@@ -452,6 +452,128 @@ function copyNaverMapLink() {
   });
 }
 
+function projectToOffset(latlng) {
+  const proj = map.getProjection();
+  return proj.fromCoordToOffset(latlng);
+}
+
+function drawOverlaysOnCanvas(ctx) {
+  if (!loadedPoints || loadedPoints.length === 0) return;
+
+  // 지도 컨테이너의 좌상단(북서쪽) 좌표를 화면 픽셀 오프셋으로 변환해 기준점으로 삼고,
+  // 이후 모든 좌표를 그 기준점 상대좌표(=지도 div 내부 픽셀 좌표)로 변환한다.
+  const bounds = map.getBounds();
+  const nw = new naver.maps.LatLng(bounds.getNE().lat(), bounds.getSW().lng());
+  const topLeftOffset = projectToOffset(nw);
+
+  function toCanvasXY(lat, lon) {
+    const offset = projectToOffset(new naver.maps.LatLng(lat, lon));
+    return {
+      x: offset.x - topLeftOffset.x,
+      y: offset.y - topLeftOffset.y
+    };
+  }
+
+  // 경로선
+  if (currentPolyline) {
+    const color = document.getElementById('lineColor').value;
+    const weight = parseInt(document.getElementById('lineWidth').value, 10) || 4;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = weight;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    loadedPoints.forEach((p, i) => {
+      const { x, y } = toCanvasXY(p.lat, p.lon);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // 화살표
+  if (document.getElementById('showArrows').checked) {
+    const arrowColor = document.getElementById('arrowColor').value;
+    const intervalKm = parseFloat(document.getElementById('arrowIntervalKm').value) || 1;
+    let distSinceLast = 0;
+    for (let i = 1; i < loadedPoints.length; i++) {
+      distSinceLast += haversineKm(loadedPoints[i - 1], loadedPoints[i]);
+      if (distSinceLast >= intervalKm) {
+        const bearing = bearingDeg(loadedPoints[i - 1], loadedPoints[i]);
+        const { x, y } = toCanvasXY(loadedPoints[i].lat, loadedPoints[i].lon);
+        drawArrowOnCanvas(ctx, x, y, bearing, arrowColor);
+        distSinceLast = 0;
+      }
+    }
+  }
+
+  // 들머리/날머리/최고지점 마커
+  if (document.getElementById('showMarkers').checked) {
+    const start = loadedPoints[0];
+    const end = loadedPoints[loadedPoints.length - 1];
+    drawDotOnCanvas(ctx, toCanvasXY(start.lat, start.lon), '#2b6cb0', '들머리');
+    drawDotOnCanvas(ctx, toCanvasXY(end.lat, end.lon), '#dd6b20', '날머리');
+    const withEle = loadedPoints.filter(p => p.ele !== null);
+    if (withEle.length) {
+      const peak = withEle.reduce((a, b) => (b.ele > a.ele ? b : a));
+      drawDotOnCanvas(ctx, toCanvasXY(peak.lat, peak.lon), '#e53e3e', null);
+    }
+  }
+}
+
+function drawArrowOnCanvas(ctx, x, y, bearingDegVal, color) {
+  const rad = (bearingDegVal * Math.PI) / 180;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rad);
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.lineTo(7, 7.5);
+  ctx.lineTo(0, 4.5);
+  ctx.lineTo(-7, 7.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.2;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDotOnCanvas(ctx, pos, color, label) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.restore();
+
+  if (label) {
+    ctx.save();
+    ctx.font = 'bold 12px "Noto Sans KR", "Malgun Gothic", sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    const padX = 6, padY = 4;
+    const boxW = textWidth + padX * 2;
+    const boxH = 16 + padY;
+    const boxX = pos.x - boxW / 2;
+    const boxY = pos.y + 14;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(boxX, boxY, boxW, boxH, 4) : ctx.rect(boxX, boxY, boxW, boxH);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.x, boxY + boxH / 2);
+    ctx.restore();
+  }
+}
+
 function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
@@ -460,6 +582,20 @@ function saveAsJPG() {
 
   const mapEl = document.getElementById('map');
   html2canvas(mapEl, { useCORS: true, allowTaint: false }).then(canvas => {
+    try {
+      const ctx = canvas.getContext('2d');
+      const rect = mapEl.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      ctx.save();
+      ctx.scale(scaleX, scaleY);
+      drawOverlaysOnCanvas(ctx);
+      ctx.restore();
+    } catch (err) {
+      saveWarnBox.style.display = 'block';
+      saveWarnBox.textContent = '⚠ 경로 오버레이 그리기 실패: ' + err.message;
+    }
+
     canvas.toBlob(blob => {
       if (!blob) {
         saveWarnBox.style.display = 'block';
