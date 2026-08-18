@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네이버지도 앱으로 이동 중</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #2d3748; text-align: center; padding: 24px; }
+  .box { max-width: 420px; }
+  h1 { font-size: 18px; margin: 0 0 10px; }
+  p { font-size: 13.5px; color: #718096; line-height: 1.6; }
+  .btn { display: inline-block; margin-top: 16px; background: #2b6cb0; color: #fff; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+  .btn:hover { background: #2c5282; }
+  .warn { display: none; background: #fff3cd; border: 1px solid #ffc107; color: #7a5c00; font-size: 12.5px; font-weight: 700; padding: 10px 14px; border-radius: 8px; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>📱 네이버지도 앱으로 이동 중...</h1>
+    <p>자동으로 이동하지 않으면 아래 버튼을 눌러주세요.<br>네이버지도 앱이 설치되어 있어야 합니다.</p>
+    <a class="btn" id="btn-open" href="#">네이버지도 앱 열기</a>
+    <div class="warn" id="warn-box">⚠ 링크 정보가 없습니다. 이 페이지는 gpx-map.html에서 생성한 링크로만 접속해야 합니다.</div>
+  </div>
+
+<script>
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+const params = new URLSearchParams(location.search);
+const query = params.get('q');
+const warnBox = document.getElementById('warn-box');
+const btn = document.getElementById('btn-open');
+
+if (!query) {
+  warnBox.style.display = 'block';
+  btn.style.display = 'none';
+} else {
+  const nmapUrl = `nmap://route/walk?${query}`;
+  const intentUrl = `intent://route/walk?${query}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
+  const targetUrl = isAndroid() ? intentUrl : nmapUrl;
+
+  btn.href = targetUrl;
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    location.href = targetUrl;
+  });
+
+  location.href = targetUrl;
+}
+</script>
+</body>
+</html>
