@@ -242,8 +242,8 @@ function makeArrowMarker(position, bearing, color) {
     icon: {
       content: `<div style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;transform:rotate(${bearing}deg);">
         <svg width="20" height="20" viewBox="0 0 24 24">
-          <line x1="12" y1="22" x2="12" y2="13" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
-          <path d="M12 2 L20 18 L12 14 L4 18 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
+          <line x1="12" y1="20" x2="12" y2="11" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+          <path d="M12 0 L20 16 L12 12 L4 16 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
         </svg>
       </div>`,
       anchor: new naver.maps.Point(11, 11)
@@ -546,8 +546,8 @@ function drawArrowOnCanvas(ctx, x, y, bearingDegVal, color) {
 
   // 꼬리(자루)
   ctx.beginPath();
-  ctx.moveTo(0, 10);
-  ctx.lineTo(0, 4.5);
+  ctx.moveTo(0, 8);
+  ctx.lineTo(0, 2.5);
   ctx.strokeStyle = color;
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
@@ -555,10 +555,10 @@ function drawArrowOnCanvas(ctx, x, y, bearingDegVal, color) {
 
   // 머리(삼각형)
   ctx.beginPath();
-  ctx.moveTo(0, -9);
-  ctx.lineTo(7, 7.5);
-  ctx.lineTo(0, 4.5);
-  ctx.lineTo(-7, 7.5);
+  ctx.moveTo(0, -11);
+  ctx.lineTo(7, 5.5);
+  ctx.lineTo(0, 2.5);
+  ctx.lineTo(-7, 5.5);
   ctx.closePath();
   ctx.fillStyle = color;
   ctx.strokeStyle = '#ffffff';
