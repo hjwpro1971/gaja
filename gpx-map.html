@@ -429,7 +429,10 @@ function buildRedirectPageUrl(points) {
   const params = buildNaverMapDeepLinkParams(points);
   const query = params.toString();
   const redirectBase = new URL('nmap-redirect.html', location.href).href;
-  return `${redirectBase}?q=${encodeURIComponent(query)}`;
+  const redirectParams = new URLSearchParams();
+  redirectParams.set('q', query);
+  if (gpxBaseName) redirectParams.set('title', gpxBaseName);
+  return `${redirectBase}?${redirectParams.toString()}`;
 }
 
 function copyNaverMapLink() {

@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>네이버지도 앱으로 이동 중</title>
+<title id="page-title">산행 경로 보기</title>
+<meta id="og-title" property="og:title" content="산행 경로 보기">
+<meta id="og-description" property="og:description" content="네이버지도 앱에서 산행 경로를 확인하세요.">
+<meta property="og:type" content="website">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
   * { box-sizing: border-box; }
@@ -31,8 +34,17 @@ function isAndroid() {
 
 const params = new URLSearchParams(location.search);
 const query = params.get('q');
+const title = params.get('title');
 const warnBox = document.getElementById('warn-box');
 const btn = document.getElementById('btn-open');
+
+if (title) {
+  const pageTitle = `${title} 산행 경로`;
+  document.getElementById('page-title').textContent = pageTitle;
+  document.getElementById('og-title').setAttribute('content', pageTitle);
+  document.getElementById('og-description').setAttribute('content', `${title} 산행 경로를 네이버지도 앱에서 확인하세요.`);
+  document.querySelector('h1').textContent = `📱 ${title} 경로 - 네이버지도 앱으로 이동 중...`;
+}
 
 if (!query) {
   warnBox.style.display = 'block';
