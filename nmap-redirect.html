@@ -18,6 +18,39 @@
   .btn:hover { background: #2c5282; }
   .warn { display: none; background: #fff3cd; border: 1px solid #ffc107; color: #7a5c00; font-size: 12.5px; font-weight: 700; padding: 10px 14px; border-radius: 8px; margin-top: 16px; }
 </style>
+<script>
+(function() {
+  function isAndroid() {
+    return /Android/i.test(navigator.userAgent);
+  }
+
+  var params = new URLSearchParams(location.search);
+  var query = params.get('q');
+  var title = params.get('title');
+
+  if (title) {
+    var pageTitle = title + ' 산행 경로';
+    document.title = pageTitle;
+  }
+
+  if (query) {
+    var nmapUrl = 'nmap://route/walk?' + query;
+    var intentUrl = 'intent://route/walk?' + query + '#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
+    var targetUrl = isAndroid() ? intentUrl : nmapUrl;
+
+    // 화면을 그리기 전에 즉시 이동시켜 "이동 중" 문구가 보이지 않게 한다.
+    // 앱에서 이 탭으로 돌아오면(visibilitychange) 중간 페이지를 다시 보여주지 않고
+    // 곧바로 이전 페이지(블로그 등)로 자동 복귀시켜 "두 번 닫기"를 방지한다.
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && history.length > 1) {
+        history.back();
+      }
+    });
+
+    location.replace(targetUrl);
+  }
+})();
+</script>
 </head>
 <body>
   <div class="box">
@@ -28,48 +61,33 @@
   </div>
 
 <script>
-function isAndroid() {
-  return /Android/i.test(navigator.userAgent);
-}
+(function() {
+  var params = new URLSearchParams(location.search);
+  var query = params.get('q');
+  var title = params.get('title');
+  var warnBox = document.getElementById('warn-box');
+  var btn = document.getElementById('btn-open');
 
-const params = new URLSearchParams(location.search);
-const query = params.get('q');
-const title = params.get('title');
-const warnBox = document.getElementById('warn-box');
-const btn = document.getElementById('btn-open');
+  if (title) {
+    document.getElementById('og-title').setAttribute('content', title + ' 산행 경로');
+    document.getElementById('og-description').setAttribute('content', title + ' 산행 경로를 네이버지도 앱에서 확인하세요.');
+    document.querySelector('h1').textContent = '📱 ' + title + ' 경로 - 네이버지도 앱으로 이동 중...';
+  }
 
-if (title) {
-  const pageTitle = `${title} 산행 경로`;
-  document.getElementById('page-title').textContent = pageTitle;
-  document.getElementById('og-title').setAttribute('content', pageTitle);
-  document.getElementById('og-description').setAttribute('content', `${title} 산행 경로를 네이버지도 앱에서 확인하세요.`);
-  document.querySelector('h1').textContent = `📱 ${title} 경로 - 네이버지도 앱으로 이동 중...`;
-}
-
-if (!query) {
-  warnBox.style.display = 'block';
-  btn.style.display = 'none';
-} else {
-  const nmapUrl = `nmap://route/walk?${query}`;
-  const intentUrl = `intent://route/walk?${query}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
-  const targetUrl = isAndroid() ? intentUrl : nmapUrl;
-
-  btn.href = targetUrl;
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    location.href = targetUrl;
-  });
-
-  // 앱에서 이 탭으로 돌아왔을 때, 중간 페이지를 다시 보여주지 않고
-  // 곧바로 이전 페이지(블로그 등)로 자동 복귀시켜 "두 번 닫기"를 방지한다.
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && history.length > 1) {
-      history.back();
-    }
-  });
-
-  location.href = targetUrl;
-}
+  if (!query) {
+    warnBox.style.display = 'block';
+    btn.style.display = 'none';
+  } else {
+    var nmapUrl = 'nmap://route/walk?' + query;
+    var intentUrl = 'intent://route/walk?' + query + '#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
+    var targetUrl = /Android/i.test(navigator.userAgent) ? intentUrl : nmapUrl;
+    btn.href = targetUrl;
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      location.href = targetUrl;
+    });
+  }
+})();
 </script>
 </body>
 </html>
