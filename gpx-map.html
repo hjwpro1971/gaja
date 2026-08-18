@@ -95,7 +95,7 @@
       <button class="btn" id="btn-open-nmap" type="button" disabled style="flex:1;">📱 네이버지도 앱에서 보기</button>
       <button class="btn" id="btn-copy-nmap" type="button" disabled>링크 복사</button>
     </div>
-    <p class="map-note">모바일에서 누르면 네이버지도 앱이 열리고, 들머리·경유지·날머리를 잇는 도보 경로가 표시됩니다(최대 7지점, GPX 전체 궤적과는 다름). 앱 안에서 자유롭게 확대해 실제 지형을 볼 수 있습니다. PC에서는 [링크 복사]로 주소를 복사해 블로그 등에 붙여넣으세요.</p>
+    <p class="map-note">모바일에서 누르면 네이버지도 앱이 열리고, 들머리·경유지1~5·날머리를 잇는 도보 경로가 표시됩니다(최대 7지점, GPX 전체 궤적과는 다름). 앱 안에서 자유롭게 확대해 실제 지형을 볼 수 있습니다. 네이버지도 앱이 설치되어 있어야 동작합니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣으세요.</p>
     <div class="warn-box" id="nmap-warn-box"></div>
     <div class="info-box" id="nmap-info-box"></div>
   </div>
@@ -390,10 +390,6 @@ function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
-function isMobile() {
-  return isAndroid() || isIOS();
-}
-
 function openInNaverMapApp() {
   const warnBox = document.getElementById('nmap-warn-box');
   const infoBox = document.getElementById('nmap-info-box');
@@ -411,7 +407,8 @@ function openInNaverMapApp() {
   if (isIOS()) {
     const fallbackTimer = setTimeout(() => {
       if (!document.hidden) {
-        location.href = 'https://apps.apple.com/app/id311867728';
+        infoBox.style.display = 'block';
+        infoBox.textContent = 'ℹ 네이버지도 앱이 설치되어 있지 않은 것 같습니다. 앱스토어에서 "네이버지도"를 설치한 뒤 다시 시도해주세요.';
       }
     }, 1500);
     document.addEventListener('visibilitychange', function onVis() {
@@ -425,7 +422,14 @@ function openInNaverMapApp() {
   }
 
   infoBox.style.display = 'block';
-  infoBox.textContent = 'ℹ 모바일에서만 앱이 열립니다. PC에서는 [링크 복사]로 주소를 복사해 블로그 등에 붙여넣어 모바일 사용자가 클릭하게 하세요.';
+  infoBox.textContent = 'ℹ 모바일에서만 앱이 열립니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣어 모바일 사용자가 클릭하게 하세요.';
+}
+
+function buildRedirectPageUrl(points) {
+  const params = buildNaverMapDeepLinkParams(points);
+  const query = params.toString();
+  const redirectBase = new URL('nmap-redirect.html', location.href).href;
+  return `${redirectBase}?q=${encodeURIComponent(query)}`;
 }
 
 function copyNaverMapLink() {
@@ -435,10 +439,10 @@ function copyNaverMapLink() {
   infoBox.style.display = 'none';
 
   if (!loadedPoints) return;
-  const { nmapUrl } = buildNaverMapDeepLinks(loadedPoints);
-  navigator.clipboard.writeText(nmapUrl).then(() => {
+  const redirectUrl = buildRedirectPageUrl(loadedPoints);
+  navigator.clipboard.writeText(redirectUrl).then(() => {
     infoBox.style.display = 'block';
-    infoBox.textContent = 'ℹ 네이버지도 앱 링크가 클립보드에 복사되었습니다.';
+    infoBox.textContent = 'ℹ 블로그 등에 붙일 수 있는 일반 https 링크가 클립보드에 복사되었습니다. 클릭하면 네이버지도 앱으로 자동 연결됩니다. (네이버지도 앱이 설치된 기기에서만 열립니다)';
   }).catch(err => {
     warnBox.style.display = 'block';
     warnBox.textContent = '⚠ 복사 실패: ' + err.message;
