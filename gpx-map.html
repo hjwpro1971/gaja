@@ -56,6 +56,7 @@
         <div class="stat-box"><span class="stat-label">최고고도</span><span class="stat-value" id="stat-maxalt"></span></div>
         <div class="stat-box"><span class="stat-label">최저고도</span><span class="stat-value" id="stat-minalt"></span></div>
         <div class="stat-box"><span class="stat-label">소요시간</span><span class="stat-value" id="stat-duration"></span></div>
+        <div class="stat-box" style="grid-column: span 2;"><span class="stat-label">산행날짜</span><span class="stat-value" id="stat-date"></span></div>
       </div>
     </fieldset>
 
@@ -158,6 +159,15 @@ function formatDuration(ms) {
   return `${hours}시간 ${minutes}분`;
 }
 
+function formatDateWithWeekday(date) {
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const w = weekdays[date.getDay()];
+  return `${y}-${m}-${d} (${w})`;
+}
+
 function haversineKm(a, b) {
   const R = 6371;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
@@ -179,8 +189,9 @@ function computeStats(points) {
   const durationMs = withTime.length >= 2
     ? withTime[withTime.length - 1].time.getTime() - withTime[0].time.getTime()
     : null;
+  const hikeDate = withTime.length ? withTime[0].time : null;
 
-  return { totalKm, maxAlt, minAlt, durationMs };
+  return { totalKm, maxAlt, minAlt, durationMs, hikeDate };
 }
 
 function clearMapLayers() {
@@ -318,6 +329,7 @@ function handleGPXFile(e) {
       document.getElementById('stat-maxalt').textContent = stats.maxAlt !== null ? Math.round(stats.maxAlt) + 'm' : '-';
       document.getElementById('stat-minalt').textContent = stats.minAlt !== null ? Math.round(stats.minAlt) + 'm' : '-';
       document.getElementById('stat-duration').textContent = stats.durationMs !== null ? formatDuration(stats.durationMs) : '- (GPX에 시간 정보 없음)';
+      document.getElementById('stat-date').textContent = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '- (GPX에 날짜 정보 없음)';
       statGrid.style.display = 'grid';
 
       warnBox.style.display = 'none';
