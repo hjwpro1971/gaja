@@ -60,6 +60,14 @@ if (!query) {
     location.href = targetUrl;
   });
 
+  // 앱에서 이 탭으로 돌아왔을 때, 중간 페이지를 다시 보여주지 않고
+  // 곧바로 이전 페이지(블로그 등)로 자동 복귀시켜 "두 번 닫기"를 방지한다.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && history.length > 1) {
+      history.back();
+    }
+  });
+
   location.href = targetUrl;
 }
 </script>
