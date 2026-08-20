@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>산행 가이드 생성기</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #2d3748; }
+  .layout { display: flex; min-height: 100vh; }
+  .form-pane { width: 480px; min-width: 480px; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  .preview-pane { flex: 1; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 12.5px; color: #718096; margin: 0 0 20px; }
+  fieldset { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; padding: 14px; }
+  legend { font-size: 13px; font-weight: 700; color: #2b6cb0; padding: 0 6px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #4a5568; margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-family: inherit; background: #fff; color: #2d3748;
+  }
+  textarea { resize: vertical; min-height: 44px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .section-box { border: 1px solid #edf2f7; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #f7fafc; }
+  .section-box h3 { font-size: 13px; margin: 0 0 8px; color: #1a202c; }
+  .charcount { font-size: 10.5px; color: #a0aec0; text-align: right; margin-top: 2px; }
+  .charcount.over { color: #e53e3e; font-weight: 700; }
+  .bullet-row { border: 1px dashed #cbd5e0; border-radius: 6px; padding: 8px; margin-top: 8px; position: relative; }
+  .bullet-row .remove-bullet { position: absolute; top: 6px; right: 6px; font-size: 11px; color: #e53e3e; background: none; border: none; cursor: pointer; }
+  .btn { display: inline-block; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; color: #2d3748; cursor: pointer; }
+  .btn:hover { background: #f7fafc; }
+  .btn-add { font-size: 11.5px; padding: 4px 10px; margin-top: 6px; }
+  .btn-primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-size: 14px; padding: 10px 18px; }
+  .btn-primary:hover { background: #2c5282; }
+  .btn-download { background: #dd6b20; color: #fff; border-color: #dd6b20; font-size: 14px; padding: 10px 18px; }
+  .btn-download:hover { background: #c05621; }
+  .btn-download:disabled { background: #cbd5e0; border-color: #cbd5e0; cursor: not-allowed; }
+  .action-bar { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+  .warn-box { display: none; background: #fff3cd; border: 1px solid #ffc107; color: #7a5c00; font-size: 12.5px; font-weight: 700; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; white-space: pre-line; }
+  .info-box { display: none; background: #ebf8ff; border: 1px solid #90cdf4; color: #2c5282; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; white-space: pre-line; }
+  .total-line { font-size: 12.5px; color: #4a5568; margin-top: 6px; }
+  iframe { width: 100%; height: 900px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+  .preview-placeholder { color: #a0aec0; font-size: 13px; padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="form-pane">
+    <h1>⛰️ 산행 가이드 생성기</h1>
+    <p class="sub">코스 정보를 입력하고 [가이드 생성]을 누르면 template.html 형식의 산행 가이드가 만들어집니다.</p>
+
+    <div class="action-bar">
+      <button class="btn" id="btn-example" type="button">예시(설악산)</button>
+      <button class="btn" id="btn-reset" type="button">폼 초기화</button>
+      <label for="loadHtmlFile" class="btn" style="margin:0; cursor:pointer;">기존HTML불러오기</label>
+      <input type="file" id="loadHtmlFile" accept=".html" style="display:none;">
+    </div>
+    <div class="warn-box" id="load-html-warn-box"></div>
+
+    <fieldset>
+      <legend>코스별 상세 가이드 ↔ JSON</legend>
+      <p class="sub" style="margin:0 0 8px;">1) 아래에 산행 코스 상세 정보(자유 텍스트)를 입력 → 2) [JSON으로 변환하기]를 누르면 변환용 프롬프트+원문이 클립보드에 복사됨 → 3) 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 같은 칸에 붙여넣고 [JSON으로 붙여넣기] 클릭 → 4) 폼 확인/수정 후 [가이드 생성] → [다운로드]</p>
+      <textarea id="json-paste-area" style="min-height:140px; font-family: 'Consolas', monospace; font-size:11.5px;" placeholder="여기에 산행 코스 상세 정보(원문 텍스트) 또는 AI가 만든 MOUNTAIN_DATA JSON을 입력하세요"></textarea>
+      <div class="action-bar" style="margin:8px 0 0;">
+        <button class="btn" id="btn-copy-prompt" type="button">JSON 프롬프트 복사</button>
+        <button class="btn" id="btn-fill-json" type="button">JSON 붙여넣기</button>
+      </div>
+      <div class="warn-box" id="json-warn-box" style="margin-top:8px;"></div>
+      <div class="info-box" id="json-copy-info" style="margin-top:8px;"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>기본 정보</legend>
+      <label>산 이름</label>
+      <input type="text" id="mountainName" placeholder="예: 지리산">
+
+      <label>코스 흐름 (콤마로 구분, 지도상 순서대로)</label>
+      <input type="text" id="courseRouteFlow" placeholder="예: 백무동, 장터목, 연하선경, 세석, 한신계곡">
+
+      <div class="row">
+        <div>
+          <label>총 소요시간</label>
+          <input type="text" id="totalTime" placeholder="예: 9.5h">
+        </div>
+        <div>
+          <label>전체 난이도</label>
+          <select id="overallDifficulty">
+            <option value="쉬움">쉬움</option>
+            <option value="보통">보통</option>
+            <option value="힘듦" selected>힘듦</option>
+          </select>
+        </div>
+      </div>
+
+      <label>안전 유의 문구</label>
+      <textarea id="safetyWarningText" placeholder="예: 참샘 식수 부적합 · 한신계곡 급경사 무릎주의"></textarea>
+
+      <label>코스 소개 (하단 가이드 상단 문단)</label>
+      <textarea id="guideIntro" style="min-height:70px;"></textarea>
+
+      <label for="coverImage">표지 배경 사진 (선택, 없으면 기본 단색 배경 사용) <span style="font-weight:400; color:#718096;">— 권장 원본 사양: 16:9 비율, 1920×1080px 이상, 주요 피사체는 화면 중앙~약간 아래, 원경이 상하로 넉넉하게 퍼진 구도. 아래 편집기에서 표지 영역(가로 960px 고정)에 맞춰 드래그로 이동하고 휠/버튼으로 확대·축소해 구도를 잡으세요.</span></label>
+      <input type="file" id="coverImage" accept="image/*">
+      <div id="coverImagePreviewWrap" style="display:none; margin-top:8px;">
+        <div id="coverEditorWrap" style="position:relative; width:100%; border-radius:6px; overflow:hidden; background:#edf2f7; touch-action:none;">
+          <canvas id="coverEditorCanvas" style="display:block; width:100%; cursor:grab;"></canvas>
+          <button type="button" id="btn-remove-cover-image" class="btn" style="position:absolute; top:6px; right:6px; padding:3px 8px; font-size:11px;">사진 제거</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+          <label for="coverEditorZoom" style="margin:0; white-space:nowrap;">확대/축소</label>
+          <input type="range" id="coverEditorZoom" min="100" max="400" value="100" step="1" style="flex:1;">
+          <button type="button" id="btn-cover-zoom-reset" class="btn" style="padding:4px 10px; font-size:11px;">위치 초기화</button>
+        </div>
+        <div class="charcount">드래그로 이동, 슬라이더나 마우스 휠로 확대/축소할 수 있습니다. 표지 영역(가로 960px)에 보이는 그대로 결과물에 적용됩니다.</div>
+      </div>
+      <div id="coverImageHeightRow" style="display:none;">
+        <label for="coverImageHeight">사진 높이 (px, 상단부터 이 높이까지만 사진이 채워짐 · 표지 전체 높이는 562px)</label>
+        <input type="number" id="coverImageHeight" value="350" min="50" max="562" step="1">
+      </div>
+      <div class="charcount" id="coverImageSizeNote"></div>
+    </fieldset>
+
+    <div id="sections-container"></div>
+
+    <div class="total-line" id="total-distance-line"></div>
+
+    <div class="warn-box" id="warn-box"></div>
+    <div class="info-box" id="info-box"></div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="btn-generate" type="button">가이드 생성</button>
+      <button class="btn btn-download" id="btn-download" type="button" disabled>HTML 다운로드</button>
+    </div>
+    <div class="action-bar" style="margin-top:6px;">
+      <button class="btn" id="btn-choose-save-dir" type="button">저장 폴더 지정</button>
+      <span class="charcount" id="save-dir-status" style="text-align:left; margin:0;"></span>
+    </div>
+    <div class="warn-box" id="save-location-warn"></div>
+    <div class="info-box" id="save-location-info"></div>
+
+    <div id="deploy-url-box" style="display:none; margin-top:10px; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px;">
+      <label style="margin:0 0 4px;">배포 주소 (gaja 폴더에 저장 후 접속 가능)</label>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="deploy-url-text" readonly style="flex:1; font-size:11.5px; font-family:'Consolas',monospace;">
+        <button class="btn" id="btn-copy-deploy-url" type="button" style="white-space:nowrap;">주소 복사</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="preview-pane">
+    <div id="preview-area">
+      <div class="preview-placeholder">왼쪽에서 정보를 입력하고 [가이드 생성]을 누르면 여기에 미리보기가 표시됩니다.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// SKILL.md 규칙 요약 — 다른 AI에게 그대로 전달해 MOUNTAIN_DATA JSON을 만들도록 하는 프롬프트
+const JSON_CONVERT_PROMPT = `아래는 산행 코스에 대한 상세 정보(원문 텍스트)입니다. 이 정보를 바탕으로 산행 가이드 인포그래픽에 쓰일 MOUNTAIN_DATA JSON을 정확히 아래 스키마와 규칙에 맞춰 생성해 주세요. 설명 없이 JSON 코드 블록 하나만 출력하세요.
+
+[스키마]
+{
+  "mountainName": "산 이름",
+  "courseRouteFlow": ["경유지1", "경유지2", "경유지3", "경유지4", "경유지5"],
+  "totalTime": "예: 9.5h~10.5h",
+  "overallDifficulty": "쉬움" | "보통" | "힘듦",
+  "safetyWarningText": "핵심 안전 유의 문구 (명사구 나열, · 로 구분)",
+  "guideIntro": "하단 상세 가이드 상단에 들어갈 산 소개 문단 (2~4문장)",
+  "sections": [
+    {
+      "cardTitle": "8자 이하 명사구",
+      "distanceKm": 숫자,
+      "difficulty": "easy" | "medium" | "hard",
+      "altitude": 숫자(1구간은 들머리=시작 지점 고도, 2~5구간은 해당 구간이 끝나는 지점 고도, m — 고도 그래프가 5개 값을 선으로 이어 그리므로 1구간에 도착 고도를 넣으면 시작점이 산 아래가 아니라 능선 위에서 시작하는 그래프 왜곡이 생김),
+      "features": ["8자 이하 명사구", "8자 이하 명사구", "8자 이하 명사구"],
+      "detail": {
+        "headerName": "구간 시작 ➔ 구간 끝 (약 X km / 소요시간)",
+        "bullets": [
+          { "strong": "소제목", "p": "본문 설명 문장" }
+        ]
+      }
+    }
+  ]
+}
+
+[필수 규칙]
+1. sections 배열은 반드시 정확히 5개 (더 많거나 적으면 안 됨). 원문의 구간이 5개가 아니면 적절히 재분할/병합해서 5개로 맞출 것.
+2. cardTitle과 features의 모든 문구는 조사·서술어·어미를 100% 제거한 8자 이하 명사구여야 함. (나쁜 예: "가파르고 거친 바위 능선길" → 좋은 예: "가파른돌바위능선")
+3. 동의어는 다음 표준 용어로 치환: 대피소→쉼터, 전망대→조망터, 암릉/암벽→바위길, 너덜지대→돌길, 삼거리/네거리→갈림길, 들머리→시작점, 날머리→종착점, 하산길→내리막, 군락지→숲, 급경사 오르막→깔딱고개.
+4. difficulty는 "easy"|"medium"|"hard" 중 하나만 사용 (한글 아님).
+5. altitude는 원문에 고도 수치가 없으면 실제 지리 정보를 근거로 합리적으로 추정해서 채울 것. 반드시 1구간 altitude = 들머리(전체 코스 시작 지점) 고도로 채우고, 2~5구간 altitude는 각 구간이 끝나는 지점(다음 경유지) 고도로 채워서 [들머리 → 구간1끝 → 구간2끝 → 구간3끝 → 구간4끝(=날머리)]의 산세(오르막/내리막) 흐름이 그대로 드러나게 할 것. 최고 지점이 5개 값 중 도드라지도록 배치.
+6. distanceKm은 원문의 거리 수치를 최대한 그대로 반영하고, 5개 구간 합이 원문 총거리와 근접하도록 배분.
+7. detail.bullets는 구간당 2~4개, strong(소제목)과 p(본문 설명 문장)로 구성.
+8. safetyWarningText에는 원문에 언급된 위험 요소(식수 부적합, 급경사 무릎주의, 우천시 주의 등)를 명사구로 나열.
+
+[원문 산행 코스 정보]
+`;
+
+// SKILL.md 규칙: 동의어 치환 리스트
+const SYNONYM_MAP = {
+  '대피소': '쉼터', '전망대': '조망터', '암릉': '바위길', '암벽': '바위길',
+  '너덜지대': '돌길', '삼거리': '갈림길', '네거리': '갈림길',
+  '들머리': '시작점', '날머리': '종착점', '하산길': '내리막',
+  '군락지': '숲', '급경사 오르막': '깔딱고개'
+};
+const DIFF_OPTIONS = [
+  { value: 'easy', label: '쉬움' },
+  { value: 'medium', label: '보통' },
+  { value: 'hard', label: '힘듦' }
+];
+
+const MAX_LABEL_LEN = 8;
+
+function graphemeLen(str) { return Array.from(str || '').length; }
+
+function bulletRowHTML(sIdx, bIdx, strong, p) {
+  return `
+    <div class="bullet-row" data-bullet-idx="${bIdx}">
+      <button type="button" class="remove-bullet" onclick="removeBullet(${sIdx}, ${bIdx})">✕ 삭제</button>
+      <label>소제목 (strong)</label>
+      <input type="text" class="bullet-strong" value="${escapeAttr(strong || '')}">
+      <label>본문 (p)</label>
+      <textarea class="bullet-p">${escapeHtml(p || '')}</textarea>
+    </div>`;
+}
+
+function escapeHtml(s) { return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function escapeAttr(s) { return (s || '').replace(/"/g, '&quot;'); }
+
+function sectionBoxHTML(idx) {
+  return `
+    <div class="section-box" data-section-idx="${idx}">
+      <h3>${idx + 1}구간</h3>
+      <div class="row">
+        <div>
+          <label>카드 제목 (${MAX_LABEL_LEN}자 이하)</label>
+          <input type="text" class="s-cardTitle" oninput="checkCharLimit(this)">
+          <div class="charcount"></div>
+        </div>
+        <div>
+          <label>거리(km)</label>
+          <input type="number" class="s-distanceKm" step="0.1" oninput="updateTotalDistance()">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>난이도</label>
+          <select class="s-difficulty">
+            ${DIFF_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>고도(m)</label>
+          <input type="number" class="s-altitude">
+        </div>
+      </div>
+      <label>코스 특징 (콤마 구분, 각 ${MAX_LABEL_LEN}자 이하)</label>
+      <input type="text" class="s-features" oninput="checkFeaturesCharLimit(this)">
+      <div class="charcount"></div>
+
+      <label>구간 헤더명 (예: 오색 ➔ 설악폭포 약 2.5km / 1시간30분)</label>
+      <input type="text" class="s-headerName">
+
+      <label style="margin-top:12px;">상세 설명 불릿</label>
+      <div class="bullets-container"></div>
+      <button type="button" class="btn btn-add" onclick="addBullet(${idx})">+ 불릿 추가</button>
+    </div>`;
+}
+
+function buildSectionsForm() {
+  const container = document.getElementById('sections-container');
+  let html = '<fieldset><legend>구간별 상세 정보 (5구간 고정)</legend>';
+  for (let i = 0; i < 5; i++) html += sectionBoxHTML(i);
+  html += '</fieldset>';
+  container.innerHTML = html;
+  for (let i = 0; i < 5; i++) {
+    addBullet(i, '', '');
+    addBullet(i, '', '');
+  }
+}
+
+function getSectionBox(idx) {
+  return document.querySelector(`.section-box[data-section-idx="${idx}"]`);
+}
+
+function addBullet(sIdx, strong, p) {
+  const box = getSectionBox(sIdx);
+  const bulletsContainer = box.querySelector('.bullets-container');
+  const bIdx = bulletsContainer.children.length;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = bulletRowHTML(sIdx, bIdx, strong, p);
+  bulletsContainer.appendChild(wrapper.firstElementChild);
+}
+
+function removeBullet(sIdx, bIdx) {
+  const box = getSectionBox(sIdx);
+  const bulletsContainer = box.querySelector('.bullets-container');
+  if (bulletsContainer.children.length <= 1) return;
+  bulletsContainer.children[bIdx].remove();
+  Array.from(bulletsContainer.children).forEach((el, i) => {
+    el.setAttribute('data-bullet-idx', i);
+    el.querySelector('.remove-bullet').setAttribute('onclick', `removeBullet(${sIdx}, ${i})`);
+  });
+}
+
+function checkCharLimit(input) {
+  const box = input.closest('.section-box, label')?.parentElement || input.parentElement;
+  const counter = input.parentElement.querySelector('.charcount');
+  const len = graphemeLen(input.value);
+  counter.textContent = `${len}/${MAX_LABEL_LEN}자`;
+  counter.classList.toggle('over', len > MAX_LABEL_LEN);
+}
+
+function checkFeaturesCharLimit(input) {
+  const counter = input.parentElement.querySelector('.charcount');
+  const items = input.value.split(',').map(s => s.trim()).filter(Boolean);
+  const overs = items.filter(f => graphemeLen(f) > MAX_LABEL_LEN);
+  if (overs.length) {
+    counter.textContent = `⚠ ${MAX_LABEL_LEN}자 초과: ${overs.join(', ')}`;
+    counter.classList.add('over');
+  } else {
+    counter.textContent = `${items.length}개 항목`;
+    counter.classList.remove('over');
+  }
+}
+
+function updateTotalDistance() {
+  let total = 0;
+  for (let i = 0; i < 5; i++) {
+    const box = getSectionBox(i);
+    total += parseFloat(box.querySelector('.s-distanceKm').value) || 0;
+  }
+  document.getElementById('total-distance-line').textContent = `구간 거리 합계(자동 계산): ${total.toFixed(1)}km`;
+}
+
+function collectFormData() {
+  const mountainName = document.getElementById('mountainName').value.trim();
+  const courseRouteFlow = document.getElementById('courseRouteFlow').value.split(',').map(s => s.trim()).filter(Boolean);
+  const totalTime = document.getElementById('totalTime').value.trim();
+  const overallDifficulty = document.getElementById('overallDifficulty').value;
+  const safetyWarningText = document.getElementById('safetyWarningText').value.trim();
+  const guideIntro = document.getElementById('guideIntro').value.trim();
+
+  const sections = [];
+  for (let i = 0; i < 5; i++) {
+    const box = getSectionBox(i);
+    const bullets = Array.from(box.querySelectorAll('.bullet-row')).map(row => ({
+      strong: row.querySelector('.bullet-strong').value.trim(),
+      p: row.querySelector('.bullet-p').value.trim()
+    })).filter(b => b.strong || b.p);
+
+    sections.push({
+      cardTitle: box.querySelector('.s-cardTitle').value.trim(),
+      distanceKm: parseFloat(box.querySelector('.s-distanceKm').value) || 0,
+      difficulty: box.querySelector('.s-difficulty').value,
+      altitude: parseInt(box.querySelector('.s-altitude').value, 10) || 0,
+      features: box.querySelector('.s-features').value.split(',').map(s => s.trim()).filter(Boolean),
+      detail: {
+        headerName: box.querySelector('.s-headerName').value.trim(),
+        bullets
+      }
+    });
+  }
+
+  return { mountainName, courseRouteFlow, totalTime, overallDifficulty, safetyWarningText, guideIntro, sections };
+}
+
+function validateData(data) {
+  const errors = [];
+  const warnings = [];
+
+  if (!data.mountainName) errors.push('산 이름을 입력하세요.');
+  if (data.courseRouteFlow.length === 0) errors.push('코스 흐름을 입력하세요.');
+
+  data.sections.forEach((s, i) => {
+    if (graphemeLen(s.cardTitle) > MAX_LABEL_LEN) errors.push(`${i + 1}구간 카드 제목 "${s.cardTitle}"이(가) ${MAX_LABEL_LEN}자를 초과합니다.`);
+    if (!s.cardTitle) errors.push(`${i + 1}구간 카드 제목이 비어 있습니다.`);
+    s.features.forEach(f => {
+      if (graphemeLen(f) > MAX_LABEL_LEN) errors.push(`${i + 1}구간 특징 "${f}"이(가) ${MAX_LABEL_LEN}자를 초과합니다.`);
+    });
+    if (!s.detail.headerName) errors.push(`${i + 1}구간 헤더명이 비어 있습니다.`);
+    if (s.detail.bullets.length === 0) errors.push(`${i + 1}구간 상세 불릿이 하나도 없습니다.`);
+  });
+
+  // 동의어 치환 안내 (경고만, 차단하지 않음)
+  const allText = JSON.stringify(data);
+  Object.keys(SYNONYM_MAP).forEach(word => {
+    if (allText.includes(word)) {
+      warnings.push(`"${word}" → SKILL.md 규칙상 "${SYNONYM_MAP[word]}"(으)로 치환을 권장합니다.`);
+    }
+  });
+
+  return { errors, warnings };
+}
+
+function buildMountainDataJSON(data) {
+  const payload = {
+    mountainName: data.mountainName,
+    courseRouteFlow: data.courseRouteFlow,
+    totalTime: data.totalTime,
+    overallDifficulty: data.overallDifficulty,
+    safetyWarningText: data.safetyWarningText,
+    guideIntro: data.guideIntro,
+    sections: data.sections
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+// template.html의 정적 마크업 + 렌더링 스크립트를 그대로 내장 (file:// 환경에서도 fetch 없이 동작)
+const TEMPLATE_HTML = "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes\">\n<title id=\"page-title\">등산 가이드 & 코스 상세 분석</title>\n<style>\n  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n  html, body { width: 100%; background-color: #f0f4f8; }\n  body { font-family: 'Noto Sans CJK KR', 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #2d3748; line-height: 1.6; padding: 20px 0; }\n  .page-container { width: 100%; max-width: 1000px; margin: 0 auto; padding: 0 15px; }\n\n  /* 상단 8자 초과 경고 배너 (신규) */\n  .warning-banner {\n    display: none;\n    background: #fff3cd;\n    border: 1px solid #ffc107;\n    color: #7a5c00;\n    font-size: 13px;\n    font-weight: 700;\n    padding: 10px 16px;\n    border-radius: 8px;\n    margin-bottom: 12px;\n  }\n\n  /* ==========================================================================\n     1. 상단 인포그래픽 표지 영역\n     ========================================================================== */\n  .infographic-scroll-container {\n    width: 100%;\n    overflow: hidden;\n    position: relative;\n    margin-bottom: 30px;\n    border-radius: 20px;\n    box-shadow: 0 15px 35px rgba(31, 38, 135, 0.08);\n    border: 1px solid rgba(255, 255, 255, 0.6);\n    background-color: #ffffff;\n    /* 버그6 수정: JS가 실패해도 세로 비율(1000:562)이 유지되도록 CSS 폴백 */\n    aspect-ratio: 1000 / 562;\n  }\n\n  .infographic-wrapper {\n    width: 1000px;\n    height: 562px;\n    position: absolute;\n    top: 0;\n    left: 0;\n    /* 옵션(a) 채택: 사진 배경 없이 밝은 단색만 사용 */\n    background-color: #f7fafc;\n  }\n\n  .cover-image-layer {\n    position: absolute;\n    top: 0;\n    left: 20px;\n    width: 960px;\n    overflow: hidden;\n    border-radius: 12px;\n  }\n\n  .cover-image-layer img {\n    display: block;\n    width: 100%;\n    height: 100%;\n    object-fit: fill;\n  }\n\n  .keep-all { word-break: keep-all; }\n\n  .header { position: absolute; top: 30px; left: 40px; width: 480px; }\n  .header h1 { font-size: 30px; font-weight: 700; color: #1a202c; letter-spacing: -1.5px; margin: 0 0 8px 0; text-shadow: 0 1px 3px rgba(255,255,255,0.9), 0 0 12px rgba(255,255,255,0.7); }\n  .header .subtitle { display: inline-block; background: #ffffff; border: 2px solid #ffffff; border-radius: 30px; padding: 6px 16px; font-size: 11.5px; font-weight: 800; color: #1a202c; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); line-height: 1.5; }\n  .header .subtitle span { color: #e28743; margin: 0 3px; font-weight: bold; }\n\n  .summary-dashboard { position: absolute; top: 30px; right: 40px; width: 440px; height: 52px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }\n  .summary-col { position: absolute; top: 8px; text-align: center; }\n  .summary-col-1 { left: 0px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }\n  .summary-col-2 { left: 110px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }\n  .summary-col-3 { left: 220px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }\n  .summary-col-4 { left: 330px; width: 110px; }\n  .summary-label { font-size: 10.5px; color: #c05621; display: block; margin-bottom: 2px; font-weight: 700; }\n  .summary-value { font-size: 14px; font-weight: 700; color: #1a202c; }\n\n  /* 버그5 수정: height를 SVG viewBox(185)와 동일하게 맞춤 (기존 145 → 185) */\n  .elevation-container { position: absolute; top: 100px; left: 40px; width: 920px; height: 185px; }\n  .grid-line { stroke: rgba(0, 0, 0, 0.08); stroke-width: 1; stroke-dasharray: 4,4; }\n  /* 옵션(a) 채택: 밝은 배경이므로 격자/노드 텍스트는 어두운 색 유지 */\n  .grid-text-bg { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }\n  .grid-text { fill: #1a202c; font-size: 9.5px; font-weight: 700; }\n  .elevation-area { fill: url(#terrain-gradient); opacity: 0.16; }\n  .elevation-line { fill: none; stroke: #2b6cb0; stroke-width: 3.5; stroke-linejoin: round; stroke-linecap: round; }\n  .node-point { fill: #ffffff; stroke: #2b6cb0; stroke-width: 2.5; }\n  .node-point-peak { stroke: #dd6b20; stroke-width: 3; r: 6; }\n  .node-text-bg { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }\n  .node-text { fill: #1a202c; font-size: 10px; font-weight: 700; text-anchor: middle; }\n  .node-text-peak { fill: #e53e3e; }\n\n  /* 버그3 수정: 5분할 구조. 색상은 JS가 각 구간 난이도에 맞춰 채움 */\n  .difficulty-strip { position: absolute; top: 296px; left: 20px; width: 960px; height: 7px; border-radius: 4px; overflow: hidden; background: #edf2f7; display: flex; }\n  .strip-seg { height: 100%; flex: 1 1 0; }\n\n  .card { position: absolute; top: 319px; width: 176px; height: 210px; background: rgba(255, 255, 255, 0.95); border: 1.5px solid #edf2f7; border-radius: 12px; padding: 12px; box-sizing: border-box; box-shadow: 0 6px 15px rgba(0, 0, 0, 0.03); transition: all 0.2s ease; }\n  .card-1 { left: 20px; }\n  .card-2 { left: 216px; }\n  .card-3 { left: 412px; }\n  .card-4 { left: 608px; }\n  .card-5 { left: 804px; }\n  /* 버그4 수정: 특정 카드 번호가 아니라 JS가 부여하는 .card-peak 클래스로 강조 */\n  .card-peak { border-color: rgba(221, 107, 32, 0.3); background: rgba(255, 253, 245, 0.98); }\n  .card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06); border-color: #cbd5e0; }\n\n  .card-num { font-size: 10px; color: #718096; font-weight: 700; }\n  .card-title { font-size: 13.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }\n  .badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }\n  .badge-easy { background: rgba(72, 187, 120, 0.15); color: #22543d; border: 1px solid rgba(72, 187, 120, 0.3); }\n  .badge-medium { background: rgba(246, 224, 94, 0.2); color: #744210; border: 1px solid rgba(246, 224, 94, 0.4); }\n  .badge-hard { background: rgba(245, 101, 101, 0.15); color: #742a2a; border: 1px solid rgba(245, 101, 101, 0.3); }\n\n  .card-features { border-top: 1px dashed rgba(0, 0, 0, 0.08); padding-top: 8px; margin-top: 4px; }\n  .features-header { font-size: 10px; font-weight: 700; color: #c05621; margin-bottom: 5px; letter-spacing: -0.3px; }\n  .feature-item { font-size: 10.5px; color: #4a5568; margin-bottom: 4px; position: relative; padding-left: 9px; font-weight: 500; }\n  .feature-item::before { content: '•'; color: #e28743; position: absolute; left: 0; font-weight: bold; }\n  .feature-item:last-child { margin-bottom: 0; }\n\n  .safety-overlay { position: absolute; bottom: 15px; left: 20px; right: 20px; height: 30px; background: #fffbe6; border: 1px solid #f6e05e; border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }\n  .safety-tag { position: absolute; top: 5px; left: 12px; background-color: #dd6b20; color: #ffffff; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; }\n  .safety-text { position: absolute; top: 5px; left: 80px; font-size: 11px; color: #744210; font-weight: 700; }\n\n  /* ==========================================================================\n     2. 하단 상세 분석 영역\n     ========================================================================== */\n  .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }\n  .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }\n  .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }\n  .section-block { margin-bottom: 35px; padding: 0 24px 30px; border-bottom: 1px solid #edf2f7; }\n  .section-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }\n  .section-header-row { display: flex; align-items: center; margin-bottom: 15px; }\n  .section-index-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; margin-right: 12px; letter-spacing: -0.3px; }\n  .badge-style-easy { background: rgba(72, 187, 120, 0.15); color: #22543d; border: 1px solid rgba(72, 187, 120, 0.3); }\n  .badge-style-medium { background: rgba(246, 224, 94, 0.2); color: #744210; border: 1px solid rgba(246, 224, 94, 0.4); }\n  .badge-style-hard { background: rgba(245, 101, 101, 0.15); color: #742a2a; border: 1px solid rgba(245, 101, 101, 0.3); }\n  .section-main-name { font-size: 18px; font-weight: 700; color: #2d3748; }\n  .section-detail-bullets { list-style: none; padding-left: 0; }\n  .section-detail-bullets li { font-size: 14px; color: #4a5568; margin-bottom: 15px; position: relative; padding-left: 20px; }\n  .section-detail-bullets li::before { content: '•'; color: #e28743; position: absolute; left: 0; font-size: 18px; line-height: 1.2; font-weight: bold; }\n  .section-detail-bullets li strong { color: #1a202c; font-weight: 700; display: inline-block; margin-bottom: 3px; }\n  .section-detail-bullets li p { margin-top: 2px; color: #718096; font-size: 13.5px; white-space: pre-line; }\n\n  @media (max-width: 768px) {\n    body { padding: 10px 0; }\n    .guide-container { padding: 20px 0; border-radius: 12px; }\n    .guide-main-title, .guide-intro { margin-left: 16px; margin-right: 16px; }\n    .section-block { padding-left: 16px; padding-right: 16px; }\n    .guide-main-title { font-size: 20px; }\n    .guide-intro { font-size: 13.5px; }\n    .section-header-row { flex-direction: column; align-items: flex-start; gap: 8px; }\n    .section-main-name { font-size: 15.5px; }\n    .section-detail-bullets li { font-size: 13px; }\n    .section-detail-bullets li p { font-size: 12.5px; }\n  }\n</style>\n</head>\n<body>\n<div class=\"page-container\">\n  <div id=\"warning-banner\" class=\"warning-banner\"></div>\n\n  <div class=\"infographic-scroll-container\">\n    <div class=\"infographic-wrapper\">__COVER_IMAGE_LAYER__\n      <div class=\"header\">\n        <h1 class=\"keep-all\" id=\"mountain-name\"></h1>\n        <div class=\"subtitle keep-all\" id=\"course-route\"></div>\n      </div>\n\n      <div class=\"summary-dashboard\">\n        <div class=\"summary-col summary-col-1\"><span class=\"summary-label\">총거리</span><span class=\"summary-value\" id=\"sum-distance\"></span></div>\n        <div class=\"summary-col summary-col-2\"><span class=\"summary-label\">소요시간</span><span class=\"summary-value\" id=\"sum-time\"></span></div>\n        <div class=\"summary-col summary-col-3\"><span class=\"summary-label\">최고고도</span><span class=\"summary-value\" id=\"sum-altitude\"></span></div>\n        <div class=\"summary-col summary-col-4\"><span class=\"summary-label\">난이도</span><span class=\"summary-value\" style=\"color:#dd6b20;\" id=\"sum-difficulty\"></span></div>\n      </div>\n\n      <div class=\"elevation-container\">\n        <svg id=\"elevation-svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 920 185\">\n          <defs>\n            <linearGradient id=\"terrain-gradient\" x1=\"0%\" y1=\"0%\" x2=\"0%\" y2=\"100%\">\n              <stop offset=\"0%\" stop-color=\"#3182ce\" stop-opacity=\"0.8\"/>\n              <stop offset=\"100%\" stop-color=\"#3182ce\" stop-opacity=\"0.0\"/>\n            </linearGradient>\n          </defs>\n          <!-- 격자선/그래프/노드는 전부 JS가 채움 -->\n        </svg>\n      </div>\n\n      <div class=\"difficulty-strip\" id=\"difficulty-strip\"></div>\n\n      <div id=\"cards-container\"></div>\n\n      <div class=\"safety-overlay keep-all\">\n        <span class=\"safety-tag\">안전 유의</span>\n        <span class=\"safety-text\" id=\"safety-text\"></span>\n      </div>\n    </div>\n  </div>\n\n  <div class=\"guide-container\" id=\"guide-container\"></div>\n</div>\n\n<script id=\"MOUNTAIN_DATA\" type=\"application/json\">\n__MOUNTAIN_DATA_JSON__\n<\/script>\n\n<script>\n(function () {\n  const data = JSON.parse(document.getElementById('MOUNTAIN_DATA').textContent);\n  const sections = data.sections;\n  if (!sections || sections.length !== 5) {\n    console.error('sections 배열은 정확히 5개여야 합니다.');\n    return;\n  }\n\n  const CX = [124, 312, 500, 688, 876];\n  const Y_MIN_LINE = 140;\n  const Y_RANGE = 105;\n\n  const alts = sections.map(s => s.altitude);\n  const minAlt = Math.min(...alts);\n  const maxAlt = Math.max(...alts);\n  const peakIdx = alts.indexOf(maxAlt);\n\n  function toY(altitude) {\n    if (maxAlt === minAlt) return Y_MIN_LINE - Y_RANGE / 2;\n    return Y_MIN_LINE - ((altitude - minAlt) / (maxAlt - minAlt)) * Y_RANGE;\n  }\n  const ys = alts.map(toY);\n\n  // 격자 고도 라벨: 보기 좋은 단위(50/100/200m)로 반올림\n  function niceStep(range) {\n    if (range <= 300) return 50;\n    if (range <= 800) return 100;\n    return 200;\n  }\n  function roundNice(v, step) { return Math.round(v / step) * step; }\n  const range = maxAlt - minAlt || 1;\n  const step = niceStep(range);\n  const gridRatios = [0, 0.4286, 0.8571];\n  const gridYs = [140, 95, 50];\n  const gridAlts = gridRatios.map(r => roundNice(minAlt + r * range, step));\n\n  const svgNS = 'http://www.w3.org/2000/svg';\n  const svg = document.getElementById('elevation-svg');\n  function svgEl(tag, attrs) {\n    const el = document.createElementNS(svgNS, tag);\n    for (const k in attrs) el.setAttribute(k, attrs[k]);\n    return el;\n  }\n\n  gridYs.forEach((y, i) => {\n    svg.appendChild(svgEl('line', { class: 'grid-line', x1: 124, y1: y, x2: 876, y2: y }));\n  });\n\n  const linePoints = CX.map((cx, i) => `${cx},${ys[i]}`).join(' L ');\n  svg.appendChild(svgEl('path', { class: 'elevation-area', d: `M ${linePoints} L 876,165 L 124,165 Z` }));\n  svg.appendChild(svgEl('path', { class: 'elevation-line', d: `M ${linePoints}` }));\n\n  CX.forEach((cx, i) => {\n    const isPeak = i === peakIdx;\n    svg.appendChild(svgEl('circle', {\n      class: 'node-point' + (isPeak ? ' node-point-peak' : ''),\n      cx: cx, cy: ys[i], r: isPeak ? 6 : 4.5\n    }));\n    const label = String(alts[i]) + 'm';\n    const estW = label.length * 7 + 8;\n    svg.appendChild(svgEl('rect', { class: 'node-text-bg', x: cx - estW / 2, y: ys[i] - 24, width: estW, height: 14, rx: 3 }));\n    const t = svgEl('text', { class: 'node-text' + (isPeak ? ' node-text-peak' : ''), x: cx, y: ys[i] - 13 });\n    t.textContent = label;\n    svg.appendChild(t);\n  });\n\n  const DIFF_COLOR = { easy: '#48bb78', medium: '#ecc94b', hard: '#f56565' };\n  const DIFF_LABEL = { easy: '쉬움', medium: '보통', hard: '힘듦' };\n  const DIFF_BADGE_STYLE = { easy: 'badge-style-easy', medium: 'badge-style-medium', hard: 'badge-style-hard' };\n\n  const strip = document.getElementById('difficulty-strip');\n  sections.forEach(s => {\n    const seg = document.createElement('div');\n    seg.className = 'strip-seg';\n    seg.style.backgroundColor = DIFF_COLOR[s.difficulty] || '#cbd5e0';\n    strip.appendChild(seg);\n  });\n\n  const cardsContainer = document.getElementById('cards-container');\n  sections.forEach((s, i) => {\n    const isPeak = i === peakIdx;\n    const card = document.createElement('div');\n    card.className = `card card-${i + 1}` + (isPeak ? ' card-peak' : '');\n    card.innerHTML = `\n      <div style=\"display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;\">\n        <span class=\"card-num\"${isPeak ? ' style=\"color:#dd6b20;\"' : ''}>${i + 1}구간${isPeak ? ' (정상)' : ''}</span>\n        <span style=\"font-size:10px; color:${isPeak ? '#dd6b20' : '#718096'}; font-weight:700;\">${s.distanceKm}km</span>\n      </div>\n      <h3 class=\"card-title keep-all\">${s.cardTitle}</h3>\n      <span class=\"badge badge-${s.difficulty}\">${DIFF_LABEL[s.difficulty]}</span>\n      <div class=\"card-features\">\n        <div class=\"features-header\">코스 특징</div>\n        ${s.features.map(f => `<div class=\"feature-item keep-all\">${f}</div>`).join('')}\n      </div>`;\n    cardsContainer.appendChild(card);\n  });\n\n  const totalDistanceKm = sections.reduce((sum, s) => sum + s.distanceKm, 0);\n\n  document.getElementById('page-title').textContent = data.mountainName + ' 등산 가이드 & 코스 상세 분석';\n  document.title = data.mountainName + ' 등산 가이드 & 코스 상세 분석';\n  document.getElementById('mountain-name').textContent = data.mountainName;\n  document.getElementById('course-route').innerHTML = data.courseRouteFlow.join('<span>➔</span>');\n  document.getElementById('sum-distance').textContent = totalDistanceKm.toFixed(1) + 'km';\n  document.getElementById('sum-time').textContent = data.totalTime;\n  document.getElementById('sum-altitude').textContent = maxAlt + 'm';\n  document.getElementById('sum-difficulty').textContent = data.overallDifficulty;\n  document.getElementById('safety-text').textContent = data.safetyWarningText;\n\n  const guide = document.getElementById('guide-container');\n  let guideHTML = `\n    <h2 class=\"guide-main-title\">⛰️ ${data.mountainName} 코스 상세 가이드</h2>\n    <p class=\"guide-intro keep-all\">${data.guideIntro || ''}</p>`;\n  sections.forEach((s, i) => {\n    guideHTML += `\n    <div class=\"section-block\">\n      <div class=\"section-header-row\">\n        <span class=\"section-index-badge ${DIFF_BADGE_STYLE[s.difficulty]}\">${i + 1}구간 · ${DIFF_LABEL[s.difficulty]}</span>\n        <h3 class=\"section-main-name\">${s.detail.headerName}</h3>\n      </div>\n      <ul class=\"section-detail-bullets\">\n        ${s.detail.bullets.map(b => `<li class=\"keep-all\"><strong>${b.strong}</strong><p>${b.p}</p></li>`).join('')}\n      </ul>\n    </div>`;\n  });\n  guide.innerHTML = guideHTML;\n\n  function graphemeLen(str) { return Array.from(str).length; }\n  const violations = [];\n  sections.forEach((s, i) => {\n    if (graphemeLen(s.cardTitle) > 8) violations.push(`${i + 1}구간 제목 \"${s.cardTitle}\"`);\n    s.features.forEach(f => { if (graphemeLen(f) > 8) violations.push(`${i + 1}구간 특징 \"${f}\"`); });\n  });\n  if (violations.length) {\n    const banner = document.getElementById('warning-banner');\n    banner.style.display = 'block';\n    banner.textContent = `⚠ 8자 초과 명사구 ${violations.length}건: ` + violations.join(', ');\n  }\n})();\n\nfunction adjustScale() {\n  const container = document.querySelector('.infographic-scroll-container');\n  const wrapper = document.querySelector('.infographic-wrapper');\n  if (container && wrapper) {\n    const containerWidth = container.getBoundingClientRect().width;\n    const scale = containerWidth / 1000;\n    wrapper.style.transform = `scale(${scale})`;\n    wrapper.style.transformOrigin = 'top left';\n    container.style.height = (562 * scale) + 'px';\n  }\n}\nwindow.addEventListener('resize', adjustScale);\nwindow.addEventListener('load', adjustScale);\ndocument.addEventListener('DOMContentLoaded', adjustScale);\nsetTimeout(adjustScale, 50);\n<\/script>\n\n</body>\n</html>\n";
+
+function buildFinalHTML(mountainDataJSON, coverImageDataURL, coverImageHeight) {
+  let html = TEMPLATE_HTML.replace('__MOUNTAIN_DATA_JSON__', mountainDataJSON);
+  if (coverImageDataURL) {
+    const height = Math.max(0, Math.min(562, coverImageHeight || 350));
+    const layer = `<div class="cover-image-layer" style="height:${height}px;"><img src="${coverImageDataURL}" alt=""></div>`;
+    html = html.replace('__COVER_IMAGE_LAYER__', layer);
+  } else {
+    html = html.replace('__COVER_IMAGE_LAYER__', '');
+  }
+  return html;
+}
+
+const EXAMPLE_DATA = {
+  mountainName: '설악산',
+  courseRouteFlow: ['오색', '대청봉', '중청대피소', '희운각', '천불동계곡'],
+  totalTime: '9.5h',
+  overallDifficulty: '힘듦',
+  safetyWarningText: '설악산국립공원 입산시간 통제구역 존재 · 대청봉 대피소 사전예약 필수 확인',
+  guideIntro: '설악산은 대한민국을 대표하는 최고봉급 산악미를 자랑하는 명산으로, 오색에서 대청봉을 오르는 급경사 코스부터 천불동계곡의 웅장한 기암괴석까지 다채로운 절경을 품고 있습니다.',
+  sections: [
+    { cardTitle: '오색약수', distanceKm: 2.5, difficulty: 'easy', altitude: 500, features: ['시작점', '약수터', '완만한길'],
+      detail: { headerName: '오색 ➔ 설악폭포 (약 2.5km / 1시간 30분 소요)', bullets: [
+        { strong: '들머리 정보 및 산행 시작점', p: '오색약수 주차장 인근 들머리에서 출발하며, 초반 구간은 완만한 계곡길로 몸을 풀기 좋습니다.' },
+        { strong: '설악폭포까지의 계곡길', p: '맑은 계곡물 소리를 들으며 걷는 구간으로, 여름철에는 시원한 물놀이 명소로도 인기가 많습니다.' }
+      ] } },
+    { cardTitle: '깔딱고개', distanceKm: 2.8, difficulty: 'hard', altitude: 1200, features: ['가파른돌길', '급경사구간', '체력소모큼'],
+      detail: { headerName: '설악폭포 ➔ 깔딱고개 (약 2.8km / 2시간 소요)', bullets: [
+        { strong: '설악산 최대 난코스 급경사 구간', p: '계단과 돌길이 반복되는 가파른 오르막으로, 설악산 전체 코스 중 체력 소모가 가장 큰 구간입니다.' },
+        { strong: '충분한 휴식과 수분 섭취 필수', p: '무리하지 말고 짧은 구간씩 나눠 오르며 페이스를 조절하는 것이 중요합니다.' }
+      ] } },
+    { cardTitle: '중청쉼터', distanceKm: 1.7, difficulty: 'medium', altitude: 1600, features: ['쉼터', '조망터', '바람강함'],
+      detail: { headerName: '깔딱고개 ➔ 중청대피소 (약 1.7km / 1시간 소요)', bullets: [
+        { strong: '경사가 완만해지는 능선 구간', p: '급경사가 끝나고 능선을 따라 걷는 구간으로 한결 수월하게 이동할 수 있습니다.' },
+        { strong: '고지대 강풍 및 기온 변화 주의', p: '해발 1,600m 부근으로 바람이 강하고 기온이 낮아 방풍 장비를 챙기는 것이 좋습니다.' }
+      ] } },
+    { cardTitle: '대청봉정상', distanceKm: 0.6, difficulty: 'medium', altitude: 1708, features: ['최고봉조망', '넓은암반', '360도전망'],
+      detail: { headerName: '중청대피소 ➔ 대청봉 정상 (약 0.6km / 30분 소요)', bullets: [
+        { strong: '남한에서 세 번째로 높은 정상', p: '해발 1,708m 대청봉 정상에서는 동해와 서북능선을 아우르는 웅장한 파노라마 조망을 즐길 수 있습니다.' },
+        { strong: '정상석 인증 및 휴식 명소', p: '넓은 암반 지대로 되어 있어 많은 등산객이 정상석 앞에서 인증 사진을 남기고 휴식을 취합니다.' }
+      ] } },
+    { cardTitle: '천불동계곡', distanceKm: 7.4, difficulty: 'hard', altitude: 300, features: ['기암괴석', '무릎부담큼', '청정계곡'],
+      detail: { headerName: '대청봉 ➔ 희운각 ➔ 천불동계곡 ➔ 비선대 (하산, 약 7.4km)', bullets: [
+        { strong: '설악산 대표 비경 천불동계곡', p: '천 개의 불상을 닮은 기암괴석이 늘어선 협곡으로, 설악산에서 가장 아름다운 하산 코스로 손꼽힙니다.' },
+        { strong: '장거리 급경사 내리막 무릎 주의', p: '7km가 넘는 긴 내리막 구간으로 무릎과 허벅지 피로가 크므로 스틱 사용을 강력히 권장합니다.' }
+      ] } }
+  ]
+};
+
+function fillFormFromData(data) {
+  document.getElementById('mountainName').value = data.mountainName;
+  document.getElementById('courseRouteFlow').value = data.courseRouteFlow.join(', ');
+  document.getElementById('totalTime').value = data.totalTime;
+  document.getElementById('overallDifficulty').value = data.overallDifficulty;
+  document.getElementById('safetyWarningText').value = data.safetyWarningText;
+  document.getElementById('guideIntro').value = data.guideIntro;
+
+  data.sections.forEach((s, i) => {
+    const box = getSectionBox(i);
+    box.querySelector('.s-cardTitle').value = s.cardTitle;
+    box.querySelector('.s-distanceKm').value = s.distanceKm;
+    box.querySelector('.s-difficulty').value = s.difficulty;
+    box.querySelector('.s-altitude').value = s.altitude;
+    box.querySelector('.s-features').value = s.features.join(', ');
+    box.querySelector('.s-headerName').value = s.detail.headerName;
+
+    const bulletsContainer = box.querySelector('.bullets-container');
+    bulletsContainer.innerHTML = '';
+    s.detail.bullets.forEach((b, bi) => addBullet(i, b.strong, b.p));
+
+    checkCharLimit(box.querySelector('.s-cardTitle'));
+    checkFeaturesCharLimit(box.querySelector('.s-features'));
+  });
+  updateTotalDistance();
+}
+
+let lastGeneratedHTML = null;
+let coverImageDataURL = null;
+
+const COVER_IMAGE_MAX_WIDTH = 1920;
+const COVER_IMAGE_JPEG_QUALITY = 0.82;
+
+// 표지 사진 영역의 실제 가로폭(cover-image-layer CSS와 동일하게 유지)
+const COVER_LAYER_WIDTH = 960;
+
+// 크롭 편집기 상태: 원본 이미지 + 사용자가 조절한 이동/확대 값
+let coverEditorImage = null; // Image 객체 (원본, 리사이즈 없이 그대로 유지 - 확대해도 화질 손실 최소화)
+let coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
+let coverEditorDragging = null; // { startX, startY, startOffsetX, startOffsetY }
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function dataURLSizeBytes(dataURL) {
+  const base64 = dataURL.slice(dataURL.indexOf(',') + 1);
+  return Math.round(base64.length * 3 / 4);
+}
+
+function getCoverEditorHeight() {
+  return parseInt(document.getElementById('coverImageHeight').value, 10) || 350;
+}
+
+// 편집기 캔버스(표시용, CSS로 실제 화면 폭에 맞춰 축소 렌더링됨)를 원본 이미지 기준으로 그림
+function renderCoverEditor() {
+  if (!coverEditorImage) return;
+  const canvas = document.getElementById('coverEditorCanvas');
+  const h = getCoverEditorHeight();
+  canvas.width = COVER_LAYER_WIDTH;
+  canvas.height = h;
+  document.getElementById('coverEditorWrap').style.aspectRatio = `${COVER_LAYER_WIDTH} / ${h}`;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, COVER_LAYER_WIDTH, h);
+
+  const img = coverEditorImage;
+  const zoom = coverEditorState.zoomPercent / 100;
+  // 기본(zoom=100%): 이미지가 캔버스를 완전히 덮도록(cover) 하는 배율에서 시작
+  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = img.naturalWidth * scale;
+  const drawH = img.naturalHeight * scale;
+
+  const drawX = (COVER_LAYER_WIDTH - drawW) / 2 + coverEditorState.offsetX;
+  const drawY = (h - drawH) / 2 + coverEditorState.offsetY;
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+}
+
+// 드래그 이동 범위를 캔버스 밖으로 여백이 생기지 않도록 제한
+function clampCoverEditorOffset() {
+  if (!coverEditorImage) return;
+  const img = coverEditorImage;
+  const h = getCoverEditorHeight();
+  const zoom = coverEditorState.zoomPercent / 100;
+  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = img.naturalWidth * scale;
+  const drawH = img.naturalHeight * scale;
+
+  const maxOffsetX = Math.max(0, (drawW - COVER_LAYER_WIDTH) / 2);
+  const maxOffsetY = Math.max(0, (drawH - h) / 2);
+  coverEditorState.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, coverEditorState.offsetX));
+  coverEditorState.offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, coverEditorState.offsetY));
+}
+
+function updateCoverEditor() {
+  clampCoverEditorOffset();
+  renderCoverEditor();
+}
+
+function resetCoverEditorPosition() {
+  coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
+  document.getElementById('coverEditorZoom').value = 100;
+  updateCoverEditor();
+}
+
+// [가이드 생성] 시 호출: 편집기에 보이는 그대로를 실제 960xheight 이미지로 구워 JPEG로 반환
+function exportCoverEditorImage() {
+  if (!coverEditorImage) return null;
+  const h = getCoverEditorHeight();
+  const canvas = document.createElement('canvas');
+  canvas.width = COVER_LAYER_WIDTH;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+
+  const img = coverEditorImage;
+  const zoom = coverEditorState.zoomPercent / 100;
+  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = img.naturalWidth * scale;
+  const drawH = img.naturalHeight * scale;
+  const drawX = (COVER_LAYER_WIDTH - drawW) / 2 + coverEditorState.offsetX;
+  const drawY = (h - drawH) / 2 + coverEditorState.offsetY;
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+  return canvas.toDataURL('image/jpeg', COVER_IMAGE_JPEG_QUALITY);
+}
+
+function handleCoverImageSelect(e) {
+  const file = e.target.files && e.target.files[0];
+  const sizeNote = document.getElementById('coverImageSizeNote');
+  if (!file) return;
+
+  sizeNote.textContent = '이미지를 불러오는 중...';
+  sizeNote.classList.remove('over');
+
+  loadImageFromFile(file).then(img => {
+    coverEditorImage = img;
+    resetCoverEditorPosition();
+    document.getElementById('coverImagePreviewWrap').style.display = 'block';
+    document.getElementById('coverImageHeightRow').style.display = 'block';
+
+    const originalMB = file.size / 1024 / 1024;
+    sizeNote.textContent = `원본 ${originalMB.toFixed(1)}MB. 편집기에서 위치와 확대/축소를 조절한 뒤 [가이드 생성]을 누르면 그 상태 그대로 적용됩니다.`;
+  }).catch(err => {
+    sizeNote.textContent = '⚠ 이미지를 불러오지 못했습니다: ' + err.message;
+    sizeNote.classList.add('over');
+  });
+}
+
+function removeCoverImage() {
+  coverImageDataURL = null;
+  coverEditorImage = null;
+  coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
+  document.getElementById('coverImage').value = '';
+  document.getElementById('coverImagePreviewWrap').style.display = 'none';
+  document.getElementById('coverImageHeightRow').style.display = 'none';
+  document.getElementById('coverImageHeight').value = '350';
+  document.getElementById('coverEditorZoom').value = 100;
+  document.getElementById('coverImageSizeNote').textContent = '';
+  document.getElementById('coverImageSizeNote').classList.remove('over');
+}
+
+const GITHUB_PAGES_BASE_URL = 'https://hjwpro1971.github.io/gaja/';
+
+function computeGuideFileName(mountainName) {
+  const name = mountainName.trim() || '산행가이드';
+  return name.replace(/\s+/g, '_') + '_가이드.html';
+}
+
+function updateDeployUrlBox(fileName) {
+  const box = document.getElementById('deploy-url-box');
+  const input = document.getElementById('deploy-url-text');
+  if (!fileName) {
+    box.style.display = 'none';
+    input.value = '';
+    return;
+  }
+  input.value = GITHUB_PAGES_BASE_URL + fileName;
+  box.style.display = 'block';
+}
+
+function generateGuide() {
+  const data = collectFormData();
+  const { errors, warnings } = validateData(data);
+
+  const warnBox = document.getElementById('warn-box');
+  const infoBox = document.getElementById('info-box');
+  const downloadBtn = document.getElementById('btn-download');
+
+  if (errors.length) {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 생성 불가 — 다음 항목을 수정하세요:\n' + errors.map(e => '· ' + e).join('\n');
+    infoBox.style.display = 'none';
+    downloadBtn.disabled = true;
+    lastGeneratedHTML = null;
+    updateDeployUrlBox(null);
+    return;
+  }
+  warnBox.style.display = 'none';
+
+  if (warnings.length) {
+    infoBox.style.display = 'block';
+    infoBox.textContent = 'ℹ 참고 (치환 권장):\n' + warnings.map(w => '· ' + w).join('\n');
+  } else {
+    infoBox.style.display = 'none';
+  }
+
+  const coverImageHeight = parseInt(document.getElementById('coverImageHeight').value, 10) || 350;
+  if (coverEditorImage) {
+    coverImageDataURL = exportCoverEditorImage();
+  }
+  const mountainDataJSON = buildMountainDataJSON(data);
+  const finalHTML = buildFinalHTML(mountainDataJSON, coverImageDataURL, coverImageHeight);
+  lastGeneratedHTML = finalHTML;
+
+  const previewArea = document.getElementById('preview-area');
+  previewArea.innerHTML = '<iframe id="preview-iframe"></iframe>';
+  document.getElementById('preview-iframe').srcdoc = finalHTML;
+
+  downloadBtn.disabled = false;
+  updateDeployUrlBox(computeGuideFileName(data.mountainName));
+}
+
+function downloadGuideFallback(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const SAVE_DIR_DB_NAME = 'hiking-builder-save-dir';
+const SAVE_DIR_STORE = 'handles';
+const SAVE_DIR_KEY = 'saveDirHandle';
+let savedDirHandle = null;
+
+function openSaveDirDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SAVE_DIR_DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(SAVE_DIR_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadSavedDirHandle() {
+  try {
+    const db = await openSaveDirDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(SAVE_DIR_STORE, 'readonly');
+      const req = tx.objectStore(SAVE_DIR_STORE).get(SAVE_DIR_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+async function storeDirHandle(handle) {
+  const db = await openSaveDirDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(SAVE_DIR_STORE, 'readwrite');
+    tx.objectStore(SAVE_DIR_STORE).put(handle, SAVE_DIR_KEY);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function chooseSaveDirectory() {
+  const infoBox = document.getElementById('save-location-info');
+  const warnBox = document.getElementById('save-location-warn');
+  if (!window.showDirectoryPicker) {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 이 브라우저는 폴더 지정 기능을 지원하지 않습니다 (Chrome/Edge 권장).';
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker();
+    savedDirHandle = handle;
+    await storeDirHandle(handle);
+    document.getElementById('save-dir-status').textContent = `지정된 폴더: ${handle.name}`;
+    warnBox.style.display = 'none';
+    infoBox.style.display = 'none';
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 폴더 지정 실패: ' + err.message;
+  }
+}
+
+async function ensureDirPermission(handle) {
+  const opts = { mode: 'readwrite' };
+  if ((await handle.queryPermission(opts)) === 'granted') return true;
+  return (await handle.requestPermission(opts)) === 'granted';
+}
+
+async function downloadGuide() {
+  if (!lastGeneratedHTML) return;
+  const mountainName = document.getElementById('mountainName').value.trim();
+  const fileName = computeGuideFileName(mountainName);
+  const blob = new Blob([lastGeneratedHTML], { type: 'text/html;charset=utf-8' });
+
+  const infoBox = document.getElementById('save-location-info');
+  const warnBox = document.getElementById('save-location-warn');
+  if (infoBox) infoBox.style.display = 'none';
+  if (warnBox) warnBox.style.display = 'none';
+
+  if (window.showSaveFilePicker) {
+    try {
+      const pickerOpts = {
+        suggestedName: fileName,
+        types: [{ description: 'HTML 파일', accept: { 'text/html': ['.html'] } }]
+      };
+      if (savedDirHandle && (await ensureDirPermission(savedDirHandle))) {
+        pickerOpts.startIn = savedDirHandle;
+      }
+      const handle = await window.showSaveFilePicker(pickerOpts);
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      if (infoBox) {
+        infoBox.style.display = 'block';
+        infoBox.textContent = 'ℹ 선택하신 위치에 저장되었습니다.';
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      if (warnBox) {
+        warnBox.style.display = 'block';
+        warnBox.textContent = '⚠ 저장 실패: ' + err.message;
+      }
+    }
+    return;
+  }
+
+  downloadGuideFallback(blob, fileName);
+}
+
+function resetForm() {
+  document.getElementById('mountainName').value = '';
+  document.getElementById('courseRouteFlow').value = '';
+  document.getElementById('totalTime').value = '';
+  document.getElementById('overallDifficulty').value = '힘듦';
+  document.getElementById('safetyWarningText').value = '';
+  document.getElementById('guideIntro').value = '';
+  document.getElementById('json-paste-area').value = '';
+  document.getElementById('json-warn-box').style.display = 'none';
+  document.getElementById('json-copy-info').style.display = 'none';
+  removeCoverImage();
+  buildSectionsForm();
+  updateTotalDistance();
+  document.getElementById('warn-box').style.display = 'none';
+  document.getElementById('info-box').style.display = 'none';
+  document.getElementById('save-location-warn').style.display = 'none';
+  document.getElementById('save-location-info').style.display = 'none';
+  document.getElementById('btn-download').disabled = true;
+  lastGeneratedHTML = null;
+  updateDeployUrlBox(null);
+  document.getElementById('preview-area').innerHTML = '<div class="preview-placeholder">왼쪽에서 정보를 입력하고 [가이드 생성]을 누르면 여기에 미리보기가 표시됩니다.</div>';
+}
+
+function handleLoadExistingHTML(e) {
+  const file = e.target.files && e.target.files[0];
+  const warnBox = document.getElementById('load-html-warn-box');
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const htmlText = reader.result;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlText, 'text/html');
+
+      const dataScript = doc.getElementById('MOUNTAIN_DATA');
+      if (!dataScript) throw new Error('이 파일에서 MOUNTAIN_DATA를 찾을 수 없습니다. builder.html로 만든 가이드 파일이 맞는지 확인하세요.');
+
+      const data = JSON.parse(dataScript.textContent);
+      if (!Array.isArray(data.sections) || data.sections.length !== 5) {
+        throw new Error('sections 배열이 5개가 아닙니다.');
+      }
+      if (!Array.isArray(data.courseRouteFlow)) data.courseRouteFlow = [];
+      data.sections.forEach(s => {
+        if (!Array.isArray(s.features)) s.features = [];
+        if (!s.detail) s.detail = { headerName: '', bullets: [] };
+        if (!Array.isArray(s.detail.bullets)) s.detail.bullets = [];
+      });
+
+      fillFormFromData(data);
+
+      const coverImg = doc.querySelector('.cover-image-layer img');
+      const coverLayer = doc.querySelector('.cover-image-layer');
+      if (coverImg && coverImg.getAttribute('src')) {
+        coverImageDataURL = coverImg.getAttribute('src');
+        const heightMatch = coverLayer.getAttribute('style') && coverLayer.getAttribute('style').match(/height:\s*(\d+)px/);
+        document.getElementById('coverImageHeight').value = heightMatch ? heightMatch[1] : '350';
+        const img = new Image();
+        img.onload = () => {
+          coverEditorImage = img;
+          resetCoverEditorPosition();
+        };
+        img.src = coverImageDataURL;
+        document.getElementById('coverImagePreviewWrap').style.display = 'block';
+        document.getElementById('coverImageHeightRow').style.display = 'block';
+      } else {
+        removeCoverImage();
+      }
+
+      warnBox.style.display = 'none';
+    } catch (err) {
+      warnBox.style.display = 'block';
+      warnBox.textContent = '⚠ 가이드 HTML을 불러오는 중 오류: ' + err.message;
+    }
+  };
+  reader.onerror = () => {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 파일을 읽을 수 없습니다.';
+  };
+  reader.readAsText(file);
+}
+
+function fillFormFromJSONPaste() {
+  const textarea = document.getElementById('json-paste-area');
+  const jsonWarnBox = document.getElementById('json-warn-box');
+  document.getElementById('json-copy-info').style.display = 'none';
+
+  let data;
+  try {
+    data = JSON.parse(textarea.value);
+  } catch (e) {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = '⚠ JSON 형식이 올바르지 않습니다: ' + e.message;
+    return;
+  }
+
+  if (!data || typeof data !== 'object') {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = '⚠ JSON이 객체 형태가 아닙니다.';
+    return;
+  }
+  if (!data.mountainName) {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = '⚠ mountainName 필드가 없습니다.';
+    return;
+  }
+  if (!Array.isArray(data.sections) || data.sections.length !== 5) {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = `⚠ sections 배열은 정확히 5개여야 합니다 (현재 ${Array.isArray(data.sections) ? data.sections.length : '없음'}개).`;
+    return;
+  }
+  if (!Array.isArray(data.courseRouteFlow)) data.courseRouteFlow = [];
+  data.sections.forEach(s => {
+    if (!Array.isArray(s.features)) s.features = [];
+    if (!s.detail) s.detail = { headerName: '', bullets: [] };
+    if (!Array.isArray(s.detail.bullets)) s.detail.bullets = [];
+  });
+
+  jsonWarnBox.style.display = 'none';
+  fillFormFromData(data);
+}
+
+function copyPromptToClipboard() {
+  const textarea = document.getElementById('json-paste-area');
+  const jsonWarnBox = document.getElementById('json-warn-box');
+  const copyInfo = document.getElementById('json-copy-info');
+
+  const courseText = textarea.value.trim();
+  if (!courseText) {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = '⚠ 먼저 산행 코스 상세 정보를 입력하세요.';
+    copyInfo.style.display = 'none';
+    return;
+  }
+
+  const fullPrompt = JSON_CONVERT_PROMPT + courseText;
+
+  navigator.clipboard.writeText(fullPrompt).then(() => {
+    jsonWarnBox.style.display = 'none';
+    copyInfo.style.display = 'block';
+    copyInfo.textContent = 'ℹ 프롬프트가 클립보드에 복사되었습니다. 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 이 칸에 붙여넣고 [JSON으로 붙여넣기]를 누르세요.';
+  }).catch(err => {
+    jsonWarnBox.style.display = 'block';
+    jsonWarnBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
+    copyInfo.style.display = 'none';
+  });
+}
+
+document.getElementById('btn-generate').addEventListener('click', generateGuide);
+document.getElementById('btn-download').addEventListener('click', downloadGuide);
+document.getElementById('btn-example').addEventListener('click', () => fillFormFromData(EXAMPLE_DATA));
+document.getElementById('btn-reset').addEventListener('click', resetForm);
+document.getElementById('btn-fill-json').addEventListener('click', fillFormFromJSONPaste);
+document.getElementById('btn-copy-prompt').addEventListener('click', copyPromptToClipboard);
+document.getElementById('json-paste-area').addEventListener('focus', function () {
+  this.value = '';
+});
+document.getElementById('coverImage').addEventListener('change', handleCoverImageSelect);
+document.getElementById('btn-remove-cover-image').addEventListener('click', removeCoverImage);
+document.getElementById('loadHtmlFile').addEventListener('change', handleLoadExistingHTML);
+document.getElementById('coverImageHeight').addEventListener('input', updateCoverEditor);
+document.getElementById('coverEditorZoom').addEventListener('input', function () {
+  coverEditorState.zoomPercent = parseInt(this.value, 10) || 100;
+  updateCoverEditor();
+});
+document.getElementById('btn-cover-zoom-reset').addEventListener('click', resetCoverEditorPosition);
+
+(function setupCoverEditorDragAndWheel() {
+  const canvas = document.getElementById('coverEditorCanvas');
+
+  function pointerDown(clientX, clientY) {
+    if (!coverEditorImage) return;
+    coverEditorDragging = {
+      startX: clientX,
+      startY: clientY,
+      startOffsetX: coverEditorState.offsetX,
+      startOffsetY: coverEditorState.offsetY
+    };
+    canvas.style.cursor = 'grabbing';
+  }
+  function pointerMove(clientX, clientY) {
+    if (!coverEditorDragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleFactor = COVER_LAYER_WIDTH / rect.width;
+    coverEditorState.offsetX = coverEditorDragging.startOffsetX + (clientX - coverEditorDragging.startX) * scaleFactor;
+    coverEditorState.offsetY = coverEditorDragging.startOffsetY + (clientY - coverEditorDragging.startY) * scaleFactor;
+    updateCoverEditor();
+  }
+  function pointerUp() {
+    coverEditorDragging = null;
+    canvas.style.cursor = 'grab';
+  }
+
+  canvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', pointerUp);
+
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) pointerDown(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    if (e.touches.length === 1) { pointerMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, { passive: false });
+  canvas.addEventListener('touchend', pointerUp);
+
+  canvas.addEventListener('wheel', e => {
+    if (!coverEditorImage) return;
+    e.preventDefault();
+    const zoomInput = document.getElementById('coverEditorZoom');
+    const delta = e.deltaY < 0 ? 5 : -5;
+    const next = Math.max(parseInt(zoomInput.min, 10), Math.min(parseInt(zoomInput.max, 10), coverEditorState.zoomPercent + delta));
+    zoomInput.value = next;
+    coverEditorState.zoomPercent = next;
+    updateCoverEditor();
+  }, { passive: false });
+})();
+document.getElementById('btn-choose-save-dir').addEventListener('click', chooseSaveDirectory);
+document.getElementById('btn-copy-deploy-url').addEventListener('click', () => {
+  const input = document.getElementById('deploy-url-text');
+  if (!input.value) return;
+  navigator.clipboard.writeText(input.value).then(() => {
+    const btn = document.getElementById('btn-copy-deploy-url');
+    const original = btn.textContent;
+    btn.textContent = '복사됨!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+});
+
+buildSectionsForm();
+updateTotalDistance();
+
+(async function restoreSaveDir() {
+  const statusEl = document.getElementById('save-dir-status');
+  if (!window.showDirectoryPicker) {
+    statusEl.textContent = '(이 브라우저는 폴더 지정 미지원)';
+    return;
+  }
+  const handle = await loadSavedDirHandle();
+  if (handle) {
+    savedDirHandle = handle;
+    statusEl.textContent = `지정된 폴더: ${handle.name}`;
+  } else {
+    statusEl.textContent = '(지정된 폴더 없음 — 기본 위치에서 시작)';
+  }
+})();
+</script>
+</body>
+</html>
