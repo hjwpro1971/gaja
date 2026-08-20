@@ -484,6 +484,7 @@ function fillFormFromData(data) {
     checkFeaturesCharLimit(box.querySelector('.s-features'));
   });
   updateTotalDistance();
+  scheduleDraftSave();
 }
 
 let lastGeneratedHTML = null;
@@ -807,6 +808,46 @@ async function downloadGuide() {
   downloadGuideFallback(blob, fileName);
 }
 
+// 다른 사이트를 오가다 브라우저가 탭을 새로고침/재사용해도 입력값이 사라지지 않도록
+// 텍스트 폼 데이터만 자동 저장한다 (표지 사진은 용량 문제로 제외 — 사진은 파일로 남아있으니 재업로드).
+const DRAFT_STORAGE_KEY = 'hikingGuideBuilderDraft';
+let draftSaveTimer = null;
+
+function saveDraftNow() {
+  try {
+    const data = collectFormData();
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    // localStorage 용량 초과 등은 자동저장 실패로 조용히 넘어감 (수동 작업엔 영향 없음)
+  }
+}
+
+function scheduleDraftSave() {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(saveDraftNow, 500);
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_STORAGE_KEY);
+}
+
+function restoreDraftIfAny() {
+  let raw;
+  try {
+    raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+  } catch (e) {
+    return;
+  }
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.sections) || data.sections.length !== 5) return;
+    fillFormFromData(data);
+  } catch (e) {
+    // 저장된 draft가 깨져 있으면 무시(폼은 빈 상태로 시작)
+  }
+}
+
 function resetForm() {
   document.getElementById('mountainName').value = '';
   document.getElementById('courseRouteFlow').value = '';
@@ -828,6 +869,7 @@ function resetForm() {
   lastGeneratedHTML = null;
   updateDeployUrlBox(null);
   document.getElementById('preview-area').innerHTML = '<div class="preview-placeholder">왼쪽에서 정보를 입력하고 [가이드 생성]을 누르면 여기에 미리보기가 표시됩니다.</div>';
+  clearDraft();
 }
 
 function handleLoadExistingHTML(e) {
@@ -1037,6 +1079,17 @@ document.getElementById('btn-copy-deploy-url').addEventListener('click', () => {
 
 buildSectionsForm();
 updateTotalDistance();
+restoreDraftIfAny();
+
+document.querySelector('.form-pane').addEventListener('input', e => {
+  if (e.target.closest('#json-paste-area')) return;
+  scheduleDraftSave();
+});
+document.querySelector('.form-pane').addEventListener('change', e => {
+  if (e.target.closest('#json-paste-area')) return;
+  scheduleDraftSave();
+});
+window.addEventListener('beforeunload', saveDraftNow);
 
 (async function restoreSaveDir() {
   const statusEl = document.getElementById('save-dir-status');
