@@ -17,7 +17,6 @@
             text-align: center;
         }
         .container {
-            /* 캔버스가 들어갈 수 있도록 최대 너비를 늘림 */
             max-width: 1050px; 
             margin: 0 auto;
             background: white;
@@ -131,7 +130,6 @@
             <button id="deleteBtn" class="btn btn-delete">🗑️ 삭제</button>
         </div>
 
-        <!-- 블로그 헤더 사이즈 (966x300) 캔버스 -->
         <div class="canvas-wrapper">
             <canvas id="c" width="966" height="300"></canvas>
         </div>
@@ -165,18 +163,37 @@
             preserveObjectStacking: true
         });
 
+        // 💡 사진 업로드 시 자동 크기 조절 로직 추가
         document.getElementById('uploadImages').addEventListener('change', function(e) {
             const files = e.target.files;
             for (let i = 0; i < files.length; i++) {
                 const reader = new FileReader();
                 reader.onload = function(f) {
                     fabric.Image.fromURL(f.target.result, function(img) {
-                        // 가로로 긴 캔버스에 맞게 초기 이미지 크기 조정
-                        if (img.width > 500) img.scaleToWidth(500);
+                        const cWidth = canvas.getWidth();
+                        const cHeight = canvas.getHeight();
+                        
+                        // 캔버스의 90% 크기를 최대치로 설정 (여백 확보)
+                        const maxWidth = cWidth * 0.9;
+                        const maxHeight = cHeight * 0.9;
+                        
+                        let scale = 1;
+                        // 원본 이미지가 캔버스보다 크면 비율에 맞춰 축소
+                        if (img.width > maxWidth || img.height > maxHeight) {
+                            scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+                        }
+                        
                         img.set({
-                            left: 50 + (i * 30), top: 50 + (i * 30),
-                            cornerColor: '#007bff', cornerStyle: 'circle', transparentCorners: false
+                            scaleX: scale, 
+                            scaleY: scale,
+                            // 캔버스 정중앙 즈음에 배치되도록 위치 계산 (여러 장일 경우 살짝 어긋나게)
+                            left: (cWidth - img.width * scale) / 2 + (i * 20),
+                            top: (cHeight - img.height * scale) / 2 + (i * 20),
+                            cornerColor: '#007bff', 
+                            cornerStyle: 'circle', 
+                            transparentCorners: false
                         });
+                        
                         canvas.add(img);
                         canvas.setActiveObject(img);
                     });
@@ -235,6 +252,7 @@
             if (cropper) cropper.destroy();
         });
 
+        // 💡 자르기 완료 후에도 캔버스에 맞게 자동 크기 조절
         document.getElementById('applyCropBtn').addEventListener('click', () => {
             if (!cropper) return;
             const croppedCanvas = cropper.getCroppedCanvas();
@@ -242,7 +260,18 @@
 
             activeImageToCrop.setSrc(dataUrl, function() {
                 activeImageToCrop.set({ scaleX: 1, scaleY: 1 });
-                if (activeImageToCrop.width > 500) activeImageToCrop.scaleToWidth(500);
+                
+                const cWidth = canvas.getWidth();
+                const cHeight = canvas.getHeight();
+                const maxWidth = cWidth * 0.9;
+                const maxHeight = cHeight * 0.9;
+                
+                let scale = 1;
+                if (activeImageToCrop.width > maxWidth || activeImageToCrop.height > maxHeight) {
+                    scale = Math.min(maxWidth / activeImageToCrop.width, maxHeight / activeImageToCrop.height);
+                }
+                
+                activeImageToCrop.set({ scaleX: scale, scaleY: scale });
                 canvas.renderAll();
                 cropModal.style.display = 'none';
                 cropper.destroy();
@@ -253,7 +282,6 @@
             canvas.discardActiveObject(); 
             canvas.renderAll();
 
-            // 저장 시 고화질(Multiplier 2)로 1932x600 사이즈로 캡처됩니다.
             const dataURL = canvas.toDataURL({
                 format: 'jpeg',
                 quality: 0.9,
