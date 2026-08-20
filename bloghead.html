@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>사진 합성 및 자르기 도구</title>
+    <title>블로그 헤더 편집 도구</title>
     
     <!-- Cropper.js CSS -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
@@ -17,7 +17,8 @@
             text-align: center;
         }
         .container {
-            max-width: 900px;
+            /* 캔버스가 들어갈 수 있도록 최대 너비를 늘림 */
+            max-width: 1050px; 
             margin: 0 auto;
             background: white;
             padding: 20px;
@@ -59,7 +60,6 @@
         .btn-delete { background-color: #dc3545; }
         .btn-delete:hover { background-color: #c82333; }
         
-        /* 저장 영역 및 산 이름 입력칸 스타일 */
         .save-area {
             display: flex;
             justify-content: center;
@@ -68,7 +68,7 @@
             margin-top: 10px;
         }
         .name-input {
-            width: 150px; /* 산 이름을 적기 편하도록 너비를 넓힘 */
+            width: 150px;
             padding: 10px;
             font-size: 16px;
             text-align: center;
@@ -87,7 +87,6 @@
         }
         .btn-save:hover { background-color: #218838; }
 
-        /* 자르기 팝업(모달) 스타일 */
         .modal {
             display: none; 
             position: fixed; 
@@ -115,7 +114,7 @@
 <body>
 
     <div class="container">
-        <h2>📷 블로그 헤더 이미지 편집 (16:9)</h2>
+        <h2>📷 블로그 헤더 이미지 편집 (가로형)</h2>
         <p class="instructions">
             원하는 사진을 캔버스 안에서 선택한 뒤, 아래 버튼을 눌러 순서 변경이나 자르기를 해보세요.<br>
             모든 배치가 끝나면 산 이름을 입력하고 저장 버튼을 누르세요.
@@ -132,11 +131,11 @@
             <button id="deleteBtn" class="btn btn-delete">🗑️ 삭제</button>
         </div>
 
+        <!-- 블로그 헤더 사이즈 (966x300) 캔버스 -->
         <div class="canvas-wrapper">
-            <canvas id="c" width="800" height="450"></canvas>
+            <canvas id="c" width="966" height="300"></canvas>
         </div>
 
-        <!-- 산 이름 입력 및 저장 버튼 영역 -->
         <div class="save-area">
             <input type="text" id="mountainName" class="name-input" value="" placeholder="예: 지리산">
             <span style="font-size: 16px; font-weight: bold; color: #333;">블러그헤더</span>
@@ -172,7 +171,8 @@
                 const reader = new FileReader();
                 reader.onload = function(f) {
                     fabric.Image.fromURL(f.target.result, function(img) {
-                        if (img.width > 400) img.scaleToWidth(400);
+                        // 가로로 긴 캔버스에 맞게 초기 이미지 크기 조정
+                        if (img.width > 500) img.scaleToWidth(500);
                         img.set({
                             left: 50 + (i * 30), top: 50 + (i * 30),
                             cornerColor: '#007bff', cornerStyle: 'circle', transparentCorners: false
@@ -242,34 +242,30 @@
 
             activeImageToCrop.setSrc(dataUrl, function() {
                 activeImageToCrop.set({ scaleX: 1, scaleY: 1 });
-                if (activeImageToCrop.width > 400) activeImageToCrop.scaleToWidth(400);
+                if (activeImageToCrop.width > 500) activeImageToCrop.scaleToWidth(500);
                 canvas.renderAll();
                 cropModal.style.display = 'none';
                 cropper.destroy();
             });
         });
 
-        // 최종 16:9 캡처 및 산 이름 지정
         document.getElementById('saveBtn').addEventListener('click', function() {
             canvas.discardActiveObject(); 
             canvas.renderAll();
 
+            // 저장 시 고화질(Multiplier 2)로 1932x600 사이즈로 캡처됩니다.
             const dataURL = canvas.toDataURL({
                 format: 'jpeg',
                 quality: 0.9,
-                multiplier: 2.4 
+                multiplier: 2 
             });
 
-            // 입력칸에서 산 이름을 가져옴
             let mName = document.getElementById('mountainName').value.trim();
-            
-            // 만약 아무것도 입력하지 않고 저장 버튼을 눌렀을 경우의 기본값 설정
             if (mName === '') {
                 mName = '이름없음';
             }
 
             const link = document.createElement('a');
-            // 사용자가 원한 파일명: "산이름블러그헤더.jpg"
             link.download = mName + '블러그헤더.jpg'; 
             link.href = dataURL;
             link.click();
