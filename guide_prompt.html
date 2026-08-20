@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 산행 파노라마 프롬프트 디자이너</title>
+    <style>
+        :root {
+            --primary-color: #2e7d32; 
+            --secondary-color: #fce4ec; 
+            --bg-color: #fafafa;
+            --text-color: #333;
+            --border-color: #ccc;
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 15px;
+        }
+
+        header h1 {
+            color: var(--primary-color);
+            margin: 0;
+            font-size: 2.2rem;
+        }
+
+        header p {
+            margin: 5px 0 0;
+            color: #666;
+        }
+
+        fieldset {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+            background-color: #fff;
+        }
+
+        legend {
+            font-weight: bold;
+            color: var(--primary-color);
+            padding: 0 10px;
+            font-size: 1.1rem;
+        }
+
+        textarea {
+            width: 100%;
+            height: 250px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            resize: vertical;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+            background-color: #f9f9f9;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        button {
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+            transition: background-color 0.3s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background-color: #1b5e20;
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: #880e4f;
+            border: 1px solid #f8bbd0;
+        }
+
+        .btn-secondary:hover {
+            background-color: #f8bbd0;
+        }
+
+        .info-box {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .prompt-result {
+            background-color: #333;
+            color: #f1f1f1;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9rem;
+            position: relative;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        #jsonError {
+            color: #d32f2f;
+            background-color: #ffcdd2;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>AI 산행 파노라마 프롬프트 디자이너</h1>
+        <p>자연스럽게 이어지는 하나의 긴 파노라마 뷰를 생성합니다</p>
+    </header>
+
+    <fieldset>
+        <legend>1단계: 산행 가이드 JSON 입력</legend>
+        <textarea id="jsonInput">{
+  "mountainName": "가리왕산",
+  "courseRouteFlow": [
+    "장구목이시작점",
+    "임도",
+    "가리왕산정상",
+    "어은골계곡",
+    "자연휴양림"
+  ],
+  "totalTime": "5.5h~6.0h",
+  "overallDifficulty": "보통",
+  "sections": [
+    {
+      "cardTitle": "이끼폭포계곡",
+      "features": ["이끼폭포비경", "냉골바람지대", "미끄러운돌길"]
+    },
+    {
+      "cardTitle": "가리왕산정상",
+      "features": ["넓은고원평지", "360도조망터", "백두대간조망"]
+    }
+  ]
+}</textarea>
+        <div id="jsonError">올바른 JSON 형식이 아닙니다. 형식을 확인해 주세요.</div>
+        <button id="parseJsonBtn" class="btn-primary" style="margin-top: 15px;">JSON 분석</button>
+    </fieldset>
+
+    <fieldset id="step3Area" class="hidden">
+        <legend>2단계: 산행 코스 요약 확인</legend>
+        <div id="basicInfoResult" class="info-box"></div>
+    </fieldset>
+
+    <fieldset id="step4Area" class="hidden">
+        <legend>3단계: 주요 설정 및 최종 프롬프트 생성</legend>
+        <p style="font-size: 0.9rem; color: #666; margin-top: 0;">배경과 캐릭터의 위치를 원하시는 대로 자유롭게 설정해 주세요.</p>
+        
+        <div class="input-group">
+            <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어):</label>
+            <input type="text" id="bgLocationEntry" placeholder="예: 가리왕산 정상의 넓은 고원과 백두대간 조망터">
+        </div>
+
+        <div class="input-group">
+            <label for="bgSeasonEntry">계절 및 날씨 (한국어):</label>
+            <input type="text" id="bgSeasonEntry" value="가을의 맑고 쾌청한 날씨, 따뜻한 아침 햇살">
+        </div>
+
+        <div class="input-group">
+            <label for="charPositionEntry">반달곰 커플의 화면 내 위치 (한국어):</label>
+            <input type="text" id="charPositionEntry" value="화면 좌측 하단의 숲길 초입">
+        </div>
+        
+        <div class="input-group">
+            <label for="charActionEntry">반달곰 커플의 행동 정의 (한국어):</label>
+            <input type="text" id="charActionEntry" value="산그리메 풍경을 바라보며 나란히 서서 밝게 웃고 있는 모습">
+        </div>
+        
+        <button id="generateFinalBtn" class="btn-primary">최종 영문 이미지 프롬프트 생성</button>
+    </fieldset>
+
+    <fieldset id="finalArea" class="hidden" style="background-color: #fffde7; border-color: #fff59d;">
+        <legend style="color: #f57f17;">최종 결과: 완성형 영문 프롬프트</legend>
+        <div class="prompt-result">
+            <button class="copy-btn btn-secondary" onclick="copyPrompt()">복사</button>
+            <span id="finalPromptResult"></span>
+        </div>
+    </fieldset>
+
+</div>
+
+<script>
+    const nodes = {
+        jsonInput: document.getElementById('jsonInput'),
+        jsonError: document.getElementById('jsonError'),
+        parseBtn: document.getElementById('parseJsonBtn'),
+        step3: document.getElementById('step3Area'),
+        infoResult: document.getElementById('basicInfoResult'),
+        step4: document.getElementById('step4Area'),
+        bgLocation: document.getElementById('bgLocationEntry'),
+        bgSeason: document.getElementById('bgSeasonEntry'),
+        charPosition: document.getElementById('charPositionEntry'), // 추가된 위치 인풋
+        actionEntry: document.getElementById('charActionEntry'),
+        generateBtn: document.getElementById('generateFinalBtn'),
+        finalArea: document.getElementById('finalArea'),
+        finalResult: document.getElementById('finalPromptResult')
+    };
+
+    let hikingData = {};
+
+    const CHAR_DEFINITIONS_EN = `
+[BLACK MOON BEAR]: Premium cinematic 3D animated mascot, ultra-cute, lovable collectible plush-toy proportions, soft fluffy black fur, clear natural white crescent marking on chest, round baby-face proportions, oversized sparkling eyes, round chubby cheeks, warm friendly smile, small black nose. Wearing beige wide-brim hiking hat, olive green functional layering hiking outfit, olive green large hiking backpack with small water bottle, brown sturdy hiking boots. Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).
+[PINK MOON BEAR]: Extremely adorable 3D animated mascot, lovable plush-toy proportions, soft cotton-candy pink fluffy fur, clear white crescent marking on chest, round baby-face proportions, oversized sparkling eyes with soft eyelashes, round chubby cheeks, bright lovable smile, tiny nose. Wearing light pink wide-brim hiking hat, light pink and beige functional layering hiking outfit, light pink hiking backpack with small water bottle, brown sturdy hiking boots. Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).
+The couple is depicted as close hiking partners, sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.`;
+
+    const STYLE_DEFINITIONS_EN = `
+[BACKGROUND STYLE]: Photorealistic high-resolution mountain landscape, professional outdoor travel photography quality, authentic national park scenery, cinematic natural lighting, realistic atmospheric perspective with layered ridges fading into the distance, detailed textures for rocks, trees, and ground.
+[MASCOT RENDER]: Polished feature-animation quality rendering, soft global illumination, detailed but gentle fur texture, naturally integrated with proper contact shadows and lighting matching the environment.`;
+
+    const NEGATIVE_PROMPT_EN = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters, no missing poles. Each bear uses exactly two poles. No empty space, no black borders.`;
+
+    // 영문 변환을 위한 키워드 맵퍼
+    function translateKeyword(text) {
+        if (!text) return "";
+        const map = {
+            "이끼": "mossy", "폭포": "waterfall", "돌길": "rocky path",
+            "정상": "summit", "고원": "plateau", "조망": "panoramic view", 
+            "산그리메": "layered mountain silhouettes", "원시림": "primeval forest",
+            "계곡": "valley stream", "가을": "Autumn", "봄": "Spring", 
+            "여름": "Summer", "겨울": "Winter", "맑은": "clear", "따뜻한": "warm",
+            "바라보며": "looking at the view", "웃고 있는": "smiling happily", "나란히": "side by side",
+            "화면 좌측 하단": "bottom-left foreground", "화면 우측 하단": "bottom-right foreground", 
+            "화면 중앙": "center of the screen", "화면 좌측": "left side of the screen", "화면 우측": "right side of the screen",
+            "숲길 초입": "entrance of the forest trail"
+        };
+        let translated = text;
+        Object.keys(map).forEach(k => {
+            translated = translated.replaceAll(k, map[k]);
+        });
+        return translated;
+    }
+
+    nodes.parseBtn.addEventListener('click', () => {
+        const rawJson = nodes.jsonInput.value.trim();
+        nodes.jsonError.style.display = 'none';
+
+        if (!rawJson) {
+            alert('JSON 데이터를 입력해 주세요.');
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(rawJson);
+            
+            let allFeaturesSet = new Set();
+            if(parsed.sections) {
+                parsed.sections.forEach(sec => {
+                    if(sec.features) sec.features.forEach(f => allFeaturesSet.add(f));
+                });
+            }
+
+            hikingData = {
+                mountainName: parsed.mountainName || "명산",
+                routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
+                allFeatures: Array.from(allFeaturesSet).join(", ")
+            };
+
+            const summaryKo = `
+산명: ${hikingData.mountainName}
+전체 흐름: ${hikingData.routeFlow}
+코스 주요 특징(배경 요소 참고용): ${hikingData.allFeatures || '정보 없음'}
+`;
+            nodes.infoResult.innerText = summaryKo;
+            nodes.step3.classList.remove('hidden');
+
+            // 배경장소 초기값 세팅
+            let defaultLoc = `${hikingData.mountainName}의 아름다운 자연 풍경`;
+            if(parsed.sections && parsed.sections.length > 0) {
+                let midIdx = Math.floor(parsed.sections.length / 2);
+                defaultLoc = parsed.sections[midIdx].cardTitle + " 주변";
+            }
+            nodes.bgLocation.value = defaultLoc;
+
+            nodes.step4.classList.remove('hidden');
+            nodes.finalArea.classList.add('hidden');
+            nodes.step4.scrollIntoView({ behavior: 'smooth' });
+
+        } catch (e) {
+            nodes.jsonError.style.display = 'block';
+            nodes.step3.classList.add('hidden');
+            nodes.step4.classList.add('hidden');
+            nodes.finalArea.classList.add('hidden');
+        }
+    });
+
+    nodes.generateBtn.addEventListener('click', () => {
+        const locationText = nodes.bgLocation.value.trim();
+        const seasonWeather = nodes.bgSeason.value.trim();
+        const positionText = nodes.charPosition.value.trim(); // 캐릭터 위치 값
+        const actionText = nodes.actionEntry.value.trim();
+
+        if (!locationText || !seasonWeather || !positionText || !actionText) {
+            alert('모든 설정값을 입력해 주세요.');
+            return;
+        }
+
+        // 전체 화면 구성 규칙
+        let finalPrompt = `[COMPOSITION RULE - STRICT]: A premium ultrawide 21:9 panoramic desktop wallpaper showing ONE seamless, continuous hiking trail. The entire route is connected as one coherent, photorealistic mountain landscape. The scenery must flow naturally without any artificial section dividers, collage, or split-screen.\n\n`;
+
+        // 배경 
+        finalPrompt += `[SCENE & ENVIRONMENT]: The background landscape features ${translateKeyword(locationText)} at ${hikingData.mountainName}. Lighting and atmosphere: ${translateKeyword(seasonWeather)}. A long, single hiking trail winds naturally through this magnificent scenery. (Optional surrounding natural elements to blend in: ${translateKeyword(hikingData.allFeatures)}).\n\n`;
+
+        // 캐릭터 배치 (새로 적용된 위치 조건 포함)
+        finalPrompt += `[CHARACTERS POSITION & ACTION]:\n`;
+        finalPrompt += `Position: The Moon Bear couple is specifically located at the ${translateKeyword(positionText)} of the scene.\n`;
+        finalPrompt += `Action: ${translateKeyword(actionText)}.\n`;
+        finalPrompt += CHAR_DEFINITIONS_EN + `\n\n`;
+
+        // 스타일 및 네거티브 프롬프트
+        finalPrompt += `[STYLE]:\n${STYLE_DEFINITIONS_EN}\n\n`;
+        finalPrompt += `[NEGATIVE PROMPT]:\n${NEGATIVE_PROMPT_EN}`;
+
+        nodes.finalResult.innerText = finalPrompt;
+        nodes.finalArea.classList.remove('hidden');
+        nodes.finalArea.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    function copyPrompt() {
+        const textToCopy = nodes.finalResult.innerText;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            alert('최종 영문 프롬프트가 복사되었습니다!');
+        }).catch(err => {
+            alert('복사 실패. 직접 텍스트를 드래그해 복사해 주세요.');
+        });
+    }
+</script>
+
+</body>
+</html>
