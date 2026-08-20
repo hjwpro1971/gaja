@@ -625,6 +625,41 @@ function openCropOverlay(video, scaleX, scaleY) {
   });
 }
 
+// 캡처 직전에 지도 위 줌 컨트롤(+/-)을 숨기고, 그 상태가 실제로 새 비디오
+// 프레임에 반영될 때까지 기다린다. video는 스트림을 실시간 재생 중이므로
+// DOM을 숨긴 즉시가 아니라 몇 프레임 뒤에야 화면에서 사라진 모습이 잡힌다.
+async function hideZoomControlAndWaitFrame(video) {
+  const zoomControl = document.getElementById('zoom-control');
+  const prevVisibility = zoomControl.style.visibility;
+  zoomControl.style.visibility = 'hidden';
+  await waitForNextVideoFrame(video, 3);
+  return () => { zoomControl.style.visibility = prevVisibility; };
+}
+
+// requestVideoFrameCallback이 있으면 실제 다음 디코딩 프레임을 기다리고,
+// 없는 브라우저에서는 rAF를 여러 번 겹쳐 프레임이 갱신될 시간을 확보한다.
+function waitForNextVideoFrame(video, minFrames) {
+  return new Promise(resolve => {
+    if (video.requestVideoFrameCallback) {
+      let count = 0;
+      const step = () => {
+        count++;
+        if (count >= minFrames) resolve();
+        else video.requestVideoFrameCallback(step);
+      };
+      video.requestVideoFrameCallback(step);
+    } else {
+      let count = 0;
+      const step = () => {
+        count++;
+        if (count >= minFrames) resolve();
+        else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+  });
+}
+
 async function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
@@ -638,13 +673,21 @@ async function saveAsJPG() {
   }
 
   let stream = null;
+  let restoreZoomControl = null;
 
   try {
     saveInfoBox.style.display = 'block';
     saveInfoBox.textContent = 'ℹ 화면 공유 선택창이 뜨면 "이 탭"(또는 이 창)을 선택해주세요.';
 
     stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'browser' },
+      // 지도 텍스트/등고선이 흐릿하게 나오지 않도록 캡처 소스 해상도를 최대한
+      // 높게 요청한다. 브라우저가 실제로 줄 수 있는 값으로 알아서 clamp된다.
+      video: {
+        displaySurface: 'browser',
+        width: { ideal: 7680 },
+        height: { ideal: 4320 },
+        frameRate: { ideal: 5 }
+      },
       audio: false,
       preferCurrentTab: true
     });
@@ -669,16 +712,42 @@ async function saveAsJPG() {
     saveInfoBox.textContent = 'ℹ 저장할 영역을 화면에서 드래그로 선택해주세요.';
     const cssRect = await openCropOverlay(video, scaleX, scaleY);
 
+    // 영역 확정 시점엔 오버레이(안내 문구 등)는 이미 DOM에서 제거됐지만, 지도
+    // 위 줌 컨트롤(+/-)은 실제 화면 요소라 별도로 숨기고 새 프레임이 반영될
+    // 때까지 기다려야 캡처 결과에서도 사라진다.
+    restoreZoomControl = await hideZoomControlAndWaitFrame(video);
+
+    // ImageCapture.grabFrame()은 <video> 렌더링 파이프라인을 거치지 않고
+    // 트랙의 원본 프레임을 그대로 가져와 video.drawImage보다 선명하다.
+    // 지원하지 않는 브라우저에서는 video 프레임으로 폴백한다.
+    let frameSource = video;
+    let frameWidth = video.videoWidth;
+    let frameHeight = video.videoHeight;
+    if (window.ImageCapture) {
+      try {
+        const imageCapture = new ImageCapture(track);
+        const bitmap = await imageCapture.grabFrame();
+        frameSource = bitmap;
+        frameWidth = bitmap.width;
+        frameHeight = bitmap.height;
+      } catch (e) {
+        // grabFrame 미지원/실패 시 video 프레임 그대로 사용
+      }
+    }
+    const frameScaleX = frameWidth / window.innerWidth;
+    const frameScaleY = frameHeight / window.innerHeight;
+
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(cssRect.width * scaleX);
-    canvas.height = Math.round(cssRect.height * scaleY);
+    canvas.width = Math.round(cssRect.width * frameScaleX);
+    canvas.height = Math.round(cssRect.height * frameScaleY);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(
-      video,
-      cssRect.left * scaleX, cssRect.top * scaleY, cssRect.width * scaleX, cssRect.height * scaleY,
+      frameSource,
+      cssRect.left * frameScaleX, cssRect.top * frameScaleY, cssRect.width * frameScaleX, cssRect.height * frameScaleY,
       0, 0, canvas.width, canvas.height
     );
 
+    restoreZoomControl();
     track.stop();
     stream = null;
 
@@ -700,6 +769,7 @@ async function saveAsJPG() {
       saveInfoBox.textContent = 'ℹ JPG 파일이 다운로드되었습니다.';
     }, 'image/jpeg', 0.92);
   } catch (err) {
+    if (restoreZoomControl) restoreZoomControl();
     if (stream) stream.getTracks().forEach(t => t.stop());
     saveInfoBox.style.display = 'none';
     if (err.message === 'CANCELLED') {
