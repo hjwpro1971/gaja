@@ -290,13 +290,32 @@
             textColor: '#0d0c0c',
             textSize: '16',
             lineHeight: '1.6',
-            memoColor: '#1b1e79', 
+            memoColor: '#1b1e79',
             memoSize: '15'
         };
         styles.forEach(id => {
             const savedValue = localStorage.getItem('gaja_' + id);
             document.getElementById(id).value = savedValue ? savedValue : defaultValues[id];
         });
+    }
+
+    // 다른 사이트를 오가다 브라우저가 탭을 새로고침/재사용해도 입력값이 사라지지 않도록
+    // 텍스트 입력값을 자동 저장한다. "텍스트 초기화" 버튼을 누르기 전까지 유지된다.
+    function saveDraftText() {
+        inputs.forEach(id => {
+            localStorage.setItem('gaja_draft_' + id, document.getElementById(id).value);
+        });
+    }
+
+    function loadDraftText() {
+        inputs.forEach(id => {
+            const saved = localStorage.getItem('gaja_draft_' + id);
+            if (saved !== null) document.getElementById(id).value = saved;
+        });
+    }
+
+    function clearDraftText() {
+        inputs.forEach(id => localStorage.removeItem('gaja_draft_' + id));
     }
 
     // 산행지 자동 변환
@@ -409,6 +428,8 @@
         localStorage.setItem('gaja_memoColor', memoColor);
         localStorage.setItem('gaja_memoSize', memoSize);
 
+        saveDraftText();
+
         const htmlContent = `
             <div style="color: ${color}; font-size: ${size}px; line-height: ${lineHeight}; font-family: sans-serif;">
                 <strong>산행지:</strong> ${mountain}<br>
@@ -429,6 +450,7 @@
     });
 
     loadSavedStyles();
+    loadDraftText();
     updatePreview();
 
     resetBtn.addEventListener('click', () => {
@@ -438,6 +460,7 @@
             document.getElementById('distTime').value = '';
             document.getElementById('course').value = '';
             document.getElementById('memo').value = '';
+            clearDraftText();
             updatePreview();
         }
     });

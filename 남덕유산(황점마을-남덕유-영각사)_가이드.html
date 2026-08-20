@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<title id="page-title">등산 가이드 & 코스 상세 분석</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; background-color: #f0f4f8; }
+  body { font-family: 'Noto Sans CJK KR', 'Noto Sans KR', 'Malgun Gothic', sans-serif; color: #2d3748; line-height: 1.6; padding: 20px 0; }
+  .page-container { width: 100%; max-width: 1000px; margin: 0 auto; padding: 0 15px; }
+
+  /* 상단 8자 초과 경고 배너 (신규) */
+  .warning-banner {
+    display: none;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #7a5c00;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+
+  /* ==========================================================================
+     1. 상단 인포그래픽 표지 영역
+     ========================================================================== */
+  .infographic-scroll-container {
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 30px;
+    border-radius: 20px;
+    box-shadow: 0 15px 35px rgba(31, 38, 135, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background-color: #ffffff;
+    /* 버그6 수정: JS가 실패해도 세로 비율(1000:562)이 유지되도록 CSS 폴백 */
+    aspect-ratio: 1000 / 562;
+  }
+
+  .infographic-wrapper {
+    width: 1000px;
+    height: 562px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* 옵션(a) 채택: 사진 배경 없이 밝은 단색만 사용 */
+    background-color: #f7fafc;
+  }
+
+  .cover-image-layer {
+    position: absolute;
+    top: 0;
+    left: 20px;
+    width: 960px;
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  .cover-image-layer img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+  }
+
+  .keep-all { word-break: keep-all; }
+
+  .header { position: absolute; top: 30px; left: 40px; width: 480px; }
+  .header h1 { font-size: 30px; font-weight: 700; color: #1a202c; letter-spacing: -1.5px; margin: 0 0 8px 0; text-shadow: 0 1px 3px rgba(255,255,255,0.9), 0 0 12px rgba(255,255,255,0.7); }
+  .header .subtitle { display: inline-block; background: #ffffff; border: 2px solid #ffffff; border-radius: 30px; padding: 6px 16px; font-size: 11.5px; font-weight: 800; color: #1a202c; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); line-height: 1.5; }
+  .header .subtitle span { color: #e28743; margin: 0 3px; font-weight: bold; }
+
+  .summary-dashboard { position: absolute; top: 30px; right: 40px; width: 440px; height: 52px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
+  .summary-col { position: absolute; top: 8px; text-align: center; }
+  .summary-col-1 { left: 0px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }
+  .summary-col-2 { left: 110px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }
+  .summary-col-3 { left: 220px; width: 110px; border-right: 1px solid rgba(0, 0, 0, 0.06); }
+  .summary-col-4 { left: 330px; width: 110px; }
+  .summary-label { font-size: 10.5px; color: #c05621; display: block; margin-bottom: 2px; font-weight: 700; }
+  .summary-value { font-size: 14px; font-weight: 700; color: #1a202c; }
+
+  /* 버그5 수정: height를 SVG viewBox(185)와 동일하게 맞춤 (기존 145 → 185) */
+  .elevation-container { position: absolute; top: 100px; left: 40px; width: 920px; height: 185px; }
+  .grid-line { stroke: rgba(0, 0, 0, 0.08); stroke-width: 1; stroke-dasharray: 4,4; }
+  /* 옵션(a) 채택: 밝은 배경이므로 격자/노드 텍스트는 어두운 색 유지 */
+  .grid-text-bg { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }
+  .grid-text { fill: #1a202c; font-size: 9.5px; font-weight: 700; }
+  .elevation-area { fill: url(#terrain-gradient); opacity: 0.16; }
+  .elevation-line { fill: none; stroke: #2b6cb0; stroke-width: 3.5; stroke-linejoin: round; stroke-linecap: round; }
+  .node-point { fill: #ffffff; stroke: #2b6cb0; stroke-width: 2.5; }
+  .node-point-peak { stroke: #dd6b20; stroke-width: 3; r: 6; }
+  .node-text-bg { fill: #ffffff; stroke: #e2e8f0; stroke-width: 1; }
+  .node-text { fill: #1a202c; font-size: 10px; font-weight: 700; text-anchor: middle; }
+  .node-text-peak { fill: #e53e3e; }
+
+  /* 버그3 수정: 5분할 구조. 색상은 JS가 각 구간 난이도에 맞춰 채움 */
+  .difficulty-strip { position: absolute; top: 296px; left: 20px; width: 960px; height: 7px; border-radius: 4px; overflow: hidden; background: #edf2f7; display: flex; }
+  .strip-seg { height: 100%; flex: 1 1 0; }
+
+  .card { position: absolute; top: 319px; width: 176px; height: 210px; background: rgba(255, 255, 255, 0.95); border: 1.5px solid #edf2f7; border-radius: 12px; padding: 12px; box-sizing: border-box; box-shadow: 0 6px 15px rgba(0, 0, 0, 0.03); transition: all 0.2s ease; }
+  .card-1 { left: 20px; }
+  .card-2 { left: 216px; }
+  .card-3 { left: 412px; }
+  .card-4 { left: 608px; }
+  .card-5 { left: 804px; }
+  /* 버그4 수정: 특정 카드 번호가 아니라 JS가 부여하는 .card-peak 클래스로 강조 */
+  .card-peak { border-color: rgba(221, 107, 32, 0.3); background: rgba(255, 253, 245, 0.98); }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.06); border-color: #cbd5e0; }
+
+  .card-num { font-size: 10px; color: #718096; font-weight: 700; }
+  .card-title { font-size: 13.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
+  .badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
+  .badge-easy { background: rgba(72, 187, 120, 0.15); color: #22543d; border: 1px solid rgba(72, 187, 120, 0.3); }
+  .badge-medium { background: rgba(246, 224, 94, 0.2); color: #744210; border: 1px solid rgba(246, 224, 94, 0.4); }
+  .badge-hard { background: rgba(245, 101, 101, 0.15); color: #742a2a; border: 1px solid rgba(245, 101, 101, 0.3); }
+
+  .card-features { border-top: 1px dashed rgba(0, 0, 0, 0.08); padding-top: 8px; margin-top: 4px; }
+  .features-header { font-size: 10px; font-weight: 700; color: #c05621; margin-bottom: 5px; letter-spacing: -0.3px; }
+  .feature-item { font-size: 10.5px; color: #4a5568; margin-bottom: 4px; position: relative; padding-left: 9px; font-weight: 500; }
+  .feature-item::before { content: '•'; color: #e28743; position: absolute; left: 0; font-weight: bold; }
+  .feature-item:last-child { margin-bottom: 0; }
+
+  .safety-overlay { position: absolute; bottom: 15px; left: 20px; right: 20px; height: 30px; background: #fffbe6; border: 1px solid #f6e05e; border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
+  .safety-tag { position: absolute; top: 5px; left: 12px; background-color: #dd6b20; color: #ffffff; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+  .safety-text { position: absolute; top: 5px; left: 80px; font-size: 11px; color: #744210; font-weight: 700; }
+
+  /* ==========================================================================
+     2. 하단 상세 분석 영역
+     ========================================================================== */
+  .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
+  .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
+  .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .section-block { margin-bottom: 35px; padding: 0 24px 30px; border-bottom: 1px solid #edf2f7; }
+  .section-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .section-header-row { display: flex; align-items: center; margin-bottom: 15px; }
+  .section-index-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; margin-right: 12px; letter-spacing: -0.3px; }
+  .badge-style-easy { background: rgba(72, 187, 120, 0.15); color: #22543d; border: 1px solid rgba(72, 187, 120, 0.3); }
+  .badge-style-medium { background: rgba(246, 224, 94, 0.2); color: #744210; border: 1px solid rgba(246, 224, 94, 0.4); }
+  .badge-style-hard { background: rgba(245, 101, 101, 0.15); color: #742a2a; border: 1px solid rgba(245, 101, 101, 0.3); }
+  .section-main-name { font-size: 18px; font-weight: 700; color: #2d3748; }
+  .section-detail-bullets { list-style: none; padding-left: 0; }
+  .section-detail-bullets li { font-size: 14px; color: #4a5568; margin-bottom: 15px; position: relative; padding-left: 20px; }
+  .section-detail-bullets li::before { content: '•'; color: #e28743; position: absolute; left: 0; font-size: 18px; line-height: 1.2; font-weight: bold; }
+  .section-detail-bullets li strong { color: #1a202c; font-weight: 700; display: inline-block; margin-bottom: 3px; }
+  .section-detail-bullets li p { margin-top: 2px; color: #718096; font-size: 13.5px; white-space: pre-line; }
+
+  @media (max-width: 768px) {
+    body { padding: 10px 0; }
+    .guide-container { padding: 20px 0; border-radius: 12px; }
+    .guide-main-title, .guide-intro { margin-left: 16px; margin-right: 16px; }
+    .section-block { padding-left: 16px; padding-right: 16px; }
+    .guide-main-title { font-size: 20px; }
+    .guide-intro { font-size: 13.5px; }
+    .section-header-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .section-main-name { font-size: 15.5px; }
+    .section-detail-bullets li { font-size: 13px; }
+    .section-detail-bullets li p { font-size: 12.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="page-container">
+  <div id="warning-banner" class="warning-banner"></div>
+
+  <div class="infographic-scroll-container">
+    <div class="infographic-wrapper">
+      <div class="header">
+        <h1 class="keep-all" id="mountain-name"></h1>
+        <div class="subtitle keep-all" id="course-route"></div>
+      </div>
+
+      <div class="summary-dashboard">
+        <div class="summary-col summary-col-1"><span class="summary-label">총거리</span><span class="summary-value" id="sum-distance"></span></div>
+        <div class="summary-col summary-col-2"><span class="summary-label">소요시간</span><span class="summary-value" id="sum-time"></span></div>
+        <div class="summary-col summary-col-3"><span class="summary-label">최고고도</span><span class="summary-value" id="sum-altitude"></span></div>
+        <div class="summary-col summary-col-4"><span class="summary-label">난이도</span><span class="summary-value" style="color:#dd6b20;" id="sum-difficulty"></span></div>
+      </div>
+
+      <div class="elevation-container">
+        <svg id="elevation-svg" width="100%" height="100%" viewBox="0 0 920 185">
+          <defs>
+            <linearGradient id="terrain-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#3182ce" stop-opacity="0.8"/>
+              <stop offset="100%" stop-color="#3182ce" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <!-- 격자선/그래프/노드는 전부 JS가 채움 -->
+        </svg>
+      </div>
+
+      <div class="difficulty-strip" id="difficulty-strip"></div>
+
+      <div id="cards-container"></div>
+
+      <div class="safety-overlay keep-all">
+        <span class="safety-tag">안전 유의</span>
+        <span class="safety-text" id="safety-text"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="guide-container" id="guide-container"></div>
+</div>
+
+<script id="MOUNTAIN_DATA" type="application/json">
+{
+  "mountainName": "남덕유산(황점마을-남덕유-영각사)",
+  "courseRouteFlow": [
+    "황점마을",
+    "월성재",
+    "남덕유산정상",
+    "영각재",
+    "영각사"
+  ],
+  "totalTime": "약 5시간~5시간 30분",
+  "overallDifficulty": "힘듦",
+  "safetyWarningText": "식수부적합·급경사무릎주의·칼바람저체온증·수직철계단추락",
+  "guideIntro": "경상남도 거창군과 함양군에 걸쳐 있는 남덕유산은 수려한 계곡과 아찔한 바위길이 어우러진 명품 횡단 코스입니다. 황점마을에서 시작하여 월성재를 거쳐 정상에 오른 뒤 영각사로 하산하는 총 거리 약 9.5km의 중상급 코스입니다. 가파른 깔딱고개와 수직 철계단 구간이 포함되어 있어 철저한 체력 배분과 안전 장비가 필수적입니다.",
+  "sections": [
+    {
+      "cardTitle": "완만계곡길",
+      "distanceKm": 2,
+      "difficulty": "easy",
+      "altitude": 590,
+      "features": [
+        "시작점",
+        "계곡숲길",
+        "완만오르막"
+      ],
+      "detail": {
+        "headerName": "황점마을 시작점 ➔ 월성계곡 갈림길 (약 2.0km / 약 40분)",
+        "bullets": [
+          {
+            "strong": "편안한 산책로",
+            "p": "초반 경사도가 완만하여 본격적인 산행 전 가볍게 몸을 풀기에 좋은 구간입니다."
+          },
+          {
+            "strong": "계곡 숲길",
+            "p": "청량한 물소리를 들으며 평탄한 숲길을 따라 힐링하며 걸을 수 있습니다."
+          }
+        ]
+      }
+    },
+    {
+      "cardTitle": "가파른돌길",
+      "distanceKm": 1.8,
+      "difficulty": "hard",
+      "altitude": 1220,
+      "features": [
+        "깔딱고개",
+        "식수부적합",
+        "돌계단오름"
+      ],
+      "detail": {
+        "headerName": "월성계곡 갈림길 ➔ 월성재 고개 (약 1.8km / 약 1시간 10분)",
+        "bullets": [
+          {
+            "strong": "가파른 깔딱고개",
+            "p": "월성재까지 수직 고도를 크게 올리는 매우 가파른 돌계단 오르막이 이어집니다."
+          },
+          {
+            "strong": "식수 주의",
+            "p": "중간 샘터의 수질 상태가 고르지 못해 음용하기 곤란할 수 있으므로 미리 물을 챙겨야 합니다."
+          }
+        ]
+      }
+    },
+    {
+      "cardTitle": "능선조망터",
+      "distanceKm": 1.4,
+      "difficulty": "medium",
+      "altitude": 1507,
+      "features": [
+        "야생화숲",
+        "완만한능선",
+        "정상등반"
+      ],
+      "detail": {
+        "headerName": "월성재 고개 ➔ 남덕유산 정상 (약 1.4km / 약 1시간)",
+        "bullets": [
+          {
+            "strong": "완만한 능선",
+            "p": "백두대간 주능선에 진입하여 쾌적하게 조망을 즐기며 걸을 수 있는 구간입니다."
+          },
+          {
+            "strong": "정상 등반",
+            "p": "가을 야생화가 지천으로 피어난 숲을 지나 마지막 급경사를 오르면 정상에 닿습니다."
+          }
+        ]
+      }
+    },
+    {
+      "cardTitle": "아찔바위길",
+      "distanceKm": 0.9,
+      "difficulty": "hard",
+      "altitude": 1200,
+      "features": [
+        "칼바람",
+        "수직철계단",
+        "기암괴석"
+      ],
+      "detail": {
+        "headerName": "남덕유산 정상 ➔ 영각재 고개 (약 0.9km / 약 50분)",
+        "bullets": [
+          {
+            "strong": "수직 철계단",
+            "p": "중봉과 하봉을 지나는 아찔한 수직 경사의 바위길에서 안전에 각별히 유의해야 합니다."
+          },
+          {
+            "strong": "칼바람 주의",
+            "p": "정상부의 강한 바람과 추위에 대비해 방한용품을 단단히 챙겨야 합니다."
+          }
+        ]
+      }
+    },
+    {
+      "cardTitle": "가파른내리막",
+      "distanceKm": 3.4,
+      "difficulty": "hard",
+      "altitude": 650,
+      "features": [
+        "돌계단하산",
+        "안전쉼터",
+        "종착점임도"
+      ],
+      "detail": {
+        "headerName": "영각재 고개 ➔ 영각사 종착점 (약 3.4km / 약 1시간 20분)",
+        "bullets": [
+          {
+            "strong": "가파른 하산길",
+            "p": "초반에는 가파른 돌계단 내리막이 이어지므로 무릎 보호에 신경 써야 합니다."
+          },
+          {
+            "strong": "편안한 종착점",
+            "p": "안전쉼터를 지나 완만한 숲길과 아스팔트 길을 걸어 종착점에 도착합니다."
+          }
+        ]
+      }
+    }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  const data = JSON.parse(document.getElementById('MOUNTAIN_DATA').textContent);
+  const sections = data.sections;
+  if (!sections || sections.length !== 5) {
+    console.error('sections 배열은 정확히 5개여야 합니다.');
+    return;
+  }
+
+  const CX = [124, 312, 500, 688, 876];
+  const Y_MIN_LINE = 140;
+  const Y_RANGE = 105;
+
+  const alts = sections.map(s => s.altitude);
+  const minAlt = Math.min(...alts);
+  const maxAlt = Math.max(...alts);
+  const peakIdx = alts.indexOf(maxAlt);
+
+  function toY(altitude) {
+    if (maxAlt === minAlt) return Y_MIN_LINE - Y_RANGE / 2;
+    return Y_MIN_LINE - ((altitude - minAlt) / (maxAlt - minAlt)) * Y_RANGE;
+  }
+  const ys = alts.map(toY);
+
+  // 격자 고도 라벨: 보기 좋은 단위(50/100/200m)로 반올림
+  function niceStep(range) {
+    if (range <= 300) return 50;
+    if (range <= 800) return 100;
+    return 200;
+  }
+  function roundNice(v, step) { return Math.round(v / step) * step; }
+  const range = maxAlt - minAlt || 1;
+  const step = niceStep(range);
+  const gridRatios = [0, 0.4286, 0.8571];
+  const gridYs = [140, 95, 50];
+  const gridAlts = gridRatios.map(r => roundNice(minAlt + r * range, step));
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('elevation-svg');
+  function svgEl(tag, attrs) {
+    const el = document.createElementNS(svgNS, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  gridYs.forEach((y, i) => {
+    svg.appendChild(svgEl('line', { class: 'grid-line', x1: 124, y1: y, x2: 876, y2: y }));
+  });
+
+  const linePoints = CX.map((cx, i) => `${cx},${ys[i]}`).join(' L ');
+  svg.appendChild(svgEl('path', { class: 'elevation-area', d: `M ${linePoints} L 876,165 L 124,165 Z` }));
+  svg.appendChild(svgEl('path', { class: 'elevation-line', d: `M ${linePoints}` }));
+
+  CX.forEach((cx, i) => {
+    const isPeak = i === peakIdx;
+    svg.appendChild(svgEl('circle', {
+      class: 'node-point' + (isPeak ? ' node-point-peak' : ''),
+      cx: cx, cy: ys[i], r: isPeak ? 6 : 4.5
+    }));
+    const label = String(alts[i]) + 'm';
+    const estW = label.length * 7 + 8;
+    svg.appendChild(svgEl('rect', { class: 'node-text-bg', x: cx - estW / 2, y: ys[i] - 24, width: estW, height: 14, rx: 3 }));
+    const t = svgEl('text', { class: 'node-text' + (isPeak ? ' node-text-peak' : ''), x: cx, y: ys[i] - 13 });
+    t.textContent = label;
+    svg.appendChild(t);
+  });
+
+  const DIFF_COLOR = { easy: '#48bb78', medium: '#ecc94b', hard: '#f56565' };
+  const DIFF_LABEL = { easy: '쉬움', medium: '보통', hard: '힘듦' };
+  const DIFF_BADGE_STYLE = { easy: 'badge-style-easy', medium: 'badge-style-medium', hard: 'badge-style-hard' };
+
+  const strip = document.getElementById('difficulty-strip');
+  sections.forEach(s => {
+    const seg = document.createElement('div');
+    seg.className = 'strip-seg';
+    seg.style.backgroundColor = DIFF_COLOR[s.difficulty] || '#cbd5e0';
+    strip.appendChild(seg);
+  });
+
+  const cardsContainer = document.getElementById('cards-container');
+  sections.forEach((s, i) => {
+    const isPeak = i === peakIdx;
+    const card = document.createElement('div');
+    card.className = `card card-${i + 1}` + (isPeak ? ' card-peak' : '');
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+        <span class="card-num"${isPeak ? ' style="color:#dd6b20;"' : ''}>${i + 1}구간${isPeak ? ' (정상)' : ''}</span>
+        <span style="font-size:10px; color:${isPeak ? '#dd6b20' : '#718096'}; font-weight:700;">${s.distanceKm}km</span>
+      </div>
+      <h3 class="card-title keep-all">${s.cardTitle}</h3>
+      <span class="badge badge-${s.difficulty}">${DIFF_LABEL[s.difficulty]}</span>
+      <div class="card-features">
+        <div class="features-header">코스 특징</div>
+        ${s.features.map(f => `<div class="feature-item keep-all">${f}</div>`).join('')}
+      </div>`;
+    cardsContainer.appendChild(card);
+  });
+
+  const totalDistanceKm = sections.reduce((sum, s) => sum + s.distanceKm, 0);
+
+  document.getElementById('page-title').textContent = data.mountainName + ' 등산 가이드 & 코스 상세 분석';
+  document.title = data.mountainName + ' 등산 가이드 & 코스 상세 분석';
+  document.getElementById('mountain-name').textContent = data.mountainName;
+  document.getElementById('course-route').innerHTML = data.courseRouteFlow.join('<span>➔</span>');
+  document.getElementById('sum-distance').textContent = totalDistanceKm.toFixed(1) + 'km';
+  document.getElementById('sum-time').textContent = data.totalTime;
+  document.getElementById('sum-altitude').textContent = maxAlt + 'm';
+  document.getElementById('sum-difficulty').textContent = data.overallDifficulty;
+  document.getElementById('safety-text').textContent = data.safetyWarningText;
+
+  const guide = document.getElementById('guide-container');
+  let guideHTML = `
+    <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
+    <p class="guide-intro keep-all">${data.guideIntro || ''}</p>`;
+  sections.forEach((s, i) => {
+    guideHTML += `
+    <div class="section-block">
+      <div class="section-header-row">
+        <span class="section-index-badge ${DIFF_BADGE_STYLE[s.difficulty]}">${i + 1}구간 · ${DIFF_LABEL[s.difficulty]}</span>
+        <h3 class="section-main-name">${s.detail.headerName}</h3>
+      </div>
+      <ul class="section-detail-bullets">
+        ${s.detail.bullets.map(b => `<li class="keep-all"><strong>${b.strong}</strong><p>${b.p}</p></li>`).join('')}
+      </ul>
+    </div>`;
+  });
+  guide.innerHTML = guideHTML;
+
+  function graphemeLen(str) { return Array.from(str).length; }
+  const violations = [];
+  sections.forEach((s, i) => {
+    if (graphemeLen(s.cardTitle) > 8) violations.push(`${i + 1}구간 제목 "${s.cardTitle}"`);
+    s.features.forEach(f => { if (graphemeLen(f) > 8) violations.push(`${i + 1}구간 특징 "${f}"`); });
+  });
+  if (violations.length) {
+    const banner = document.getElementById('warning-banner');
+    banner.style.display = 'block';
+    banner.textContent = `⚠ 8자 초과 명사구 ${violations.length}건: ` + violations.join(', ');
+  }
+})();
+
+function adjustScale() {
+  const container = document.querySelector('.infographic-scroll-container');
+  const wrapper = document.querySelector('.infographic-wrapper');
+  if (container && wrapper) {
+    const containerWidth = container.getBoundingClientRect().width;
+    const scale = containerWidth / 1000;
+    wrapper.style.transform = `scale(${scale})`;
+    wrapper.style.transformOrigin = 'top left';
+    container.style.height = (562 * scale) + 'px';
+  }
+}
+window.addEventListener('resize', adjustScale);
+window.addEventListener('load', adjustScale);
+document.addEventListener('DOMContentLoaded', adjustScale);
+setTimeout(adjustScale, 50);
+</script>
+
+</body>
+</html>

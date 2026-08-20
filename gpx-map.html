@@ -84,7 +84,10 @@
           <input type="number" id="arrowIntervalKm" value="1" min="0.1" max="5" step="0.1">
         </div>
       </div>
-      <button class="btn" id="btn-apply-style" type="button" style="margin-top:8px; width:100%;">스타일 적용</button>
+      <div class="action-bar" style="margin-top:8px;">
+        <button class="btn" id="btn-apply-style" type="button" style="flex:1;">스타일 적용</button>
+        <button class="btn" id="btn-reset-style" type="button">초기화</button>
+      </div>
     </fieldset>
 
     <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled>JPG로 저장</button>
@@ -647,6 +650,14 @@ function saveAsJPG() {
 
 const STYLE_STORAGE_KEY = 'gpx-map-style';
 const STYLE_FIELD_IDS = ['lineColor', 'lineWidth', 'showMarkers', 'showArrows', 'arrowColor', 'arrowIntervalKm'];
+const STYLE_DEFAULTS = {
+  lineColor: '#e53e3e',
+  lineWidth: '4',
+  showMarkers: true,
+  showArrows: true,
+  arrowColor: '#1a202c',
+  arrowIntervalKm: '1'
+};
 
 function saveStyleToStorage() {
   const style = {};
@@ -671,6 +682,16 @@ function restoreStyleFromStorage() {
   } catch (e) {}
 }
 
+function resetStyleToDefaults() {
+  STYLE_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el.type === 'checkbox') el.checked = STYLE_DEFAULTS[id];
+    else el.value = STYLE_DEFAULTS[id];
+  });
+  try { localStorage.removeItem(STYLE_STORAGE_KEY); } catch (e) {}
+  if (loadedPoints) drawRoute(loadedPoints);
+}
+
 document.getElementById('gpxFile').addEventListener('change', handleGPXFile);
 document.getElementById('btn-save-jpg').addEventListener('click', saveAsJPG);
 document.getElementById('btn-open-nmap').addEventListener('click', openInNaverMapApp);
@@ -679,6 +700,7 @@ document.getElementById('btn-apply-style').addEventListener('click', () => {
   saveStyleToStorage();
   if (loadedPoints) drawRoute(loadedPoints);
 });
+document.getElementById('btn-reset-style').addEventListener('click', resetStyleToDefaults);
 
 restoreStyleFromStorage();
 initMap();
