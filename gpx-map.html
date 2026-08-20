@@ -104,9 +104,9 @@
     <div class="info-box" id="nmap-info-box"></div>
   </div>
 
-  <div class="main-pane" style="position:relative;">
+  <div class="main-pane" id="main-pane" style="position:relative;">
     <div id="map"></div>
-    <div style="position:absolute; top:36px; right:36px; display:flex; flex-direction:column; z-index:200; box-shadow:0 2px 8px rgba(0,0,0,0.25); border-radius:6px; overflow:hidden;">
+    <div id="zoom-control" style="position:absolute; top:36px; right:36px; display:flex; flex-direction:column; z-index:200; box-shadow:0 2px 8px rgba(0,0,0,0.25); border-radius:6px; overflow:hidden;">
       <button id="btn-zoom-in" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer; border-bottom:1px solid #e2e8f0;">+</button>
       <button id="btn-zoom-out" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer;">−</button>
     </div>
@@ -506,20 +506,24 @@ function projectToOffset(latlng) {
   return proj.fromCoordToOffset(latlng);
 }
 
-function drawOverlaysOnCanvas(ctx) {
+function drawOverlaysOnCanvas(ctx, mapEl, captureRootEl) {
   if (!loadedPoints || loadedPoints.length === 0) return;
 
-  // 지도 컨테이너의 좌상단(북서쪽) 좌표를 화면 픽셀 오프셋으로 변환해 기준점으로 삼고,
-  // 이후 모든 좌표를 그 기준점 상대좌표(=지도 div 내부 픽셀 좌표)로 변환한다.
-  const bounds = map.getBounds();
-  const nw = new naver.maps.LatLng(bounds.getNE().lat(), bounds.getSW().lng());
-  const topLeftOffset = projectToOffset(nw);
+  // projectToOffset(fromCoordToOffset)은 지도 컨테이너(#map) 좌상단을 원점(0,0)으로 하는
+  // 픽셀 오프셋을 반환한다. 캡처 대상이 #map이 아닌 상위 컨테이너(예: .main-pane)일 경우,
+  // #map이 그 컨테이너 안에서 떨어진 만큼(padding 등)을 더해줘야 캡처 좌표계와 맞는다.
+  const mapRect = mapEl.getBoundingClientRect();
+  const captureRootRect = captureRootEl.getBoundingClientRect();
+  const mapOffsetInCaptureRoot = {
+    x: mapRect.left - captureRootRect.left,
+    y: mapRect.top - captureRootRect.top
+  };
 
   function toCanvasXY(lat, lon) {
     const offset = projectToOffset(new naver.maps.LatLng(lat, lon));
     return {
-      x: offset.x - topLeftOffset.x,
-      y: offset.y - topLeftOffset.y
+      x: offset.x + mapOffsetInCaptureRoot.x,
+      y: offset.y + mapOffsetInCaptureRoot.y
     };
   }
 
@@ -641,29 +645,36 @@ function saveAsJPG() {
   saveInfoBox.style.display = 'none';
 
   const mapEl = document.getElementById('map');
+  // 지도 화면 오른쪽 프레임 전체(main-pane)를 캡처 대상으로 삼는다.
+  // #map만 캡처하면 뷰포트 크기 계산에 따라 지도 일부가 잘려 저장되는
+  // 문제가 있어, 확대/축소 버튼까지 포함한 프레임 전체를 그대로 캡처한다.
+  const captureEl = document.getElementById('main-pane');
+  const zoomControl = document.getElementById('zoom-control');
 
   // 실제 Naver Maps 마커/폴리라인(DOM 오버레이)이 html2canvas에 부분적으로
   // 캡처되면, 캔버스에 별도로 그리는 drawOverlaysOnCanvas와 겹쳐 마커가
   // 중복되거나 위치가 어긋나 보인다. 캡처 직전 실제 오버레이를 지도에서
-  // 잠시 떼어내고, 캡처가 끝난 뒤 다시 붙인다.
+  // 잠시 떼어내고, 확대/축소 버튼도 숨긴 뒤 캡처가 끝나면 모두 되돌린다.
   if (currentPolyline) currentPolyline.setMap(null);
   currentMarkers.forEach(m => m.setMap(null));
+  zoomControl.style.visibility = 'hidden';
 
   function restoreMapLayers() {
     if (currentPolyline) currentPolyline.setMap(map);
     currentMarkers.forEach(m => m.setMap(map));
+    zoomControl.style.visibility = 'visible';
   }
 
-  html2canvas(mapEl, { useCORS: true, allowTaint: false }).then(canvas => {
+  html2canvas(captureEl, { useCORS: true, allowTaint: false }).then(canvas => {
     restoreMapLayers();
     try {
       const ctx = canvas.getContext('2d');
-      const rect = mapEl.getBoundingClientRect();
+      const rect = captureEl.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       ctx.save();
       ctx.scale(scaleX, scaleY);
-      drawOverlaysOnCanvas(ctx);
+      drawOverlaysOnCanvas(ctx, mapEl, captureEl);
       ctx.restore();
     } catch (err) {
       saveWarnBox.style.display = 'block';
