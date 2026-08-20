@@ -641,7 +641,21 @@ function saveAsJPG() {
   saveInfoBox.style.display = 'none';
 
   const mapEl = document.getElementById('map');
+
+  // 실제 Naver Maps 마커/폴리라인(DOM 오버레이)이 html2canvas에 부분적으로
+  // 캡처되면, 캔버스에 별도로 그리는 drawOverlaysOnCanvas와 겹쳐 마커가
+  // 중복되거나 위치가 어긋나 보인다. 캡처 직전 실제 오버레이를 지도에서
+  // 잠시 떼어내고, 캡처가 끝난 뒤 다시 붙인다.
+  if (currentPolyline) currentPolyline.setMap(null);
+  currentMarkers.forEach(m => m.setMap(null));
+
+  function restoreMapLayers() {
+    if (currentPolyline) currentPolyline.setMap(map);
+    currentMarkers.forEach(m => m.setMap(map));
+  }
+
   html2canvas(mapEl, { useCORS: true, allowTaint: false }).then(canvas => {
+    restoreMapLayers();
     try {
       const ctx = canvas.getContext('2d');
       const rect = mapEl.getBoundingClientRect();
@@ -674,6 +688,7 @@ function saveAsJPG() {
       saveInfoBox.textContent = 'ℹ JPG 파일이 다운로드되었습니다.';
     }, 'image/jpeg', 0.92);
   }).catch(err => {
+    restoreMapLayers();
     saveWarnBox.style.display = 'block';
     saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message + ' (네이버지도 타일이 CORS를 차단했을 수 있습니다.)';
   });
