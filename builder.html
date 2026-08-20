@@ -738,7 +738,7 @@ function generateGuide() {
   document.getElementById('btn-capture-cover').disabled = false;
   updateDeployUrlBox(computeGuideFileName(data.mountainName));
 
-  saveCourseHandoffToSummary(data.courseRouteFlow);
+  saveCourseHandoffToSummary(data);
   markGuideGeneratedInDraft();
 }
 
@@ -749,12 +749,25 @@ function generateGuide() {
 // distTime은 그쪽이, course는 이쪽이 채움) 서로 덮어쓰지 않도록 병합한다.
 const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
 
-function saveCourseHandoffToSummary(courseRouteFlow) {
+function saveCourseHandoffToSummary(data) {
+  const courseRouteFlow = data.courseRouteFlow;
   if (!courseRouteFlow || courseRouteFlow.length === 0) return;
   try {
     const raw = localStorage.getItem(SUMMARY_HANDOFF_KEY);
     const existing = raw ? JSON.parse(raw) : {};
     existing.course = courseRouteFlow.join(' ➔ ');
+
+    // 주봉(최고 고도 구간)의 카드 제목+고도를 "산이름 (1,507m)" 형태로 넘긴다.
+    // template.html이 정상 배지를 붙이는 기준(구간 중 altitude 최댓값)과
+    // 동일한 로직이라 산행가이드에 표시되는 정상 카드와 항상 일치한다.
+    const sections = data.sections || [];
+    if (sections.length) {
+      const peak = sections.reduce((a, b) => (b.altitude > a.altitude ? b : a));
+      if (peak.cardTitle && peak.altitude) {
+        existing.peakSummary = `${peak.cardTitle} (${peak.altitude.toLocaleString('ko-KR')}m)`;
+      }
+    }
+
     localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify(existing));
   } catch (e) {
     // localStorage 실패는 조용히 무시(핵심 기능인 가이드 생성에는 영향 없음)

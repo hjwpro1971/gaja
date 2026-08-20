@@ -197,6 +197,10 @@
                 <input type="text" id="mountain" placeholder="예: 연인산" value="">
             </div>
             <div class="input-group">
+                <label>주봉 높이 (예: 남덕유산 (1,507m))</label>
+                <input type="text" id="peakSummary" placeholder="예: 남덕유산 (1,507m)" value="">
+            </div>
+            <div class="input-group">
                 <label>산행일자 (예: 26.4.5 자동변환)</label>
                 <input type="text" id="date" placeholder="예: 26.4.5" value="">
             </div>
@@ -235,14 +239,15 @@
 </div>
 
 <script>
-    const inputs = ['mountain', 'date', 'distTime', 'course', 'memo'];
-    const styles = ['textColor', 'textSize', 'lineHeight', 'memoColor', 'memoSize']; 
+    const inputs = ['mountain', 'peakSummary', 'date', 'distTime', 'course', 'memo'];
+    const styles = ['textColor', 'textSize', 'lineHeight', 'memoColor', 'memoSize'];
     const previewBox = document.getElementById('previewBox');
     const copyBtn = document.getElementById('copyBtn');
     const resetBtn = document.getElementById('resetAllBtn');
-    
+
     // 개별 입력창 요소들
     const mountainInput = document.getElementById('mountain');
+    const peakSummaryInput = document.getElementById('peakSummary');
     const dateInput = document.getElementById('date');
     const distTimeInput = document.getElementById('distTime');
     const courseInput = document.getElementById('course');
@@ -319,8 +324,8 @@
     }
 
     // GPX 경로 생성 화면(gpx-map.html)에서 계산한 총거리/소요시간/산행날짜와,
-    // 산행 가이드 생성 화면(builder.html)의 "코스 흐름"을 넘겨받아 자동으로
-    // 채운다. 서로 다른 iframe에서 로드되는 별개 페이지라 localStorage를
+    // 산행 가이드 생성 화면(builder.html)의 "코스 흐름"·"주봉 높이"를 넘겨받아
+    // 자동으로 채운다. 서로 다른 iframe에서 로드되는 별개 페이지라 localStorage를
     // 매개로 전달받으며, 한 번 적용한 뒤에는 지워서 다음에 이 페이지를 다시
     // 열었을 때 같은 값이 중복 적용되지 않게 한다.
     const GPX_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
@@ -339,6 +344,7 @@
                 mountainInput.value = data.mountain;
                 autoFormatMountain();
             }
+            if (data.peakSummary) peakSummaryInput.value = data.peakSummary;
             if (data.date) dateInput.value = data.date;
             if (data.distTime) distTimeInput.value = data.distTime;
             if (data.course) courseInput.value = data.course;
@@ -440,6 +446,7 @@
 
     function updatePreview() {
         const mountain = document.getElementById('mountain').value;
+        const peakSummary = document.getElementById('peakSummary').value;
         const date = document.getElementById('date').value;
         const distTime = document.getElementById('distTime').value;
         const course = document.getElementById('course').value;
@@ -463,6 +470,7 @@
         const htmlContent = `
             <div style="color: ${color}; font-size: ${size}px; line-height: ${lineHeight}; font-family: sans-serif;">
                 <strong>산행지:</strong> ${mountain}<br>
+                <strong>주봉 높이:</strong> ${peakSummary}<br>
                 <strong>산행일자:</strong> ${date}<br>
                 <strong>산행거리& 시간:</strong> ${distTime}<br>
                 <strong>코스(GPX):</strong> ${course}<br>
@@ -487,6 +495,7 @@
     resetBtn.addEventListener('click', () => {
         if(confirm('작성 중인 텍스트 내용을 지우시겠습니까?\\n(글자 색상, 크기 등 서식 설정은 그대로 유지됩니다.)')) {
             document.getElementById('mountain').value = '';
+            document.getElementById('peakSummary').value = '';
             document.getElementById('date').value = '';
             document.getElementById('distTime').value = '';
             document.getElementById('course').value = '';
