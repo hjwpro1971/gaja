@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>사진 합성 및 자르기 도구</title>
     
-    <!-- Cropper.js CSS (자르기 팝업용) -->
+    <!-- Cropper.js CSS -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
     
     <style>
@@ -58,6 +58,23 @@
         .btn-crop:hover { background-color: #138496; }
         .btn-delete { background-color: #dc3545; }
         .btn-delete:hover { background-color: #c82333; }
+        
+        /* 저장 영역 및 산 이름 입력칸 스타일 */
+        .save-area {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .name-input {
+            width: 150px; /* 산 이름을 적기 편하도록 너비를 넓힘 */
+            padding: 10px;
+            font-size: 16px;
+            text-align: center;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+        }
         .btn-save {
             background-color: #28a745;
             color: white;
@@ -98,17 +115,16 @@
 <body>
 
     <div class="container">
-        <h2>📷 사진 겹치기 및 편집 (16:9)</h2>
+        <h2>📷 블로그 헤더 이미지 편집 (16:9)</h2>
         <p class="instructions">
-            원하는 사진을 캔버스 안에서 선택한 뒤, 아래 버튼을 눌러 <strong>순서 변경</strong>이나 <strong>자르기</strong>를 해보세요.<br>
-            모든 배치가 끝나면 파란색 점선 안의 영역이 16:9 고화질로 저장됩니다.
+            원하는 사진을 캔버스 안에서 선택한 뒤, 아래 버튼을 눌러 순서 변경이나 자르기를 해보세요.<br>
+            모든 배치가 끝나면 산 이름을 입력하고 저장 버튼을 누르세요.
         </p>
         
         <div class="controls">
             <input type="file" id="uploadImages" accept="image/*" multiple>
         </div>
         
-        <!-- 편집 툴바 -->
         <div class="controls">
             <button id="bringFrontBtn" class="btn">🔼 맨 앞으로</button>
             <button id="sendBackBtn" class="btn">🔽 맨 뒤로</button>
@@ -116,17 +132,18 @@
             <button id="deleteBtn" class="btn btn-delete">🗑️ 삭제</button>
         </div>
 
-        <!-- Fabric.js 캔버스 (16:9 비율) -->
         <div class="canvas-wrapper">
             <canvas id="c" width="800" height="450"></canvas>
         </div>
 
-        <div>
-            <button id="saveBtn" class="btn-save">💾 최종 화면 캡처 및 저장</button>
+        <!-- 산 이름 입력 및 저장 버튼 영역 -->
+        <div class="save-area">
+            <input type="text" id="mountainName" class="name-input" value="" placeholder="예: 지리산">
+            <span style="font-size: 16px; font-weight: bold; color: #333;">블러그헤더</span>
+            <button id="saveBtn" class="btn-save">💾 저장</button>
         </div>
     </div>
 
-    <!-- 사진 자르기용 팝업(모달) -->
     <div id="cropModal" class="modal">
         <div class="modal-content">
             <h3>사진 자르기</h3>
@@ -140,18 +157,15 @@
         </div>
     </div>
 
-    <!-- 라이브러리 CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
     
     <script>
-        // 1. 캔버스 초기화
         const canvas = new fabric.Canvas('c', {
             backgroundColor: '#ffffff',
-            preserveObjectStacking: true // 클릭 시 강제로 맨 앞으로 튀어나오는 현상 방지
+            preserveObjectStacking: true
         });
 
-        // 2. 이미지 업로드
         document.getElementById('uploadImages').addEventListener('change', function(e) {
             const files = e.target.files;
             for (let i = 0; i < files.length; i++) {
@@ -169,10 +183,9 @@
                 };
                 reader.readAsDataURL(files[i]);
             }
-            e.target.value = ''; // 초기화
+            e.target.value = ''; 
         });
 
-        // 3. 사진 순서 변경 (앞으로 / 뒤로)
         document.getElementById('bringFrontBtn').addEventListener('click', () => {
             const activeObj = canvas.getActiveObject();
             if (activeObj) canvas.bringToFront(activeObj);
@@ -183,7 +196,6 @@
             if (activeObj) canvas.sendToBack(activeObj);
         });
 
-        // 4. 사진 삭제
         function deleteSelected() {
             const activeObjects = canvas.getActiveObjects();
             if (activeObjects.length) {
@@ -196,25 +208,21 @@
             if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
         });
 
-        // 5. 사진 자르기 기능 (모달 & Cropper.js 연동)
         let cropper = null;
         let activeImageToCrop = null;
         const cropModal = document.getElementById('cropModal');
         const cropTarget = document.getElementById('cropTarget');
 
-        // '자르기' 버튼 클릭 시 팝업 열기
         document.getElementById('cropBtn').addEventListener('click', () => {
             const activeObj = canvas.getActiveObject();
             if (!activeObj || activeObj.type !== 'image') {
                 alert('자르기를 할 사진을 먼저 선택해주세요!');
                 return;
             }
-            
             activeImageToCrop = activeObj;
-            cropTarget.src = activeObj.getSrc(); // 원본 이미지 데이터 가져오기
+            cropTarget.src = activeObj.getSrc(); 
             cropModal.style.display = 'flex';
             
-            // 모달이 열린 후 Cropper 초기화 (비율 제한 없이 자유롭게 자르기)
             if (cropper) cropper.destroy();
             cropper = new Cropper(cropTarget, {
                 viewMode: 1,
@@ -222,46 +230,47 @@
             });
         });
 
-        // 자르기 '취소'
         document.getElementById('cancelCropBtn').addEventListener('click', () => {
             cropModal.style.display = 'none';
             if (cropper) cropper.destroy();
         });
 
-        // 자르기 '적용'
         document.getElementById('applyCropBtn').addEventListener('click', () => {
             if (!cropper) return;
-            
-            // 자른 영역 이미지를 추출 (배경 투명도 유지를 위해 png 사용)
             const croppedCanvas = cropper.getCroppedCanvas();
             const dataUrl = croppedCanvas.toDataURL('image/png');
 
-            // 기존 캔버스에 있던 이미지 소스를 자른 이미지로 교체
             activeImageToCrop.setSrc(dataUrl, function() {
-                // 자르면서 비율이 바뀌었을 수 있으므로 크기 비율 초기화
                 activeImageToCrop.set({ scaleX: 1, scaleY: 1 });
-                // 이미지가 너무 크면 다시 줄여주기
                 if (activeImageToCrop.width > 400) activeImageToCrop.scaleToWidth(400);
-                
                 canvas.renderAll();
                 cropModal.style.display = 'none';
                 cropper.destroy();
             });
         });
 
-        // 6. 최종 16:9 캡처
+        // 최종 16:9 캡처 및 산 이름 지정
         document.getElementById('saveBtn').addEventListener('click', function() {
-            canvas.discardActiveObject(); // 파란색 조절점 숨기기
+            canvas.discardActiveObject(); 
             canvas.renderAll();
 
             const dataURL = canvas.toDataURL({
                 format: 'jpeg',
                 quality: 0.9,
-                multiplier: 2.4 // 1920x1080 출력
+                multiplier: 2.4 
             });
 
+            // 입력칸에서 산 이름을 가져옴
+            let mName = document.getElementById('mountainName').value.trim();
+            
+            // 만약 아무것도 입력하지 않고 저장 버튼을 눌렀을 경우의 기본값 설정
+            if (mName === '') {
+                mName = '이름없음';
+            }
+
             const link = document.createElement('a');
-            link.download = 'collage_16x9_' + new Date().getTime() + '.jpg';
+            // 사용자가 원한 파일명: "산이름블러그헤더.jpg"
+            link.download = mName + '블러그헤더.jpg'; 
             link.href = dataURL;
             link.click();
         });
