@@ -518,7 +518,22 @@ function saveAsJPG() {
   const zoomControl = document.getElementById('zoom-control');
   zoomControl.style.visibility = 'hidden';
 
-  html2canvas(captureEl, { useCORS: true, allowTaint: false }).then(canvas => {
+  // html2canvas가 요소의 실제 스크롤 콘텐츠 크기(네이버 지도 내부 타일 레이어 등)를
+  // 기준으로 확대해서 캡처하면 화면에 보이는 범위 밖까지 잡으려다 일부만 캡처되는
+  // 문제가 생긴다. 화면에 실제로 보이는 크기(getBoundingClientRect)로 강제 고정한다.
+  const captureRect = captureEl.getBoundingClientRect();
+  html2canvas(captureEl, {
+    useCORS: true,
+    allowTaint: false,
+    width: captureRect.width,
+    height: captureRect.height,
+    windowWidth: document.documentElement.clientWidth,
+    windowHeight: document.documentElement.clientHeight,
+    x: captureRect.left,
+    y: captureRect.top,
+    scrollX: 0,
+    scrollY: 0
+  }).then(canvas => {
     zoomControl.style.visibility = 'visible';
 
     canvas.toBlob(blob => {
