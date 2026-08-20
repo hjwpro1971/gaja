@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>산행 요약 텍스트 생성기</title>
+    <style>
+        :root {
+            --primary-color: #2e7d32;
+            --bg-color: #f4f7f6;
+            --border-color: #ccc;
+        }
+
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: var(--bg-color);
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            position: relative; /* 초기화 버튼 위치 기준점 */
+        }
+
+        /* 초기화 버튼 스타일 */
+        .reset-btn-top {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            background-color: #f5f5f5;
+            color: #555;
+            border: 1px solid #ddd;
+            padding: 8px 15px;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .reset-btn-top:hover {
+            background-color: #e0e0e0;
+            color: #d32f2f;
+            border-color: #d32f2f;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 15px;
+            margin-top: 0;
+        }
+
+        .layout {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .input-section, .preview-section {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        .input-group input[type="text"],
+        .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+
+        .input-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .style-controls {
+            display: flex;
+            gap: 15px;
+            background-color: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        
+        .memo-style-controls {
+            display: flex;
+            gap: 15px;
+            background-color: #fff3e0;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            align-items: center;
+            border: 1px solid #ffe0b2;
+        }
+
+        .style-controls input[type="color"],
+        .memo-style-controls input[type="color"] {
+            cursor: pointer;
+            height: 35px;
+            border: none;
+            background: none;
+        }
+
+        .style-controls input[type="number"],
+        .memo-style-controls input[type="number"] {
+            width: 70px;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+
+        .preview-box {
+            border: 2px dashed #4caf50;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #fff;
+            min-height: 200px;
+            margin-bottom: 15px;
+        }
+
+        button.action-btn {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button.action-btn:hover {
+            background-color: #1b5e20;
+        }
+
+        button.action-btn.success {
+            background-color: #004d40;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 초기화 버튼 추가 -->
+    <button id="resetAllBtn" class="reset-btn-top">🔄 전체 초기화</button>
+
+    <h1>산행 요약 텍스트 생성기</h1>
+
+    <div class="layout">
+        <!-- 입력 영역 -->
+        <div class="input-section">
+            
+            <!-- 기본 텍스트 서식 -->
+            <div class="style-controls">
+                <div>
+                    <label style="font-size:0.85rem; font-weight:bold;">기본 글자 색상</label><br>
+                    <input type="color" id="textColor" value="#000000">
+                </div>
+                <div>
+                    <label style="font-size:0.85rem; font-weight:bold;">기본 크기 (px)</label><br>
+                    <input type="number" id="textSize" value="16" min="10" max="50">
+                </div>
+                <div>
+                    <label style="font-size:0.85rem; font-weight:bold;">줄간격</label><br>
+                    <input type="number" id="lineHeight" value="1.6" step="0.1" min="1" max="3">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>산행지</label>
+                <input type="text" id="mountain" placeholder="예: 경기 가평 연인산" value="경기 가평 연인산">
+            </div>
+            <div class="input-group">
+                <label>산행일자</label>
+                <input type="text" id="date" placeholder="예: 2026년7월4일" value="2026년7월4일">
+            </div>
+            <div class="input-group">
+                <label>산행거리 & 시간</label>
+                <input type="text" id="distTime" placeholder="예: 12.86Km & 5시간5분" value="12.86Km & 5시간5분">
+            </div>
+            <div class="input-group">
+                <label>코스(GPX)</label>
+                <input type="text" id="course" placeholder="예: 백둔리2주차장-1주차장-연인산-아재비고개-백둔리 2주차장" value="백둔리2주차장-1주차장-연인산-아재비고개-백둔리 2주차장">
+            </div>
+            
+            <div class="input-group">
+                <label>추가 메모 (줄바꿈 가능)</label>
+                <!-- 메모 전용 서식 -->
+                <div class="memo-style-controls">
+                    <div>
+                        <label style="font-size:0.8rem; font-weight:bold; color:#e65100;">메모 글자 색상</label>
+                        <input type="color" id="memoColor" value="#ff0000">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; font-weight:bold; color:#e65100;">메모 크기 (px)</label>
+                        <input type="number" id="memoSize" value="15" min="10" max="50">
+                    </div>
+                </div>
+                
+                <textarea id="memo" placeholder="기타 코멘트를 입력하세요.">정비가 잘 안 된 하산길, 긴팔,긴바지는 필수
+가평 잣나무 숲길이 너무 좋았던 산행지.  봄 철쭉도 유명함</textarea>
+            </div>
+        </div>
+
+        <!-- 미리보기 및 출력 영역 -->
+        <div class="preview-section">
+            <div style="margin-bottom: 5px; font-weight: bold; color: #555;">미리보기 (블로그용 서식 적용됨)</div>
+            <div id="previewBox" class="preview-box">
+                <!-- 자바스크립트를 통해 실시간으로 내용이 업데이트 됩니다 -->
+            </div>
+            <button id="copyBtn" class="action-btn">복사하기 (블로그/카페 붙여넣기)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // DOM 요소 가져오기
+    const inputs = ['mountain', 'date', 'distTime', 'course', 'memo'];
+    const styles = ['textColor', 'textSize', 'lineHeight', 'memoColor', 'memoSize']; 
+    const previewBox = document.getElementById('previewBox');
+    const copyBtn = document.getElementById('copyBtn');
+    const resetBtn = document.getElementById('resetAllBtn'); // 초기화 버튼
+
+    // 실시간 업데이트 함수
+    function updatePreview() {
+        const mountain = document.getElementById('mountain').value;
+        const date = document.getElementById('date').value;
+        const distTime = document.getElementById('distTime').value;
+        const course = document.getElementById('course').value;
+        const memo = document.getElementById('memo').value.replace(/\n/g, '<br>');
+
+        const color = document.getElementById('textColor').value;
+        const size = document.getElementById('textSize').value;
+        const lineHeight = document.getElementById('lineHeight').value;
+        
+        const memoColor = document.getElementById('memoColor').value;
+        const memoSize = document.getElementById('memoSize').value;
+
+        // 적용할 HTML 서식 
+        const htmlContent = `
+            <div style="color: ${color}; font-size: ${size}px; line-height: ${lineHeight}; font-family: sans-serif;">
+                <strong>산행지:</strong> ${mountain}<br>
+                <strong>산행일자:</strong> ${date}<br>
+                <strong>산행거리& 시간:</strong> ${distTime}<br>
+                <strong>코스(GPX):</strong> ${course}<br>
+                <br>
+                <div style="color: ${memoColor}; font-size: ${memoSize}px;">
+                    ${memo}
+                </div>
+            </div>
+        `;
+
+        previewBox.innerHTML = htmlContent;
+    }
+
+    // 입력 이벤트 등록
+    [...inputs, ...styles].forEach(id => {
+        document.getElementById(id).addEventListener('input', updatePreview);
+    });
+
+    // 초기 실행
+    updatePreview();
+
+    // 초기화 버튼 클릭 이벤트
+    resetBtn.addEventListener('click', () => {
+        if(confirm('작성 중인 모든 내용을 지우고 초기화하시겠습니까?')) {
+            // 내용 비우기
+            document.getElementById('mountain').value = '';
+            document.getElementById('date').value = '';
+            document.getElementById('distTime').value = '';
+            document.getElementById('course').value = '';
+            document.getElementById('memo').value = '';
+            
+            // 서식 기본값 복구
+            document.getElementById('textColor').value = '#000000';
+            document.getElementById('textSize').value = '16';
+            document.getElementById('lineHeight').value = '1.6';
+            document.getElementById('memoColor').value = '#ff0000';
+            document.getElementById('memoSize').value = '15';
+            
+            // 미리보기 업데이트
+            updatePreview();
+        }
+    });
+
+    // 팝업 알림 대신 버튼 텍스트 변경
+    copyBtn.addEventListener('click', () => {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(previewBox);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        try {
+            document.execCommand('copy');
+            // 복사 성공 시 버튼 텍스트와 스타일 임시 변경
+            copyBtn.innerText = '✅ 복사 완료! (블로그에 Ctrl+V 하세요)';
+            copyBtn.classList.add('success');
+            
+            // 2초 뒤 원래대로 복구
+            setTimeout(() => {
+                copyBtn.innerText = '복사하기 (블로그/카페 붙여넣기)';
+                copyBtn.classList.remove('success');
+            }, 2000);
+            
+        } catch (err) {
+            // 실패 시 
+            copyBtn.innerText = '❌ 복사 실패 (직접 드래그해서 복사해주세요)';
+            setTimeout(() => {
+                copyBtn.innerText = '복사하기 (블로그/카페 붙여넣기)';
+            }, 2000);
+        }
+        
+        selection.removeAllRanges(); 
+    });
+</script>
+
+</body>
+</html>
