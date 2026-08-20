@@ -501,142 +501,6 @@ function copyNaverMapLink() {
   });
 }
 
-function projectToOffset(latlng) {
-  const proj = map.getProjection();
-  return proj.fromCoordToOffset(latlng);
-}
-
-function drawOverlaysOnCanvas(ctx, mapEl, captureRootEl) {
-  if (!loadedPoints || loadedPoints.length === 0) return;
-
-  // projectToOffset(fromCoordToOffset)은 지도 컨테이너(#map) 좌상단을 원점(0,0)으로 하는
-  // 픽셀 오프셋을 반환한다. 캡처 대상이 #map이 아닌 상위 컨테이너(예: .main-pane)일 경우,
-  // #map이 그 컨테이너 안에서 떨어진 만큼(padding 등)을 더해줘야 캡처 좌표계와 맞는다.
-  const mapRect = mapEl.getBoundingClientRect();
-  const captureRootRect = captureRootEl.getBoundingClientRect();
-  const mapOffsetInCaptureRoot = {
-    x: mapRect.left - captureRootRect.left,
-    y: mapRect.top - captureRootRect.top
-  };
-
-  function toCanvasXY(lat, lon) {
-    const offset = projectToOffset(new naver.maps.LatLng(lat, lon));
-    return {
-      x: offset.x + mapOffsetInCaptureRoot.x,
-      y: offset.y + mapOffsetInCaptureRoot.y
-    };
-  }
-
-  // 경로선
-  if (currentPolyline) {
-    const color = document.getElementById('lineColor').value;
-    const weight = parseInt(document.getElementById('lineWidth').value, 10) || 4;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = weight;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.9;
-    ctx.beginPath();
-    loadedPoints.forEach((p, i) => {
-      const { x, y } = toCanvasXY(p.lat, p.lon);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // 화살표
-  if (document.getElementById('showArrows').checked) {
-    const arrowColor = document.getElementById('arrowColor').value;
-    const intervalKm = parseFloat(document.getElementById('arrowIntervalKm').value) || 1;
-    let distSinceLast = 0;
-    for (let i = 1; i < loadedPoints.length; i++) {
-      distSinceLast += haversineKm(loadedPoints[i - 1], loadedPoints[i]);
-      if (distSinceLast >= intervalKm) {
-        const bearing = bearingDeg(loadedPoints[i - 1], loadedPoints[i]);
-        const { x, y } = toCanvasXY(loadedPoints[i].lat, loadedPoints[i].lon);
-        drawArrowOnCanvas(ctx, x, y, bearing, arrowColor);
-        distSinceLast = 0;
-      }
-    }
-  }
-
-  // 들머리/날머리/최고지점 마커
-  if (document.getElementById('showMarkers').checked) {
-    const start = loadedPoints[0];
-    const end = loadedPoints[loadedPoints.length - 1];
-    drawDotOnCanvas(ctx, toCanvasXY(start.lat, start.lon), '#2b6cb0', '들머리');
-    drawDotOnCanvas(ctx, toCanvasXY(end.lat, end.lon), '#dd6b20', '날머리');
-    const withEle = loadedPoints.filter(p => p.ele !== null);
-    if (withEle.length) {
-      const peak = withEle.reduce((a, b) => (b.ele > a.ele ? b : a));
-      drawDotOnCanvas(ctx, toCanvasXY(peak.lat, peak.lon), '#e53e3e', null);
-    }
-  }
-}
-
-function drawArrowOnCanvas(ctx, x, y, bearingDegVal, color) {
-  const rad = (bearingDegVal * Math.PI) / 180;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rad);
-
-  // 꼬리(자루)
-  ctx.beginPath();
-  ctx.moveTo(0, 8);
-  ctx.lineTo(0, 2.5);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  // 머리(삼각형)
-  ctx.beginPath();
-  ctx.moveTo(0, -11);
-  ctx.lineTo(7, 5.5);
-  ctx.lineTo(0, 2.5);
-  ctx.lineTo(-7, 5.5);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.2;
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawDotOnCanvas(ctx, pos, color, label) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = color;
-  ctx.stroke();
-  ctx.restore();
-
-  if (label) {
-    ctx.save();
-    ctx.font = 'bold 12px "Noto Sans KR", "Malgun Gothic", sans-serif';
-    const textWidth = ctx.measureText(label).width;
-    const padX = 6, padY = 4;
-    const boxW = textWidth + padX * 2;
-    const boxH = 16 + padY;
-    const boxX = pos.x - boxW / 2;
-    const boxY = pos.y + 14;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(boxX, boxY, boxW, boxH, 4) : ctx.rect(boxX, boxY, boxW, boxH);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, pos.x, boxY + boxH / 2);
-    ctx.restore();
-  }
-}
 
 function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
@@ -644,42 +508,18 @@ function saveAsJPG() {
   saveWarnBox.style.display = 'none';
   saveInfoBox.style.display = 'none';
 
-  const mapEl = document.getElementById('map');
-  // 지도 화면 오른쪽 프레임 전체(main-pane)를 캡처 대상으로 삼는다.
-  // #map만 캡처하면 뷰포트 크기 계산에 따라 지도 일부가 잘려 저장되는
-  // 문제가 있어, 확대/축소 버튼까지 포함한 프레임 전체를 그대로 캡처한다.
+  // 지도 화면 오른쪽 프레임(main-pane)에 실제로 보이는 그대로 캡처한다.
+  // 예전에는 html2canvas가 Naver Maps 경로선/마커를 못 잡는 문제 때문에
+  // 캔버스에 경로를 다시 그려 덧씌우는 방식을 썼으나, 그 방식이 오히려
+  // 좌표 계산 오차로 마커 중복·위치 어긋남을 반복적으로 일으켰다.
+  // html2canvas가 실제로 마커/경로선을 캡처해내므로 화면 그대로 캡처하고,
+  // 확대/축소 버튼만 캡처 직전 숨겼다가 캡처 후 복원한다.
   const captureEl = document.getElementById('main-pane');
   const zoomControl = document.getElementById('zoom-control');
-
-  // 실제 Naver Maps 마커/폴리라인(DOM 오버레이)이 html2canvas에 부분적으로
-  // 캡처되면, 캔버스에 별도로 그리는 drawOverlaysOnCanvas와 겹쳐 마커가
-  // 중복되거나 위치가 어긋나 보인다. 캡처 직전 실제 오버레이를 지도에서
-  // 잠시 떼어내고, 확대/축소 버튼도 숨긴 뒤 캡처가 끝나면 모두 되돌린다.
-  if (currentPolyline) currentPolyline.setMap(null);
-  currentMarkers.forEach(m => m.setMap(null));
   zoomControl.style.visibility = 'hidden';
 
-  function restoreMapLayers() {
-    if (currentPolyline) currentPolyline.setMap(map);
-    currentMarkers.forEach(m => m.setMap(map));
-    zoomControl.style.visibility = 'visible';
-  }
-
   html2canvas(captureEl, { useCORS: true, allowTaint: false }).then(canvas => {
-    restoreMapLayers();
-    try {
-      const ctx = canvas.getContext('2d');
-      const rect = captureEl.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      ctx.save();
-      ctx.scale(scaleX, scaleY);
-      drawOverlaysOnCanvas(ctx, mapEl, captureEl);
-      ctx.restore();
-    } catch (err) {
-      saveWarnBox.style.display = 'block';
-      saveWarnBox.textContent = '⚠ 경로 오버레이 그리기 실패: ' + err.message;
-    }
+    zoomControl.style.visibility = 'visible';
 
     canvas.toBlob(blob => {
       if (!blob) {
@@ -699,7 +539,7 @@ function saveAsJPG() {
       saveInfoBox.textContent = 'ℹ JPG 파일이 다운로드되었습니다.';
     }, 'image/jpeg', 0.92);
   }).catch(err => {
-    restoreMapLayers();
+    zoomControl.style.visibility = 'visible';
     saveWarnBox.style.display = 'block';
     saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message + ' (네이버지도 타일이 CORS를 차단했을 수 있습니다.)';
   });
