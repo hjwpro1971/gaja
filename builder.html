@@ -1003,6 +1003,20 @@ function markGuideGeneratedInDraft() {
 function clearDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
   localStorage.removeItem(GENERATED_FLAG_KEY);
+  clearSummaryDraft();
+}
+
+// 산행요약 생성(hiking_summary.html)도 draft를 localStorage에 저장하는데
+// (gaja_draft_* 키), 서로 다른 iframe이라 직접 DOM을 건드릴 수 없다. 같은
+// origin(GitHub Pages)이라 localStorage는 공유되므로, [초기화]를 누르면
+// 그 draft 키를 여기서 직접 지우고 아직 전달되지 않은 handoff 대기값도
+// 함께 지운다. hiking_summary.html이 이미 열려 있는 iframe이라면 다음에
+// 그 화면을 다시 로드할 때(메뉴 재방문 등) 빈 상태로 나타난다.
+const SUMMARY_INPUT_IDS = ['mountain', 'peakSummary', 'date', 'distTime', 'course', 'memo'];
+
+function clearSummaryDraft() {
+  SUMMARY_INPUT_IDS.forEach(id => localStorage.removeItem('gaja_draft_' + id));
+  localStorage.removeItem(SUMMARY_HANDOFF_KEY);
 }
 
 function restoreDraftIfAny() {
