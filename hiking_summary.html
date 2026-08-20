@@ -318,6 +318,34 @@
         inputs.forEach(id => localStorage.removeItem('gaja_draft_' + id));
     }
 
+    // GPX 경로 생성 화면(gpx-map.html)에서 계산한 총거리/소요시간/산행날짜를
+    // 넘겨받아 자동으로 채운다. 서로 다른 iframe에서 로드되는 별개 페이지라
+    // localStorage를 매개로 전달받으며, 한 번 적용한 뒤에는 지워서 다음에
+    // 이 페이지를 다시 열었을 때 같은 값이 중복 적용되지 않게 한다.
+    const GPX_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
+
+    function applyGpxHandoffIfAny() {
+        let raw;
+        try {
+            raw = localStorage.getItem(GPX_HANDOFF_KEY);
+        } catch (e) {
+            return;
+        }
+        if (!raw) return;
+        try {
+            const data = JSON.parse(raw);
+            if (data.mountain) {
+                mountainInput.value = data.mountain;
+                autoFormatMountain();
+            }
+            if (data.date) dateInput.value = data.date;
+            if (data.distTime) distTimeInput.value = data.distTime;
+            localStorage.removeItem(GPX_HANDOFF_KEY);
+        } catch (e) {
+            // handoff 데이터가 깨져 있으면 무시
+        }
+    }
+
     // 산행지 자동 변환
     function autoFormatMountain() {
         let val = mountainInput.value.trim();
@@ -451,6 +479,7 @@
 
     loadSavedStyles();
     loadDraftText();
+    applyGpxHandoffIfAny();
     updatePreview();
 
     resetBtn.addEventListener('click', () => {
