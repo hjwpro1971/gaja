@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>가자(GAJA) - 작업 대시보드</title>
+    <style>
+        /* 기본 여백 제거 및 폰트 설정 */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            display: flex;
+            height: 100vh; /* 화면 전체 높이 사용 */
+            overflow: hidden;
+            background-color: #f4f7f6;
+        }
+
+        /* 좌측 사이드바 디자인 */
+        .sidebar {
+            width: 260px;
+            background-color: #2c3e50; /* 짙은 네이비 색상 */
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        .sidebar h2 {
+            text-align: center;
+            margin-top: 30px;
+            margin-bottom: 30px;
+            font-size: 1.5rem;
+            color: #fff;
+            letter-spacing: 1px;
+        }
+
+        /* 메뉴 버튼 스타일 */
+        .nav-btn {
+            background: none;
+            border: none;
+            color: #bdc3c7;
+            padding: 18px 25px;
+            text-align: left;
+            font-size: 1.05rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 5px solid transparent; /* 선택 표시를 위한 투명 테두리 */
+        }
+
+        .nav-btn:hover {
+            background-color: #34495e;
+            color: #fff;
+        }
+
+        /* 선택된(활성화된) 버튼 스타일 */
+        .nav-btn.active {
+            background-color: #34495e;
+            color: #ffffff;
+            border-left: 5px solid #4caf50; /* 초록색 포인트 */
+        }
+
+        /* 우측 메인 콘텐츠 영역 (아이프레임 컨테이너) */
+        .content {
+            flex: 1; /* 남은 공간 모두 차지 */
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+        }
+
+        /* 아이프레임 (다른 웹페이지를 띄우는 창) */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none; /* 테두리 제거 */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 좌측 메뉴바 -->
+    <div class="sidebar">
+        <h2>GAJA TOOLS</h2>
+        <!-- 버튼 클릭 시 loadPage 함수 실행. 첫 번째 버튼은 기본 활성화(active) 상태 -->
+        <button class="nav-btn active" onclick="loadPage('https://hjwpro1971.github.io/gaja/bloghead.html', this)">블로그헤더만들기</button>
+        <button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/guide_prompt.html', this)">산행가이드표지만들기</button>
+    </div>
+
+    <!-- 우측 콘텐츠 화면 -->
+    <div class="content">
+        <!-- 초기 화면으로 '블로그헤더만들기' 페이지를 띄워둠 -->
+        <iframe id="mainFrame" src="https://hjwpro1971.github.io/gaja/bloghead.html"></iframe>
+    </div>
+
+    <!-- 스크립트: 버튼 클릭 시 아이프레임 주소 변경 및 버튼 스타일 변경 -->
+    <script>
+        function loadPage(url, buttonElement) {
+            // 1. 우측 iframe의 주소(src)를 클릭한 버튼의 url로 변경
+            document.getElementById('mainFrame').src = url;
+
+            // 2. 모든 버튼에서 'active' 클래스 제거 (초기화)
+            var buttons = document.querySelectorAll('.nav-btn');
+            buttons.forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+
+            // 3. 클릭된 현재 버튼에만 'active' 클래스 추가 (선택 표시)
+            buttonElement.classList.add('active');
+        }
+    </script>
+
+</body>
+</html>
