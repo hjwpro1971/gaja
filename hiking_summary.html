@@ -27,7 +27,7 @@
             padding: 30px;
             border-radius: 12px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            position: relative; /* 초기화 버튼 위치 기준점 */
+            position: relative;
         }
 
         /* 초기화 버튼 스타일 */
@@ -168,8 +168,7 @@
 <body>
 
 <div class="container">
-    <!-- 초기화 버튼 추가 -->
-    <button id="resetAllBtn" class="reset-btn-top">🔄 전체 초기화</button>
+    <button id="resetAllBtn" class="reset-btn-top">🔄 텍스트 초기화</button>
 
     <h1>산행 요약 텍스트 생성기</h1>
 
@@ -181,7 +180,7 @@
             <div class="style-controls">
                 <div>
                     <label style="font-size:0.85rem; font-weight:bold;">기본 글자 색상</label><br>
-                    <input type="color" id="textColor" value="#000000">
+                    <input type="color" id="textColor" value="#0d0c0c">
                 </div>
                 <div>
                     <label style="font-size:0.85rem; font-weight:bold;">기본 크기 (px)</label><br>
@@ -194,61 +193,202 @@
             </div>
 
             <div class="input-group">
-                <label>산행지</label>
-                <input type="text" id="mountain" placeholder="예: 경기 가평 연인산" value="경기 가평 연인산">
+                <label>산행지 (산 이름만 입력해도 지역 자동 완성)</label>
+                <input type="text" id="mountain" placeholder="예: 연인산" value="">
             </div>
             <div class="input-group">
-                <label>산행일자</label>
-                <input type="text" id="date" placeholder="예: 2026년7월4일" value="2026년7월4일">
+                <label>산행일자 (예: 26.4.5 자동변환)</label>
+                <input type="text" id="date" placeholder="예: 26.4.5" value="">
             </div>
             <div class="input-group">
-                <label>산행거리 & 시간</label>
-                <input type="text" id="distTime" placeholder="예: 12.86Km & 5시간5분" value="12.86Km & 5시간5분">
+                <label>산행거리 & 시간 (예: 12.86 5.05 자동변환)</label>
+                <input type="text" id="distTime" placeholder="예: 12.8 5.3" value="">
             </div>
             <div class="input-group">
-                <label>코스(GPX)</label>
-                <input type="text" id="course" placeholder="예: 백둔리2주차장-1주차장-연인산-아재비고개-백둔리 2주차장" value="백둔리2주차장-1주차장-연인산-아재비고개-백둔리 2주차장">
+                <label>코스(GPX) (쉼표나 하이픈으로 입력 시 화살표로 자동변환)</label>
+                <input type="text" id="course" placeholder="예: 백무동, 소지봉, 장터목" value="">
             </div>
             
             <div class="input-group">
                 <label>추가 메모 (줄바꿈 가능)</label>
-                <!-- 메모 전용 서식 -->
                 <div class="memo-style-controls">
                     <div>
                         <label style="font-size:0.8rem; font-weight:bold; color:#e65100;">메모 글자 색상</label>
-                        <input type="color" id="memoColor" value="#ff0000">
+                        <input type="color" id="memoColor" value="#1b1e79">
                     </div>
                     <div>
                         <label style="font-size:0.8rem; font-weight:bold; color:#e65100;">메모 크기 (px)</label>
                         <input type="number" id="memoSize" value="15" min="10" max="50">
                     </div>
                 </div>
-                
-                <textarea id="memo" placeholder="기타 코멘트를 입력하세요.">정비가 잘 안 된 하산길, 긴팔,긴바지는 필수
-가평 잣나무 숲길이 너무 좋았던 산행지.  봄 철쭉도 유명함</textarea>
+                <textarea id="memo" placeholder="기타 코멘트를 입력하세요."></textarea>
             </div>
         </div>
 
         <!-- 미리보기 및 출력 영역 -->
         <div class="preview-section">
             <div style="margin-bottom: 5px; font-weight: bold; color: #555;">미리보기 (블로그용 서식 적용됨)</div>
-            <div id="previewBox" class="preview-box">
-                <!-- 자바스크립트를 통해 실시간으로 내용이 업데이트 됩니다 -->
-            </div>
+            <div id="previewBox" class="preview-box"></div>
             <button id="copyBtn" class="action-btn">복사하기 (블로그/카페 붙여넣기)</button>
         </div>
     </div>
 </div>
 
 <script>
-    // DOM 요소 가져오기
     const inputs = ['mountain', 'date', 'distTime', 'course', 'memo'];
     const styles = ['textColor', 'textSize', 'lineHeight', 'memoColor', 'memoSize']; 
     const previewBox = document.getElementById('previewBox');
     const copyBtn = document.getElementById('copyBtn');
-    const resetBtn = document.getElementById('resetAllBtn'); // 초기화 버튼
+    const resetBtn = document.getElementById('resetAllBtn');
+    
+    // 개별 입력창 요소들
+    const mountainInput = document.getElementById('mountain');
+    const dateInput = document.getElementById('date');
+    const distTimeInput = document.getElementById('distTime');
+    const courseInput = document.getElementById('course');
 
-    // 실시간 업데이트 함수
+    // === 산행지 지역 자동완성 사전 ===
+    const mountainDB = {
+        // [서울/경기/인천]
+        "북한산": "서울 강북", "도봉산": "서울 도봉", "관악산": "서울 관악", "수락산": "서울 노원", "불암산": "서울 노원", "청계산": "서울 서초", "삼성산": "서울 관악",
+        "명지산": "경기 가평", "화악산": "경기 가평", "연인산": "경기 가평", "운악산": "경기 가평", "유명산": "경기 가평", "호명산": "경기 가평",
+        "축령산": "경기 남양주", "천마산": "경기 남양주", "예봉산": "경기 남양주", "용문산": "경기 양평", "유명산": "경기 양평",
+        "백운산": "경기 포천", "명성산": "경기 포천", "소요산": "경기 동두천", "감악산": "경기 파주", "광교산": "경기 수원", "수리산": "경기 군포",
+        "남한산": "경기 광주", "검단산": "경기 하남", "마니산": "인천 강화", "계양산": "인천 계양",
+
+        // [강원]
+        "설악산": "강원 속초", "오대산": "강원 평창", "태백산": "강원 태백", "치악산": "강원 원주", "가리왕산": "강원 정선", "민둥산": "강원 정선",
+        "방태산": "강원 인제", "점봉산": "강원 인제", "대암산": "강원 양구", "삼악산": "강원 춘천", "오봉산": "강원 춘천", "가리산": "강원 홍천",
+        "팔봉산": "강원 홍천", "계방산": "강원 평창", "발왕산": "강원 평창", "두타산": "강원 동해", "청옥산": "강원 동해", "응봉산": "강원 삼척",
+        "함백산": "강원 태백", "노추산": "강원 강릉", "백덕산": "강원 영월", "태기산": "강원 횡성",
+
+        // [충청/대전]
+        "계룡산": "충남 공주", "속리산": "충북 보은", "월악산": "충북 제천", "소백산": "충북 단양", "금수산": "충북 제천", "도락산": "충북 단양",
+        "민주지산": "충북 영동", "천태산": "충북 영동", "구병산": "충북 보은", "희양산": "충북 괴산", "대둔산": "충남 금산", "칠갑산": "충남 청양",
+        "광덕산": "충남 천안", "용봉산": "충남 홍성", "오서산": "충남 보령", "가야산": "충남 예산", "식장산": "대전 동구", "보문산": "대전 중구",
+
+        // [경상/대구/부산/울산]
+        "지리산": "경남 산청", "황매산": "경남 합천", "주왕산": "경북 청송", "금오산": "경북 구미", "팔공산": "대구 동구", "비슬산": "대구 달성",
+        "내연산": "경북 포항", "주흘산": "경북 문경", "조령산": "경북 문경", "대야산": "경북 문경", "청량산": "경북 봉화", "일월산": "경북 영양",
+        "남산": "경북 경주", "성인봉": "경북 울릉", "가지산": "울산 울주", "신불산": "울산 울주", "간월산": "울산 울주", "영축산": "경남 양산",
+        "천성산": "경남 양산", "재약산": "경남 밀양", "천황산": "경남 밀양", "운문산": "경북 청도", "금정산": "부산 금정", "장산": "부산 해운대",
+        "신어산": "경남 김해", "연화산": "경남 고성", "무학산": "경남 창원", "화왕산": "경남 창녕", "미륵산": "경남 통영", "금산": "경남 남해",
+
+        // [전라/광주]
+        "무등산": "광주 북구", "내장산": "전북 정읍", "덕유산": "전북 무주", "적상산": "전북 무주", "마이산": "전북 진안", "운장산": "전북 진안",
+        "장안산": "전북 장수", "모악산": "전북 완주", "선운산": "전북 고창", "변산": "전북 부안", "강천산": "전북 순창", "월출산": "전남 영암",
+        "조계산": "전남 순천", "두륜산": "전남 해남", "달마산": "전남 해남", "천관산": "전남 장흥", "제암산": "전남 장흥", "팔영산": "전남 고흥",
+        "백암산": "전남 장성", "방장산": "전남 장성", "추월산": "전남 담양", "백운산": "전남 광양",
+
+        // [제주]
+        "한라산": "제주"
+    };
+
+    // 저장된 스타일 불러오기
+    function loadSavedStyles() {
+        const defaultValues = {
+            textColor: '#0d0c0c',
+            textSize: '16',
+            lineHeight: '1.6',
+            memoColor: '#1b1e79', 
+            memoSize: '15'
+        };
+        styles.forEach(id => {
+            const savedValue = localStorage.getItem('gaja_' + id);
+            document.getElementById(id).value = savedValue ? savedValue : defaultValues[id];
+        });
+    }
+
+    // 산행지 자동 변환
+    function autoFormatMountain() {
+        let val = mountainInput.value.trim();
+        if (!val) return;
+
+        for (let mnt in mountainDB) {
+            if (val.includes(mnt)) {
+                let region = mountainDB[mnt];
+                let regionFirstWord = region.split(' ')[0];
+                if (!val.includes(regionFirstWord)) {
+                    mountainInput.value = `${region} ${val}`;
+                    updatePreview();
+                }
+                break;
+            }
+        }
+    }
+
+    // 날짜 자동 변환
+    function autoFormatDate() {
+        let val = dateInput.value.replace(/\s+/g, '').replace(/[.\/\-]$/, ''); 
+        const regex = /^(\d{2}|\d{4})[.\/\-](\d{1,2})[.\/\-](\d{1,2})$/;
+        const match = val.match(regex);
+
+        if (match) {
+            let year = parseInt(match[1], 10);
+            let month = parseInt(match[2], 10);
+            let day = parseInt(match[3], 10);
+            if (year < 100) year += 2000;
+
+            const dateObj = new Date(year, month - 1, day);
+            if (dateObj.getFullYear() === year && dateObj.getMonth() === month - 1 && dateObj.getDate() === day) {
+                const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+                dateInput.value = `${year}년 ${month}월 ${day}일 ${weekdays[dateObj.getDay()]}요일`;
+                updatePreview(); 
+            }
+        }
+    }
+
+    // 거리/시간 자동 변환
+    function autoFormatDistTime() {
+        let val = distTimeInput.value.trim();
+        const parts = val.split(/\s+/);
+        
+        if (parts.length === 2) {
+            let distPart = parts[0];
+            let timePart = parts[1];
+
+            if (!isNaN(distPart)) {
+                let hours = timePart;
+                let minutes = "";
+                if (timePart.includes('.')) {
+                    const timeSplit = timePart.split('.');
+                    hours = timeSplit[0];
+                    minutes = timeSplit[1];
+                }
+
+                if (!isNaN(hours)) {
+                    let formatted = `${distPart}Km & ${hours}시간`;
+                    if (minutes && !isNaN(minutes)) {
+                        formatted += ` ${parseInt(minutes, 10)}분`;
+                    }
+                    distTimeInput.value = formatted;
+                    updatePreview();
+                }
+            }
+        }
+    }
+
+    // 코스 화살표 자동 변환 (쉼표, 하이픈 등을 화살표로 치환)
+    function autoFormatCourse() {
+        let val = courseInput.value.trim();
+        if (!val) return;
+
+        // 쉼표(,) 하이픈(-) 기존 화살표(->, ➔) 등을 기준으로 문자를 나눈 뒤 화살표 기호로 다시 결합
+        // 빈 항목들은 filter(Boolean)으로 자동 제거됨
+        const formattedVal = val.split(/\s*,\s*|\s*-\s*|\s*➔\s*|\s*->\s*/).filter(Boolean).join(' ➔ ');
+        
+        if (val !== formattedVal) {
+            courseInput.value = formattedVal;
+            updatePreview();
+        }
+    }
+
+    // blur(입력창 빠져나갈 때) 이벤트 등록
+    mountainInput.addEventListener('blur', autoFormatMountain);
+    dateInput.addEventListener('blur', autoFormatDate);
+    distTimeInput.addEventListener('blur', autoFormatDistTime);
+    courseInput.addEventListener('blur', autoFormatCourse);
+
     function updatePreview() {
         const mountain = document.getElementById('mountain').value;
         const date = document.getElementById('date').value;
@@ -259,11 +399,16 @@
         const color = document.getElementById('textColor').value;
         const size = document.getElementById('textSize').value;
         const lineHeight = document.getElementById('lineHeight').value;
-        
         const memoColor = document.getElementById('memoColor').value;
         const memoSize = document.getElementById('memoSize').value;
 
-        // 적용할 HTML 서식 
+        // 스타일 로컬 스토리지에 저장
+        localStorage.setItem('gaja_textColor', color);
+        localStorage.setItem('gaja_textSize', size);
+        localStorage.setItem('gaja_lineHeight', lineHeight);
+        localStorage.setItem('gaja_memoColor', memoColor);
+        localStorage.setItem('gaja_memoSize', memoSize);
+
         const htmlContent = `
             <div style="color: ${color}; font-size: ${size}px; line-height: ${lineHeight}; font-family: sans-serif;">
                 <strong>산행지:</strong> ${mountain}<br>
@@ -276,41 +421,27 @@
                 </div>
             </div>
         `;
-
         previewBox.innerHTML = htmlContent;
     }
 
-    // 입력 이벤트 등록
     [...inputs, ...styles].forEach(id => {
         document.getElementById(id).addEventListener('input', updatePreview);
     });
 
-    // 초기 실행
+    loadSavedStyles();
     updatePreview();
 
-    // 초기화 버튼 클릭 이벤트
     resetBtn.addEventListener('click', () => {
-        if(confirm('작성 중인 모든 내용을 지우고 초기화하시겠습니까?')) {
-            // 내용 비우기
+        if(confirm('작성 중인 텍스트 내용을 지우시겠습니까?\\n(글자 색상, 크기 등 서식 설정은 그대로 유지됩니다.)')) {
             document.getElementById('mountain').value = '';
             document.getElementById('date').value = '';
             document.getElementById('distTime').value = '';
             document.getElementById('course').value = '';
             document.getElementById('memo').value = '';
-            
-            // 서식 기본값 복구
-            document.getElementById('textColor').value = '#000000';
-            document.getElementById('textSize').value = '16';
-            document.getElementById('lineHeight').value = '1.6';
-            document.getElementById('memoColor').value = '#ff0000';
-            document.getElementById('memoSize').value = '15';
-            
-            // 미리보기 업데이트
             updatePreview();
         }
     });
 
-    // 팝업 알림 대신 버튼 텍스트 변경
     copyBtn.addEventListener('click', () => {
         const selection = window.getSelection();
         const range = document.createRange();
@@ -320,24 +451,18 @@
 
         try {
             document.execCommand('copy');
-            // 복사 성공 시 버튼 텍스트와 스타일 임시 변경
             copyBtn.innerText = '✅ 복사 완료! (블로그에 Ctrl+V 하세요)';
             copyBtn.classList.add('success');
-            
-            // 2초 뒤 원래대로 복구
             setTimeout(() => {
                 copyBtn.innerText = '복사하기 (블로그/카페 붙여넣기)';
                 copyBtn.classList.remove('success');
             }, 2000);
-            
         } catch (err) {
-            // 실패 시 
             copyBtn.innerText = '❌ 복사 실패 (직접 드래그해서 복사해주세요)';
             setTimeout(() => {
                 copyBtn.innerText = '복사하기 (블로그/카페 붙여넣기)';
             }, 2000);
         }
-        
         selection.removeAllRanges(); 
     });
 </script>
