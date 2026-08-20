@@ -93,7 +93,7 @@
     <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled>JPG로 저장</button>
     <div class="warn-box" id="save-warn-box"></div>
     <div class="info-box" id="save-info-box"></div>
-    <p class="map-note">저장 시 현재 화면에 보이는 지도 범위/확대 상태 그대로 캡처됩니다. 원하는 구도로 맞춘 뒤 저장하세요.</p>
+    <p class="map-note">저장 버튼을 누르면 브라우저 화면 공유 선택창이 뜹니다 — "이 탭"을 선택하면 현재 화면에 보이는 지도 그대로 캡처됩니다. 원하는 구도로 맞춘 뒤 저장하세요.</p>
 
     <div class="action-bar" style="margin-top:12px;">
       <button class="btn" id="btn-open-nmap" type="button" disabled style="flex:1;">📱 네이버지도 앱에서 보기</button>
@@ -114,7 +114,6 @@
 </div>
 
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
-<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <script>
 let map = null;
 let currentPolyline = null;
@@ -502,87 +501,71 @@ function copyNaverMapLink() {
 }
 
 
-function projectToOffset(latlng) {
-  const proj = map.getProjection();
-  return proj.fromCoordToOffset(latlng);
-}
-
-// html2canvas는 Naver Maps의 경로선(Polyline, 별도 렌더링 레이어)을 캡처하지
-// 못하므로, 캡처된 캔버스 위에 경로선만 좌표를 다시 계산해서 그려 넣는다.
-// 마커/화살표(icon.content로 만든 HTML 오버레이)는 html2canvas가 실제로
-// 캡처해내므로 다시 그리지 않는다.
-function drawPolylineOnCanvas(ctx) {
-  if (!currentPolyline || !loadedPoints || loadedPoints.length === 0) return;
-
-  // fromCoordToOffset은 지도 컨테이너(#map) 좌상단을 원점(0,0)으로 하는 픽셀
-  // 오프셋을 반환한다. 캡처 대상이 #map 자체이므로 별도 오프셋 보정이 필요 없다.
-  const color = document.getElementById('lineColor').value;
-  const weight = parseInt(document.getElementById('lineWidth').value, 10) || 4;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = weight;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.globalAlpha = 0.9;
-  ctx.beginPath();
-  loadedPoints.forEach((p, i) => {
-    const offset = projectToOffset(new naver.maps.LatLng(p.lat, p.lon));
-    const x = offset.x;
-    const y = offset.y;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-}
-
-function saveAsJPG() {
+// 화면 캡처(getDisplayMedia)로 실제 브라우저가 합성한 픽셀을 그대로 가져온다.
+// html2canvas처럼 DOM/지도 타일/경로선을 각각 따로 다시 그려서 근사하는 방식이
+// 아니라, 사용자 눈에 보이는 화면 자체를 찍기 때문에 좌표 어긋남이 구조적으로
+// 발생하지 않는다. 사용자가 "이 탭"을 공유로 선택해야 동작한다.
+async function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
   saveWarnBox.style.display = 'none';
   saveInfoBox.style.display = 'none';
 
-  // 지도(#map)에 실제로 보이는 그대로 캡처한다. main-pane 전체를 캡처하면
-  // padding 여백과 zoom-control까지 포함되어 화면과 다른 구도로 저장되므로,
-  // 지도 요소 자체만 캡처 대상으로 삼는다.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    saveWarnBox.style.display = 'block';
+    saveWarnBox.textContent = '⚠ 이 브라우저는 화면 캡처(getDisplayMedia)를 지원하지 않습니다.';
+    return;
+  }
+
   const captureEl = document.getElementById('map');
   const zoomControl = document.getElementById('zoom-control');
-  zoomControl.style.visibility = 'hidden';
+  let stream = null;
 
-  // html2canvas가 요소의 실제 스크롤 콘텐츠 크기(네이버 지도 내부 타일 레이어 등)를
-  // 기준으로 확대해서 캡처하면 화면에 보이는 범위 밖까지 잡으려다 일부만 캡처되는
-  // 문제가 생긴다. 화면에 실제로 보이는 크기(getBoundingClientRect)로 강제 고정한다.
-  //
-  // 단, fromCoordToOffset()이 반환하는 좌표는 지도 컨테이너의 콘텐츠 박스(테두리
-  // 제외) 좌상단이 원점이다. #map에 1px 테두리가 있어 getBoundingClientRect()
-  // (테두리 포함 border box)를 그대로 쓰면 캡처 캔버스와 좌표계가 어긋나
-  // 지도 가장자리로 갈수록 경로선이 벌어져 보이므로, clientWidth/clientHeight
-  // (테두리 제외 content box)로 캡처 크기와 오프셋을 맞춘다.
-  const borderLeft = parseFloat(getComputedStyle(captureEl).borderLeftWidth) || 0;
-  const borderTop = parseFloat(getComputedStyle(captureEl).borderTopWidth) || 0;
-  const captureWidth = captureEl.clientWidth;
-  const captureHeight = captureEl.clientHeight;
-  html2canvas(captureEl, {
-    useCORS: true,
-    allowTaint: false,
-    x: borderLeft,
-    y: borderTop,
-    width: captureWidth,
-    height: captureHeight
-  }).then(canvas => {
+  try {
+    saveInfoBox.style.display = 'block';
+    saveInfoBox.textContent = 'ℹ 화면 공유 선택창이 뜨면 "이 탭"(또는 이 창)을 선택해주세요.';
+
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: 'browser' },
+      audio: false,
+      preferCurrentTab: true
+    });
+
+    const track = stream.getVideoTracks()[0];
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.muted = true;
+    await video.play();
+    // 첫 프레임이 실제로 그려질 때까지 대기 (안 하면 검은 화면이 캡처될 수 있음)
+    await new Promise(resolve => {
+      if (video.readyState >= 2) resolve();
+      else video.onloadeddata = resolve;
+    });
+
+    zoomControl.style.visibility = 'hidden';
+    // 캡처 프레임에 zoom-control이 사라진 상태가 반영되도록 한 프레임 더 대기
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const rect = captureEl.getBoundingClientRect();
+    // 비디오 트랙 해상도는 실제 화면 배율(devicePixelRatio, OS 확대 등)에 따라
+    // CSS 픽셀과 다를 수 있으므로 video의 실제 픽셀 크기 대비 뷰포트 크기 비율로
+    // #map의 CSS 좌표를 비디오 프레임 좌표로 환산한다.
+    const scaleX = video.videoWidth / window.innerWidth;
+    const scaleY = video.videoHeight / window.innerHeight;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(rect.width * scaleX);
+    canvas.height = Math.round(rect.height * scaleY);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(
+      video,
+      rect.left * scaleX, rect.top * scaleY, rect.width * scaleX, rect.height * scaleY,
+      0, 0, canvas.width, canvas.height
+    );
+
+    track.stop();
+    stream = null;
     zoomControl.style.visibility = 'visible';
-
-    try {
-      const ctx = canvas.getContext('2d');
-      const scaleX = canvas.width / captureWidth;
-      const scaleY = canvas.height / captureHeight;
-      ctx.save();
-      ctx.scale(scaleX, scaleY);
-      drawPolylineOnCanvas(ctx);
-      ctx.restore();
-    } catch (err) {
-      saveWarnBox.style.display = 'block';
-      saveWarnBox.textContent = '⚠ 경로선 그리기 실패: ' + err.message;
-    }
 
     canvas.toBlob(blob => {
       if (!blob) {
@@ -601,11 +584,15 @@ function saveAsJPG() {
       saveInfoBox.style.display = 'block';
       saveInfoBox.textContent = 'ℹ JPG 파일이 다운로드되었습니다.';
     }, 'image/jpeg', 0.92);
-  }).catch(err => {
+  } catch (err) {
     zoomControl.style.visibility = 'visible';
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    saveInfoBox.style.display = 'none';
     saveWarnBox.style.display = 'block';
-    saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message + ' (네이버지도 타일이 CORS를 차단했을 수 있습니다.)';
-  });
+    saveWarnBox.textContent = err.name === 'NotAllowedError'
+      ? 'ℹ 화면 공유를 취소했습니다. 저장하려면 다시 시도해 "이 탭"을 선택해주세요.'
+      : '⚠ 화면 캡처 실패: ' + err.message;
+  }
 }
 
 const STYLE_STORAGE_KEY = 'gpx-map-style';
