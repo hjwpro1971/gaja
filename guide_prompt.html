@@ -67,7 +67,7 @@
 
         textarea {
             width: 100%;
-            height: 250px;
+            height: 200px;
             padding: 15px;
             border: 1px solid var(--border-color);
             border-radius: 8px;
@@ -225,22 +225,22 @@
         
         <div class="input-group">
             <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어):</label>
-            <input type="text" id="bgLocationEntry" placeholder="예: 가리왕산 정상의 넓은 고원과 백두대간 조망터">
+            <input type="text" id="bgLocationEntry" placeholder="예: 이끼계곡과 정상으로 가는 주목나무 숲길 (2씬)">
         </div>
 
         <div class="input-group">
             <label for="bgSeasonEntry">계절 및 날씨 (한국어):</label>
-            <input type="text" id="bgSeasonEntry" value="가을의 맑고 쾌청한 날씨, 따뜻한 아침 햇살">
+            <input type="text" id="bgSeasonEntry" placeholder="예: 한여름 맑고 쾌청한 날씨, 한낮은 뜨거운 햇살">
         </div>
 
         <div class="input-group">
             <label for="charPositionEntry">반달곰 커플의 화면 내 위치 (한국어):</label>
-            <input type="text" id="charPositionEntry" value="화면 좌측 하단의 숲길 초입">
+            <input type="text" id="charPositionEntry" placeholder="예: 곰돌이는 화면 좌측 하단의 이끼 계곡, 곰순이는 화면 우측 상단의 주목나무 숲길">
         </div>
         
         <div class="input-group">
             <label for="charActionEntry">반달곰 커플의 행동 정의 (한국어):</label>
-            <input type="text" id="charActionEntry" value="산그리메 풍경을 바라보며 나란히 서서 밝게 웃고 있는 모습">
+            <input type="text" id="charActionEntry" placeholder="예: 곰돌이는 사진기를 들고 사진을 찍고, 곰순이는 귀여운 포즈를 취하고 있어">
         </div>
         
         <button id="generateFinalBtn" class="btn-primary">최종 영문 이미지 프롬프트 생성</button>
@@ -266,7 +266,7 @@
         step4: document.getElementById('step4Area'),
         bgLocation: document.getElementById('bgLocationEntry'),
         bgSeason: document.getElementById('bgSeasonEntry'),
-        charPosition: document.getElementById('charPositionEntry'), // 추가된 위치 인풋
+        charPosition: document.getElementById('charPositionEntry'), 
         actionEntry: document.getElementById('charActionEntry'),
         generateBtn: document.getElementById('generateFinalBtn'),
         finalArea: document.getElementById('finalArea'),
@@ -275,33 +275,85 @@
 
     let hikingData = {};
 
-    const CHAR_DEFINITIONS_EN = `
-[BLACK MOON BEAR]: Premium cinematic 3D animated mascot, ultra-cute, lovable collectible plush-toy proportions, soft fluffy black fur, clear natural white crescent marking on chest, round baby-face proportions, oversized sparkling eyes, round chubby cheeks, warm friendly smile, small black nose. Wearing beige wide-brim hiking hat, olive green functional layering hiking outfit, olive green large hiking backpack with small water bottle, brown sturdy hiking boots. Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).
-[PINK MOON BEAR]: Extremely adorable 3D animated mascot, lovable plush-toy proportions, soft cotton-candy pink fluffy fur, clear white crescent marking on chest, round baby-face proportions, oversized sparkling eyes with soft eyelashes, round chubby cheeks, bright lovable smile, tiny nose. Wearing light pink wide-brim hiking hat, light pink and beige functional layering hiking outfit, light pink hiking backpack with small water bottle, brown sturdy hiking boots. Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).
-The couple is depicted as close hiking partners, sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.`;
+    // --- JSON 입력창 포커스 시 자동 비우기 ---
+    const defaultJsonText = nodes.jsonInput.value;
+    nodes.jsonInput.addEventListener('focus', function() {
+        if (this.value === defaultJsonText) this.value = '';
+    });
+    nodes.jsonInput.addEventListener('blur', function() {
+        if (this.value.trim() === '') this.value = defaultJsonText;
+    });
+
+    // --- 동적 캐릭터 정의 생성 함수 (스마트 소품 전환) ---
+    function getCharDefinitions(actionText) {
+        let blackBearPole = "Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).";
+        let pinkBearPole = "Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).";
+        
+        // 사진기/카메라 키워드 인식 시 등산스틱 해제
+        if (actionText.includes("사진기") || actionText.includes("카메라")) {
+            if (actionText.includes("곰돌이")) blackBearPole = "Holding a camera and taking pictures (no trekking poles).";
+            if (actionText.includes("곰순이")) pinkBearPole = "Holding a camera and taking pictures (no trekking poles).";
+            if (!actionText.includes("곰돌이") && !actionText.includes("곰순이")) {
+                blackBearPole = "Holding a camera (no trekking poles).";
+            }
+        }
+
+        return `
+[BLACK MOON BEAR]: Premium cinematic 3D animated mascot, ultra-cute, lovable collectible plush-toy proportions, soft fluffy black fur, clear natural white crescent marking on chest, round baby-face proportions, oversized sparkling eyes, round chubby cheeks, warm friendly smile, small black nose. Wearing beige wide-brim hiking hat, olive green functional layering hiking outfit, olive green large hiking backpack with small water bottle, brown sturdy hiking boots. ${blackBearPole}
+[PINK MOON BEAR]: Extremely adorable 3D animated mascot, lovable plush-toy proportions, soft cotton-candy pink fluffy fur, clear white crescent marking on chest, round baby-face proportions, oversized sparkling eyes with soft eyelashes, round chubby cheeks, bright lovable smile, tiny nose. Wearing light pink wide-brim hiking hat, light pink and beige functional layering hiking outfit, light pink hiking backpack with small water bottle, brown sturdy hiking boots. ${pinkBearPole}
+The couple is depicted sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.`;
+    }
 
     const STYLE_DEFINITIONS_EN = `
 [BACKGROUND STYLE]: Photorealistic high-resolution mountain landscape, professional outdoor travel photography quality, authentic national park scenery, cinematic natural lighting, realistic atmospheric perspective with layered ridges fading into the distance, detailed textures for rocks, trees, and ground.
 [MASCOT RENDER]: Polished feature-animation quality rendering, soft global illumination, detailed but gentle fur texture, naturally integrated with proper contact shadows and lighting matching the environment.`;
 
-    const NEGATIVE_PROMPT_EN = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters, no missing poles. Each bear uses exactly two poles. No empty space, no black borders.`;
+    // --- 동적 네거티브 프롬프트 (스틱 규칙 유연화) ---
+    function getNegativePrompt(actionText) {
+        let baseNeg = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters. No empty space, no black borders.`;
+        
+        // 카메라를 안 들고 있으면 스틱 필수 규칙 추가
+        if (!(actionText.includes("사진기") || actionText.includes("카메라"))) {
+             baseNeg += " No missing poles. Each bear uses exactly two poles.";
+        }
+        return baseNeg;
+    }
 
-    // 영문 변환을 위한 키워드 맵퍼
+    // --- 강력해진 한국어-영어 번역 사전 ---
     function translateKeyword(text) {
         if (!text) return "";
         const map = {
+            "곰돌이는": "The Black Moon Bear is",
+            "곰순이는": "The Pink Moon Bear is",
+            "곰돌이": "Black Moon Bear",
+            "곰순이": "Pink Moon Bear",
+            "사진기를 들고": "holding a camera",
+            "사진기": "camera",
+            "사진을 찍고": "taking a picture",
+            "귀여운 포즈를 취하고 있어": "striking a cute pose",
+            "포즈를 취하고": "striking a cute pose",
+            "좌측 하단": "bottom-left",
+            "우측 상단": "top-right",
+            "화면 좌측 하단의": "in the bottom-left foreground of",
+            "화면 우측 상단의": "in the top-right background of",
+            "(2씬)": "(A dynamic composition showing both locations connected naturally in one panoramic view)",
+            "2씬": "dynamic composition",
+            "이끼계곡": "mossy valley",
+            "이끼 계곡": "mossy valley",
+            "주목나무 숲길": "ancient yew tree forest trail",
+            "주목나무": "ancient yew tree",
+            "한여름": "midsummer",
+            "뜨거운 햇살": "bright hot sunlight",
             "이끼": "mossy", "폭포": "waterfall", "돌길": "rocky path",
+            "정상으로 가는": "leading to the summit",
             "정상": "summit", "고원": "plateau", "조망": "panoramic view", 
             "산그리메": "layered mountain silhouettes", "원시림": "primeval forest",
             "계곡": "valley stream", "가을": "Autumn", "봄": "Spring", 
-            "여름": "Summer", "겨울": "Winter", "맑은": "clear", "따뜻한": "warm",
-            "바라보며": "looking at the view", "웃고 있는": "smiling happily", "나란히": "side by side",
-            "화면 좌측 하단": "bottom-left foreground", "화면 우측 하단": "bottom-right foreground", 
-            "화면 중앙": "center of the screen", "화면 좌측": "left side of the screen", "화면 우측": "right side of the screen",
-            "숲길 초입": "entrance of the forest trail"
+            "여름": "Summer", "겨울": "Winter", "맑은": "clear", "따뜻한": "warm", "쾌청한": "crisp and clear"
         };
         let translated = text;
-        Object.keys(map).forEach(k => {
+        // 긴 단어부터 순차적으로 치환
+        Object.keys(map).sort((a,b) => b.length - a.length).forEach(k => {
             translated = translated.replaceAll(k, map[k]);
         });
         return translated;
@@ -335,19 +387,10 @@ The couple is depicted as close hiking partners, sharing a warm, joyful bond. Th
             const summaryKo = `
 산명: ${hikingData.mountainName}
 전체 흐름: ${hikingData.routeFlow}
-코스 주요 특징(배경 요소 참고용): ${hikingData.allFeatures || '정보 없음'}
+코스 주요 특징: ${hikingData.allFeatures || '정보 없음'}
 `;
             nodes.infoResult.innerText = summaryKo;
             nodes.step3.classList.remove('hidden');
-
-            // 배경장소 초기값 세팅
-            let defaultLoc = `${hikingData.mountainName}의 아름다운 자연 풍경`;
-            if(parsed.sections && parsed.sections.length > 0) {
-                let midIdx = Math.floor(parsed.sections.length / 2);
-                defaultLoc = parsed.sections[midIdx].cardTitle + " 주변";
-            }
-            nodes.bgLocation.value = defaultLoc;
-
             nodes.step4.classList.remove('hidden');
             nodes.finalArea.classList.add('hidden');
             nodes.step4.scrollIntoView({ behavior: 'smooth' });
@@ -363,7 +406,7 @@ The couple is depicted as close hiking partners, sharing a warm, joyful bond. Th
     nodes.generateBtn.addEventListener('click', () => {
         const locationText = nodes.bgLocation.value.trim();
         const seasonWeather = nodes.bgSeason.value.trim();
-        const positionText = nodes.charPosition.value.trim(); // 캐릭터 위치 값
+        const positionText = nodes.charPosition.value.trim(); 
         const actionText = nodes.actionEntry.value.trim();
 
         if (!locationText || !seasonWeather || !positionText || !actionText) {
@@ -371,21 +414,19 @@ The couple is depicted as close hiking partners, sharing a warm, joyful bond. Th
             return;
         }
 
-        // 전체 화면 구성 규칙
-        let finalPrompt = `[COMPOSITION RULE - STRICT]: A premium ultrawide 21:9 panoramic desktop wallpaper showing ONE seamless, continuous hiking trail. The entire route is connected as one coherent, photorealistic mountain landscape. The scenery must flow naturally without any artificial section dividers, collage, or split-screen.\n\n`;
+        let finalPrompt = `[COMPOSITION RULE - STRICT]: A premium ultrawide 21:9 panoramic desktop wallpaper showing ONE seamless, continuous hiking trail. The entire route is connected as one coherent, photorealistic mountain landscape. The scenery must flow naturally from foreground to background without any artificial section dividers, collage, or split-screen.\n\n`;
 
-        // 배경 
-        finalPrompt += `[SCENE & ENVIRONMENT]: The background landscape features ${translateKeyword(locationText)} at ${hikingData.mountainName}. Lighting and atmosphere: ${translateKeyword(seasonWeather)}. A long, single hiking trail winds naturally through this magnificent scenery. (Optional surrounding natural elements to blend in: ${translateKeyword(hikingData.allFeatures)}).\n\n`;
+        finalPrompt += `[SCENE & ENVIRONMENT]: The background landscape features ${translateKeyword(locationText)} at ${hikingData.mountainName}. Lighting and atmosphere: ${translateKeyword(seasonWeather)}. A long, single hiking trail winds naturally through this magnificent scenery.\n\n`;
 
-        // 캐릭터 배치 (새로 적용된 위치 조건 포함)
         finalPrompt += `[CHARACTERS POSITION & ACTION]:\n`;
-        finalPrompt += `Position: The Moon Bear couple is specifically located at the ${translateKeyword(positionText)} of the scene.\n`;
+        finalPrompt += `Position: ${translateKeyword(positionText)}.\n`;
         finalPrompt += `Action: ${translateKeyword(actionText)}.\n`;
-        finalPrompt += CHAR_DEFINITIONS_EN + `\n\n`;
+        // 행동(카메라 유무 등)에 따라 동적으로 생성된 캐릭터 룰 적용
+        finalPrompt += getCharDefinitions(actionText) + `\n\n`;
 
-        // 스타일 및 네거티브 프롬프트
         finalPrompt += `[STYLE]:\n${STYLE_DEFINITIONS_EN}\n\n`;
-        finalPrompt += `[NEGATIVE PROMPT]:\n${NEGATIVE_PROMPT_EN}`;
+        // 행동(카메라 유무 등)에 따라 동적으로 생성된 네거티브 룰 적용
+        finalPrompt += `[NEGATIVE PROMPT]:\n${getNegativePrompt(actionText)}`;
 
         nodes.finalResult.innerText = finalPrompt;
         nodes.finalArea.classList.remove('hidden');
