@@ -297,7 +297,15 @@
             bgLocation: nodes.bgLocation.value,
             bgSeason: nodes.bgSeason.value,
             charPosition: nodes.charPosition.value,
-            actionEntry: nodes.actionEntry.value
+            actionEntry: nodes.actionEntry.value,
+            // 1단계(JSON 분석) 결과와 최종 영문 프롬프트까지 그대로 보관해
+            // 다시 열었을 때 처음부터 다시 생성하지 않아도 되게 한다.
+            hikingData: hikingData,
+            infoResultText: nodes.infoResult.innerText,
+            finalPromptText: nodes.finalResult.innerText,
+            step3Visible: !nodes.step3.classList.contains('hidden'),
+            step4Visible: !nodes.step4.classList.contains('hidden'),
+            finalAreaVisible: !nodes.finalArea.classList.contains('hidden')
         };
     }
 
@@ -332,6 +340,13 @@
             if (data.bgSeason) nodes.bgSeason.value = data.bgSeason;
             if (data.charPosition) nodes.charPosition.value = data.charPosition;
             if (data.actionEntry) nodes.actionEntry.value = data.actionEntry;
+
+            if (data.hikingData) hikingData = data.hikingData;
+            if (data.infoResultText) nodes.infoResult.innerText = data.infoResultText;
+            if (data.finalPromptText) nodes.finalResult.innerText = data.finalPromptText;
+            if (data.step3Visible) nodes.step3.classList.remove('hidden');
+            if (data.step4Visible) nodes.step4.classList.remove('hidden');
+            if (data.finalAreaVisible) nodes.finalArea.classList.remove('hidden');
         } catch (e) {
             // 저장된 draft가 깨져 있으면 무시(폼은 기본 상태로 시작)
         }
@@ -468,7 +483,9 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
             nodes.step3.classList.remove('hidden');
             nodes.step4.classList.remove('hidden');
             nodes.finalArea.classList.add('hidden');
+            nodes.finalResult.innerText = '';
             nodes.step4.scrollIntoView({ behavior: 'smooth' });
+            saveDraftNow();
 
         } catch (e) {
             nodes.jsonError.style.display = 'block';
@@ -506,6 +523,7 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         nodes.finalResult.innerText = finalPrompt;
         nodes.finalArea.classList.remove('hidden');
         nodes.finalArea.scrollIntoView({ behavior: 'smooth' });
+        saveDraftNow();
     });
 
     function copyPrompt() {
