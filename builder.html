@@ -843,7 +843,22 @@ async function captureCoverImage() {
   wrapper.style.transformOrigin = 'top left';
 
   try {
-    const canvas = await win.html2canvas(wrapper, { useCORS: true, allowTaint: false, width: 1000, height: 562 });
+    const rawCanvas = await win.html2canvas(wrapper, { useCORS: true, allowTaint: false, width: 1000, height: 562 });
+
+    // wrapper(1000x562) 중 실제 콘텐츠(배경사진+카드+안내바) 영역만 잘라낸다.
+    // 좌우 20px, 하단 15px은 콘텐츠가 없는 wrapper 배경색 여백이라 제외.
+    const CROP = { x: 20, y: 0, width: 960, height: 547 };
+    const scaleRatio = rawCanvas.width / 1000; // 레티나 등 devicePixelRatio 대응
+    const canvas = document.createElement('canvas');
+    canvas.width = CROP.width * scaleRatio;
+    canvas.height = CROP.height * scaleRatio;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(
+      rawCanvas,
+      CROP.x * scaleRatio, CROP.y * scaleRatio, CROP.width * scaleRatio, CROP.height * scaleRatio,
+      0, 0, canvas.width, canvas.height
+    );
+
     canvas.toBlob(blob => {
       if (!blob) {
         warnBox.style.display = 'block';
