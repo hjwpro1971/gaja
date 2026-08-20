@@ -739,6 +739,7 @@ function generateGuide() {
   updateDeployUrlBox(computeGuideFileName(data.mountainName));
 
   saveCourseHandoffToSummary(data.courseRouteFlow);
+  markGuideGeneratedInDraft();
 }
 
 // 산행요약 생성(hiking_summary.html)의 "코스(GPX)" 입력란이 자동으로 채워
@@ -956,6 +957,15 @@ async function downloadGuide() {
 // beforeunload/디바운스 타이머가 실행되지 않을 수 있으므로, 지연 없이 매번 즉시 저장한다.
 const DRAFT_STORAGE_KEY = 'hikingGuideBuilderDraft';
 
+// [가이드 생성]으로 만든 결과(lastGeneratedHTML)는 그 자체가 크지 않지만
+// 커버 배경 이미지가 base64로 인라인돼 있어 통째로 캐시하면 localStorage
+// 용량(보통 5~10MB)을 넘기기 쉽다. 그래서 결과 HTML을 직접 저장하는 대신
+// "가이드가 생성된 상태였다"는 플래그만 저장해두고, 다시 돌아왔을 때 이미
+// 캐시돼 있는 폼 데이터(draft)로 generateGuide()를 다시 실행해 미리보기를
+// 재구성한다. 커버 이미지는 draft에도 담기지 않으므로 배경만 빠진 채로
+// 자동 복원되며, 사용자가 원하면 다시 업로드하면 된다.
+const GENERATED_FLAG_KEY = 'hikingGuideBuilderGeneratedFlag';
+
 function saveDraftNow() {
   try {
     const data = collectFormData();
@@ -969,8 +979,17 @@ function scheduleDraftSave() {
   saveDraftNow();
 }
 
+function markGuideGeneratedInDraft() {
+  try {
+    localStorage.setItem(GENERATED_FLAG_KEY, '1');
+  } catch (e) {
+    // 저장 실패해도 현재 세션의 미리보기 자체는 이미 떠 있으므로 무해함
+  }
+}
+
 function clearDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
+  localStorage.removeItem(GENERATED_FLAG_KEY);
 }
 
 function restoreDraftIfAny() {
@@ -985,6 +1004,9 @@ function restoreDraftIfAny() {
     const data = JSON.parse(raw);
     if (!Array.isArray(data.sections) || data.sections.length !== 5) return;
     fillFormFromData(data);
+    let wasGenerated = false;
+    try { wasGenerated = localStorage.getItem(GENERATED_FLAG_KEY) === '1'; } catch (e) {}
+    if (wasGenerated) generateGuide();
   } catch (e) {
     // 저장된 draft가 깨져 있으면 무시(폼은 빈 상태로 시작)
   }
