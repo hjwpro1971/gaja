@@ -737,6 +737,27 @@ function generateGuide() {
   downloadBtn.disabled = false;
   document.getElementById('btn-capture-cover').disabled = false;
   updateDeployUrlBox(computeGuideFileName(data.mountainName));
+
+  saveCourseHandoffToSummary(data.courseRouteFlow);
+}
+
+// 산행요약 생성(hiking_summary.html)의 "코스(GPX)" 입력란이 자동으로 채워
+// 쓸 수 있도록, 이 화면의 "코스 흐름"을 localStorage에 넘겨둔다. 서로 다른
+// iframe에서 로드되는 별개 페이지라 직접 DOM 접근이 불가능해 localStorage를
+// 매개로 사용. gpx-map.html이 쓰는 것과 같은 키를 공유하되(mountain/date/
+// distTime은 그쪽이, course는 이쪽이 채움) 서로 덮어쓰지 않도록 병합한다.
+const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
+
+function saveCourseHandoffToSummary(courseRouteFlow) {
+  if (!courseRouteFlow || courseRouteFlow.length === 0) return;
+  try {
+    const raw = localStorage.getItem(SUMMARY_HANDOFF_KEY);
+    const existing = raw ? JSON.parse(raw) : {};
+    existing.course = courseRouteFlow.join(' ➔ ');
+    localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify(existing));
+  } catch (e) {
+    // localStorage 실패는 조용히 무시(핵심 기능인 가이드 생성에는 영향 없음)
+  }
 }
 
 function downloadGuideFallback(blob, fileName) {
