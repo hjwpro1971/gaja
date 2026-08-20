@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>다중 이미지 겹치기 및 16:9 캡처</title>
+    <title>사진 합성 및 자르기 도구</title>
+    
+    <!-- Cropper.js CSS (자르기 팝업용) -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
     
     <style>
         body {
@@ -27,21 +30,34 @@
             margin-bottom: 20px;
             line-height: 1.6;
         }
-        /* 16:9 캔버스를 감싸는 영역 */
         .canvas-wrapper {
             display: inline-block;
             border: 2px dashed #007bff;
             background-color: #e9ecef;
             margin-bottom: 20px;
-            /* 모바일 화면에서도 비율이 유지되도록 처리 가능하지만, 기본적으로 800x450 크기 유지 */
         }
         .controls {
             margin-bottom: 15px;
             display: flex;
             justify-content: center;
+            flex-wrap: wrap;
             gap: 10px;
             align-items: center;
         }
+        .btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .btn:hover { background-color: #5a6268; }
+        .btn-crop { background-color: #17a2b8; }
+        .btn-crop:hover { background-color: #138496; }
+        .btn-delete { background-color: #dc3545; }
+        .btn-delete:hover { background-color: #c82333; }
         .btn-save {
             background-color: #28a745;
             color: white;
@@ -53,126 +69,195 @@
             border-radius: 5px;
         }
         .btn-save:hover { background-color: #218838; }
-        .btn-delete {
-            background-color: #dc3545;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 5px;
+
+        /* 자르기 팝업(모달) 스타일 */
+        .modal {
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); 
+            z-index: 1000; 
+            justify-content: center; align-items: center;
         }
-        .btn-delete:hover { background-color: #c82333; }
-        input[type="file"] {
-            font-size: 15px;
+        .modal-content {
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            width: 90%; max-width: 600px;
+            text-align: center;
+        }
+        .crop-container {
+            width: 100%; height: 50vh; 
+            margin-bottom: 20px; background-color: #eee;
+        }
+        .crop-container img {
+            display: block; max-width: 100%;
         }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h2>📷 다중 사진 합성 (16:9 캡처)</h2>
+        <h2>📷 사진 겹치기 및 편집 (16:9)</h2>
         <p class="instructions">
-            1. <strong>여러 장의 사진</strong>을 한 번에 선택하거나 여러 번 업로드할 수 있습니다.<br>
-            2. 사진을 클릭하면 나오는 <strong>모서리 점을 드래그해서 크기를 조절</strong>하거나 회전시킬 수 있습니다.<br>
-            3. <strong>파란색 점선 네모 박스(16:9 비율)</strong> 안쪽 영역만 최종적으로 캡처됩니다.
+            원하는 사진을 캔버스 안에서 선택한 뒤, 아래 버튼을 눌러 <strong>순서 변경</strong>이나 <strong>자르기</strong>를 해보세요.<br>
+            모든 배치가 끝나면 파란색 점선 안의 영역이 16:9 고화질로 저장됩니다.
         </p>
         
         <div class="controls">
-            <!-- multiple 속성을 추가하여 여러 장 동시 선택 가능 -->
             <input type="file" id="uploadImages" accept="image/*" multiple>
-            <button id="deleteBtn" class="btn-delete">🗑️ 선택한 사진 지우기</button>
+        </div>
+        
+        <!-- 편집 툴바 -->
+        <div class="controls">
+            <button id="bringFrontBtn" class="btn">🔼 맨 앞으로</button>
+            <button id="sendBackBtn" class="btn">🔽 맨 뒤로</button>
+            <button id="cropBtn" class="btn btn-crop">✂️ 선택한 사진 자르기</button>
+            <button id="deleteBtn" class="btn btn-delete">🗑️ 삭제</button>
         </div>
 
-        <!-- Fabric.js가 그림을 그릴 16:9 비율의 캔버스 (화면상 800x450) -->
+        <!-- Fabric.js 캔버스 (16:9 비율) -->
         <div class="canvas-wrapper">
             <canvas id="c" width="800" height="450"></canvas>
         </div>
 
         <div>
-            <button id="saveBtn" class="btn-save">💾 파란색 박스 영역 캡처 및 저장</button>
+            <button id="saveBtn" class="btn-save">💾 최종 화면 캡처 및 저장</button>
         </div>
     </div>
 
-    <!-- Fabric.js 라이브러리 CDN -->
+    <!-- 사진 자르기용 팝업(모달) -->
+    <div id="cropModal" class="modal">
+        <div class="modal-content">
+            <h3>사진 자르기</h3>
+            <div class="crop-container">
+                <img id="cropTarget" src="">
+            </div>
+            <div>
+                <button id="applyCropBtn" class="btn-save">✅ 자르기 적용</button>
+                <button id="cancelCropBtn" class="btn btn-delete">❌ 취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 라이브러리 CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
     
     <script>
-        // 1. 캔버스 초기화 (크기는 HTML에서 지정한 800x450, 16:9 비율)
+        // 1. 캔버스 초기화
         const canvas = new fabric.Canvas('c', {
-            backgroundColor: '#ffffff', // 배경색 흰색
-            preserveObjectStacking: true // 클릭한 이미지가 항상 맨 위로 오도록 설정
+            backgroundColor: '#ffffff',
+            preserveObjectStacking: true // 클릭 시 강제로 맨 앞으로 튀어나오는 현상 방지
         });
 
-        // 2. 이미지 업로드 이벤트
+        // 2. 이미지 업로드
         document.getElementById('uploadImages').addEventListener('change', function(e) {
             const files = e.target.files;
-            
-            // 선택된 모든 파일(사진 2~3장 등)을 순회하며 캔버스에 추가
             for (let i = 0; i < files.length; i++) {
-                const file = files[i];
                 const reader = new FileReader();
-                
                 reader.onload = function(f) {
-                    const data = f.target.result;
-                    
-                    fabric.Image.fromURL(data, function(img) {
-                        // 이미지가 너무 크면 캔버스 너비의 절반 정도로 줄여서 표시
-                        if (img.width > 400) {
-                            img.scaleToWidth(400);
-                        }
-                        
-                        // 이미지가 겹치지 않게 약간씩 위치를 다르게 배치
+                    fabric.Image.fromURL(f.target.result, function(img) {
+                        if (img.width > 400) img.scaleToWidth(400);
                         img.set({
-                            left: 50 + (i * 30),
-                            top: 50 + (i * 30),
-                            cornerColor: '#007bff', // 조절점 색상
-                            cornerStyle: 'circle',
-                            transparentCorners: false
+                            left: 50 + (i * 30), top: 50 + (i * 30),
+                            cornerColor: '#007bff', cornerStyle: 'circle', transparentCorners: false
                         });
-                        
                         canvas.add(img);
-                        canvas.setActiveObject(img); // 방금 추가한 이미지를 선택 상태로 만듦
+                        canvas.setActiveObject(img);
                     });
                 };
-                reader.readAsDataURL(file);
+                reader.readAsDataURL(files[i]);
             }
-            
-            // 파일 입력창 초기화 (같은 파일을 다시 올릴 수 있도록)
-            e.target.value = '';
+            e.target.value = ''; // 초기화
         });
 
-        // 3. 선택한 사진 삭제 기능 (버튼 클릭 또는 Delete 키)
+        // 3. 사진 순서 변경 (앞으로 / 뒤로)
+        document.getElementById('bringFrontBtn').addEventListener('click', () => {
+            const activeObj = canvas.getActiveObject();
+            if (activeObj) canvas.bringToFront(activeObj);
+        });
+
+        document.getElementById('sendBackBtn').addEventListener('click', () => {
+            const activeObj = canvas.getActiveObject();
+            if (activeObj) canvas.sendToBack(activeObj);
+        });
+
+        // 4. 사진 삭제
         function deleteSelected() {
             const activeObjects = canvas.getActiveObjects();
             if (activeObjects.length) {
                 canvas.discardActiveObject();
-                activeObjects.forEach(function(object) {
-                    canvas.remove(object);
-                });
+                activeObjects.forEach(obj => canvas.remove(obj));
             }
         }
         document.getElementById('deleteBtn').addEventListener('click', deleteSelected);
-        
-        // 키보드 Delete 또는 Backspace 키로도 삭제 가능
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                deleteSelected();
-            }
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
         });
 
-        // 4. 최종 16:9 캡처 및 저장 이벤트
+        // 5. 사진 자르기 기능 (모달 & Cropper.js 연동)
+        let cropper = null;
+        let activeImageToCrop = null;
+        const cropModal = document.getElementById('cropModal');
+        const cropTarget = document.getElementById('cropTarget');
+
+        // '자르기' 버튼 클릭 시 팝업 열기
+        document.getElementById('cropBtn').addEventListener('click', () => {
+            const activeObj = canvas.getActiveObject();
+            if (!activeObj || activeObj.type !== 'image') {
+                alert('자르기를 할 사진을 먼저 선택해주세요!');
+                return;
+            }
+            
+            activeImageToCrop = activeObj;
+            cropTarget.src = activeObj.getSrc(); // 원본 이미지 데이터 가져오기
+            cropModal.style.display = 'flex';
+            
+            // 모달이 열린 후 Cropper 초기화 (비율 제한 없이 자유롭게 자르기)
+            if (cropper) cropper.destroy();
+            cropper = new Cropper(cropTarget, {
+                viewMode: 1,
+                autoCropArea: 1,
+            });
+        });
+
+        // 자르기 '취소'
+        document.getElementById('cancelCropBtn').addEventListener('click', () => {
+            cropModal.style.display = 'none';
+            if (cropper) cropper.destroy();
+        });
+
+        // 자르기 '적용'
+        document.getElementById('applyCropBtn').addEventListener('click', () => {
+            if (!cropper) return;
+            
+            // 자른 영역 이미지를 추출 (배경 투명도 유지를 위해 png 사용)
+            const croppedCanvas = cropper.getCroppedCanvas();
+            const dataUrl = croppedCanvas.toDataURL('image/png');
+
+            // 기존 캔버스에 있던 이미지 소스를 자른 이미지로 교체
+            activeImageToCrop.setSrc(dataUrl, function() {
+                // 자르면서 비율이 바뀌었을 수 있으므로 크기 비율 초기화
+                activeImageToCrop.set({ scaleX: 1, scaleY: 1 });
+                // 이미지가 너무 크면 다시 줄여주기
+                if (activeImageToCrop.width > 400) activeImageToCrop.scaleToWidth(400);
+                
+                canvas.renderAll();
+                cropModal.style.display = 'none';
+                cropper.destroy();
+            });
+        });
+
+        // 6. 최종 16:9 캡처
         document.getElementById('saveBtn').addEventListener('click', function() {
-            // 저장할 때 이미지 주변의 조절점(네모 박스)이 보이지 않게 선택 해제
-            canvas.discardActiveObject();
+            canvas.discardActiveObject(); // 파란색 조절점 숨기기
             canvas.renderAll();
 
-            // 캔버스 영역 추출
-            // 화면상으론 800x450 이지만, 저장할 때는 화질을 높이기 위해 multiplier를 2.4로 설정 (1920x1080 출력)
             const dataURL = canvas.toDataURL({
                 format: 'jpeg',
                 quality: 0.9,
-                multiplier: 2.4 
+                multiplier: 2.4 // 1920x1080 출력
             });
 
             const link = document.createElement('a');
