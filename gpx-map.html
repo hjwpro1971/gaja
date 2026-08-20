@@ -208,7 +208,7 @@ function makeDotMarker(position, strokeColor) {
     position,
     map,
     icon: {
-      content: `<div style="width:14px;height:14px;border-radius:50%;background:#ffffff;border:3px solid ${strokeColor};box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>`,
+      content: `<div style="width:14px;height:14px;border-radius:50%;background:#ffffff;border:3px solid ${strokeColor};"></div>`,
       anchor: new naver.maps.Point(7, 7)
     },
     zIndex: 100
@@ -221,7 +221,7 @@ function makeLabelMarker(position, strokeColor, label) {
     map,
     draggable: true,
     icon: {
-      content: `<div style="white-space:nowrap; font-size:12px; font-weight:700; color:#ffffff; background:${strokeColor}; padding:2px 6px; border-radius:4px; box-shadow:0 1px 3px rgba(0,0,0,0.4); cursor:move;">${label}</div>`,
+      content: `<div style="white-space:nowrap; font-size:12px; font-weight:700; color:#ffffff; background:${strokeColor}; padding:2px 6px; border-radius:4px; cursor:move;">${label}</div>`,
       anchor: new naver.maps.Point(-4, -18)
     },
     title: '드래그해서 위치를 옮길 수 있습니다',
@@ -502,6 +502,45 @@ function copyNaverMapLink() {
 }
 
 
+function projectToOffset(latlng) {
+  const proj = map.getProjection();
+  return proj.fromCoordToOffset(latlng);
+}
+
+// html2canvas는 Naver Maps의 경로선(Polyline, 별도 렌더링 레이어)을 캡처하지
+// 못하므로, 캡처된 캔버스 위에 경로선만 좌표를 다시 계산해서 그려 넣는다.
+// 마커/화살표(icon.content로 만든 HTML 오버레이)는 html2canvas가 실제로
+// 캡처해내므로 다시 그리지 않는다.
+function drawPolylineOnCanvas(ctx, mapEl, captureRootEl) {
+  if (!currentPolyline || !loadedPoints || loadedPoints.length === 0) return;
+
+  // fromCoordToOffset은 지도 컨테이너(#map) 좌상단을 원점(0,0)으로 하는 픽셀
+  // 오프셋을 반환한다. 캡처 대상(main-pane) 안에서 #map이 padding만큼 떨어져
+  // 있으므로 그 차이를 더해줘야 캡처 좌표계와 맞는다.
+  const mapRect = mapEl.getBoundingClientRect();
+  const captureRootRect = captureRootEl.getBoundingClientRect();
+  const offsetX = mapRect.left - captureRootRect.left;
+  const offsetY = mapRect.top - captureRootRect.top;
+
+  const color = document.getElementById('lineColor').value;
+  const weight = parseInt(document.getElementById('lineWidth').value, 10) || 4;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = weight;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  loadedPoints.forEach((p, i) => {
+    const offset = projectToOffset(new naver.maps.LatLng(p.lat, p.lon));
+    const x = offset.x + offsetX;
+    const y = offset.y + offsetY;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
@@ -509,12 +548,10 @@ function saveAsJPG() {
   saveInfoBox.style.display = 'none';
 
   // 지도 화면 오른쪽 프레임(main-pane)에 실제로 보이는 그대로 캡처한다.
-  // 예전에는 html2canvas가 Naver Maps 경로선/마커를 못 잡는 문제 때문에
-  // 캔버스에 경로를 다시 그려 덧씌우는 방식을 썼으나, 그 방식이 오히려
-  // 좌표 계산 오차로 마커 중복·위치 어긋남을 반복적으로 일으켰다.
-  // html2canvas가 실제로 마커/경로선을 캡처해내므로 화면 그대로 캡처하고,
-  // 확대/축소 버튼만 캡처 직전 숨겼다가 캡처 후 복원한다.
+  // 마커/화살표는 html2canvas가 실제로 캡처해내지만 경로선(Polyline)은
+  // 캡처하지 못하므로, 캡처 후 경로선만 캔버스에 다시 그려 덧씌운다.
   const captureEl = document.getElementById('main-pane');
+  const mapEl = document.getElementById('map');
   const zoomControl = document.getElementById('zoom-control');
   zoomControl.style.visibility = 'hidden';
 
@@ -535,6 +572,19 @@ function saveAsJPG() {
     scrollY: 0
   }).then(canvas => {
     zoomControl.style.visibility = 'visible';
+
+    try {
+      const ctx = canvas.getContext('2d');
+      const scaleX = canvas.width / captureRect.width;
+      const scaleY = canvas.height / captureRect.height;
+      ctx.save();
+      ctx.scale(scaleX, scaleY);
+      drawPolylineOnCanvas(ctx, mapEl, captureEl);
+      ctx.restore();
+    } catch (err) {
+      saveWarnBox.style.display = 'block';
+      saveWarnBox.textContent = '⚠ 경로선 그리기 실패: ' + err.message;
+    }
 
     canvas.toBlob(blob => {
       if (!blob) {
