@@ -391,7 +391,8 @@
         return `
 [BLACK MOON BEAR]: Premium cinematic 3D animated mascot, ultra-cute, lovable collectible plush-toy proportions, soft fluffy black fur, clear natural white crescent marking on chest, round baby-face proportions, oversized sparkling eyes, round chubby cheeks, warm friendly smile, small black nose. Wearing beige wide-brim hiking hat, olive green functional layering hiking outfit, olive green large hiking backpack with small water bottle, brown sturdy hiking boots. ${blackBearPole}
 [PINK MOON BEAR]: Extremely adorable 3D animated mascot, lovable plush-toy proportions, soft cotton-candy pink fluffy fur, clear white crescent marking on chest, round baby-face proportions, oversized sparkling eyes with soft eyelashes, round chubby cheeks, bright lovable smile, tiny nose. Wearing light pink wide-brim hiking hat, light pink and beige functional layering hiking outfit, light pink hiking backpack with small water bottle, brown sturdy hiking boots. ${pinkBearPole}
-The couple is depicted sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.`;
+The couple is depicted sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.
+[CHARACTER SCALE - STRICT]: Both bears are SMALL, distant figures within the vast panoramic landscape — the background scenery is the true subject of this wallpaper, not the characters. Each bear's height must occupy no more than 15-18% of the total frame height. Render them at a scale consistent with two small hikers seen from a distance on a mountain trail, fully surrounded by open landscape on all sides. Do not crop, zoom into, or fill the frame with the characters.`;
     }
 
     const STYLE_DEFINITIONS_EN = `
@@ -400,7 +401,7 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
 
     // --- 동적 네거티브 프롬프트 (스틱 규칙 유연화) ---
     function getNegativePrompt(actionText) {
-        let baseNeg = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters. No empty space, no black borders.`;
+        let baseNeg = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters. No empty space, no black borders. No oversized characters, no close-up character shot, no characters filling or dominating the frame, no characters larger than 20% of frame height.`;
         
         // 카메라를 안 들고 있으면 스틱 필수 규칙 추가
         if (!(actionText.includes("사진기") || actionText.includes("카메라"))) {
