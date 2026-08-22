@@ -382,6 +382,7 @@ function handleGPXFile(e) {
       document.getElementById('btn-copy-nmap').disabled = false;
 
       saveHandoffToSummary(gpxBaseName, stats);
+      saveGpxDraft(points, gpxBaseName);
     } catch (err) {
       warnBox.style.display = 'block';
       warnBox.textContent = '⚠ GPX 파일을 읽는 중 오류: ' + err.message;
@@ -396,6 +397,72 @@ function handleGPXFile(e) {
     warnBox.textContent = '⚠ 파일을 읽을 수 없습니다.';
   };
   reader.readAsText(file);
+}
+
+// index.html의 iframe 안에서 쓰일 때 다른 메뉴로 전환하면 iframe이 즉시
+// 파기되어 GPX 로드 상태(loadedPoints, 파일명)가 완전히 사라지고, 그
+// 메뉴로 돌아와도 다시 파일을 선택해야 했다. <input type="file">은 보안상
+// 프로그래밍적으로 값을 되돌릴 수 없어 원본 파일을 복원할 수는 없지만,
+// 이미 파싱된 트랙 포인트와 파일명은 localStorage에 저장해두고 페이지가
+// 다시 로드될 때 그 데이터로 지도를 곧바로 다시 그려 복원한다.
+const GPX_DRAFT_KEY = 'gpxMapDraft';
+
+function saveGpxDraft(points, baseName) {
+  try {
+    localStorage.setItem(GPX_DRAFT_KEY, JSON.stringify({
+      points: points.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele, time: p.time ? p.time.toISOString() : null })),
+      baseName
+    }));
+  } catch (e) {
+    // localStorage 용량 초과 등은 자동저장 실패로 조용히 넘어감(핵심 기능인 지도 생성에는 영향 없음)
+  }
+}
+
+function clearGpxDraft() {
+  try { localStorage.removeItem(GPX_DRAFT_KEY); } catch (e) {}
+}
+
+function restoreGpxDraftIfAny() {
+  let raw;
+  try {
+    raw = localStorage.getItem(GPX_DRAFT_KEY);
+  } catch (e) {
+    return;
+  }
+  if (!raw) return;
+
+  const warnBox = document.getElementById('gpx-warn-box');
+  const statGrid = document.getElementById('stat-grid');
+  const saveBtn = document.getElementById('btn-save-jpg');
+
+  try {
+    const data = JSON.parse(raw);
+    const points = data.points.map(p => ({
+      lat: p.lat, lon: p.lon, ele: p.ele,
+      time: p.time ? new Date(p.time) : null
+    }));
+    if (!points.length) return;
+
+    gpxBaseName = data.baseName || 'gpx';
+    loadedPoints = points;
+    drawRoute(points);
+
+    const stats = computeStats(points);
+    document.getElementById('stat-points').textContent = points.length + '개';
+    document.getElementById('stat-distance').textContent = stats.totalKm.toFixed(2) + 'km';
+    document.getElementById('stat-maxalt').textContent = stats.maxAlt !== null ? Math.round(stats.maxAlt) + 'm' : '-';
+    document.getElementById('stat-minalt').textContent = stats.minAlt !== null ? Math.round(stats.minAlt) + 'm' : '-';
+    document.getElementById('stat-duration').textContent = stats.durationMs !== null ? formatDuration(stats.durationMs) : '- (GPX에 시간 정보 없음)';
+    document.getElementById('stat-date').textContent = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '- (GPX에 날짜 정보 없음)';
+    statGrid.style.display = 'grid';
+
+    warnBox.style.display = 'none';
+    saveBtn.disabled = false;
+    document.getElementById('btn-open-nmap').disabled = false;
+    document.getElementById('btn-copy-nmap').disabled = false;
+  } catch (e) {
+    // 저장된 draft가 깨져 있으면 무시(지도는 빈 상태로 시작)
+  }
 }
 
 function pickWaypoints(points, count) {
@@ -612,6 +679,7 @@ document.getElementById('btn-reset-style').addEventListener('click', resetStyleT
 
 restoreStyleFromStorage();
 initMap();
+restoreGpxDraftIfAny();
 
 document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));
 document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(-1));
