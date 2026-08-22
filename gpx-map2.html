@@ -1,0 +1,608 @@
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPX 경로 지도 생성기</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #2d3748; }
+  .layout { display: flex; min-height: 100vh; }
+  .side-pane { width: 340px; min-width: 340px; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  .main-pane { flex: 1; padding: 24px; display: flex; flex-direction: column; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 12.5px; color: #718096; margin: 0 0 16px; }
+  fieldset { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; padding: 14px; }
+  legend { font-size: 13px; font-weight: 700; color: #2b6cb0; padding: 0 6px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #4a5568; margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=file], input[type=color], input[type=range], input[type=number], input[type=text] {
+    width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-family: inherit; background: #fff; color: #2d3748;
+  }
+  .btn { display: inline-block; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; color: #2d3748; cursor: pointer; }
+  .btn:hover { background: #f7fafc; }
+  .btn-primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-size: 14px; padding: 10px 18px; width: 100%; }
+  .btn-primary:hover { background: #2c5282; }
+  .btn-primary:disabled { background: #cbd5e0; border-color: #cbd5e0; cursor: not-allowed; }
+  .action-bar { display: flex; gap: 8px; margin-top: 12px; }
+  .warn-box { display: none; background: #fff3cd; border: 1px solid #ffc107; color: #7a5c00; font-size: 12.5px; font-weight: 700; padding: 10px 14px; border-radius: 8px; margin-top: 12px; white-space: pre-line; }
+  .info-box { display: none; background: #ebf8ff; border: 1px solid #90cdf4; color: #2c5282; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-top: 12px; white-space: pre-line; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .stat-box { background: #f7fafc; border: 1px solid #edf2f7; border-radius: 8px; padding: 8px 10px; }
+  .stat-label { font-size: 10.5px; color: #718096; display: block; }
+  .stat-value { font-size: 14px; font-weight: 700; color: #1a202c; }
+  #map { flex: 1; min-height: 500px; border-radius: 12px; border: 1px solid #e2e8f0; }
+  .map-note { font-size: 11.5px; color: #a0aec0; margin-top: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row label { margin: 0; }
+</style>
+<!-- html2canvas 라이브러리 추가 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <div class="side-pane">
+    <h1>🗺️ GPX 경로 지도 생성기</h1>
+    <p class="sub">GPX 파일을 불러오면 실제 지도(네이버지도) 위에 산행 경로가 그려집니다. 인터넷 연결이 필요합니다.</p>
+
+    <fieldset>
+      <legend>GPX 파일</legend>
+      <label for="gpxFile">GPX 파일 선택</label>
+      <input type="file" id="gpxFile" accept=".gpx">
+      <div class="warn-box" id="gpx-warn-box"></div>
+      <div class="stat-grid" id="stat-grid" style="display:none;">
+        <div class="stat-box"><span class="stat-label">트랙 포인트</span><span class="stat-value" id="stat-points"></span></div>
+        <div class="stat-box"><span class="stat-label">총거리</span><span class="stat-value" id="stat-distance"></span></div>
+        <div class="stat-box"><span class="stat-label">최고고도</span><span class="stat-value" id="stat-maxalt"></span></div>
+        <div class="stat-box"><span class="stat-label">최저고도</span><span class="stat-value" id="stat-minalt"></span></div>
+        <div class="stat-box"><span class="stat-label">소요시간</span><span class="stat-value" id="stat-duration"></span></div>
+        <div class="stat-box" style="grid-column: span 2;"><span class="stat-label">산행날짜</span><span class="stat-value" id="stat-date"></span></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>경로선 스타일</legend>
+      <div class="row">
+        <div style="flex:1;">
+          <label for="lineColor">색상</label>
+          <input type="color" id="lineColor" value="#e53e3e">
+        </div>
+        <div style="flex:1;">
+          <label for="lineWidth">두께 (px)</label>
+          <input type="number" id="lineWidth" value="4" min="1" max="12" step="1">
+        </div>
+      </div>
+      <label style="margin-top:10px;"><input type="checkbox" id="showMarkers" checked style="width:auto; margin-right:6px;">들머리·날머리·최고지점 마커 표시</label>
+      <label style="margin-top:6px;"><input type="checkbox" id="showArrows" checked style="width:auto; margin-right:6px;">산행 방향 화살표 표시</label>
+      <div class="row" style="margin-top:8px;">
+        <div style="flex:1;">
+          <label for="arrowColor" style="margin:0;">화살표 색상</label>
+          <input type="color" id="arrowColor" value="#1a202c">
+        </div>
+        <div style="flex:1;">
+          <label for="arrowIntervalKm" style="margin:0;">간격 (km)</label>
+          <input type="number" id="arrowIntervalKm" value="1" min="0.1" max="5" step="0.1">
+        </div>
+      </div>
+      <div class="action-bar" style="margin-top:8px;">
+        <button class="btn" id="btn-apply-style" type="button" style="flex:1;">스타일 적용</button>
+        <button class="btn" id="btn-reset-style" type="button">초기화</button>
+      </div>
+    </fieldset>
+
+    <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled>JPG로 저장</button>
+    <div class="warn-box" id="save-warn-box"></div>
+    <div class="info-box" id="save-info-box"></div>
+    <p class="map-note">인터넷 환경 및 지도 데이터량에 따라 캡처에 1~3초 정도 소요될 수 있습니다.</p>
+
+    <div class="action-bar" style="margin-top:12px;">
+      <button class="btn" id="btn-open-nmap" type="button" disabled style="flex:1;">📱 네이버지도 앱에서 보기</button>
+      <button class="btn" id="btn-copy-nmap" type="button" disabled>링크 복사</button>
+    </div>
+    <p class="map-note">모바일에서 누르면 네이버지도 앱이 열리고, 들머리·경유지1~5·날머리를 잇는 도보 경로가 표시됩니다(최대 7지점, GPX 전체 궤적과는 다름). 앱 안에서 자유롭게 확대해 실제 지형을 볼 수 있습니다. 네이버지도 앱이 설치되어 있어야 동작합니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣으세요.</p>
+    <div class="warn-box" id="nmap-warn-box"></div>
+    <div class="info-box" id="nmap-info-box"></div>
+  </div>
+
+  <div class="main-pane" id="main-pane" style="position:relative;">
+    <div id="map"></div>
+    <div id="zoom-control" style="position:absolute; top:36px; right:36px; display:flex; flex-direction:column; z-index:200; box-shadow:0 2px 8px rgba(0,0,0,0.25); border-radius:6px; overflow:hidden;">
+      <button id="btn-zoom-in" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer; border-bottom:1px solid #e2e8f0;">+</button>
+      <button id="btn-zoom-out" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer;">−</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
+<script>
+let map = null;
+let currentPolyline = null;
+let currentMarkers = [];
+let gpxBaseName = 'gpx';
+
+function initMap() {
+  map = new naver.maps.Map('map', {
+    center: new naver.maps.LatLng(36.5, 127.8),
+    zoom: 7
+  });
+}
+
+function zoomBy(delta) {
+  if (!map) return;
+  const newZoom = Math.min(21, Math.max(1, Math.round(map.getZoom()) + delta));
+  map.setZoom(newZoom, true);
+}
+
+function parseGPX(xmlText) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlText, 'application/xml');
+  const errorNode = xml.querySelector('parsererror');
+  if (errorNode) throw new Error('GPX XML 파싱 오류');
+
+  const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+  if (trkpts.length === 0) throw new Error('트랙 포인트(trkpt)를 찾을 수 없습니다.');
+
+  return trkpts.map(pt => {
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    const eleEl = pt.getElementsByTagName('ele')[0];
+    const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+    const timeEl = pt.getElementsByTagName('time')[0];
+    const time = timeEl ? new Date(timeEl.textContent) : null;
+    return { lat, lon, ele, time: (time && !isNaN(time.getTime())) ? time : null };
+  }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+}
+
+function formatDuration(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  return `${hours}시간 ${minutes}분`;
+}
+
+function formatDateWithWeekday(date) {
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const w = weekdays[date.getDay()];
+  return `${y}-${m}-${d} (${w})`;
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
+}
+
+function computeStats(points) {
+  let totalKm = 0;
+  for (let i = 1; i < points.length; i++) totalKm += haversineKm(points[i - 1], points[i]);
+  const elevations = points.map(p => p.ele).filter(e => e !== null);
+  const maxAlt = elevations.length ? Math.max(...elevations) : null;
+  const minAlt = elevations.length ? Math.min(...elevations) : null;
+
+  const withTime = points.filter(p => p.time !== null);
+  const durationMs = withTime.length >= 2
+    ? withTime[withTime.length - 1].time.getTime() - withTime[0].time.getTime()
+    : null;
+  const hikeDate = withTime.length ? withTime[0].time : null;
+
+  return { totalKm, maxAlt, minAlt, durationMs, hikeDate };
+}
+
+function clearMapLayers() {
+  if (currentPolyline) { currentPolyline.setMap(null); currentPolyline = null; }
+  currentMarkers.forEach(m => m.setMap(null));
+  currentMarkers = [];
+}
+
+function makeDotMarker(position, strokeColor) {
+  return new naver.maps.Marker({
+    position,
+    map,
+    icon: {
+      content: `<div style="width:14px;height:14px;border-radius:50%;background:#ffffff;border:3px solid ${strokeColor};"></div>`,
+      anchor: new naver.maps.Point(7, 7)
+    },
+    zIndex: 100
+  });
+}
+
+function makeLabelMarker(position, strokeColor, label) {
+  return new naver.maps.Marker({
+    position,
+    map,
+    draggable: true,
+    icon: {
+      content: `<div style="white-space:nowrap; font-size:12px; font-weight:700; color:#ffffff; background:${strokeColor}; padding:2px 6px; border-radius:4px; cursor:move;">${label}</div>`,
+      anchor: new naver.maps.Point(-4, -18)
+    },
+    title: '드래그해서 위치를 옮길 수 있습니다',
+    zIndex: 110
+  });
+}
+
+function bearingDeg(a, b) {
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function makeArrowMarker(position, bearing, color) {
+  return new naver.maps.Marker({
+    position,
+    map,
+    icon: {
+      content: `<div style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;transform:rotate(${bearing}deg);">
+        <svg width="20" height="20" viewBox="0 0 24 24">
+          <line x1="12" y1="20" x2="12" y2="11" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+          <path d="M12 0 L20 16 L12 12 L4 16 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
+        </svg>
+      </div>`,
+      anchor: new naver.maps.Point(11, 11)
+    },
+    zIndex: 50
+  });
+}
+
+function placeDirectionArrows(points, color, intervalKm) {
+  const arrows = [];
+  let distSinceLast = 0;
+  for (let i = 1; i < points.length; i++) {
+    distSinceLast += haversineKm(points[i - 1], points[i]);
+    if (distSinceLast >= intervalKm) {
+      const bearing = bearingDeg(points[i - 1], points[i]);
+      arrows.push(makeArrowMarker(new naver.maps.LatLng(points[i].lat, points[i].lon), bearing, color));
+      distSinceLast = 0;
+    }
+  }
+  return arrows;
+}
+
+function drawRoute(points) {
+  clearMapLayers();
+
+  const path = points.map(p => new naver.maps.LatLng(p.lat, p.lon));
+  const color = document.getElementById('lineColor').value;
+  const weight = parseInt(document.getElementById('lineWidth').value, 10) || 4;
+
+  currentPolyline = new naver.maps.Polyline({
+    map,
+    path,
+    strokeColor: color,
+    strokeWeight: weight,
+    strokeOpacity: 0.9
+  });
+
+  const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
+  path.forEach(ll => bounds.extend(ll));
+  map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+
+  if (document.getElementById('showMarkers').checked) {
+    const start = points[0];
+    const end = points[points.length - 1];
+    const startLL = new naver.maps.LatLng(start.lat, start.lon);
+    const endLL = new naver.maps.LatLng(end.lat, end.lon);
+    currentMarkers.push(makeDotMarker(startLL, '#2b6cb0'));
+    currentMarkers.push(makeLabelMarker(startLL, '#2b6cb0', '들머리'));
+    currentMarkers.push(makeDotMarker(endLL, '#dd6b20'));
+    currentMarkers.push(makeLabelMarker(endLL, '#dd6b20', '날머리'));
+    const withEle = points.filter(p => p.ele !== null);
+    if (withEle.length) {
+      const peak = withEle.reduce((a, b) => (b.ele > a.ele ? b : a));
+      currentMarkers.push(makeDotMarker(new naver.maps.LatLng(peak.lat, peak.lon), '#e53e3e'));
+    }
+  }
+
+  if (document.getElementById('showArrows').checked) {
+    const arrowColor = document.getElementById('arrowColor').value;
+    const intervalKm = parseFloat(document.getElementById('arrowIntervalKm').value) || 1;
+    currentMarkers.push(...placeDirectionArrows(points, arrowColor, intervalKm));
+  }
+}
+
+let loadedPoints = null;
+
+const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
+
+function saveHandoffToSummary(mountainName, stats) {
+  const totalMinutes = stats.durationMs !== null ? Math.round(stats.durationMs / 60000) : null;
+  const hours = totalMinutes !== null ? Math.floor(totalMinutes / 60) : null;
+  const minutes = totalMinutes !== null ? totalMinutes % 60 : null;
+
+  let distTimeText = stats.totalKm.toFixed(1) + 'Km';
+  if (hours !== null) {
+    distTimeText += hours > 0 ? ` & ${hours}시간` : ' &';
+    if (minutes) distTimeText += ` ${minutes}분`;
+  }
+
+  const dateText = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '';
+
+  try {
+    localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify({
+      mountain: mountainName,
+      date: dateText,
+      distTime: distTimeText
+    }));
+  } catch (e) {
+  }
+}
+
+function handleGPXFile(e) {
+  const file = e.target.files && e.target.files[0];
+  const warnBox = document.getElementById('gpx-warn-box');
+  const statGrid = document.getElementById('stat-grid');
+  const saveBtn = document.getElementById('btn-save-jpg');
+  if (!file) return;
+
+  gpxBaseName = file.name.replace(/\.gpx$/i, '') || 'gpx';
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const points = parseGPX(reader.result);
+      loadedPoints = points;
+      drawRoute(points);
+
+      const stats = computeStats(points);
+      document.getElementById('stat-points').textContent = points.length + '개';
+      document.getElementById('stat-distance').textContent = stats.totalKm.toFixed(2) + 'km';
+      document.getElementById('stat-maxalt').textContent = stats.maxAlt !== null ? Math.round(stats.maxAlt) + 'm' : '-';
+      document.getElementById('stat-minalt').textContent = stats.minAlt !== null ? Math.round(stats.minAlt) + 'm' : '-';
+      document.getElementById('stat-duration').textContent = stats.durationMs !== null ? formatDuration(stats.durationMs) : '- (GPX에 시간 정보 없음)';
+      document.getElementById('stat-date').textContent = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '- (GPX에 날짜 정보 없음)';
+      statGrid.style.display = 'grid';
+
+      warnBox.style.display = 'none';
+      saveBtn.disabled = false;
+      document.getElementById('btn-open-nmap').disabled = false;
+      document.getElementById('btn-copy-nmap').disabled = false;
+
+      saveHandoffToSummary(gpxBaseName, stats);
+    } catch (err) {
+      warnBox.style.display = 'block';
+      warnBox.textContent = '⚠ GPX 파일을 읽는 중 오류: ' + err.message;
+      statGrid.style.display = 'none';
+      saveBtn.disabled = true;
+      document.getElementById('btn-open-nmap').disabled = true;
+      document.getElementById('btn-copy-nmap').disabled = true;
+    }
+  };
+  reader.onerror = () => {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 파일을 읽을 수 없습니다.';
+  };
+  reader.readAsText(file);
+}
+
+function pickWaypoints(points, count) {
+  if (points.length === 0) return [];
+  if (points.length <= count) return points.slice();
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.round((i / (count - 1)) * (points.length - 1));
+    result.push(points[idx]);
+  }
+  return result;
+}
+
+function buildNaverMapDeepLinkParams(points) {
+  const waypoints = pickWaypoints(points, 7);
+  const start = waypoints[0];
+  const end = waypoints[waypoints.length - 1];
+  const middles = waypoints.slice(1, -1);
+
+  const params = new URLSearchParams();
+  params.set('slat', start.lat);
+  params.set('slng', start.lon);
+  params.set('sname', '들머리');
+  middles.forEach((p, i) => {
+    const n = i + 1;
+    params.set(`v${n}lat`, p.lat);
+    params.set(`v${n}lng`, p.lon);
+    params.set(`v${n}name`, `경유지${n}`);
+  });
+  params.set('dlat', end.lat);
+  params.set('dlng', end.lon);
+  params.set('dname', '날머리');
+  params.set('appname', location.href);
+  return params;
+}
+
+function buildNaverMapDeepLinks(points) {
+  const params = buildNaverMapDeepLinkParams(points);
+  const query = params.toString();
+  const nmapUrl = `nmap://route/walk?${query}`;
+  const intentUrl = `intent://route/walk?${query}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
+  return { nmapUrl, intentUrl };
+}
+
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+function isIOS() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function openInNaverMapApp() {
+  const warnBox = document.getElementById('nmap-warn-box');
+  const infoBox = document.getElementById('nmap-info-box');
+  warnBox.style.display = 'none';
+  infoBox.style.display = 'none';
+
+  if (!loadedPoints) return;
+  const { nmapUrl, intentUrl } = buildNaverMapDeepLinks(loadedPoints);
+
+  if (isAndroid()) {
+    location.href = intentUrl;
+    return;
+  }
+
+  if (isIOS()) {
+    const fallbackTimer = setTimeout(() => {
+      if (!document.hidden) {
+        infoBox.style.display = 'block';
+        infoBox.textContent = 'ℹ 네이버지도 앱이 설치되어 있지 않은 것 같습니다. 앱스토어에서 "네이버지도"를 설치한 뒤 다시 시도해주세요.';
+      }
+    }, 1500);
+    document.addEventListener('visibilitychange', function onVis() {
+      if (document.hidden) {
+        clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', onVis);
+      }
+    });
+    location.href = nmapUrl;
+    return;
+  }
+
+  infoBox.style.display = 'block';
+  infoBox.textContent = 'ℹ 모바일에서만 앱이 열립니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣어 모바일 사용자가 클릭하게 하세요.';
+}
+
+function buildRedirectPageUrl(points) {
+  const params = buildNaverMapDeepLinkParams(points);
+  const query = params.toString();
+  const redirectBase = new URL('nmap-redirect.html', location.href).href;
+  const redirectParams = new URLSearchParams();
+  redirectParams.set('q', query);
+  if (gpxBaseName) redirectParams.set('title', gpxBaseName);
+  return `${redirectBase}?${redirectParams.toString()}`;
+}
+
+function copyNaverMapLink() {
+  const warnBox = document.getElementById('nmap-warn-box');
+  const infoBox = document.getElementById('nmap-info-box');
+  warnBox.style.display = 'none';
+  infoBox.style.display = 'none';
+
+  if (!loadedPoints) return;
+  const redirectUrl = buildRedirectPageUrl(loadedPoints);
+  navigator.clipboard.writeText(redirectUrl).then(() => {
+    infoBox.style.display = 'block';
+    infoBox.textContent = 'ℹ 블로그 등에 붙일 수 있는 일반 https 링크가 클립보드에 복사되었습니다. 클릭하면 네이버지도 앱으로 자동 연결됩니다. (네이버지도 앱이 설치된 기기에서만 열립니다)';
+  }).catch(err => {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 복사 실패: ' + err.message;
+  });
+}
+
+
+// JPG 저장(html2canvas 사용) 기능으로 교체
+async function saveAsJPG() {
+  const saveWarnBox = document.getElementById('save-warn-box');
+  const saveInfoBox = document.getElementById('save-info-box');
+  const btn = document.getElementById('btn-save-jpg');
+  const mapDiv = document.getElementById('map');
+
+  saveWarnBox.style.display = 'none';
+  saveInfoBox.style.display = 'block';
+  saveInfoBox.textContent = '⏳ 지도를 캡처하는 중입니다. 잠시만 기다려주세요...';
+  btn.disabled = true;
+
+  try {
+    const canvas = await html2canvas(mapDiv, {
+      useCORS: true,       // 네이버지도 외부 타일 이미지를 불러오기 위해 필수
+      allowTaint: false,
+      scale: 2,            // 고화질 캡처
+      backgroundColor: '#f0f4f8'
+    });
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+    const link = document.createElement('a');
+    link.download = (gpxBaseName || 'hiking_route') + '_map.jpg';
+    link.href = dataUrl;
+    link.click();
+
+    saveInfoBox.textContent = '✅ 지도가 성공적으로 저장되었습니다.';
+    
+  } catch (err) {
+    saveInfoBox.style.display = 'none';
+    saveWarnBox.style.display = 'block';
+    saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => {
+      if (saveInfoBox.textContent.includes('✅')) {
+        saveInfoBox.style.display = 'none';
+      }
+    }, 3000);
+  }
+}
+
+const STYLE_STORAGE_KEY = 'gpx-map-style';
+const STYLE_FIELD_IDS = ['lineColor', 'lineWidth', 'showMarkers', 'showArrows', 'arrowColor', 'arrowIntervalKm'];
+const STYLE_DEFAULTS = {
+  lineColor: '#e53e3e',
+  lineWidth: '4',
+  showMarkers: true,
+  showArrows: true,
+  arrowColor: '#1a202c',
+  arrowIntervalKm: '1'
+};
+
+function saveStyleToStorage() {
+  const style = {};
+  STYLE_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    style[id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  try { localStorage.setItem(STYLE_STORAGE_KEY, JSON.stringify(style)); } catch (e) {}
+}
+
+function restoreStyleFromStorage() {
+  try {
+    const raw = localStorage.getItem(STYLE_STORAGE_KEY);
+    if (!raw) return;
+    const style = JSON.parse(raw);
+    STYLE_FIELD_IDS.forEach(id => {
+      if (!(id in style)) return;
+      const el = document.getElementById(id);
+      if (el.type === 'checkbox') el.checked = style[id];
+      else el.value = style[id];
+    });
+  } catch (e) {}
+}
+
+function resetStyleToDefaults() {
+  STYLE_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el.type === 'checkbox') el.checked = STYLE_DEFAULTS[id];
+    else el.value = STYLE_DEFAULTS[id];
+  });
+  try { localStorage.removeItem(STYLE_STORAGE_KEY); } catch (e) {}
+  if (loadedPoints) drawRoute(loadedPoints);
+}
+
+document.getElementById('gpxFile').addEventListener('change', handleGPXFile);
+document.getElementById('btn-save-jpg').addEventListener('click', saveAsJPG);
+document.getElementById('btn-open-nmap').addEventListener('click', openInNaverMapApp);
+document.getElementById('btn-copy-nmap').addEventListener('click', copyNaverMapLink);
+document.getElementById('btn-apply-style').addEventListener('click', () => {
+  saveStyleToStorage();
+  if (loadedPoints) drawRoute(loadedPoints);
+});
+document.getElementById('btn-reset-style').addEventListener('click', resetStyleToDefaults);
+
+restoreStyleFromStorage();
+initMap();
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));
+document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(-1));
+</script>
+</body>
+</html>
