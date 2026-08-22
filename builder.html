@@ -1279,6 +1279,11 @@ function copyPromptToClipboard() {
     jsonWarnBox.style.display = 'none';
     copyInfo.style.display = 'block';
     copyInfo.textContent = 'ℹ 프롬프트가 클립보드에 복사되었습니다. 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 이 칸에 붙여넣고 [JSON으로 붙여넣기]를 누르세요.';
+    // 산행가이드표지(guide_prompt.html)도 이 원문 텍스트를 그대로 붙여넣으면
+    // 자체적으로 산 이름/경로/코스 특징을 추출할 수 있으므로(자유 서술형
+    // 텍스트 지원), [JSON 붙여넣기] 때와 동일한 handoff 채널로 원문 텍스트를
+    // 미리 넘겨둔다. 사용자가 직접 "산행가이드표지" 메뉴로 이동해야 반영된다.
+    saveJsonHandoffToGuidePrompt(courseText);
   }).catch(err => {
     jsonWarnBox.style.display = 'block';
     jsonWarnBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
