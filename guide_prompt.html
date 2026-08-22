@@ -188,9 +188,10 @@
     </header>
 
     <fieldset>
-        <legend>1단계: 산행 가이드 JSON 입력</legend>
-        <textarea id="jsonInput" placeholder='예: {&#10;  "mountainName": "가리왕산",&#10;  "courseRouteFlow": ["장구목이시작점", "임도", "가리왕산정상", "어은골계곡", "자연휴양림"],&#10;  "totalTime": "5.5h~6.0h",&#10;  "overallDifficulty": "보통",&#10;  "sections": [ ... ]&#10;}'></textarea>
-        <div id="jsonError">올바른 JSON 형식이 아닙니다. 형식을 확인해 주세요.</div>
+        <legend>1단계: 산행 가이드 JSON 또는 원문 텍스트 입력</legend>
+        <p class="sub" style="margin:0 0 8px;">MOUNTAIN_DATA JSON을 붙여넣거나, "전체 경로: 들머리 ➔ 경유지 ➔ 날머리" 형태의 산행 가이드 원문(자유 서술형 텍스트)을 그대로 붙여넣어도 산 이름·경로·코스 특징을 자동으로 추출합니다.</p>
+        <textarea id="jsonInput" placeholder='예: {&#10;  "mountainName": "가리왕산",&#10;  "courseRouteFlow": ["장구목이시작점", "임도", "가리왕산정상", "어은골계곡", "자연휴양림"],&#10;  "totalTime": "5.5h~6.0h",&#10;  "overallDifficulty": "보통",&#10;  "sections": [ ... ]&#10;}&#10;&#10;또는 "전체 경로: 심원정 주차장 ➔ 유동마을 ➔ 황석산 정상 ➔ 거망산 정상..." 형태의 원문 텍스트'></textarea>
+        <div id="jsonError">JSON도 아니고 "전체 경로:" 형식의 원문 텍스트도 찾지 못했습니다. 형식을 확인해 주세요.</div>
         <button id="parseJsonBtn" class="btn-primary" style="margin-top: 15px;">JSON 분석</button>
     </fieldset>
 
@@ -446,30 +447,104 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         return translated;
     }
 
+    // MOUNTAIN_DATA JSON이 아니라 산행 가이드 원문(자유 서술형 텍스트)이
+    // 붙여넣어진 경우를 위한 폴백 파서. 여기서 실제로 쓰는 값은 산 이름/
+    // 경유지 흐름/코스 특징 키워드뿐이므로(이미지 프롬프트 자체는 배경·
+    // 계절·캐릭터 입력칸에서 별도로 만듦), 이 세 가지만 텍스트에서 최대한
+    // 뽑아낸다. 정확한 파싱이 아니라 실패해도 안전한 휴리스틱 추출이라,
+    // 못 찾은 값은 빈 문자열로 두고 사용자가 직접 보완할 수 있게 한다.
+    function parseFreeformGuideText(text) {
+        // 산 이름: "전체 경로:" 줄에서 맨 처음 지점명을 우선 쓰고, 없으면
+        // 첫 줄 제목에서 한글 산 이름 패턴(...산/봉/령 등)을 찾는다.
+        let mountainName = '';
+        const routeLineMatch = text.match(/전체\s*경로\s*[:：]\s*(.+)/);
+        let routeFlow = '';
+        if (routeLineMatch) {
+            const routeStops = routeLineMatch[1]
+                .split('➔')
+                .map(s => s.replace(/\(.*?\)/g, '').replace(/\[[0-9,\s]+\]/g, '').trim())
+                .filter(Boolean);
+            if (routeStops.length) routeFlow = routeStops.join(' ➔ ');
+        }
+
+        const titleLine = text.split('\n').find(l => l.trim());
+        if (titleLine) {
+            const nameMatch = titleLine.match(/([가-힣]{2,}(?:산|봉|령|재|골|폭포))/);
+            if (nameMatch) mountainName = nameMatch[1];
+        }
+        if (!mountainName && routeFlow) {
+            mountainName = routeFlow.split('➔')[0].trim();
+        }
+
+        // 코스 특징(산세/지형 묘사): "N구간: 제목" 아래 큰따옴표로 감싼
+        // 한 줄 요약("숨이 턱 끝까지 차오르는 깔딱고개와 웅장한 황석산성,
+        // 그리고 360도 파노라마 뷰" 등)이 그 구간의 풍경을 가장 압축적으로
+        // 담고 있어 배경 프롬프트 재료로 가장 유용하므로 우선 추출한다.
+        // 이런 서술형 요약이 없는 텍스트를 위해, 굵은 강조 키워드(**...**)도
+        // 보조 후보로 함께 모은다.
+        const featuresSet = new Set();
+        const quotedLineMatches = text.matchAll(/"([^"]{4,60})"/g);
+        for (const m of quotedLineMatches) {
+            featuresSet.add(m[1].trim());
+        }
+        const boldMatches = text.matchAll(/\*\*([^*]{2,20})\*\*/g);
+        for (const m of boldMatches) {
+            const cleaned = m[1].replace(/\(.*?\)/g, '').trim();
+            if (cleaned && !/^\d/.test(cleaned)) featuresSet.add(cleaned);
+        }
+
+        // 산 이름도 경로 흐름도 하나도 못 찾았다면 이 텍스트에서는 아무것도
+        // 추출할 수 없다고 보고 실패 처리한다(무관한 텍스트를 "명산"/"경로
+        // 정보 없음"으로 조용히 통과시키지 않기 위함).
+        if (!mountainName && !routeFlow) {
+            throw new Error('산 이름이나 "전체 경로:" 줄을 찾을 수 없습니다.');
+        }
+
+        return {
+            mountainName: mountainName || '명산',
+            routeFlow: routeFlow || '경로 정보 없음',
+            allFeatures: Array.from(featuresSet).slice(0, 12).join(', ')
+        };
+    }
+
     nodes.parseBtn.addEventListener('click', () => {
-        const rawJson = nodes.jsonInput.value.trim();
+        const rawInput = nodes.jsonInput.value.trim();
         nodes.jsonError.style.display = 'none';
 
-        if (!rawJson) {
-            alert('JSON 데이터를 입력해 주세요.');
+        if (!rawInput) {
+            alert('JSON 또는 산행 가이드 텍스트를 입력해 주세요.');
             return;
         }
 
         try {
-            const parsed = JSON.parse(rawJson);
-            
-            let allFeaturesSet = new Set();
-            if(parsed.sections) {
-                parsed.sections.forEach(sec => {
-                    if(sec.features) sec.features.forEach(f => allFeaturesSet.add(f));
-                });
+            let parsedHikingData;
+            try {
+                const parsed = JSON.parse(rawInput);
+                let allFeaturesSet = new Set();
+                if (parsed.sections) {
+                    parsed.sections.forEach(sec => {
+                        if (sec.features) sec.features.forEach(f => allFeaturesSet.add(f));
+                    });
+                }
+                parsedHikingData = {
+                    mountainName: parsed.mountainName || "명산",
+                    routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
+                    allFeatures: Array.from(allFeaturesSet).join(", ")
+                };
+            } catch (jsonErr) {
+                // JSON이 아니면 자유 서술형 텍스트로 간주해 휴리스틱으로 추출
+                parsedHikingData = parseFreeformGuideText(rawInput);
             }
 
-            hikingData = {
-                mountainName: parsed.mountainName || "명산",
-                routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
-                allFeatures: Array.from(allFeaturesSet).join(", ")
-            };
+            hikingData = parsedHikingData;
+
+            // 추출한 코스 특징(산세/지형 묘사)을 "배경에 사용할 핵심 장소"
+            // 입력칸에 제안값으로 채워 넣어, 이 산의 실제 풍경 정보가 배경
+            // 이미지 프롬프트에 반영되도록 한다. 사용자가 이미 직접 입력해둔
+            // 값이 있으면 덮어쓰지 않는다.
+            if (hikingData.allFeatures && !nodes.bgLocation.value.trim()) {
+                nodes.bgLocation.value = hikingData.allFeatures;
+            }
 
             const summaryKo = `
 산명: ${hikingData.mountainName}
