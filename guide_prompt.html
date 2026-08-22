@@ -189,28 +189,7 @@
 
     <fieldset>
         <legend>1단계: 산행 가이드 JSON 입력</legend>
-        <textarea id="jsonInput">{
-  "mountainName": "가리왕산",
-  "courseRouteFlow": [
-    "장구목이시작점",
-    "임도",
-    "가리왕산정상",
-    "어은골계곡",
-    "자연휴양림"
-  ],
-  "totalTime": "5.5h~6.0h",
-  "overallDifficulty": "보통",
-  "sections": [
-    {
-      "cardTitle": "이끼폭포계곡",
-      "features": ["이끼폭포비경", "냉골바람지대", "미끄러운돌길"]
-    },
-    {
-      "cardTitle": "가리왕산정상",
-      "features": ["넓은고원평지", "360도조망터", "백두대간조망"]
-    }
-  ]
-}</textarea>
+        <textarea id="jsonInput" placeholder='예: {&#10;  "mountainName": "가리왕산",&#10;  "courseRouteFlow": ["장구목이시작점", "임도", "가리왕산정상", "어은골계곡", "자연휴양림"],&#10;  "totalTime": "5.5h~6.0h",&#10;  "overallDifficulty": "보통",&#10;  "sections": [ ... ]&#10;}'></textarea>
         <div id="jsonError">올바른 JSON 형식이 아닙니다. 형식을 확인해 주세요.</div>
         <button id="parseJsonBtn" class="btn-primary" style="margin-top: 15px;">JSON 분석</button>
     </fieldset>
@@ -276,15 +255,6 @@
 
     let hikingData = {};
 
-    // --- JSON 입력창 포커스 시 자동 비우기 ---
-    const defaultJsonText = nodes.jsonInput.value;
-    nodes.jsonInput.addEventListener('focus', function() {
-        if (this.value === defaultJsonText) this.value = '';
-    });
-    nodes.jsonInput.addEventListener('blur', function() {
-        if (this.value.trim() === '') this.value = defaultJsonText;
-    });
-
     // --- 다른 사이트를 오가다 브라우저가 탭을 새로고침/재사용해도 입력값이 사라지지 않도록
     //     텍스트 폼 데이터를 자동 저장한다. "폼 초기화" 버튼을 누르기 전까지 유지된다.
     //     index.html의 iframe 안에서 쓰일 때 다른 메뉴로 전환하면 iframe이 즉시 파기되어
@@ -293,7 +263,7 @@
 
     function collectDraftData() {
         return {
-            jsonInput: nodes.jsonInput.value === defaultJsonText ? '' : nodes.jsonInput.value,
+            jsonInput: nodes.jsonInput.value,
             bgLocation: nodes.bgLocation.value,
             bgSeason: nodes.bgSeason.value,
             charPosition: nodes.charPosition.value,
@@ -353,7 +323,7 @@
     }
 
     function resetForm() {
-        nodes.jsonInput.value = defaultJsonText;
+        nodes.jsonInput.value = '';
         nodes.bgLocation.value = '';
         nodes.bgSeason.value = '';
         nodes.charPosition.value = '';
