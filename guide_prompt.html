@@ -372,7 +372,33 @@
     });
     window.addEventListener('beforeunload', saveDraftNow);
 
+    // 산행가이드(builder.html)의 [JSON 붙여넣기]에서 넘겨준 MOUNTAIN_DATA
+    // JSON을 1단계 입력창에 자동으로 채운다. 서로 다른 iframe에서 로드되는
+    // 별개 페이지라 localStorage를 매개로 전달받으며, 한 번 적용한 뒤에는
+    // 지워서 다음에 이 페이지를 다시 열었을 때 중복 적용되지 않게 한다.
+    // draft(이 페이지에서 직접 작성 중이던 값)보다 나중에 적용해, 방금
+    // 산행가이드에서 새로 만든 최신 데이터가 우선하도록 한다.
+    const BUILDER_HANDOFF_KEY = 'gajaBuilderJsonToGuidePromptHandoff';
+
+    function applyBuilderJsonHandoffIfAny() {
+        let raw;
+        try {
+            raw = localStorage.getItem(BUILDER_HANDOFF_KEY);
+        } catch (e) {
+            return;
+        }
+        if (!raw) return;
+        try {
+            nodes.jsonInput.value = raw;
+            localStorage.removeItem(BUILDER_HANDOFF_KEY);
+            scheduleDraftSave();
+        } catch (e) {
+            // handoff 데이터가 깨져 있으면 무시
+        }
+    }
+
     restoreDraftIfAny();
+    applyBuilderJsonHandoffIfAny();
 
     // --- 동적 캐릭터 정의 생성 함수 (스마트 소품 전환) ---
     function getCharDefinitions(actionText) {
