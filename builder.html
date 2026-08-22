@@ -534,6 +534,7 @@ const EXAMPLE_DATA = {
 
 function fillFormFromData(data) {
   document.getElementById('mountainName').value = data.mountainName;
+  saveMountainNameHandoff((data.mountainName || '').trim());
   document.getElementById('courseRouteFlow').value = data.courseRouteFlow.join(', ');
   document.getElementById('startAltitude').value = data.startAltitude || '';
   document.getElementById('endAltitude').value = data.endAltitude || '';
@@ -1033,6 +1034,7 @@ function markGuideGeneratedInDraft() {
 function clearDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
   localStorage.removeItem(GENERATED_FLAG_KEY);
+  localStorage.removeItem(MOUNTAIN_NAME_HANDOFF_KEY);
   clearSummaryDraft();
   clearGuidePromptDraft();
   clearGpxMapDraft();
@@ -1259,6 +1261,21 @@ function saveJsonHandoffToGuidePrompt(courseText) {
   }
 }
 
+// 블로그헤더(bloghead.html)의 산 이름 입력란이 자동으로 채워 쓸 수 있도록
+// "산 이름" 입력칸에 타이핑할 때마다 실시간으로 localStorage에 넘겨둔다.
+// 서로 다른 iframe에서 로드되는 별개 페이지라 직접 DOM 접근이 불가능해
+// localStorage를 매개로 사용. [가이드 생성]을 누르지 않아도 언제 블로그헤더로
+// 이동하든 그 시점의 최신 산 이름이 반영된다.
+const MOUNTAIN_NAME_HANDOFF_KEY = 'gajaBuilderMountainNameHandoff';
+
+function saveMountainNameHandoff(name) {
+  try {
+    localStorage.setItem(MOUNTAIN_NAME_HANDOFF_KEY, name);
+  } catch (e) {
+    // localStorage 실패는 조용히 무시(핵심 기능인 가이드 생성에는 영향 없음)
+  }
+}
+
 function copyPromptToClipboard() {
   const textarea = document.getElementById('json-paste-area');
   const jsonWarnBox = document.getElementById('json-warn-box');
@@ -1379,6 +1396,7 @@ restoreDraftIfAny();
 document.querySelector('.form-pane').addEventListener('input', e => {
   if (e.target.closest('#json-paste-area')) return;
   scheduleDraftSave();
+  if (e.target.id === 'mountainName') saveMountainNameHandoff(e.target.value.trim());
 });
 document.querySelector('.form-pane').addEventListener('change', e => {
   if (e.target.closest('#json-paste-area')) return;

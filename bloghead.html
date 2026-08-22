@@ -163,6 +163,24 @@
             preserveObjectStacking: true
         });
 
+        // 산행가이드(builder.html)의 "산 이름" 입력칸에 타이핑할 때마다
+        // localStorage에 실시간으로 저장해두는 값을 그대로 가져와 채운다.
+        // 서로 다른 iframe에서 로드되는 별개 페이지라 직접 DOM 접근이
+        // 불가능해 localStorage를 매개로 사용. 이 handoff는 "항상 최신
+        // 산행가이드 값을 따라간다"는 성격이라(한 번 쓰고 버리는 다른
+        // handoff와 달리) 적용 후에도 지우지 않는다. 사용자가 이미 이
+        // 화면에서 직접 이름을 입력해뒀다면 덮어쓰지 않는다.
+        (function applyMountainNameHandoffIfAny() {
+            const nameInput = document.getElementById('mountainName');
+            if (nameInput.value.trim()) return;
+            try {
+                const name = localStorage.getItem('gajaBuilderMountainNameHandoff');
+                if (name) nameInput.value = name;
+            } catch (e) {
+                // localStorage 접근 실패는 조용히 무시(핵심 기능인 저장에는 영향 없음)
+            }
+        })();
+
         // 💡 사진 업로드 시 자동 크기 조절 로직 추가
         document.getElementById('uploadImages').addEventListener('change', function(e) {
             const files = e.target.files;
