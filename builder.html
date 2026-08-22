@@ -1034,6 +1034,8 @@ function clearDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
   localStorage.removeItem(GENERATED_FLAG_KEY);
   clearSummaryDraft();
+  clearGuidePromptDraft();
+  clearGpxMapDraft();
 }
 
 // 산행요약 생성(hiking_summary.html)도 draft를 localStorage에 저장하는데
@@ -1047,6 +1049,24 @@ const SUMMARY_INPUT_IDS = ['mountain', 'peakSummary', 'date', 'distTime', 'cours
 function clearSummaryDraft() {
   SUMMARY_INPUT_IDS.forEach(id => localStorage.removeItem('gaja_draft_' + id));
   localStorage.removeItem(SUMMARY_HANDOFF_KEY);
+}
+
+// 산행가이드표지(guide_prompt.html)도 자체 draft(guidePromptBuilderDraft)와
+// 이 화면의 [JSON 붙여넣기]가 넘긴 handoff 대기값을 갖고 있어 함께 지운다.
+const GUIDE_PROMPT_DRAFT_KEY = 'guidePromptBuilderDraft';
+
+function clearGuidePromptDraft() {
+  localStorage.removeItem(GUIDE_PROMPT_DRAFT_KEY);
+  localStorage.removeItem(BUILDER_HANDOFF_KEY);
+}
+
+// GPX 경로 생성(gpx-map.html)이 불러온 GPX 트랙 draft(gpxMapDraft)도 함께
+// 지운다. 경로선 색상/두께 같은 스타일 취향(gpx-map-style)은 산행가이드와
+// 무관한 개인 설정이라 초기화 대상에서 제외한다.
+const GPX_MAP_DRAFT_KEY = 'gpxMapDraft';
+
+function clearGpxMapDraft() {
+  localStorage.removeItem(GPX_MAP_DRAFT_KEY);
 }
 
 function restoreDraftIfAny() {
