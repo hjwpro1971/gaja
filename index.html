@@ -16,9 +16,12 @@
             background-color: #f4f7f6;
         }
 
-        /* 좌측 사이드바 디자인 */
+        /* 좌측 사이드바 디자인 — 뷰포트 폭에 비례해 늘고 줄되(clamp),
+           좁은 화면에서는 최소폭 아래로 더 줄지 않아 메뉴 글자가 깨지지 않게 함 */
         .sidebar {
-            width: 260px;
+            width: clamp(200px, 16vw, 260px);
+            min-width: 200px;
+            flex-shrink: 0;
             background-color: #2c3e50; /* 짙은 네이비 색상 */
             color: #ecf0f1;
             display: flex;

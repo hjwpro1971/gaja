@@ -9,8 +9,15 @@
   * { box-sizing: border-box; }
   body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #2d3748; }
   .layout { display: flex; min-height: 100vh; }
-  .form-pane { width: 480px; min-width: 480px; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 24px; overflow-y: auto; max-height: 100vh; }
-  .preview-pane { flex: 1; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  /* 입력 폼 패널: 뷰포트 폭에 비례해 늘고 줄되(clamp), 최소폭 아래로는
+     입력창/버튼이 깨지지 않게 유지 */
+  .form-pane { width: clamp(360px, 34vw, 480px); min-width: 360px; flex-shrink: 0; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  .preview-pane { flex: 1; min-width: 0; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .form-pane { width: 100%; min-width: 0; max-height: none; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .preview-pane { max-height: none; }
+  }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { font-size: 12.5px; color: #718096; margin: 0 0 20px; }
   fieldset { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; padding: 14px; }
