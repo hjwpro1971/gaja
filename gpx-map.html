@@ -93,7 +93,7 @@
     <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled>JPG로 저장</button>
     <div class="warn-box" id="save-warn-box"></div>
     <div class="info-box" id="save-info-box"></div>
-    <p class="map-note">JPG 저장 기능은 현재 제공되지 않습니다. 지도를 저장하려면 브라우저나 OS의 화면 캡처 도구를 이용해주세요.</p>
+    <p class="map-note">인터넷 환경 및 지도 데이터량에 따라 캡처에 1~3초 정도 소요될 수 있습니다.</p>
 
     <div class="action-bar" style="margin-top:12px;">
       <button class="btn" id="btn-open-nmap" type="button" disabled style="flex:1;">📱 네이버지도 앱에서 보기</button>
@@ -114,6 +114,8 @@
 </div>
 
 <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
+<!-- html2canvas 대신 html-to-image 라이브러리 사용 (SVG 경로선 캡처 완벽 지원) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
 <script>
 let map = null;
 let currentPolyline = null;
@@ -501,15 +503,49 @@ function copyNaverMapLink() {
 }
 
 
-// JPG 저장(화면 캡처) 기능은 여러 방식(html2canvas 근사, getDisplayMedia
-// 화면 공유)을 시도했지만 좌표 어긋남/화질 저하/오버레이 잔류 등 문제가
-// 반복 재현되어 제거했다. 버튼은 유지하되 클릭 시 안내만 표시한다.
-function saveAsJPG() {
+// JPG 저장: html2canvas 근사 캡처, getDisplayMedia 화면 공유를 차례로
+// 시도했으나 좌표 어긋남/화질 저하/오버레이 잔류 문제가 반복 재현되어
+// 한 차례 기능을 제거했었다. 원인은 html2canvas가 네이버 지도의 경로선
+// (Polyline, SVG 벡터로 렌더링됨)을 캡처하지 못하고 투명하게 날리는
+// 데 있었다. html-to-image는 DOM을 SVG로 직렬화해 브라우저 렌더링
+// 엔진에 그대로 맡기는 방식이라 벡터 요소를 안정적으로 캡처해, 이
+// 라이브러리로 교체해 경로선까지 정상적으로 포함된 캡처를 확인했다.
+async function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
-  saveInfoBox.style.display = 'none';
-  saveWarnBox.style.display = 'block';
-  saveWarnBox.textContent = 'ℹ JPG 저장 기능은 현재 제공되지 않습니다. 브라우저나 OS의 화면 캡처 도구를 이용해주세요.';
+  const btn = document.getElementById('btn-save-jpg');
+  const mapDiv = document.getElementById('map');
+
+  saveWarnBox.style.display = 'none';
+  saveInfoBox.style.display = 'block';
+  saveInfoBox.textContent = '⏳ 지도를 캡처하는 중입니다. 잠시만 기다려주세요...';
+  btn.disabled = true;
+
+  try {
+    const dataUrl = await htmlToImage.toJpeg(mapDiv, {
+      quality: 0.95,
+      pixelRatio: 2, // 화질을 2배로 선명하게 유지
+      backgroundColor: '#f0f4f8'
+    });
+
+    const link = document.createElement('a');
+    link.download = (gpxBaseName || 'hiking_route') + '_map.jpg';
+    link.href = dataUrl;
+    link.click();
+
+    saveInfoBox.textContent = '✅ 지도가 성공적으로 저장되었습니다.';
+  } catch (err) {
+    saveInfoBox.style.display = 'none';
+    saveWarnBox.style.display = 'block';
+    saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => {
+      if (saveInfoBox.textContent.includes('✅')) {
+        saveInfoBox.style.display = 'none';
+      }
+    }, 3000);
+  }
 }
 
 const STYLE_STORAGE_KEY = 'gpx-map-style';
