@@ -1119,16 +1119,23 @@ function handleLoadExistingHTML(e) {
 
       // 들머리/날머리 고도 필드(startAltitude/endAltitude)가 생기기 전에
       // 만들어진 예전 가이드 파일은 이 값이 없다. 구 규칙(1구간 altitude=
-      // 들머리 고도)을 근거로 1구간 altitude를 들머리, 5구간 altitude를
-      // 날머리에 임시로 채워 최소한 [가이드 생성]이 바로 막히지 않게 하고,
-      // 사용자가 실제 값으로 다시 확인/수정하도록 안내한다.
+      // 들머리 고도)에서는 "들머리"와 "1구간 끝지점"이 같은 값이었지만,
+      // 새 7노드 그래프에서는 서로 다른 지점이라 그대로 복사하면 들머리
+      // 노드와 1구간끝 노드가 같은 고도에 겹쳐 그래프가 평평하게 보인다
+      // (5구간→날머리도 마찬가지). 정확한 값은 원본 데이터에 없어 추정할
+      // 수밖에 없으므로, 최소한 그래프가 시각적으로 안 겹치도록 1구간
+      // altitude 대비 5% 낮춰 들머리로, 5구간 altitude 대비 5% 낮춰
+      // 날머리로 임시 추정한다(하산 방향이 일반적이라는 가정 — 실제
+      // 지형과 다를 수 있으므로 사용자 확인이 반드시 필요).
       let usedLegacyAltitudeFallback = false;
       if (!data.startAltitude) {
-        data.startAltitude = data.sections[0]?.altitude || 0;
+        const base = data.sections[0]?.altitude || 0;
+        data.startAltitude = Math.round(base * 0.95);
         usedLegacyAltitudeFallback = true;
       }
       if (!data.endAltitude) {
-        data.endAltitude = data.sections[4]?.altitude || 0;
+        const base = data.sections[4]?.altitude || 0;
+        data.endAltitude = Math.round(base * 0.95);
         usedLegacyAltitudeFallback = true;
       }
 
@@ -1136,7 +1143,7 @@ function handleLoadExistingHTML(e) {
 
       if (usedLegacyAltitudeFallback) {
         warnBox.style.display = 'block';
-        warnBox.textContent = 'ℹ 이 파일은 들머리/날머리 고도 필드가 없던 예전 형식이라, 구간 고도값으로 임시 채웠습니다. "들머리 고도"/"날머리 고도" 값이 실제와 맞는지 확인해주세요.';
+        warnBox.textContent = '⚠ 이 파일은 들머리/날머리 고도 필드가 없던 예전 형식이라, 구간 고도값을 기준으로 추정치를 임시로 채웠습니다. 실제 지형과 다를 수 있으니 "들머리 고도"/"날머리 고도" 값을 반드시 직접 확인/수정한 뒤 [가이드 생성]을 눌러주세요.';
       }
 
       const coverImg = doc.querySelector('.cover-image-layer img');
