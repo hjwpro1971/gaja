@@ -89,12 +89,18 @@
             color: #555;
         }
 
-        input[type="text"] {
+        input[type="text"], textarea.field-textarea {
             width: 100%;
             padding: 12px;
             border: 1px solid var(--border-color);
             border-radius: 8px;
             box-sizing: border-box;
+            font-family: inherit;
+            font-size: inherit;
+        }
+        textarea.field-textarea {
+            resize: vertical;
+            min-height: 70px;
         }
 
         button {
@@ -205,8 +211,8 @@
         <p style="font-size: 0.9rem; color: #666; margin-top: 0;">배경과 캐릭터의 위치를 원하시는 대로 자유롭게 설정해 주세요.</p>
         
         <div class="input-group">
-            <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어):</label>
-            <input type="text" id="bgLocationEntry" placeholder="예: 이끼계곡과 정상으로 가는 주목나무 숲길 (2씬)">
+            <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어, 여러 장소는 줄바꿈으로 구분):</label>
+            <textarea id="bgLocationEntry" class="field-textarea" placeholder="예: 이끼계곡과 정상으로 가는 주목나무 숲길 (2씬)"></textarea>
         </div>
 
         <div class="input-group">
@@ -501,10 +507,19 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         }
 
         // "배경에 사용할 핵심 장소" 입력칸에는 추출된 특징을 전부 넣지 않고
-        // 길이(=묘사가 풍부한 정도) 기준 상위 2~3개만 골라 짧고 쓰기 좋게
-        // 제안한다. 전체 목록은 allFeatures로 1단계 요약 화면에 그대로
-        // 보여줘 사용자가 원하면 직접 다른 항목을 골라 쓸 수 있게 한다.
-        const topFeatures = Array.from(featuresSet)
+        // 지형/풍경 묘사인 문장만(예: "본격적인 산행을 시작하기 전, 몸을
+        // 풀며 들머리로 이동하는 준비 단계"처럼 행동 안내일 뿐 풍경 묘사가
+        // 아닌 문장은 제외) 길이(=묘사가 풍부한 정도) 기준 상위 2~3개를
+        // 골라 각각 줄바꿈으로 구분해 제안한다(콤마로 이어붙이면 문장 내부
+        // 콤마와 섞여 몇 개인지 구분이 안 됨). 전체 목록은 allFeatures로
+        // 1단계 요약 화면에 그대로 보여줘 사용자가 원하면 직접 다른 항목을
+        // 골라 쓸 수 있게 한다.
+        // "산"·"골"·"재" 같은 한 글자는 "산행"·"시작"처럼 무관한 일반
+        // 단어에도 우연히 매칭돼 필터 역할을 못 하므로 제외하고, 실제
+        // 지형·풍경을 가리키는 두 글자 이상 단어 위주로 구성한다.
+        const LANDSCAPE_KEYWORDS = /봉|령|고개|절경|비경|조망|전망|파노라마|숲|나무|단풍|설경|일출|일몰|안개|구름|암릉|능선|바위|계곡|폭포|정상|사면|봉우리/;
+        const landscapeFeatures = Array.from(featuresSet).filter(f => LANDSCAPE_KEYWORDS.test(f));
+        const topFeatures = (landscapeFeatures.length ? landscapeFeatures : Array.from(featuresSet))
             .sort((a, b) => b.length - a.length)
             .slice(0, 3);
 
@@ -512,7 +527,7 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
             mountainName: mountainName || '명산',
             routeFlow: routeFlow || '경로 정보 없음',
             allFeatures: Array.from(featuresSet).slice(0, 12).join(', '),
-            bgLocationSuggestion: topFeatures.join(', ')
+            bgLocationSuggestion: topFeatures.join('\n')
         };
     }
 
@@ -581,7 +596,10 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
     });
 
     nodes.generateBtn.addEventListener('click', () => {
-        const locationText = nodes.bgLocation.value.trim();
+        // 배경 장소는 입력칸에서 줄바꿈으로 여러 개를 구분해 보여주지만,
+        // 실제 영문 프롬프트 문장에는 줄바꿈이 그대로 들어가면 어색해지므로
+        // 쉼표로 이어붙여 하나의 매끄러운 문구로 만든다.
+        const locationText = nodes.bgLocation.value.trim().split('\n').map(s => s.trim()).filter(Boolean).join(', ');
         const seasonWeather = nodes.bgSeason.value.trim();
         const positionText = nodes.charPosition.value.trim(); 
         const actionText = nodes.actionEntry.value.trim();
