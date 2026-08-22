@@ -500,10 +500,19 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
             throw new Error('산 이름이나 "전체 경로:" 줄을 찾을 수 없습니다.');
         }
 
+        // "배경에 사용할 핵심 장소" 입력칸에는 추출된 특징을 전부 넣지 않고
+        // 길이(=묘사가 풍부한 정도) 기준 상위 2~3개만 골라 짧고 쓰기 좋게
+        // 제안한다. 전체 목록은 allFeatures로 1단계 요약 화면에 그대로
+        // 보여줘 사용자가 원하면 직접 다른 항목을 골라 쓸 수 있게 한다.
+        const topFeatures = Array.from(featuresSet)
+            .sort((a, b) => b.length - a.length)
+            .slice(0, 3);
+
         return {
             mountainName: mountainName || '명산',
             routeFlow: routeFlow || '경로 정보 없음',
-            allFeatures: Array.from(featuresSet).slice(0, 12).join(', ')
+            allFeatures: Array.from(featuresSet).slice(0, 12).join(', '),
+            bgLocationSuggestion: topFeatures.join(', ')
         };
     }
 
@@ -540,10 +549,14 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
 
             // 추출한 코스 특징(산세/지형 묘사)을 "배경에 사용할 핵심 장소"
             // 입력칸에 제안값으로 채워 넣어, 이 산의 실제 풍경 정보가 배경
-            // 이미지 프롬프트에 반영되도록 한다. 사용자가 이미 직접 입력해둔
-            // 값이 있으면 덮어쓰지 않는다.
-            if (hikingData.allFeatures && !nodes.bgLocation.value.trim()) {
-                nodes.bgLocation.value = hikingData.allFeatures;
+            // 이미지 프롬프트에 반영되도록 한다. 원문 텍스트 경로에서는
+            // 가장 묘사가 풍부한 상위 2~3개만 추린 bgLocationSuggestion을
+            // 쓰고(전체 목록을 다 넣으면 너무 길고 지저분해짐), 그게 없는
+            // JSON 경로에서는 기존처럼 allFeatures 전체를 대신 쓴다. 사용자가
+            // 이미 직접 입력해둔 값이 있으면 덮어쓰지 않는다.
+            const bgLocationCandidate = hikingData.bgLocationSuggestion || hikingData.allFeatures;
+            if (bgLocationCandidate && !nodes.bgLocation.value.trim()) {
+                nodes.bgLocation.value = bgLocationCandidate;
             }
 
             const summaryKo = `
