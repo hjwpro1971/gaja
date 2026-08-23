@@ -479,9 +479,32 @@ const HUNDRED_MOUNTAIN_LABELS = {
   hanguksanha: '한국산하'
 };
 
+// "100대명산 데이터" 관리 화면(hundred_mountains.html)에서 사용자가 직접
+// 추가한 산 목록. 같은 origin(GitHub Pages)의 별도 페이지가 저장하는
+// localStorage 값을 읽어오는 것이라, 여기서는 읽기만 하고 절대 쓰지
+// 않는다(관리/삭제는 그 페이지에서만). 항목 형태: { name, peakStone,
+// height, region, orgs: ['forest', ...] }.
+const HUNDRED_MOUNTAINS_DATA_KEY = 'gajaHundredMountainsData';
+
+function loadCustomHundredMountainsData() {
+  try {
+    const raw = localStorage.getItem(HUNDRED_MOUNTAINS_DATA_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 function getHundredMountainBadges(mountainName) {
   if (!mountainName) return [];
-  return Object.keys(HUNDRED_MOUNTAINS).filter(key => HUNDRED_MOUNTAINS[key].includes(mountainName));
+  const badges = new Set(Object.keys(HUNDRED_MOUNTAINS).filter(key => HUNDRED_MOUNTAINS[key].includes(mountainName)));
+  loadCustomHundredMountainsData().forEach(m => {
+    if (m.name === mountainName && Array.isArray(m.orgs)) {
+      m.orgs.forEach(org => badges.add(org));
+    }
+  });
+  return Array.from(badges);
 }
 
 // [배지적용] 버튼을 누른 시점의 100대명산 배지를 확정해 저장해 둔다.
@@ -544,6 +567,7 @@ function populateHundredMountainDatalist() {
     HUNDRED_MOUNTAINS[key].forEach(name => allNames.add(name));
   });
   loadCustomMountainNames().forEach(name => allNames.add(name));
+  loadCustomHundredMountainsData().forEach(m => { if (m.name) allNames.add(m.name); });
   datalist.innerHTML = '';
   Array.from(allNames).sort((a, b) => a.localeCompare(b, 'ko')).forEach(name => {
     const option = document.createElement('option');
