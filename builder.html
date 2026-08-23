@@ -82,7 +82,8 @@
     <fieldset>
       <legend>기본 정보</legend>
       <label>산 이름</label>
-      <input type="text" id="mountainName" placeholder="예: 지리산">
+      <input type="text" id="mountainName" list="hundredMountainList" placeholder="예: 지리산" autocomplete="off">
+      <datalist id="hundredMountainList"></datalist>
 
       <label>코스 흐름 (콤마로 구분, 지도상 순서대로)</label>
       <input type="text" id="courseRouteFlow" placeholder="예: 백무동, 장터목, 연하선경, 세석, 한신계곡">
@@ -306,6 +307,22 @@ function getHundredMountainBadges(mountainName) {
   if (!mountainName) return [];
   return Object.keys(HUNDRED_MOUNTAINS).filter(key => HUNDRED_MOUNTAINS[key].includes(mountainName));
 }
+
+// "산 이름" 입력 시 100대명산 목록에서 후보를 자동완성으로 보여주기 위한
+// datalist 채우기. 4개 기관 목록을 합쳐 중복 제거한 전체 산 이름 목록.
+(function populateHundredMountainDatalist() {
+  const datalist = document.getElementById('hundredMountainList');
+  if (!datalist) return;
+  const allNames = new Set();
+  Object.keys(HUNDRED_MOUNTAINS).forEach(key => {
+    HUNDRED_MOUNTAINS[key].forEach(name => allNames.add(name));
+  });
+  Array.from(allNames).sort((a, b) => a.localeCompare(b, 'ko')).forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    datalist.appendChild(option);
+  });
+})();
 
 function graphemeLen(str) { return Array.from(str || '').length; }
 
