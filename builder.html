@@ -69,7 +69,11 @@
 
     <fieldset>
       <legend>코스별 상세 가이드 ↔ JSON</legend>
-      <p class="sub" style="margin:0 0 8px;">1) 아래에 산행 코스 상세 정보(자유 텍스트)를 입력 → 2) [JSON으로 변환하기]를 누르면 변환용 프롬프트+원문이 클립보드에 복사됨 → 3) 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 같은 칸에 붙여넣고 [JSON으로 붙여넣기] 클릭 → 4) 폼 확인/수정 후 [가이드 생성] → [다운로드]</p>
+      <p class="sub" style="margin:0 0 8px;">0) 원문 자체가 없다면 [마스터프롬프트 복사]로 산행 원문부터 AI에게 만들게 하세요 → 1) 아래에 산행 코스 상세 정보(자유 텍스트)를 입력 → 2) [JSON으로 변환하기]를 누르면 변환용 프롬프트+원문이 클립보드에 복사됨 → 3) 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 같은 칸에 붙여넣고 [JSON으로 붙여넣기] 클릭 → 4) 폼 확인/수정 후 [가이드 생성] → [다운로드]</p>
+      <div class="action-bar" style="margin:0 0 8px;">
+        <button class="btn" id="btn-copy-master-prompt" type="button">마스터프롬프트 복사</button>
+      </div>
+      <div class="info-box" id="master-prompt-copy-info" style="margin:0 0 8px; display:none;"></div>
       <textarea id="json-paste-area" style="min-height:140px; font-family: 'Consolas', monospace; font-size:11.5px;" placeholder="여기에 산행 코스 상세 정보(원문 텍스트) 또는 AI가 만든 MOUNTAIN_DATA JSON을 입력하세요"></textarea>
       <div class="action-bar" style="margin:8px 0 0;">
         <button class="btn" id="btn-copy-prompt" type="button">JSON 프롬프트 복사</button>
@@ -224,6 +228,77 @@ const JSON_CONVERT_PROMPT = `아래는 산행 코스에 대한 상세 정보(원
 
 [원문 산행 코스 정보]
 `;
+
+// 산행 코스 원문 텍스트 자체가 없을 때, AI에게 먼저 이 마스터 프롬프트로
+// 5구간 종합 산행 가이드 원문을 만들게 한 뒤 그 결과를 "코스별 상세 가이드"
+// 칸에 붙여넣으면 이후 JSON 변환/guide_prompt.html 파싱이 모두 잘 먹히도록
+// 설계된 템플릿. 사용자가 직접 대괄호 [예: ...] 부분을 채워서 사용한다.
+const MASTER_GUIDE_PROMPT = `고품격 5구간 종합 산행 가이드 제작 마스터 프롬프트
+당신은 대한민국 전역의 명산을 직접 발로 뛰며 기록하는 전문 산악 기행 작가이자 베테랑 등산 가이드입니다.
+업로드된 소스 자료를 철저히 분석하여, 아래 제공된 정보를 바탕으로 품격 있고 현장감이 넘치며 구조적으로 완벽하게 정리된 [산 이름]의 '종합 산행 가이드 리포트'를 작성해 주세요.
+
+이 가이드는 등반객이 실제로 코스를 걸어가면서 비경을 만나는 순서에 따라 전체 일정을 직관적으로 파악할 수 있도록 전체 코스를 '5구간'으로 명확히 구분하여 안내해야 합니다.
+
+---
+
+### [기본 산행 정보 입력]
+- 산 이름: [예: 지리산, 설악산, 내연산 등]
+- 전체 코스 동선: [예: 보경사 -> 문수암 -> 삼지봉 -> 은폭포 -> 선일대 -> 연산폭포 -> 보경사]
+- 핵심 스펙: 총 거리 약 [예: 13~14.5km], 소요 시간 약 [예: 6~7시간], 난이도 [예: 중급]
+- 코스의 핵심 테마: [예: 땀을 흘리며 정상에 오르는 '등반의 성취감'과 하산 길에 만나는 '12폭포 비경 트레킹의 보상'이 대칭을 이루는 코스]
+
+### [코스 내 핵심 비경 및 랜드마크 정보]
+- 랜드마크 1: [예: 소금강 전망대 - 협곡 벼랑 끝 스카이워크, 한국의 장가계 같은 아찔한 조망]
+- 랜드마크 2: [예: 선일대 - 신선이 학을 탄 절벽 위 정자, 관음/연산폭포 3D 입체 조망]
+- 랜드마크 3: [예: 관음폭포 - 관음굴과 기암괴석, 겸재 정선의 '삼용추도' 진경산수화 배경]
+- 랜드마크 4: [예: 연산폭포 - 26m 구름다리 건너 마주하는 30m 높이의 내연산 최대 수직 폭포]
+- 랜드마크 5: [예: 상생폭포 - 두 갈래로 사이좋게 흐르는 쌍폭포, 동행과 상생의 철학]
+- 랜드마크 6: [예: 천년고찰 보경사 - 신라 진평왕 지명법사의 팔면폭경 설화와 오층석탑, 적광전 등 문화재]
+
+### [5대 핵심 구간 설정]
+- 1구간: [보경사 ~ 문수봉 / 거리 3.0km / 특징: 초반 솔숲길 후 지그재그 급경사 바위길, 페이스 조절 구간]
+- 2구간: [문수봉 ~ 삼지봉 / 거리 1.3km / 특징: 울창한 참나무 숲과 완만한 능선 흙길, 피톤치드 힐링 구간]
+- 3구간: [삼지봉 ~ 은폭포 / 거리 3.1km / 특징: 조피등 방향의 가파른 미끄럼 주의 하산길, 무릎 보호대 필수]
+- 4구간: [은폭포 ~ 연산폭포 / 거리 2.5km / 특징: 선일대 계단과 전망대, 관음·연산폭포 등 최고의 비경 밀집 구간]
+- 5구간: [연산폭포 ~ 보경사 / 거리 3.5km / 특징: 상생폭포를 거쳐 평탄하게 잘 닦인 야자매트 힐링 트레킹 평지]
+
+### [실용 및 웰니스 정보]
+- 안전 주의사항: [예: 능선 길 식수 공급처 없음, 생수 지참 필수, 무릎 보호대 추천]
+- 하산 후 추천 먹거리: [예: 상가지구의 쌉싸름한 도토리묵, 해물파전, 동동주/막걸리]
+- 피로 해소 온천/스파 정보: [예: 하산 후 근처 전통 온천욕으로 근육 피로 완화 추천]
+
+---
+
+### [작성 지침 및 가이드 구조]
+
+1. **타이틀**: 산의 매력과 정복의 테마가 한눈에 보이는 멋진 메인 제목과 부제목을 작성해 주세요.
+2. **Part 1. 코스 전체 개요 및 스펙**:
+   - 전체 경로, 거리, 소요 시간, 난이도를 표나 깔끔한 요약 형식으로 한눈에 보기 좋게 구성해 주세요.
+   - 땀을 흘리는 '도전(오르막)'과 자연이 주는 '보상(하산/경치)'이 어떻게 조화를 이루는지 오프닝 에세이 형태로 품격 있게 서술해 주세요.
+3. **Part 2. 코스 내 반드시 봐야 할 핵심 비경 (배경 상세 설명)**:
+   - 위에 입력된 [핵심 비경 및 랜드마크] 장소들을 시각적, 감각적으로 묘사해 주세요.
+   - 단순한 명칭 나열이 아니라, 왜 이곳이 유명한지(예: 진경산수화의 배경, 신선 설화, 지질학적 특징 등) 깊이 있는 인문·역사적 배경 설명을 덧붙여 주세요.
+4. **Part 3. 5대 핵심 구간별 상세 산행 가이드**:
+   - 1구간부터 5구간까지 순서대로 구조화하여 작성해 주세요.
+   - 각 구간 타이틀 옆에 **[거리: 0.0km | 난이도: 상/중/하]**를 명시해 주세요.
+   - **산행 특징**: 경사도, 노면 상태, 체력 안배 요령을 상세히 설명해 주세요.
+   - **꼭 봐야 할 것 & 배경 장소**: 해당 구간을 지나며 만나게 되는 핵심 랜드마크의 감상 포인트와 연계 스토리를 적어주세요.
+5. **Part 4. 안전 가이드 및 하산 후 웰니스 정보**:
+   - 조심해야 할 구간과 준비물 팁을 일러주세요.
+   - 산행 후 뒤풀이 음식과 피로를 푸는 힐링 코스(온천, 스파 등)를 추천하며 따뜻하고 품격 있게 마무리해 주세요.
+
+*작성 스타일: '블랙야크 100대 명산 가이드북'이나 '품격 있는 기행 전문 잡지'를 읽는 듯한 매끄럽고 수려한 문체로 작성해 주세요. 전문적인 산악 용어를 적절히 사용하면서도, 일반 등산객이 읽기에 친절하고 명확해야 합니다.*`;
+
+function copyMasterPromptToClipboard() {
+  const infoBox = document.getElementById('master-prompt-copy-info');
+  navigator.clipboard.writeText(MASTER_GUIDE_PROMPT).then(() => {
+    infoBox.style.display = 'block';
+    infoBox.textContent = 'ℹ 마스터 프롬프트가 클립보드에 복사되었습니다. AI 챗봇에 붙여넣고 대괄호 [예: ...] 부분을 실제 산행 정보로 채워서 요청하면, 그 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용할 수 있습니다.';
+  }).catch(err => {
+    infoBox.style.display = 'block';
+    infoBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
+  });
+}
 
 // SKILL.md 규칙: 동의어 치환 리스트
 const SYNONYM_MAP = {
@@ -1402,6 +1477,7 @@ document.getElementById('btn-example').addEventListener('click', () => fillFormF
 document.getElementById('btn-reset').addEventListener('click', resetForm);
 document.getElementById('btn-fill-json').addEventListener('click', fillFormFromJSONPaste);
 document.getElementById('btn-copy-prompt').addEventListener('click', copyPromptToClipboard);
+document.getElementById('btn-copy-master-prompt').addEventListener('click', copyMasterPromptToClipboard);
 document.getElementById('json-paste-area').addEventListener('focus', function () {
   this.value = '';
 });
