@@ -211,7 +211,7 @@
         <p style="font-size: 0.9rem; color: #666; margin-top: 0;">배경과 캐릭터의 위치를 원하시는 대로 자유롭게 설정해 주세요.</p>
         
         <div class="input-group">
-            <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어, 여러 장소는 줄바꿈으로 구분):</label>
+            <label for="bgLocationEntry">배경에 사용할 핵심 장소 (한국어, 여러 장소는 줄바꿈으로 구분) <span style="font-weight:400; color:#718096;">— 가이드에서 뽑은 풍경 후보를 모두 채워 드립니다. 배경으로 쓸 것만 남기고 나머지 줄은 지우세요(2~3개 권장).</span></label>
             <textarea id="bgLocationEntry" class="field-textarea" placeholder="예: 이끼계곡과 정상으로 가는 주목나무 숲길 (2씬)"></textarea>
         </div>
 
@@ -444,6 +444,51 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
     // 함께 쓰므로 전역으로 둔다.
     const LANDSCAPE_KEYWORDS = /봉|령|고개|절경|비경|조망|전망|파노라마|숲|나무|단풍|설경|일출|일몰|안개|구름|암릉|능선|바위|계곡|폭포|정상|사면|봉우리/;
 
+    // 배경 이미지 프롬프트에 넣으면 안 되는 성격의 문장. 풍경 묘사가 아니라
+    // 진행 안내·주의사항이거나(“페이스 조절이 필요합니다”), 다른 산에 빗댄
+    // 비유라 엉뚱한 그림을 유도하는 것들이다. 실제로 명성산 리포트에서
+    // “설악산 비선대를 닮은”이 배경 후보로 뽑혀 나온 적이 있다.
+    const NON_SCENERY_PATTERNS = /주의|필요합니다|조절|확인|이정표|하산|회귀|마무리|출발점|난이도|코스입니다|딛는|내려가야|안전/;
+    const OTHER_MOUNTAIN_SIMILE = /(설악산|지리산|한라산|북한산|금강산|백두산)[가-힣\s]*(닮은|같은|연상|비슷)/;
+
+    // 서술형 문장에서 배경 프롬프트에 쓸 "풍경 명사구"만 뽑아낸다.
+    // 예) "6만 평 규모의 드넓은 은빛 평원으로 가을바람에 흔들리는 억새 물결이
+    //      장관을 이룹니다." → "6만 평 규모의 드넓은 은빛 평원", "억새 물결"
+    //
+    // 완결된 문장을 그대로 배경 프롬프트에 넣으면 "~아름답습니다" 같은
+    // 서술어와 감상 표현까지 영문으로 번역돼 그림과 무관한 노이즈가 된다.
+    // 그래서 조사·서술어 앞에서 끊어 명사구 단위로 잘라낸 뒤, 풍경
+    // 키워드를 담은 것만 남긴다.
+    function extractSceneryPhrases(sentence) {
+        if (!sentence) return [];
+        if (OTHER_MOUNTAIN_SIMILE.test(sentence)) return [];
+
+        // 서술어/연결어미 앞에서 끊는다. 이 토큰들 뒤는 대개 감상·설명이라
+        // 그림 정보가 없다.
+        const chunks = String(sentence)
+            .split(/(?:으로서|으로|로서|이며|하며|하고|이고|아래로|따라|위치하여|둘러싸여|둘러싸고|간직한|품고|만날 수|감상할 수|이루는|이루며|이룹니다|자랑합니다|선사합니다|펼쳐집니다|안겨줍니다|아름답습니다|있습니다|입니다|됩니다|반복되므로|연속되는|떨어지는|병풍처럼|호수로|지대가|,|\.)/)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        const phrases = [];
+        chunks.forEach(chunk => {
+            let p = chunk;
+            // 앞머리에 남은 접속·부사·동사 잔여물 제거
+            p = p.replace(/^(그리고|또한|특히|여기서|이곳은|이는|그|약|있는|없는|가는|오는|되는|이동하는 동안|잔잔한)\s*/, '').trim();
+            // 뒤쪽에 남은 부사구·동사 꼬리 제거
+            p = p.replace(/\s*(한눈에|평원에|직전과|진입 전.*|및|사면이|장관)$/, '').trim();
+            // 끝에 남은 조사 정리
+            p = p.replace(/(이|가|은|는|을|를|와|과|의|에)$/, '').trim();
+            if (p.length < 3 || p.length > 28) return;
+            if (NON_SCENERY_PATTERNS.test(p)) return;
+            // 조각난 어미로 끝나면(예: "...반복되므") 버린다.
+            if (/(므|되|하|지|서|고|며)$/.test(p)) return;
+            if (!LANDSCAPE_KEYWORDS.test(p) && !/평원|호수|물결|억새|하늘|풍경|경관|절벽|암반|샘터|데크|물줄기|기암/.test(p)) return;
+            phrases.push(p);
+        });
+        return phrases;
+    }
+
     // MOUNTAIN_DATA JSON이 아니라 산행 가이드 원문(자유 서술형 텍스트)이
     // 붙여넣어진 경우를 위한 폴백 파서. 여기서 실제로 쓰는 값은 산 이름/
     // 경유지 흐름/코스 특징 키워드뿐이므로(이미지 프롬프트 자체는 배경·
@@ -505,16 +550,21 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         // 콤마와 섞여 몇 개인지 구분이 안 됨). 전체 목록은 allFeatures로
         // 1단계 요약 화면에 그대로 보여줘 사용자가 원하면 직접 다른 항목을
         // 골라 쓸 수 있게 한다.
-        const landscapeFeatures = Array.from(featuresSet).filter(f => LANDSCAPE_KEYWORDS.test(f));
-        const topFeatures = (landscapeFeatures.length ? landscapeFeatures : Array.from(featuresSet))
-            .sort((a, b) => b.length - a.length)
-            .slice(0, 3);
+        // JSON 경로와 같은 방식으로, 상위 몇 개를 고르지 않고 풍경 명사구를
+        // 전부 후보로 올린다(선택은 사람이 입력칸에서 직접 한다).
+        const phraseSet = new Set();
+        Array.from(featuresSet).forEach(f => {
+            extractSceneryPhrases(f).forEach(p => phraseSet.add(p));
+        });
+        const phrases = phraseSet.size
+            ? Array.from(phraseSet)
+            : Array.from(featuresSet).filter(f => LANDSCAPE_KEYWORDS.test(f));
 
         return {
             mountainName: mountainName || '명산',
             routeFlow: routeFlow || '경로 정보 없음',
             allFeatures: Array.from(featuresSet).slice(0, 12).join(', '),
-            bgLocationSuggestion: topFeatures.join('\n')
+            bgLocationSuggestion: phrases.join('\n')
         };
     }
 
@@ -572,16 +622,25 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
                         }
                     });
                 }
-                const bulletSentences = landmarkSentences.length ? landmarkSentences : otherSentences;
-                const landscapeSentences = bulletSentences.filter(s => LANDSCAPE_KEYWORDS.test(s));
-                const topSentences = (landscapeSentences.length ? landscapeSentences : bulletSentences)
-                    .sort((a, b) => b.length - a.length)
-                    .slice(0, 3);
+                // 랜드마크 문장을 우선 쓰되, 상위 몇 개로 자르지 않고 전부
+                // 명사구로 쪼개 후보로 올린다. 어느 풍경을 배경으로 쓸지는
+                // 사람이 판단할 몫이라, 여기서는 고르지 않고 다 보여준 뒤
+                // 입력칸에서 직접 지우고 다듬게 한다.
+                const bulletSentences = landmarkSentences.concat(otherSentences);
+                const phraseSet = new Set();
+                bulletSentences.forEach(s => {
+                    extractSceneryPhrases(s).forEach(p => phraseSet.add(p));
+                });
+                // 명사구를 하나도 못 건졌으면(문체가 예상과 다른 경우) 최소한
+                // features 명사구라도 후보로 내놓는다.
+                const phrases = phraseSet.size
+                    ? Array.from(phraseSet)
+                    : Array.from(allFeaturesSet);
                 parsedHikingData = {
                     mountainName: parsed.mountainName || "명산",
                     routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
                     allFeatures: Array.from(allFeaturesSet).join(", "),
-                    bgLocationSuggestion: topSentences.join('\n')
+                    bgLocationSuggestion: phrases.join('\n')
                 };
             } catch (jsonErr) {
                 // JSON이 아니면 자유 서술형 텍스트로 간주해 휴리스틱으로 추출
