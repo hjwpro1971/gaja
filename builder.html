@@ -1583,20 +1583,12 @@ function fillFormFromJSONPaste() {
   fillFormFromData(data);
 }
 
-// 산행가이드표지(guide_prompt.html)의 "1단계: 산행 가이드 JSON 입력" 칸이
-// 자동으로 채워 쓸 수 있도록, [JSON 프롬프트 복사] 시점에 원문 텍스트를 그대로
-// localStorage에 넘겨둔다. 서로 다른 iframe에서 로드되는 별개 페이지라
-// 직접 DOM 접근이 불가능해 localStorage를 매개로 사용. 사용자가 직접
-// "산행가이드표지" 메뉴를 클릭해 이동해야 반영된다(자동 이동은 하지 않음).
+// [JSON 프롬프트 복사] 시점에 산행가이드표지(guide_prompt.html)의 1단계로
+// 변환 전 원문 텍스트를 자동으로 넘기던 기능은 제거했다(사용자가 실제로
+// 쓰는 건 [JSON 붙여넣기] 이후 나온 변환된 JSON 결과라, 원문을 미리
+// 넘겨봐야 다시 최신 JSON으로 덮어써야 해 불필요했다). 이 키는 과거에
+// 저장된 잔여 값을 정리하기 위해 clearDraft()에서만 여전히 참조한다.
 const BUILDER_HANDOFF_KEY = 'gajaBuilderJsonToGuidePromptHandoff';
-
-function saveJsonHandoffToGuidePrompt(courseText) {
-  try {
-    localStorage.setItem(BUILDER_HANDOFF_KEY, courseText);
-  } catch (e) {
-    // localStorage 실패는 조용히 무시(핵심 기능인 가이드 생성에는 영향 없음)
-  }
-}
 
 // 블로그헤더(bloghead.html)의 산 이름 입력란이 자동으로 채워 쓸 수 있도록
 // "산 이름" 입력칸에 타이핑할 때마다 실시간으로 localStorage에 넘겨둔다.
@@ -1632,11 +1624,6 @@ function copyPromptToClipboard() {
     jsonWarnBox.style.display = 'none';
     copyInfo.style.display = 'block';
     copyInfo.textContent = 'ℹ 프롬프트가 클립보드에 복사되었습니다. 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 이 칸에 붙여넣고 [JSON으로 붙여넣기]를 누르세요.';
-    // 산행가이드표지(guide_prompt.html)도 이 원문 텍스트를 그대로 붙여넣으면
-    // 자체적으로 산 이름/경로/코스 특징을 추출할 수 있으므로(자유 서술형
-    // 텍스트 지원), 원문 텍스트를 handoff 채널로 미리 넘겨둔다. 사용자가
-    // 직접 "산행가이드표지" 메뉴로 이동해야 반영된다.
-    saveJsonHandoffToGuidePrompt(courseText);
   }).catch(err => {
     jsonWarnBox.style.display = 'block';
     jsonWarnBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
