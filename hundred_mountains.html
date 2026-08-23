@@ -352,6 +352,10 @@ function updateMountain() {
 document.getElementById('btn-add').addEventListener('click', addMountain);
 document.getElementById('btn-update').addEventListener('click', updateMountain);
 document.getElementById('btn-reset-form').addEventListener('click', resetInputForm);
+// datalist 옵션 클릭은 브라우저에 따라 'change'가 아니라 'input'만 발생시키는
+// 경우가 있어(특히 Chrome 계열) 두 이벤트 모두에 걸어야 자동완성 선택 시
+// 확실히 필드가 채워진다.
+document.getElementById('mountainName').addEventListener('input', handleNameInput);
 document.getElementById('mountainName').addEventListener('change', handleNameInput);
 
 renderList();
