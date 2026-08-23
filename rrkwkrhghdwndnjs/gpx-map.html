@@ -342,11 +342,15 @@ function saveHandoffToSummary(mountainName, stats) {
   const dateText = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '';
 
   try {
-    localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify({
-      mountain: mountainName,
-      date: dateText,
-      distTime: distTimeText
-    }));
+    // builder.html이 같은 키에 course/peakSummary를 넣어두므로, 통째로
+    // 덮어쓰면 "산행가이드 생성 → GPX 불러오기" 순서일 때 그 값이 날아간다.
+    // 기존 값을 읽어 이쪽이 담당하는 항목만 갱신한다.
+    const raw = localStorage.getItem(SUMMARY_HANDOFF_KEY);
+    const existing = raw ? JSON.parse(raw) : {};
+    if (mountainName) existing.mountain = mountainName;
+    if (dateText) existing.date = dateText;
+    if (distTimeText) existing.distTime = distTimeText;
+    localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify(existing));
   } catch (e) {
     // localStorage 실패는 조용히 무시(핵심 기능인 지도 생성에는 영향 없음)
   }

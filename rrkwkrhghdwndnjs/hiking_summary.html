@@ -347,8 +347,13 @@
     // GPX 경로 생성 화면(gpx-map.html)에서 계산한 총거리/소요시간/산행날짜와,
     // 산행 가이드 생성 화면(builder.html)의 "코스 흐름"·"주봉 높이"를 넘겨받아
     // 자동으로 채운다. 서로 다른 iframe에서 로드되는 별개 페이지라 localStorage를
-    // 매개로 전달받으며, 한 번 적용한 뒤에는 지워서 다음에 이 페이지를 다시
-    // 열었을 때 같은 값이 중복 적용되지 않게 한다.
+    // 매개로 전달받는다.
+    //
+    // 예전에는 한 번 읽은 뒤 키를 통째로 지웠는데, 그러면 "가이드 생성 →
+    // 요약 화면 열어봄 → GPX 불러오기 → 요약 화면 다시 열기" 같은 순서에서
+    // 앞서 넘어온 코스/주봉 정보가 이미 사라져 다시 채워지지 않았다. 그래서
+    // 삭제 대신 "이번에 실제로 채운 항목만" 키에서 빼고 나머지는 남겨 둔다.
+    // 남은 값은 사용자가 [초기화]를 누르거나 새 값이 덮어쓸 때까지 유지된다.
     const GPX_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
 
     function applyGpxHandoffIfAny() {
@@ -361,15 +366,32 @@
         if (!raw) return;
         try {
             const data = JSON.parse(raw);
-            if (data.mountain) {
-                mountainInput.value = data.mountain;
-                autoFormatMountain();
+            const consumed = [];
+
+            // 가이드·GPX에서 새로 넘어온 값은 기존 입력칸 내용을 덮어쓴다.
+            // 이전 산행 내용이 초안(draft)으로 남아 있는 상태에서 새 산행을
+            // 작업하는 경우가 일반적이라, 빈 칸만 채우면 새 값이 반영되지
+            // 않아 "값이 안 넘어온다"고 느껴진다.
+            function fill(key, input, after) {
+                if (!data[key]) return;
+                input.value = data[key];
+                if (after) after();
+                consumed.push(key);
             }
-            if (data.peakSummary) peakSummaryInput.value = data.peakSummary;
-            if (data.date) dateInput.value = data.date;
-            if (data.distTime) distTimeInput.value = data.distTime;
-            if (data.course) courseInput.value = data.course;
-            localStorage.removeItem(GPX_HANDOFF_KEY);
+
+            fill('mountain', mountainInput, autoFormatMountain);
+            fill('peakSummary', peakSummaryInput);
+            fill('date', dateInput);
+            fill('distTime', distTimeInput);
+            fill('course', courseInput);
+
+            // 채워 넣은 항목만 제거하고 나머지는 다음 방문을 위해 남긴다.
+            consumed.forEach(k => { delete data[k]; });
+            if (Object.keys(data).length) {
+                localStorage.setItem(GPX_HANDOFF_KEY, JSON.stringify(data));
+            } else {
+                localStorage.removeItem(GPX_HANDOFF_KEY);
+            }
         } catch (e) {
             // handoff 데이터가 깨져 있으면 무시
         }
