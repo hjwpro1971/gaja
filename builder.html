@@ -90,8 +90,12 @@
     <fieldset>
       <legend>기본 정보</legend>
       <label>산 이름</label>
-      <input type="text" id="mountainName" list="hundredMountainList" placeholder="예: 지리산" autocomplete="off">
+      <div class="row" style="align-items:center; gap:8px;">
+        <input type="text" id="mountainName" list="hundredMountainList" placeholder="예: 지리산" autocomplete="off" style="flex:1;">
+        <button class="btn" id="btn-apply-badge" type="button" style="white-space:nowrap;">배지적용</button>
+      </div>
       <datalist id="hundredMountainList"></datalist>
+      <div class="charcount" id="badge-lock-status">아직 배지가 적용되지 않았습니다. 산 이름을 입력하고 [배지적용]을 누르면 그 시점의 100대명산 여부가 확정되어, 이후 산 이름을 자유롭게 바꿔도 배지는 유지됩니다.</div>
 
       <label>코스 흐름 (콤마로 구분, 지도상 순서대로)</label>
       <input type="text" id="courseRouteFlow" placeholder="예: 백무동, 장터목, 연하선경, 세석, 한신계곡">
@@ -411,6 +415,30 @@ function getHundredMountainBadges(mountainName) {
   return Object.keys(HUNDRED_MOUNTAINS).filter(key => HUNDRED_MOUNTAINS[key].includes(mountainName));
 }
 
+// [배지적용] 버튼을 누른 시점의 100대명산 배지를 확정해 저장해 둔다.
+// 인포그래픽 표지의 "산 이름"은 검색용 정식 명칭과 다르게 자유 텍스트로
+// 편집하는 경우가 많다(예: "설악산(대청봉)" → "설악산(대청봉-천불동)").
+// 배지 판정이 mountainName 값에 실시간으로 묶여 있으면 이런 편집만으로
+// 매칭이 깨져 배지가 사라지므로, 버튼 클릭 시점에 한 번 계산해 이 변수에
+// 고정하고 이후 mountainName이 바뀌어도 다시 계산하지 않는다.
+let lockedHundredBadges = null;
+
+function applyHundredMountainBadge() {
+  const mountainName = document.getElementById('mountainName').value.trim();
+  const statusEl = document.getElementById('badge-lock-status');
+  if (!mountainName) {
+    statusEl.textContent = '⚠ 먼저 산 이름을 입력하세요.';
+    return;
+  }
+  lockedHundredBadges = getHundredMountainBadges(mountainName);
+  if (lockedHundredBadges.length) {
+    const labelText = lockedHundredBadges.map(key => HUNDRED_MOUNTAIN_LABELS[key] || key).join(', ');
+    statusEl.textContent = `✅ 배지 적용됨: ${labelText} 100대명산 (이후 산 이름을 바꿔도 이 배지가 유지됩니다)`;
+  } else {
+    statusEl.textContent = `ℹ "${mountainName}"은(는) 등록된 100대명산 목록에 없어 배지가 표시되지 않습니다.`;
+  }
+}
+
 // "산 이름" 입력 시 100대명산 목록에서 후보를 자동완성으로 보여주기 위한
 // datalist 채우기. 4개 기관 목록을 합쳐 중복 제거한 전체 산 이름 목록.
 (function populateHundredMountainDatalist() {
@@ -665,7 +693,9 @@ function buildMountainDataJSON(data) {
     guideIntro: data.guideIntro,
     extraInfos: data.extraInfos || [],
     sections: data.sections,
-    hundredMountainBadges: getHundredMountainBadges(data.mountainName)
+    // 산 이름으로 그때그때 재계산하지 않고, [배지적용] 버튼을 눌러 확정해둔
+    // 값을 그대로 쓴다(적용한 적 없으면 빈 배열).
+    hundredMountainBadges: lockedHundredBadges || []
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -726,6 +756,19 @@ const EXAMPLE_DATA = {
 function fillFormFromData(data) {
   document.getElementById('mountainName').value = data.mountainName;
   saveMountainNameHandoff((data.mountainName || '').trim());
+  // data에 이미 확정된 배지 목록이 있으면(예: 저장된 HTML을 다시 불러온
+  // 경우) 그대로 복원한다. 없으면(예시 데이터 등) 미적용 상태로 둔다 —
+  // mountainName만 보고 자동으로 다시 계산하지 않는다(그러면 [배지적용]
+  // 버튼의 "확정" 의미가 없어짐).
+  const badgeStatusEl = document.getElementById('badge-lock-status');
+  if (Array.isArray(data.hundredMountainBadges) && data.hundredMountainBadges.length) {
+    lockedHundredBadges = data.hundredMountainBadges;
+    const labelText = lockedHundredBadges.map(key => HUNDRED_MOUNTAIN_LABELS[key] || key).join(', ');
+    badgeStatusEl.textContent = `✅ 배지 적용됨: ${labelText} 100대명산 (이후 산 이름을 바꿔도 이 배지가 유지됩니다)`;
+  } else {
+    lockedHundredBadges = null;
+    badgeStatusEl.textContent = '아직 배지가 적용되지 않았습니다. 산 이름을 입력하고 [배지적용]을 누르면 그 시점의 100대명산 여부가 확정되어, 이후 산 이름을 자유롭게 바꿔도 배지는 유지됩니다.';
+  }
   document.getElementById('courseRouteFlow').value = data.courseRouteFlow.join(', ');
   document.getElementById('startAltitude').value = data.startAltitude || '';
   document.getElementById('endAltitude').value = data.endAltitude || '';
@@ -1284,6 +1327,8 @@ function restoreDraftIfAny() {
 
 function resetForm() {
   document.getElementById('mountainName').value = '';
+  lockedHundredBadges = null;
+  document.getElementById('badge-lock-status').textContent = '아직 배지가 적용되지 않았습니다. 산 이름을 입력하고 [배지적용]을 누르면 그 시점의 100대명산 여부가 확정되어, 이후 산 이름을 자유롭게 바꿔도 배지는 유지됩니다.';
   document.getElementById('courseRouteFlow').value = '';
   document.getElementById('startAltitude').value = '';
   document.getElementById('endAltitude').value = '';
@@ -1508,6 +1553,7 @@ document.getElementById('btn-reset').addEventListener('click', resetForm);
 document.getElementById('btn-fill-json').addEventListener('click', fillFormFromJSONPaste);
 document.getElementById('btn-copy-prompt').addEventListener('click', copyPromptToClipboard);
 document.getElementById('btn-copy-master-prompt').addEventListener('click', copyMasterPromptToClipboard);
+document.getElementById('btn-apply-badge').addEventListener('click', applyHundredMountainBadge);
 document.getElementById('json-paste-area').addEventListener('focus', function () {
   this.value = '';
 });
