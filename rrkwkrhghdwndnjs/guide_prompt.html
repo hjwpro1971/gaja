@@ -173,6 +173,10 @@
             right: 10px;
             padding: 6px 12px;
             font-size: 0.8rem;
+            /* 복사 후 "✓ 복사됨"으로 글자가 바뀌어도 버튼이 들썩이지 않도록 */
+            min-width: 76px;
+            text-align: center;
+            transition: color 0.15s;
         }
 
         #jsonError {
@@ -237,7 +241,7 @@
     <fieldset id="finalArea" class="hidden" style="background-color: #fffde7; border-color: #fff59d;">
         <legend style="color: #f57f17;">최종 결과: 완성형 영문 프롬프트</legend>
         <div class="prompt-result">
-            <button class="copy-btn btn-secondary" onclick="copyPrompt()">복사</button>
+            <button class="copy-btn btn-secondary" onclick="copyPrompt(event)">복사</button>
             <span id="finalPromptResult"></span>
         </div>
     </fieldset>
@@ -740,12 +744,30 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         saveDraftNow();
     });
 
-    function copyPrompt() {
+    // 복사 결과는 확인창(alert) 대신 버튼 글자를 잠깐 바꿔서 알린다.
+    // 확인창은 매번 클릭해서 닫아야 해 흐름이 끊기는데, 복사는 성공이
+    // 기본이고 눈으로 확인만 되면 충분한 동작이라 버튼 자체를 피드백으로 쓴다.
+    let copyBtnResetTimer = null;
+    function flashCopyButton(btn, message, isError) {
+        if (!btn) return;
+        if (copyBtnResetTimer) clearTimeout(copyBtnResetTimer);
+        if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent;
+        btn.textContent = message;
+        btn.style.color = isError ? '#c62828' : '#2e7d32';
+        copyBtnResetTimer = setTimeout(() => {
+            btn.textContent = btn.dataset.originalLabel;
+            btn.style.color = '';
+            copyBtnResetTimer = null;
+        }, 1500);
+    }
+
+    function copyPrompt(evt) {
+        const btn = (evt && evt.currentTarget) || document.querySelector('.copy-btn');
         const textToCopy = nodes.finalResult.innerText;
         navigator.clipboard.writeText(textToCopy).then(() => {
-            alert('최종 영문 프롬프트가 복사되었습니다!');
-        }).catch(err => {
-            alert('복사 실패. 직접 텍스트를 드래그해 복사해 주세요.');
+            flashCopyButton(btn, '✓ 복사됨', false);
+        }).catch(() => {
+            flashCopyButton(btn, '복사 실패', true);
         });
     }
 </script>
