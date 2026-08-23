@@ -123,68 +123,102 @@ const STORAGE_KEY = 'gajaHundredMountainsData';
 const ORG_LABELS = { forest: '산림청', blackyak: '블랙야크', wolgansan: '월간산', hanguksanha: '한국산하' };
 
 // 사용자가 제공한 산림청/블랙야크/월간산/한국의산하 공식 100대명산 원본 PDF
-// 4종을 각각 정독해 만든 초기 데이터. 각 기관 정확히 100개 산으로 검증했다
+// 4종을 각각 정독해 만든 원본 데이터. 각 기관 정확히 100개 산으로 검증했다
 // (이름 칸이 빈 행은 스킵, 이름은 같지만 실제로 다른 산인 동명이산은 지역명을
 // 괄호로 붙여 구분 — 예: 가야산(경남)/가야산(충남), 백운산(강원)/백운산(경기)/
-// 백운산(전남)). 정상석 정보는 원본에 없어 빈 값이다. localStorage가 완전히
-// 비어 있을 때(사용자가 한 번도 이 페이지를 쓴 적 없을 때)만 1회 채워 넣고,
-// 이후에는 사용자가 추가/삭제한 내용을 그대로 따른다.
+// 백운산(전남)). 정상석 정보는 원본에 없어 빈 값이다. 이 배열은 화면에 항상
+// 그대로 반영되며(캐시되지 않음), 사용자가 이 페이지에서 값을 고치거나
+// 삭제한 내용만 별도 저장소(OVERRIDES_KEY)에 쌓인다 — 아래 loadMountains()/
+// saveMountains() 참고.
 const SEED_DATA = [{"name":"가리산","peakStone":"","height":"1,051","region":"강원 춘천, 홍천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"가리왕산","peakStone":"","height":"1,562","region":"강원 정선, 강원 평창","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"가야산(경남)","peakStone":"","height":"1,430","region":"경남 합천, 경북 성주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"가지산","peakStone":"","height":"1,241","region":"울산 울주, 경북 청도, 경남 밀양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"감악산(경기)","peakStone":"","height":"675","region":"경기 파주, 양주, 포천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"강천산","peakStone":"","height":"584","region":"전북 순창, 전남 담양","orgs":["forest","wolgansan","hanguksanha"]},{"name":"계룡산(대전)","peakStone":"","height":"847","region":"대전, 충남 공주, 논산","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"계방산","peakStone":"","height":"1,577","region":"강원 홍천, 평창","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"공작산","peakStone":"","height":"887","region":"강원 홍천, 화촌","orgs":["forest"]},{"name":"관악산","peakStone":"","height":"632","region":"서울 관악구, 금천구, 경기 안양, 과천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"구병산","peakStone":"","height":"877","region":"경북 상주, 충북 보은","orgs":["forest","blackyak","hanguksanha"]},{"name":"금산","peakStone":"","height":"705","region":"경남 남해","orgs":["forest","wolgansan","hanguksanha"]},{"name":"금수산","peakStone":"","height":"1,016","region":"충북 제천, 단양","orgs":["forest","blackyak","hanguksanha"]},{"name":"금오산","peakStone":"","height":"977","region":"경북 구미","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"금정산","peakStone":"","height":"801","region":"부산 금정구, 경남 양산","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"깃대봉","peakStone":"","height":"368","region":"전남 신안 홍도","orgs":["forest"]},{"name":"남산","peakStone":"","height":"468","region":"경북 경주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"내연산","peakStone":"","height":"711","region":"경북 포항, 영덕","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"내장산","peakStone":"","height":"763","region":"전북 정읍, 순창","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"대둔산","peakStone":"","height":"879","region":"충남 논산, 금산, 전북 완주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"대암산","peakStone":"","height":"1,304","region":"강원 양구, 인제","orgs":["forest","wolgansan"]},{"name":"대야산","peakStone":"","height":"931","region":"경북 문경, 충북 괴산","orgs":["forest","blackyak","hanguksanha"]},{"name":"덕숭산","peakStone":"","height":"495","region":"충남 예산","orgs":["forest","wolgansan","hanguksanha"]},{"name":"덕유산","peakStone":"","height":"1,614","region":"전북 무주, 장수, 경남 거창, 함양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"덕항산","peakStone":"","height":"1,071","region":"강원 삼척, 태백","orgs":["forest","blackyak"]},{"name":"도락산","peakStone":"","height":"965","region":"충북 단양","orgs":["forest","blackyak","hanguksanha"]},{"name":"도봉산","peakStone":"","height":"740","region":"서울 도봉구, 경기 의정부, 양주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"두륜산","peakStone":"","height":"700","region":"전남 해남","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"두타산","peakStone":"","height":"1,357","region":"강원 삼척, 동해","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"마니산","peakStone":"","height":"470","region":"인천 강화","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"마이산","peakStone":"","height":"686","region":"전북 진안","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"명성산","peakStone":"","height":"922","region":"경기 포천, 강원 철원","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"명지산","peakStone":"","height":"1,252","region":"경기 가평, 포천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"모악산","peakStone":"","height":"796","region":"전북 김제, 전북 전주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"무등산","peakStone":"","height":"1,187","region":"광주, 전남 담양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"무학산","peakStone":"","height":"761","region":"경상남도 마산시 회원구, 내서읍","orgs":["forest"]},{"name":"미륵산","peakStone":"","height":"458","region":"경남 통영","orgs":["forest","hanguksanha"]},{"name":"민주지산","peakStone":"","height":"1,242","region":"충북 영동, 전북 무주, 경북 김천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"방장산","peakStone":"","height":"743","region":"전남 장성, 전북 정읍","orgs":["forest","blackyak"]},{"name":"방태산","peakStone":"","height":"1,430","region":"강원 인제, 홍천","orgs":["forest","blackyak","hanguksanha"]},{"name":"백덕산","peakStone":"","height":"1,350","region":"강원 영월, 평창","orgs":["forest","blackyak","wolgansan"]},{"name":"백암산","peakStone":"","height":"741","region":"전북 순창, 전남 장성","orgs":["forest","blackyak"]},{"name":"백운산(강원)","peakStone":"","height":"887","region":"강원 정선, 평창","orgs":["forest","blackyak"]},{"name":"백운산(경기)","peakStone":"","height":"904","region":"경기 포천, 강원 화천","orgs":["forest","hanguksanha"]},{"name":"백운산(전남)","peakStone":"","height":"1,217","region":"전남 광양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"변산","peakStone":"","height":"510","region":"전북 부안","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"북한산","peakStone":"","height":"837","region":"서울 도봉구, 성북구, 경기 고양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"비슬산","peakStone":"","height":"1,083","region":"대구 달성, 경북 청도","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"사량도지리산","peakStone":"","height":"398","region":"경남 통영","orgs":["forest","wolgansan","hanguksanha"]},{"name":"삼악산","peakStone":"","height":"656","region":"강원 춘천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"서대산","peakStone":"","height":"904","region":"충남 금산","orgs":["forest","wolgansan","hanguksanha"]},{"name":"선운산","peakStone":"","height":"335","region":"전북 고창","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"설악산","peakStone":"","height":"1,708","region":"강원 인제, 속초, 양양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"성인봉","peakStone":"","height":"984","region":"경북 울릉","orgs":["forest","wolgansan"]},{"name":"소백산","peakStone":"","height":"1,440","region":"경북 영주, 충북 단양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"소요산","peakStone":"","height":"559","region":"경기 동두천, 포천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"속리산","peakStone":"","height":"1,058","region":"경북 상주, 충북 보은, 괴산","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"신불산","peakStone":"","height":"1,159","region":"울산 울주, 경남 양산","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"연화산","peakStone":"","height":"528","region":"경남 고성","orgs":["forest","wolgansan"]},{"name":"오대산","peakStone":"","height":"1,565","region":"강원 평창, 홍천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"오봉산","peakStone":"","height":"779","region":"강원 춘천, 화천","orgs":["forest","blackyak","hanguksanha"]},{"name":"용문산","peakStone":"","height":"1,157","region":"경기 양평","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"용화산","peakStone":"","height":"878","region":"강원 화천, 춘천","orgs":["forest","blackyak"]},{"name":"운문산","peakStone":"","height":"1,195","region":"경북 청도","orgs":["forest","wolgansan","hanguksanha"]},{"name":"운악산","peakStone":"","height":"935","region":"경기 가평, 포천","orgs":["forest","blackyak","hanguksanha"]},{"name":"월악산","peakStone":"","height":"1,092","region":"충북 제천, 충주, 단양, 경북 문경","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"월출산","peakStone":"","height":"810","region":"전남 영암, 강진","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"유명산","peakStone":"","height":"864","region":"경기 가평","orgs":["forest","blackyak","hanguksanha"]},{"name":"응봉산","peakStone":"","height":"1,000","region":"강원 삼척, 경북 울진","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"장안산","peakStone":"","height":"1,237","region":"전북 장수","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"재약산","peakStone":"","height":"1,189","region":"경남 밀양, 울산 울주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"적상산","peakStone":"","height":"1,034","region":"전북 무주","orgs":["forest","wolgansan"]},{"name":"점봉산","peakStone":"","height":"1,424","region":"강원 양양, 인제","orgs":["forest","wolgansan"]},{"name":"조계산","peakStone":"","height":"887","region":"전남 순천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"주왕산","peakStone":"","height":"721","region":"경북 청송","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"주흘산","peakStone":"","height":"1,079","region":"경북 문경","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"지리산","peakStone":"","height":"1,915","region":"전북 남원, 전남 구례, 경남 하동","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"천관산","peakStone":"","height":"724","region":"전남 장흥","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"천마산","peakStone":"","height":"812","region":"경기 남양주","orgs":["forest","wolgansan","hanguksanha"]},{"name":"천성산","peakStone":"","height":"921","region":"경남 양산","orgs":["forest","blackyak","hanguksanha"]},{"name":"천태산","peakStone":"","height":"715","region":"충북 영동, 충남","orgs":["forest","blackyak","hanguksanha"]},{"name":"청계산","peakStone":"","height":"582","region":"서울 서초, 경기 과천, 의왕, 성남","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"청량산","peakStone":"","height":"870","region":"경북 봉화, 안동","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"추월산","peakStone":"","height":"731","region":"전남 담양, 전북 순창","orgs":["forest","hanguksanha"]},{"name":"축령산","peakStone":"","height":"886","region":"경기 남양주, 가평","orgs":["forest","blackyak","hanguksanha"]},{"name":"치악산","peakStone":"","height":"1,282","region":"강원 원주, 횡성","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"칠갑산","peakStone":"","height":"560","region":"충남 청양","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"태백산","peakStone":"","height":"1,567","region":"강원 태백, 경북 봉화","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"태화산","peakStone":"","height":"1,027","region":"강원 영월, 충북 단양","orgs":["forest","blackyak"]},{"name":"팔공산","peakStone":"","height":"1,193","region":"경북 칠곡, 군위, 영천, 경산","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"팔봉산","peakStone":"","height":"327","region":"강원 홍천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"팔영산","peakStone":"","height":"609","region":"전남 고흥","orgs":["forest","blackyak"]},{"name":"한라산","peakStone":"","height":"1,950","region":"제주 제주, 서귀포, 북제주, 남제주","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"화악산","peakStone":"","height":"1,468","region":"경기 가평, 화천","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"화왕산","peakStone":"","height":"758","region":"경남 창녕","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"황매산","peakStone":"","height":"1,113","region":"경남 합천, 산청","orgs":["forest","blackyak","wolgansan","hanguksanha"]},{"name":"황석산","peakStone":"","height":"1,192","region":"경남 함양, 거창","orgs":["forest","blackyak"]},{"name":"황악산","peakStone":"","height":"1,111","region":"경북 김천","orgs":["forest","blackyak","hanguksanha"]},{"name":"황장산","peakStone":"","height":"1,077","region":"경북 문경","orgs":["forest"]},{"name":"희양산","peakStone":"","height":"999","region":"경북 문경, 충북 괴산","orgs":["forest","wolgansan","hanguksanha"]},{"name":"가야산(충남)","peakStone":"","height":"678","region":"충남 예산","orgs":["blackyak","hanguksanha"]},{"name":"감악산(강원)","peakStone":"","height":"930","region":"강원 원주,충북 제천","orgs":["blackyak"]},{"name":"광덕산","peakStone":"","height":"699","region":"충남 천안","orgs":["blackyak"]},{"name":"구봉산","peakStone":"","height":"1,002","region":"전북 진안","orgs":["blackyak"]},{"name":"노인봉","peakStone":"","height":"1,338","region":"강원 강릉","orgs":["blackyak","wolgansan"]},{"name":"달마산","peakStone":"","height":"470","region":"전남 해남","orgs":["blackyak","hanguksanha"]},{"name":"덕룡산","peakStone":"","height":"433","region":"전남 강진","orgs":["blackyak"]},{"name":"동악산","peakStone":"","height":"735","region":"전남 곡성","orgs":["blackyak"]},{"name":"바래봉","peakStone":"","height":"1,165","region":"전북 남원","orgs":["blackyak","hanguksanha"]},{"name":"반야봉","peakStone":"","height":"1,732","region":"전남 구례","orgs":["blackyak"]},{"name":"불갑산","peakStone":"","height":"516","region":"전남 영광","orgs":["blackyak","wolgansan"]},{"name":"수락산","peakStone":"","height":"640","region":"서울, 경기 남양주","orgs":["blackyak","wolgansan","hanguksanha"]},{"name":"연인산","peakStone":"","height":"1,068","region":"강원 홍천, 평창","orgs":["blackyak","wolgansan","hanguksanha"]},{"name":"오서산","peakStone":"","height":"790","region":"충남 홍성, 보령","orgs":["blackyak","hanguksanha"]},{"name":"용봉산","peakStone":"","height":"381","region":"충남","orgs":["blackyak","hanguksanha"]},{"name":"운장산","peakStone":"","height":"1,126","region":"전북 진안","orgs":["blackyak"]},{"name":"조령산","peakStone":"","height":"1,026","region":"경북 문경","orgs":["blackyak","wolgansan","hanguksanha"]},{"name":"청화산","peakStone":"","height":"970","region":"충북 괴산","orgs":["blackyak"]},{"name":"칠보산","peakStone":"","height":"779","region":"충북 괴산","orgs":["blackyak","hanguksanha"]},{"name":"함백산","peakStone":"","height":"1,572","region":"강원 정선","orgs":["blackyak","wolgansan"]},{"name":"계룡산(거제)","peakStone":"","height":"561","region":"경남 거제","orgs":["wolgansan"]},{"name":"고려산","peakStone":"","height":"436","region":"인천 강화","orgs":["wolgansan"]},{"name":"금대봉","peakStone":"","height":"1,418","region":"강원 태백,정선,삼척","orgs":["wolgansan"]},{"name":"남한산","peakStone":"","height":"522","region":"경기 광주, 서울 송파구","orgs":["wolgansan","hanguksanha"]},{"name":"마대산","peakStone":"","height":"1,050","region":"강원 영월","orgs":["wolgansan"]},{"name":"만행산(천황봉)","peakStone":"","height":"909","region":"전북 남원","orgs":["wolgansan"]},{"name":"문수산","peakStone":"","height":"1,207","region":"경북 봉화","orgs":["wolgansan"]},{"name":"문암산","peakStone":"","height":"1,163","region":"강원 홍천","orgs":["wolgansan"]},{"name":"민둥산","peakStone":"","height":"1,119","region":"강원 정선","orgs":["wolgansan","hanguksanha"]},{"name":"백운산(전북)","peakStone":"","height":"1,279","region":"전북 장수","orgs":["wolgansan"]},{"name":"병풍산","peakStone":"","height":"826","region":"전남 담양, 전북 순창","orgs":["wolgansan"]},{"name":"서리산","peakStone":"","height":"832","region":"경기 남양주","orgs":["wolgansan"]},{"name":"신무산","peakStone":"","height":"896","region":"전북 장수","orgs":["wolgansan"]},{"name":"영취산","peakStone":"","height":"510","region":"전남 여수","orgs":["wolgansan"]},{"name":"일월산","peakStone":"","height":"1,219","region":"경북 영양","orgs":["wolgansan"]},{"name":"제암산","peakStone":"","height":"779","region":"전남 장흥","orgs":["wolgansan"]},{"name":"진악산","peakStone":"","height":"737","region":"충남 금산","orgs":["wolgansan"]},{"name":"천상데미","peakStone":"","height":"1,080","region":"전북 진안","orgs":["wolgansan"]},{"name":"천주산","peakStone":"","height":"640","region":"경남 창원","orgs":["wolgansan"]},{"name":"천황산","peakStone":"","height":"1,189","region":"경남 밀양","orgs":["wolgansan"]},{"name":"토함산","peakStone":"","height":"745","region":"경북 경주","orgs":["wolgansan"]},{"name":"검단산","peakStone":"","height":"658","region":"경기 하남, 경기 광주","orgs":["hanguksanha"]},{"name":"광교산","peakStone":"","height":"582","region":"경기 수원, 용인","orgs":["hanguksanha"]},{"name":"남덕유산","peakStone":"","height":"1,507","region":"경남 함양, 거창, 전북 장수","orgs":["hanguksanha"]},{"name":"남산제일봉","peakStone":"","height":"1,054","region":"경남 합천","orgs":["hanguksanha"]},{"name":"불암산","peakStone":"","height":"510","region":"서울 노원구, 경기 양주","orgs":["hanguksanha"]},{"name":"선자령","peakStone":"","height":"1,158","region":"강원 속초, 인제,양양","orgs":["hanguksanha"]},{"name":"수리산","peakStone":"","height":"469","region":"경기 안양, 군포, 안산","orgs":["hanguksanha"]}];
 
-const SEED_APPLIED_KEY = 'gajaHundredMountainsSeedApplied';
-// SEED_DATA 내용이 바뀔 때마다 올린다. 이미 시드를 적용받은 브라우저라도
-// 저장된 버전이 이보다 낮으면, SEED_DATA에 있는 산은 최신 정보로 갱신하고
-// 사용자가 그 사이 직접 추가한(=SEED_DATA에 없는 이름) 산은 그대로 보존한다.
-// 2 = 산림청/블랙야크/월간산/한국의산하 원본 PDF 기반 전면 재구성판(2026-08-23).
-const SEED_DATA_VERSION = 2;
-const SEED_VERSION_KEY = 'gajaHundredMountainsSeedVersion';
+// SEED_DATA(코드 안의 원본 100대명산)와 사용자가 이 페이지에서 추가·수정·
+// 삭제한 내용을 완전히 분리해서 관리한다. localStorage에는 "사용자가 손댄
+// 내용"만 이름 기준으로 저장하고(OVERRIDES_KEY), 화면에는 매번 SEED_DATA
+// 위에 그 오버라이드를 얹어서 보여준다. 이렇게 하면:
+//   - SEED_DATA를 코드에서 고치면(예: 높이 정정) 다음 로드에 바로 반영된다
+//     — "예전 버전이 캐시돼 있어서 새 값이 안 보이는" 문제 자체가 없어진다.
+//   - 사용자가 SEED_DATA에 있는 산의 값을 고치면 그 산 이름으로 된
+//     override 항목이 생겨, SEED_DATA가 나중에 또 바뀌어도 사용자가 직접
+//     고친 값은 override로 유지된다(원치 않으면 다시 편집해서 지우면 됨).
+//   - 사용자가 SEED_DATA에 있는 산을 삭제하면 override에 deleted:true로
+//     표시해 숨긴다(SEED_DATA 배열 자체를 건드릴 수 없으므로).
+//   - 사용자가 SEED_DATA에 없는 새 산을 추가하면 override에 그대로 쌓인다.
+const OVERRIDES_KEY = 'gajaHundredMountainsOverrides';
 
-function loadMountains() {
+function loadOverrides() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) {
-      // 이 브라우저에서 한 번도 저장한 적 없으면 초기 데이터를 시드한다.
-      // 이후에는 SEED_APPLIED_KEY가 남아 있어 사용자가 전부 지워도 다시
-      // 채워지지 않는다(사용자의 삭제 결정을 존중).
-      if (!localStorage.getItem(SEED_APPLIED_KEY)) {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
-          localStorage.setItem(SEED_APPLIED_KEY, '1');
-          localStorage.setItem(SEED_VERSION_KEY, String(SEED_DATA_VERSION));
-        } catch (e) {}
-        return SEED_DATA;
-      }
-      return [];
-    }
-    let arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) arr = [];
-
-    const storedVersion = parseInt(localStorage.getItem(SEED_VERSION_KEY) || '0', 10);
-    if (storedVersion < SEED_DATA_VERSION) {
-      // 예전 SEED_DATA로 이미 시드됐던 브라우저: SEED_DATA에 있는 산은 최신
-      // 데이터로 덮어쓰고, 사용자가 그 사이 직접 추가한 산(SEED_DATA에 없는
-      // 이름)은 그대로 둔다. 사용자가 SEED_DATA에 있는 산을 손으로 고친
-      // 내용은 이번 갱신으로 최신 원본 값으로 되돌아간다.
-      const seedNames = new Set(SEED_DATA.map(m => m.name));
-      const userOnly = arr.filter(m => !seedNames.has(m.name));
-      arr = [...SEED_DATA, ...userOnly];
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-        localStorage.setItem(SEED_VERSION_KEY, String(SEED_DATA_VERSION));
-      } catch (e) {}
-    }
-    return arr;
+    const raw = localStorage.getItem(OVERRIDES_KEY);
+    if (raw === null) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
   } catch (e) {
-    return [];
+    return {};
   }
 }
 
-function saveMountains(list) {
+function saveOverrides(overrides) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
   } catch (e) {
     // localStorage 실패는 조용히 무시(용량 초과 등) — 화면 목록 자체는 그대로 유지됨
   }
+}
+
+// SEED_DATA + overrides를 매번 병합해 반환한다. 목록 순서는 SEED_DATA
+// 순서를 먼저 따르고, SEED_DATA에 없는 사용자 추가 산을 뒤에 붙인다.
+function loadMountains() {
+  const overrides = loadOverrides();
+  const result = [];
+  SEED_DATA.forEach(seedMountain => {
+    const ov = overrides[seedMountain.name];
+    if (ov && ov.deleted) return;
+    result.push(ov ? { ...seedMountain, ...ov } : seedMountain);
+  });
+  const seedNames = new Set(SEED_DATA.map(m => m.name));
+  Object.keys(overrides).forEach(name => {
+    if (seedNames.has(name)) return; // 이미 위에서 처리됨
+    const ov = overrides[name];
+    if (ov.deleted) return;
+    result.push({ name, peakStone: '', height: '', region: '', orgs: [], ...ov });
+  });
+  return result;
+}
+
+// 화면에서 편집된 전체 목록(list)을 SEED_DATA와 비교해 "달라진 부분"만
+// overrides로 추출해 저장한다. SEED_DATA와 완전히 같은 값으로 되돌리면
+// 그 산의 override는 자동으로 사라진다(다시 SEED_DATA 그대로를 따름).
+function saveMountains(list) {
+  const seedByName = new Map(SEED_DATA.map(m => [m.name, m]));
+  const overrides = {};
+
+  const presentNames = new Set();
+  list.forEach(m => {
+    presentNames.add(m.name);
+    const seedMountain = seedByName.get(m.name);
+    if (!seedMountain) {
+      // SEED_DATA에 없는 사용자 추가 산: 그대로 override로 저장.
+      overrides[m.name] = { peakStone: m.peakStone, height: m.height, region: m.region, orgs: m.orgs };
+      return;
+    }
+    // SEED_DATA에 있는 산: 원본과 다른 필드가 하나라도 있으면 override로 저장.
+    const changed = seedMountain.peakStone !== (m.peakStone || '')
+      || seedMountain.height !== (m.height || '')
+      || seedMountain.region !== (m.region || '')
+      || JSON.stringify(seedMountain.orgs || []) !== JSON.stringify(m.orgs || []);
+    if (changed) {
+      overrides[m.name] = { peakStone: m.peakStone, height: m.height, region: m.region, orgs: m.orgs };
+    }
+  });
+
+  // SEED_DATA에는 있지만 화면 목록(list)에는 없는 산 = 사용자가 삭제한 것.
+  SEED_DATA.forEach(seedMountain => {
+    if (!presentNames.has(seedMountain.name)) {
+      overrides[seedMountain.name] = { deleted: true };
+    }
+  });
+
+  saveOverrides(overrides);
 }
 
 function renderList() {
