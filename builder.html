@@ -97,12 +97,7 @@
       </div>
       <datalist id="hundredMountainList"></datalist>
       <div class="charcount" id="badge-lock-status">아직 배지가 적용되지 않았습니다. 산 이름을 입력하고 [배지적용]을 누르면 그 시점의 100대명산 여부가 확정되어, 이후 산 이름을 자유롭게 바꿔도 배지는 유지됩니다.</div>
-      <div class="charcount" style="margin-top:2px;">100대명산 목록(산림청/블랙야크/월간산/한국산하)에 없는 산이라 자동완성에 안 뜬다면, 아래에서 직접 추가할 수 있습니다. 추가해도 100대명산 배지와는 무관하며 자동완성에만 반영됩니다.</div>
-      <div class="row" style="align-items:center; gap:8px; margin-top:4px;">
-        <input type="text" id="customMountainNameInput" placeholder="예: 응봉산" style="flex:1;">
-        <button class="btn" id="btn-add-custom-mountain" type="button" style="white-space:nowrap;">+ 산 이름 추가</button>
-      </div>
-      <div class="charcount" id="custom-mountain-status"></div>
+      <div class="charcount" style="margin-top:2px;">100대명산 목록에 없는 산이라 자동완성에 안 뜬다면, 사이드바의 "100대명산 데이터" 메뉴에서 직접 추가할 수 있습니다.</div>
 
       <label>코스 흐름 (콤마로 구분, 지도상 순서대로)</label>
       <input type="text" id="courseRouteFlow" placeholder="예: 백무동, 장터목, 연하선경, 세석, 한신계곡">
@@ -532,10 +527,10 @@ function applyHundredMountainBadge() {
 }
 
 // 100대명산 목록(HUNDRED_MOUNTAINS)에 없는 산(예: 응봉산처럼 산림청/
-// 블랙야크/월간산/한국산하 어디에도 선정되지 않은 산)도 "산 이름"
-// 자동완성에서 찾을 수 있도록, 별도의 사용자 정의 산 이름 목록을
-// localStorage에 저장해 둔다. 100대명산 배지와는 무관 — 여기 추가해도
-// 배지가 뜨지 않으며, 순수하게 자동완성 후보로만 쓰인다.
+// 과거 "+ 산 이름 추가" 기능(builder.html 내 자체 UI)이 저장하던 키.
+// 이제 이 기능은 100대명산 데이터 관리 화면(hundred_mountains.html)으로
+// 이전됐지만, 이전에 이 키에 저장해둔 값이 남아 있을 수 있어 읽기만
+// 하고 자동완성에 계속 반영한다(새로 쓰지는 않음 — 추가 UI는 제거됨).
 const CUSTOM_MOUNTAIN_NAMES_KEY = 'gajaCustomMountainNames';
 
 function loadCustomMountainNames() {
@@ -548,17 +543,9 @@ function loadCustomMountainNames() {
   }
 }
 
-function saveCustomMountainNames(names) {
-  try {
-    localStorage.setItem(CUSTOM_MOUNTAIN_NAMES_KEY, JSON.stringify(names));
-  } catch (e) {
-    // localStorage 실패는 조용히 무시(자동완성 편의 기능이라 핵심 흐름에는 영향 없음)
-  }
-}
-
-// "산 이름" 입력 시 100대명산 목록 + 사용자 정의 목록을 합쳐 자동완성으로
-// 보여주기 위한 datalist 채우기. 산 이름을 추가/삭제할 때마다 다시 호출해
-// 갱신할 수 있도록 함수로 둔다.
+// "산 이름" 입력 시 100대명산 목록 + (레거시) 사용자 정의 목록 + 100대명산
+// 데이터 관리 화면에서 추가한 산을 합쳐 자동완성으로 보여주기 위한 datalist
+// 채우기.
 function populateHundredMountainDatalist() {
   const datalist = document.getElementById('hundredMountainList');
   if (!datalist) return;
@@ -576,29 +563,6 @@ function populateHundredMountainDatalist() {
   });
 }
 populateHundredMountainDatalist();
-
-function addCustomMountainName() {
-  const input = document.getElementById('customMountainNameInput');
-  const statusEl = document.getElementById('custom-mountain-status');
-  const name = input.value.trim();
-  if (!name) {
-    statusEl.textContent = '⚠ 추가할 산 이름을 입력하세요.';
-    return;
-  }
-  const allNames = new Set();
-  Object.keys(HUNDRED_MOUNTAINS).forEach(key => HUNDRED_MOUNTAINS[key].forEach(n => allNames.add(n)));
-  const customNames = loadCustomMountainNames();
-  if (allNames.has(name) || customNames.includes(name)) {
-    statusEl.textContent = `ℹ "${name}"은(는) 이미 자동완성 목록에 있습니다.`;
-    input.value = '';
-    return;
-  }
-  customNames.push(name);
-  saveCustomMountainNames(customNames);
-  populateHundredMountainDatalist();
-  statusEl.textContent = `✅ "${name}"을(를) 자동완성 목록에 추가했습니다.`;
-  input.value = '';
-}
 
 function graphemeLen(str) { return Array.from(str || '').length; }
 
@@ -1724,7 +1688,6 @@ document.getElementById('btn-copy-prompt').addEventListener('click', copyPromptT
 document.getElementById('btn-copy-master-prompt').addEventListener('click', copyMasterPromptToClipboard);
 document.getElementById('btn-copy-notebooklm-prompt').addEventListener('click', copyNotebookLMPromptToClipboard);
 document.getElementById('btn-apply-badge').addEventListener('click', applyHundredMountainBadge);
-document.getElementById('btn-add-custom-mountain').addEventListener('click', addCustomMountainName);
 document.getElementById('json-paste-area').addEventListener('focus', function () {
   this.value = '';
 });
