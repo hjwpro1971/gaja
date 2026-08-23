@@ -622,20 +622,43 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
                         }
                     });
                 }
-                // 랜드마크 문장을 우선 쓰되, 상위 몇 개로 자르지 않고 전부
-                // 명사구로 쪼개 후보로 올린다. 어느 풍경을 배경으로 쓸지는
-                // 사람이 판단할 몫이라, 여기서는 고르지 않고 다 보여준 뒤
-                // 입력칸에서 직접 지우고 다듬게 한다.
-                const bulletSentences = landmarkSentences.concat(otherSentences);
-                const phraseSet = new Set();
-                bulletSentences.forEach(s => {
-                    extractSceneryPhrases(s).forEach(p => phraseSet.add(p));
-                });
-                // 명사구를 하나도 못 건졌으면(문체가 예상과 다른 경우) 최소한
-                // features 명사구라도 후보로 내놓는다.
-                const phrases = phraseSet.size
-                    ? Array.from(phraseSet)
-                    : Array.from(allFeaturesSet);
+                // MOUNTAIN_DATA JSON에 배경 이미지 전용 필드
+                // sceneryHighlights가 있으면 그것을 그대로 쓴다. 이 값은 JSON
+                // 변환 단계에서 원문 Part 2(핵심 비경 묘사)를 보고 "이 산의
+                // 대표 절경"만 골라 그림용으로 쓴 것이라, bullets 문장에서
+                // 정규식으로 조사·서술어를 잘라내는 extractSceneryPhrases()
+                // 역추출보다 훨씬 정확하다(역추출은 "억새밭 평원에", "있는
+                // 옥빛 인공 호수" 같은 조각이나 "설악산 비선대를 닮은" 같은
+                // 다른 산 비유를 만들어냈고, 정작 대표 절경인 억새밭은
+                // 누락되기도 했다).
+                //
+                // 이 필드가 없던 시절의 JSON도 계속 동작해야 하므로, 없거나
+                // 비어 있으면 기존 bullets 역추출 경로로 그대로 폴백한다.
+                const declaredHighlights = Array.isArray(parsed.sceneryHighlights)
+                    ? parsed.sceneryHighlights
+                        .filter(s => typeof s === 'string' && s.trim())
+                        .map(s => s.trim())
+                    : [];
+
+                let phrases;
+                if (declaredHighlights.length) {
+                    phrases = Array.from(new Set(declaredHighlights));
+                } else {
+                    // 랜드마크 문장을 우선 쓰되, 상위 몇 개로 자르지 않고 전부
+                    // 명사구로 쪼개 후보로 올린다. 어느 풍경을 배경으로 쓸지는
+                    // 사람이 판단할 몫이라, 여기서는 고르지 않고 다 보여준 뒤
+                    // 입력칸에서 직접 지우고 다듬게 한다.
+                    const bulletSentences = landmarkSentences.concat(otherSentences);
+                    const phraseSet = new Set();
+                    bulletSentences.forEach(s => {
+                        extractSceneryPhrases(s).forEach(p => phraseSet.add(p));
+                    });
+                    // 명사구를 하나도 못 건졌으면(문체가 예상과 다른 경우) 최소한
+                    // features 명사구라도 후보로 내놓는다.
+                    phrases = phraseSet.size
+                        ? Array.from(phraseSet)
+                        : Array.from(allFeaturesSet);
+                }
                 parsedHikingData = {
                     mountainName: parsed.mountainName || "명산",
                     routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
