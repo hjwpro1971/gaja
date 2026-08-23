@@ -1268,10 +1268,47 @@ function markGuideGeneratedInDraft() {
   }
 }
 
+// 마스터프롬프트용 산 이름/경로 입력칸은 collectFormData()가 다루는
+// MOUNTAIN_DATA 스키마와 무관한 별도 입력이라(가이드 생성 JSON에는
+// 들어가지 않음) DRAFT_STORAGE_KEY와 별도 키로 저장한다. 저장하지
+// 않으면 페이지를 새로고침하거나 다른 메뉴를 갔다 오면 값이 비어
+// [폼 초기화]를 누르기도 전에 사라져 버린다.
+const MASTER_PROMPT_DRAFT_KEY = 'gajaBuilderMasterPromptDraft';
+
+function saveMasterPromptDraft() {
+  try {
+    const data = {
+      mountainName: document.getElementById('masterPromptMountainName').value,
+      route: document.getElementById('masterPromptRoute').value
+    };
+    localStorage.setItem(MASTER_PROMPT_DRAFT_KEY, JSON.stringify(data));
+  } catch (e) {
+    // 저장 실패해도 현재 입력값 자체는 화면에 그대로 남아 있으므로 무해함
+  }
+}
+
+function restoreMasterPromptDraftIfAny() {
+  let raw;
+  try {
+    raw = localStorage.getItem(MASTER_PROMPT_DRAFT_KEY);
+  } catch (e) {
+    return;
+  }
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    document.getElementById('masterPromptMountainName').value = data.mountainName || '';
+    document.getElementById('masterPromptRoute').value = data.route || '';
+  } catch (e) {
+    // 저장된 draft가 깨져 있으면 무시
+  }
+}
+
 function clearDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
   localStorage.removeItem(GENERATED_FLAG_KEY);
   localStorage.removeItem(MOUNTAIN_NAME_HANDOFF_KEY);
+  localStorage.removeItem(MASTER_PROMPT_DRAFT_KEY);
   clearSummaryDraft();
   clearGuidePromptDraft();
   clearGpxMapDraft();
@@ -1635,8 +1672,13 @@ document.getElementById('btn-copy-deploy-url').addEventListener('click', () => {
 buildSectionsForm();
 updateTotalDistance();
 restoreDraftIfAny();
+restoreMasterPromptDraftIfAny();
 
 document.querySelector('.form-pane').addEventListener('input', e => {
+  if (e.target.id === 'masterPromptMountainName' || e.target.id === 'masterPromptRoute') {
+    saveMasterPromptDraft();
+    return;
+  }
   if (e.target.closest('#json-paste-area')) return;
   scheduleDraftSave();
   if (e.target.id === 'mountainName') saveMountainNameHandoff(e.target.value.trim());
