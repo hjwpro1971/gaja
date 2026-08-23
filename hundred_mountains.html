@@ -114,10 +114,6 @@
 </div>
 
 <script>
-// builder.html(100대명산 배지 판정)이 이 페이지에서 사용자가 추가·수정·
-// 삭제한 내용을 함께 읽어가는 공용 데이터 저장소. 같은 origin(GitHub
-// Pages)이라 localStorage로 공유 가능하다.
-const STORAGE_KEY = 'gajaHundredMountainsData';
 const ORG_LABELS = { forest: '산림청', blackyak: '블랙야크', wolgansan: '월간산', hanguksanha: '한국산하' };
 
 // 원본 100대명산 데이터는 hundred_mountains_data.js(<script src>로 위에서
@@ -141,18 +137,12 @@ const SEED_DATA = window.HundredMountainsSeedData || [];
 //   - 사용자가 SEED_DATA에 있는 산을 삭제하면 override에 deleted:true로
 //     표시해 숨긴다(SEED_DATA 배열 자체를 건드릴 수 없으므로).
 //   - 사용자가 SEED_DATA에 없는 새 산을 추가하면 override에 그대로 쌓인다.
-const OVERRIDES_KEY = 'gajaHundredMountainsOverrides';
-
-function loadOverrides() {
-  try {
-    const raw = localStorage.getItem(OVERRIDES_KEY);
-    if (raw === null) return {};
-    const obj = JSON.parse(raw);
-    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
-  } catch (e) {
-    return {};
-  }
-}
+// 읽기(병합)는 hundred_mountains_data.js의 공유 API를 그대로 쓴다 —
+// builder.html·hiking_summary.html도 같은 함수를 쓰므로 세 화면이 항상
+// 같은 목록을 본다. 쓰기(saveMountains)는 이 관리 화면에서만 필요해서
+// 여기에 둔다.
+const OVERRIDES_KEY = window.HundredMountainsOverridesKey;
+const loadMountains = window.loadHundredMountains;
 
 function saveOverrides(overrides) {
   try {
@@ -160,26 +150,6 @@ function saveOverrides(overrides) {
   } catch (e) {
     // localStorage 실패는 조용히 무시(용량 초과 등) — 화면 목록 자체는 그대로 유지됨
   }
-}
-
-// SEED_DATA + overrides를 매번 병합해 반환한다. 목록 순서는 SEED_DATA
-// 순서를 먼저 따르고, SEED_DATA에 없는 사용자 추가 산을 뒤에 붙인다.
-function loadMountains() {
-  const overrides = loadOverrides();
-  const result = [];
-  SEED_DATA.forEach(seedMountain => {
-    const ov = overrides[seedMountain.name];
-    if (ov && ov.deleted) return;
-    result.push(ov ? { ...seedMountain, ...ov } : seedMountain);
-  });
-  const seedNames = new Set(SEED_DATA.map(m => m.name));
-  Object.keys(overrides).forEach(name => {
-    if (seedNames.has(name)) return; // 이미 위에서 처리됨
-    const ov = overrides[name];
-    if (ov.deleted) return;
-    result.push({ name, peakStone: '', height: '', region: '', orgs: [], ...ov });
-  });
-  return result;
 }
 
 // 화면에서 편집된 전체 목록(list)을 SEED_DATA와 비교해 "달라진 부분"만

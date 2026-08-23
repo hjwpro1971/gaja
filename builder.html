@@ -437,33 +437,19 @@ function baseMountainName(name) {
   return String(name || '').replace(/\([^)]*\)/g, '').trim();
 }
 
-// "100대명산 데이터" 관리 화면(hundred_mountains.html)에서 사용자가 직접
-// 추가·수정·삭제한 내용. 같은 origin(GitHub Pages)의 별도 페이지가 저장하는
-// localStorage 값을 읽어오는 것이라, 여기서는 읽기만 하고 절대 쓰지
-// 않는다(관리/삭제는 그 페이지에서만). 항목 형태: { name, peakStone,
-// height, region, orgs: ['forest', ...] }.
-const HUNDRED_MOUNTAINS_DATA_KEY = 'gajaHundredMountainsData';
-
-function loadCustomHundredMountainsData() {
-  try {
-    const raw = localStorage.getItem(HUNDRED_MOUNTAINS_DATA_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
+// 원본 + "100대명산 데이터" 관리 화면(hundred_mountains.html)에서 사용자가
+// 직접 추가·수정·삭제한 내용을 병합한 최종 목록. 병합 로직은
+// hundred_mountains_data.js가 단독으로 갖고 있고, 이 페이지는 읽기만 한다
+// (관리/삭제는 그 페이지에서만).
+function loadAllHundredMountains() {
+  return (window.loadHundredMountains ? window.loadHundredMountains() : (window.HundredMountainsSeedData || []));
 }
 
 function getHundredMountainBadges(mountainName) {
   if (!mountainName) return [];
   const base = baseMountainName(mountainName);
   const badges = new Set();
-  (window.HundredMountainsSeedData || []).forEach(m => {
-    if (baseMountainName(m.name) === base && Array.isArray(m.orgs)) {
-      m.orgs.forEach(org => badges.add(org));
-    }
-  });
-  loadCustomHundredMountainsData().forEach(m => {
+  loadAllHundredMountains().forEach(m => {
     if (baseMountainName(m.name) === base && Array.isArray(m.orgs)) {
       m.orgs.forEach(org => badges.add(org));
     }
@@ -518,9 +504,8 @@ function populateHundredMountainDatalist() {
   const datalist = document.getElementById('hundredMountainList');
   if (!datalist) return;
   const allNames = new Set();
-  (window.HundredMountainsSeedData || []).forEach(m => { if (m.name) allNames.add(m.name); });
+  loadAllHundredMountains().forEach(m => { if (m.name) allNames.add(m.name); });
   loadCustomMountainNames().forEach(name => allNames.add(name));
-  loadCustomHundredMountainsData().forEach(m => { if (m.name) allNames.add(m.name); });
   datalist.innerHTML = '';
   Array.from(allNames).sort((a, b) => a.localeCompare(b, 'ko')).forEach(name => {
     const option = document.createElement('option');
@@ -878,7 +863,6 @@ function fillFormFromData(data) {
 let lastGeneratedHTML = null;
 let coverImageDataURL = null;
 
-const COVER_IMAGE_MAX_WIDTH = 1920;
 const COVER_IMAGE_JPEG_QUALITY = 0.82;
 
 // 표지 사진 영역의 실제 가로폭(cover-image-layer CSS와 동일하게 유지)
@@ -896,11 +880,6 @@ function loadImageFromFile(file) {
     img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
     img.src = URL.createObjectURL(file);
   });
-}
-
-function dataURLSizeBytes(dataURL) {
-  const base64 = dataURL.slice(dataURL.indexOf(',') + 1);
-  return Math.round(base64.length * 3 / 4);
 }
 
 function getCoverEditorHeight() {
