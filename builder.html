@@ -339,17 +339,52 @@ const NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE = (mountainLine, routeLine) => `업로드
 [작성 지침 및 가이드 구조]
 1. 타이틀: 산의 매력과 정복의 테마가 한눈에 보이는 멋진 메인 제목과 부제목.
 2. 코스 소개(표지용 한 문단): 타이틀 바로 아래에 이 산 전체를 압축해서 소개하는 3~5문장짜리 독립된 문단. 소스에서 찾은 이 산의 대표 랜드마크·최고의 절경·계절별 풍경(단풍/설경/신록 등)을 최소 한 가지 이상 구체적으로 녹여, 읽는 사람이 "이 산에 가면 저건 꼭 봐야겠다"는 기대감을 갖게 쓰세요.
-3. Part 1. 코스 전체 개요 및 스펙: 전체 경로, 거리, 소요 시간, 난이도를 표나 요약 형식으로 정리하고, '도전(오르막)'과 '보상(하산/경치)'의 조화를 오프닝 에세이로 서술하세요.
+3. Part 1. 코스 전체 개요 및 스펙: 먼저 아래 5개 항목을 "항목: 내용" 한 줄씩, 이 순서와 이 이름 그대로 적으세요(표·목록 기호·다른 항목명으로 바꾸지 말 것 — 이 원문은 다음 단계에서 자동으로 데이터 변환되므로 형식이 일정해야 합니다).
+   전체 경로: 들머리부터 날머리까지 경유지를 ➔ 로 연결
+   총 거리: 0.0km
+   소요 시간: 0.0h~0.0h
+   난이도: 쉬움 또는 보통 또는 힘듦 중 하나
+   들머리/날머리 고도: 들머리 000m / 날머리 000m
+   그 다음 줄을 바꿔, '도전(오르막)'과 '보상(하산/경치)'의 조화를 오프닝 에세이로 서술하세요.
 4. Part 2. 코스 내 반드시 봐야 할 핵심 비경(배경 상세 설명): 소스에서 찾은 랜드마크마다 2~3문장 이상의 완결된 문장으로 시각적·감각적으로 묘사하고, 왜 유명한지 소스에 있는 근거로 설명하세요.
-5. Part 3. 5대 핵심 구간별 상세 산행 가이드: 1구간부터 5구간까지 순서대로, 각 구간 타이틀 옆에 [거리: 0.0km | 난이도: 상/중/하]를 명시하고, 산행 특징(경사·노면·체력 안배)과 꼭 봐야 할 것을 완결된 문장으로 설명하세요.
+5. Part 3. 5대 핵심 구간별 상세 산행 가이드: 1구간부터 5구간까지 순서대로 쓰되, 위 [지정된 산행 정보]에 구간 매핑이 주어졌으면 그 시작·끝 지점을 그대로 따르세요. 각 구간 타이틀은 "N구간: 시작지점 ➔ 끝지점" 형식으로 쓰고 그 옆에 [거리: 0.0km | 난이도: 상/중/하]를 명시한 뒤, 산행 특징(경사·노면·체력 안배)과 꼭 봐야 할 것을 완결된 문장으로 설명하세요.
 6. Part 4. 안전 가이드: 조심해야 할 구간과 준비물 팁을 문장으로 안내하며 마무리하세요.
 
 작성 스타일: '블랙야크 100대 명산 가이드북'이나 품격 있는 기행 전문 잡지를 읽는 듯한 매끄럽고 수려한 문체로, 전문 산악 용어를 적절히 쓰되 일반 등산객도 이해하기 쉽게 써 주세요.`;
 
+// 사용자가 입력한 동선을 경유지 배열로 쪼갠다. 입력칸 placeholder는 "->"를
+// 쓰지만 실제로는 "➔"나 쉼표로 적는 경우도 있어 셋 다 받는다.
+function splitRouteStops(route) {
+  return String(route || '')
+    .split(/\s*(?:➔|→|->|=>|,)\s*/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+// 경유지가 정확히 6개면 1~5구간의 시작·끝 지점이 일의적으로 정해지므로,
+// 그 매핑을 프롬프트에 못박아 AI가 임의로 구간을 나누는 것을 막는다.
+// 6개가 아니면(예: 경유지 5개 → 4구간) 잘못된 지시를 주는 대신 순서만
+// 지키라고 하고 분할은 AI에게 맡긴다.
+function buildSectionMappingLine(route) {
+  const stops = splitRouteStops(route);
+  if (stops.length < 2) return '';
+
+  if (stops.length === 6) {
+    const lines = [];
+    for (let i = 0; i < 5; i++) {
+      lines.push(`  ${i + 1}구간: ${stops[i]} ➔ ${stops[i + 1]}`);
+    }
+    return `\n- 5대 구간은 아래 매핑을 그대로 따르세요(구간의 시작·끝 지점을 임의로 바꾸지 마세요).\n${lines.join('\n')}`;
+  }
+
+  return `\n- 5대 구간을 나눌 때는 위 동선의 경유지 순서(${stops.join(' ➔ ')})를 반드시 지키고, 경유지를 건너뛰거나 순서를 바꾸지 마세요. 경유지 수가 5개 구간과 딱 맞지 않으면 거리·소요시간이 비슷해지도록 인접 구간을 합치거나 나눠 정확히 5구간으로 맞추세요.`;
+}
+
 function buildNotebookLMPrompt(mountainName, route) {
   const mountainLine = mountainName ? `\n- 산 이름: ${mountainName}` : '';
   const routeLine = route ? `\n- 전체 코스 동선: ${route}` : '';
-  return NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE(mountainLine, routeLine).replace('[산이름]', mountainName || '이 산');
+  const sectionLine = buildSectionMappingLine(route);
+  return NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE(mountainLine, routeLine + sectionLine).replace('[산이름]', mountainName || '이 산');
 }
 
 function copyNotebookLMPromptToClipboard() {
