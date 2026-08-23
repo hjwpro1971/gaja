@@ -75,7 +75,9 @@
       <input type="text" id="masterPromptRoute" placeholder="예: 보경사 -> 문수암 -> 삼지봉 -> 은폭포 -> 선일대 -> 연산폭포 -> 보경사">
       <div class="action-bar" style="margin:8px 0 8px;">
         <button class="btn" id="btn-copy-master-prompt" type="button">마스터프롬프트 복사</button>
+        <button class="btn" id="btn-copy-notebooklm-prompt" type="button">NotebookLM용 복사</button>
       </div>
+      <div class="charcount" style="margin:-6px 0 8px;">마스터프롬프트: 대괄호 [예: ...]를 직접 채워 일반 AI 챗봇(ChatGPT 등)에 사용 · NotebookLM용: 업로드한 소스 문서를 근거로 AI가 직접 정보를 찾아 채우도록 요청(대괄호 없음, NotebookLM 노트북의 소스 채팅에 그대로 붙여넣기)</div>
       <div class="info-box" id="master-prompt-copy-info" style="margin:0 0 8px; display:none;"></div>
       <textarea id="json-paste-area" style="min-height:140px; font-family: 'Consolas', monospace; font-size:11.5px;" placeholder="여기에 산행 코스 상세 정보(원문 텍스트) 또는 AI가 만든 MOUNTAIN_DATA JSON을 입력하세요"></textarea>
       <div class="action-bar" style="margin:8px 0 0;">
@@ -299,6 +301,60 @@ const MASTER_GUIDE_PROMPT = `고품격 5구간 종합 산행 가이드 제작 �
    - 조심해야 할 구간과 준비물 팁을 문장으로 안내하며 마무리해 주세요.
 
 *작성 스타일: '블랙야크 100대 명산 가이드북'이나 '품격 있는 기행 전문 잡지'를 읽는 듯한 매끄럽고 수려한 문체로 작성해 주세요. 전문적인 산악 용어를 적절히 사용하면서도, 일반 등산객이 읽기에 친절하고 명확해야 합니다.*`;
+
+// NotebookLM은 일반 AI 챗봇과 달리 "업로드한 소스 문서에 근거해서만
+// 답한다"는 원칙이 강해서, MASTER_GUIDE_PROMPT의 [예: ...] 같은 미완성
+// 대괄호를 그대로 던지면 "이 표기에 해당하는 내용을 소스에서 찾아라"는
+// 지시로 오인해 못 찾겠다며 응답을 거부하거나 에러를 낸다(실제 사용자
+// 재현 사례). NotebookLM용은 대괄호 입력 방식 자체를 없애고, 대신 "소스
+// 문서에서 정보를 직접 찾아 채워라"고 명시적으로 요청하는 형태로 다시
+// 쓴다. 산 이름/경로만 사용자가 지정하고(같은 입력칸 재사용), 나머지
+// (핵심 스펙, 랜드마크, 구간별 특징 등)는 전부 AI가 소스에서 추출하게
+// 한다. 소스에 없는 값은 지어내지 말고 "소스에 명시되지 않음"이라고
+// 쓰도록 지시해, 문서에 없는 지식을 만들어내는 것을 꺼리는 NotebookLM의
+// 특성과 충돌하지 않게 한다.
+const NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE = (mountainLine, routeLine) => `업로드된 소스 자료를 근거로, [산이름]의 '종합 산행 가이드 리포트'를 작성해 주세요. 당신은 전문 산악 기행 작가이자 베테랑 등산 가이드입니다.
+
+이 가이드는 등반객이 실제로 코스를 걸어가면서 비경을 만나는 순서에 따라 전체 일정을 직관적으로 파악할 수 있도록, 전체 코스를 '5구간'으로 명확히 구분하여 안내해야 합니다.
+
+[지정된 산행 정보]${mountainLine}${routeLine}
+- 나머지 정보(총 거리, 소요 시간, 난이도, 핵심 비경/랜드마크, 구간별 거리와 특징, 안전 주의사항)는 모두 위 소스 문서 안에서 찾아 채우세요. 소스에 명시되지 않은 값은 추측해서 지어내지 말고 "소스에 명시되지 않음"이라고 표시하세요.
+
+[엄격히 금지되는 것]
+- 먹거리·맛집·식당·향토음식 등 "먹는 이야기"는 어떤 항목에도 절대 포함하지 마세요. 이 가이드는 산행 안내문이지 맛집 소개가 아닙니다.
+- 조사·서술어 없이 단어나 명사구만 나열하는 문장을 그 자체로 문단에 쓰지 마세요. 모든 설명은 반드시 주어와 서술어를 갖춘 완결된 문장으로 쓰세요.
+- 소스에 없는 지명·설화·수치를 새로 지어내지 마세요.
+
+[작성 지침 및 가이드 구조]
+1. 타이틀: 산의 매력과 정복의 테마가 한눈에 보이는 멋진 메인 제목과 부제목.
+2. 코스 소개(표지용 한 문단): 타이틀 바로 아래에 이 산 전체를 압축해서 소개하는 3~5문장짜리 독립된 문단. 소스에서 찾은 이 산의 대표 랜드마크·최고의 절경·계절별 풍경(단풍/설경/신록 등)을 최소 한 가지 이상 구체적으로 녹여, 읽는 사람이 "이 산에 가면 저건 꼭 봐야겠다"는 기대감을 갖게 쓰세요.
+3. Part 1. 코스 전체 개요 및 스펙: 전체 경로, 거리, 소요 시간, 난이도를 표나 요약 형식으로 정리하고, '도전(오르막)'과 '보상(하산/경치)'의 조화를 오프닝 에세이로 서술하세요.
+4. Part 2. 코스 내 반드시 봐야 할 핵심 비경(배경 상세 설명): 소스에서 찾은 랜드마크마다 2~3문장 이상의 완결된 문장으로 시각적·감각적으로 묘사하고, 왜 유명한지 소스에 있는 근거로 설명하세요.
+5. Part 3. 5대 핵심 구간별 상세 산행 가이드: 1구간부터 5구간까지 순서대로, 각 구간 타이틀 옆에 [거리: 0.0km | 난이도: 상/중/하]를 명시하고, 산행 특징(경사·노면·체력 안배)과 꼭 봐야 할 것을 완결된 문장으로 설명하세요.
+6. Part 4. 안전 가이드: 조심해야 할 구간과 준비물 팁을 문장으로 안내하며 마무리하세요.
+
+작성 스타일: '블랙야크 100대 명산 가이드북'이나 품격 있는 기행 전문 잡지를 읽는 듯한 매끄럽고 수려한 문체로, 전문 산악 용어를 적절히 쓰되 일반 등산객도 이해하기 쉽게 써 주세요.`;
+
+function buildNotebookLMPrompt(mountainName, route) {
+  const mountainLine = mountainName ? `\n- 산 이름: ${mountainName}` : '';
+  const routeLine = route ? `\n- 전체 코스 동선: ${route}` : '';
+  return NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE(mountainLine, routeLine).replace('[산이름]', mountainName || '이 산');
+}
+
+function copyNotebookLMPromptToClipboard() {
+  const infoBox = document.getElementById('master-prompt-copy-info');
+  const mountainName = document.getElementById('masterPromptMountainName').value.trim();
+  const route = document.getElementById('masterPromptRoute').value.trim();
+  const finalPrompt = buildNotebookLMPrompt(mountainName, route);
+
+  navigator.clipboard.writeText(finalPrompt).then(() => {
+    infoBox.style.display = 'block';
+    infoBox.textContent = 'ℹ NotebookLM용 프롬프트가 클립보드에 복사되었습니다. 산행 코스 정보가 담긴 소스를 업로드한 노트북의 채팅창에 붙여넣으세요. 대괄호가 없어 그대로 질문으로 사용할 수 있습니다. 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용하세요.';
+  }).catch(err => {
+    infoBox.style.display = 'block';
+    infoBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
+  });
+}
 
 // 사용자가 직접 지정한 산 이름/경로를 마스터 프롬프트의 해당 자리에
 // 채워 넣는다. AI가 임의의 경로를 지어내지 않고, 사용자가 실제로 갈
@@ -1593,6 +1649,7 @@ document.getElementById('btn-reset').addEventListener('click', resetForm);
 document.getElementById('btn-fill-json').addEventListener('click', fillFormFromJSONPaste);
 document.getElementById('btn-copy-prompt').addEventListener('click', copyPromptToClipboard);
 document.getElementById('btn-copy-master-prompt').addEventListener('click', copyMasterPromptToClipboard);
+document.getElementById('btn-copy-notebooklm-prompt').addEventListener('click', copyNotebookLMPromptToClipboard);
 document.getElementById('btn-apply-badge').addEventListener('click', applyHundredMountainBadge);
 document.getElementById('json-paste-area').addEventListener('focus', function () {
   this.value = '';
