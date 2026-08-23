@@ -69,8 +69,12 @@
 
     <fieldset>
       <legend>코스별 상세 가이드 ↔ JSON</legend>
-      <p class="sub" style="margin:0 0 8px;">0) 원문 자체가 없다면 [마스터프롬프트 복사]로 산행 원문부터 AI에게 만들게 하세요 → 1) 아래에 산행 코스 상세 정보(자유 텍스트)를 입력 → 2) [JSON으로 변환하기]를 누르면 변환용 프롬프트+원문이 클립보드에 복사됨 → 3) 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 같은 칸에 붙여넣고 [JSON으로 붙여넣기] 클릭 → 4) 폼 확인/수정 후 [가이드 생성] → [다운로드]</p>
-      <div class="action-bar" style="margin:0 0 8px;">
+      <p class="sub" style="margin:0 0 8px;">0) 원문 자체가 없다면 아래 산 이름/경로를 입력하고 [마스터프롬프트 복사]로 산행 원문부터 AI에게 만들게 하세요 → 1) 아래에 산행 코스 상세 정보(자유 텍스트)를 입력 → 2) [JSON으로 변환하기]를 누르면 변환용 프롬프트+원문이 클립보드에 복사됨 → 3) 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 같은 칸에 붙여넣고 [JSON으로 붙여넣기] 클릭 → 4) 폼 확인/수정 후 [가이드 생성] → [다운로드]</p>
+      <label>마스터프롬프트용 산 이름</label>
+      <input type="text" id="masterPromptMountainName" list="hundredMountainList" placeholder="예: 내연산" autocomplete="off">
+      <label>마스터프롬프트용 전체 코스 동선 (본인이 실제로 갈 경로를 화살표(-&gt;)로 구분)</label>
+      <input type="text" id="masterPromptRoute" placeholder="예: 보경사 -> 문수암 -> 삼지봉 -> 은폭포 -> 선일대 -> 연산폭포 -> 보경사">
+      <div class="action-bar" style="margin:8px 0 8px;">
         <button class="btn" id="btn-copy-master-prompt" type="button">마스터프롬프트 복사</button>
       </div>
       <div class="info-box" id="master-prompt-copy-info" style="margin:0 0 8px; display:none;"></div>
@@ -289,11 +293,35 @@ const MASTER_GUIDE_PROMPT = `고품격 5구간 종합 산행 가이드 제작 �
 
 *작성 스타일: '블랙야크 100대 명산 가이드북'이나 '품격 있는 기행 전문 잡지'를 읽는 듯한 매끄럽고 수려한 문체로 작성해 주세요. 전문적인 산악 용어를 적절히 사용하면서도, 일반 등산객이 읽기에 친절하고 명확해야 합니다.*`;
 
+// 사용자가 직접 지정한 산 이름/경로를 마스터 프롬프트의 해당 자리에
+// 채워 넣는다. AI가 임의의 경로를 지어내지 않고, 사용자가 실제로 갈
+// 경로를 기준으로 가이드를 작성하게 하기 위함이다. 나머지 대괄호
+// ([예: 13~14.5km] 등)는 그대로 두어 사용자가 직접 채우게 한다.
+function buildMasterPrompt(mountainName, route) {
+  let prompt = MASTER_GUIDE_PROMPT;
+  if (mountainName) {
+    prompt = prompt.replace('[산 이름]', mountainName);
+    prompt = prompt.replace('- 산 이름: [예: 지리산, 설악산, 내연산 등]', `- 산 이름: ${mountainName}`);
+  }
+  if (route) {
+    prompt = prompt.replace('- 전체 코스 동선: [예: 보경사 -> 문수암 -> 삼지봉 -> 은폭포 -> 선일대 -> 연산폭포 -> 보경사]', `- 전체 코스 동선: ${route}`);
+  }
+  return prompt;
+}
+
 function copyMasterPromptToClipboard() {
   const infoBox = document.getElementById('master-prompt-copy-info');
-  navigator.clipboard.writeText(MASTER_GUIDE_PROMPT).then(() => {
+  const mountainName = document.getElementById('masterPromptMountainName').value.trim();
+  const route = document.getElementById('masterPromptRoute').value.trim();
+  const finalPrompt = buildMasterPrompt(mountainName, route);
+
+  navigator.clipboard.writeText(finalPrompt).then(() => {
     infoBox.style.display = 'block';
-    infoBox.textContent = 'ℹ 마스터 프롬프트가 클립보드에 복사되었습니다. AI 챗봇에 붙여넣고 대괄호 [예: ...] 부분을 실제 산행 정보로 채워서 요청하면, 그 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용할 수 있습니다.';
+    if (mountainName || route) {
+      infoBox.textContent = 'ℹ 마스터 프롬프트가 클립보드에 복사되었습니다(입력한 산 이름/경로 반영됨). AI 챗봇에 붙여넣고 나머지 대괄호 [예: ...] 부분을 채워서 요청하면, 그 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용할 수 있습니다.';
+    } else {
+      infoBox.textContent = 'ℹ 마스터 프롬프트가 클립보드에 복사되었습니다. 위 산 이름/경로 칸을 채우면 자동으로 반영됩니다. AI 챗봇에 붙여넣고 대괄호 [예: ...] 부분을 실제 산행 정보로 채워서 요청하면, 그 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용할 수 있습니다.';
+    }
   }).catch(err => {
     infoBox.style.display = 'block';
     infoBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
@@ -1264,6 +1292,8 @@ function resetForm() {
   document.getElementById('safetyWarningText').value = '';
   document.getElementById('guideIntro').value = '';
   document.getElementById('extra-infos-container').innerHTML = '';
+  document.getElementById('masterPromptMountainName').value = '';
+  document.getElementById('masterPromptRoute').value = '';
   document.getElementById('json-paste-area').value = '';
   document.getElementById('json-warn-box').style.display = 'none';
   document.getElementById('json-copy-info').style.display = 'none';
