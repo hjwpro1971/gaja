@@ -41,6 +41,11 @@
   .org-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: #ebf8ff; color: #2c5282; border: 1px solid #90cdf4; }
   .empty-row td { text-align: center; color: #a0aec0; padding: 20px; }
   .charcount { font-size: 11.5px; color: #718096; margin: 4px 0 0; }
+  .edit-indicator { display: none; font-size: 12px; font-weight: 700; color: #b7791f; background: #fffaf0; border: 1px solid #f6e05e; border-radius: 6px; padding: 6px 10px; margin: 8px 0 0; }
+  .edit-indicator.active { display: block; }
+  .btn-edit { color: #2b6cb0; border-color: #90cdf4; font-size: 11.5px; padding: 4px 10px; margin-right: 4px; }
+  .btn-edit:hover { background: #ebf8ff; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
@@ -51,7 +56,9 @@
   <fieldset>
     <legend>산 정보 추가</legend>
     <label>산 이름</label>
-    <input type="text" id="mountainName" placeholder="예: 응봉산">
+    <input type="text" id="mountainName" list="mountainNameList" placeholder="예: 응봉산" autocomplete="off">
+    <datalist id="mountainNameList"></datalist>
+    <div class="edit-indicator" id="edit-indicator"></div>
 
     <div class="row">
       <div>
@@ -78,6 +85,7 @@
 
     <div class="action-bar">
       <button class="btn btn-primary" id="btn-add" type="button">+ 추가</button>
+      <button class="btn btn-primary hidden" id="btn-update" type="button">✎ 수정</button>
       <button class="btn" id="btn-reset-form" type="button">입력 초기화</button>
     </div>
     <div class="warn-box" id="warn-box"></div>
@@ -162,18 +170,29 @@ function renderList() {
   const tbody = document.getElementById('mountain-list-body');
   if (!list.length) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="6">아직 추가한 산이 없습니다.</td></tr>';
-    return;
+  } else {
+    tbody.innerHTML = list.map((m, i) => `
+      <tr>
+        <td>${escapeHtml(m.name)}</td>
+        <td>${escapeHtml(m.peakStone || '')}</td>
+        <td>${escapeHtml(m.height || '')}</td>
+        <td>${escapeHtml(m.region || '')}</td>
+        <td><div class="org-badges">${(m.orgs || []).map(o => `<span class="org-badge">${ORG_LABELS[o] || o}</span>`).join('') || '-'}</div></td>
+        <td>
+          <button class="btn btn-edit" type="button" onclick="editMountain(${i})">편집</button>
+          <button class="btn btn-danger" type="button" onclick="removeMountain(${i})">삭제</button>
+        </td>
+      </tr>
+    `).join('');
   }
-  tbody.innerHTML = list.map((m, i) => `
-    <tr>
-      <td>${escapeHtml(m.name)}</td>
-      <td>${escapeHtml(m.peakStone || '')}</td>
-      <td>${escapeHtml(m.height || '')}</td>
-      <td>${escapeHtml(m.region || '')}</td>
-      <td><div class="org-badges">${(m.orgs || []).map(o => `<span class="org-badge">${ORG_LABELS[o] || o}</span>`).join('') || '-'}</div></td>
-      <td><button class="btn btn-danger" type="button" onclick="removeMountain(${i})">삭제</button></td>
-    </tr>
-  `).join('');
+  renderNameDatalist(list);
+}
+
+// 산 이름 입력창에 자동완성 후보를 채운다. 이름을 선택하면 change 이벤트에서
+// 기존 데이터를 찾아 나머지 필드(정상석/높이/지역/기관)를 자동으로 채워준다.
+function renderNameDatalist(list) {
+  const datalist = document.getElementById('mountainNameList');
+  datalist.innerHTML = list.map(m => `<option value="${escapeHtml(m.name)}"></option>`).join('');
 }
 
 function escapeHtml(str) {
@@ -187,6 +206,9 @@ function removeMountain(index) {
   renderList();
 }
 
+// 편집 중인 항목의 목록 인덱스. null이면 "새로 추가" 모드.
+let editingIndex = null;
+
 function resetInputForm() {
   document.getElementById('mountainName').value = '';
   document.getElementById('peakStone').value = '';
@@ -197,6 +219,64 @@ function resetInputForm() {
   });
   document.getElementById('warn-box').style.display = 'none';
   document.getElementById('info-box').style.display = 'none';
+  exitEditMode();
+}
+
+function fillFormFromMountain(m) {
+  document.getElementById('mountainName').value = m.name || '';
+  document.getElementById('peakStone').value = m.peakStone || '';
+  document.getElementById('height').value = m.height || '';
+  document.getElementById('region').value = m.region || '';
+  Object.keys(ORG_LABELS).forEach(key => {
+    document.getElementById('org-' + key).checked = (m.orgs || []).includes(key);
+  });
+}
+
+function enterEditMode(index, name) {
+  editingIndex = index;
+  document.getElementById('btn-add').classList.add('hidden');
+  document.getElementById('btn-update').classList.remove('hidden');
+  const indicator = document.getElementById('edit-indicator');
+  indicator.classList.add('active');
+  indicator.textContent = `✎ "${name}"을(를) 편집 중입니다. 값을 고친 뒤 [수정] 버튼을 누르세요.`;
+}
+
+function exitEditMode() {
+  editingIndex = null;
+  document.getElementById('btn-add').classList.remove('hidden');
+  document.getElementById('btn-update').classList.add('hidden');
+  const indicator = document.getElementById('edit-indicator');
+  indicator.classList.remove('active');
+  indicator.textContent = '';
+}
+
+// 목록 "편집" 버튼: 해당 행 데이터를 폼에 로드하고 수정 모드로 전환한다.
+function editMountain(index) {
+  const list = loadMountains();
+  const m = list[index];
+  if (!m) return;
+  fillFormFromMountain(m);
+  enterEditMode(index, m.name);
+  document.getElementById('warn-box').style.display = 'none';
+  document.getElementById('info-box').style.display = 'none';
+  document.getElementById('mountainName').focus();
+}
+
+// 산 이름 입력창에서 기존 목록에 있는 이름을 그대로 선택/입력하면(자동완성
+// 클릭 또는 정확히 일치하는 이름 직접 입력) 나머지 필드를 자동으로 채워
+// 수정하기 편하게 한다. 새 산을 추가하는 중이라면 아무 매칭이 없어 그대로 둔다.
+function handleNameInput() {
+  const name = document.getElementById('mountainName').value.trim();
+  if (!name) return;
+  const list = loadMountains();
+  const idx = list.findIndex(m => m.name === name);
+  if (idx >= 0) {
+    fillFormFromMountain(list[idx]);
+    enterEditMode(idx, name);
+  } else if (editingIndex !== null) {
+    // 편집 중이던 이름을 다른(목록에 없는) 이름으로 바꾸면 새 항목 추가로 취급.
+    exitEditMode();
+  }
 }
 
 function addMountain() {
@@ -220,22 +300,59 @@ function addMountain() {
   const list = loadMountains();
   const existingIdx = list.findIndex(m => m.name === name);
   if (existingIdx >= 0) {
-    list[existingIdx] = { name, peakStone, height, region, orgs };
-    infoBox.style.display = 'block';
-    infoBox.textContent = `ℹ "${name}" 정보를 덮어썼습니다.`;
-  } else {
-    list.push({ name, peakStone, height, region, orgs });
-    infoBox.style.display = 'block';
-    infoBox.textContent = `✅ "${name}"을(를) 추가했습니다.`;
+    warnBox.style.display = 'block';
+    warnBox.textContent = `⚠ "${name}"은(는) 이미 목록에 있습니다. 목록에서 [편집]을 눌러 수정하세요.`;
+    return;
   }
+  list.push({ name, peakStone, height, region, orgs });
   saveMountains(list);
   renderList();
   resetInputForm();
   infoBox.style.display = 'block';
+  infoBox.textContent = `✅ "${name}"을(를) 추가했습니다.`;
+}
+
+function updateMountain() {
+  const warnBox = document.getElementById('warn-box');
+  const infoBox = document.getElementById('info-box');
+  warnBox.style.display = 'none';
+  infoBox.style.display = 'none';
+
+  if (editingIndex === null) return;
+
+  const name = document.getElementById('mountainName').value.trim();
+  if (!name) {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ 산 이름을 입력하세요.';
+    return;
+  }
+
+  const peakStone = document.getElementById('peakStone').value.trim();
+  const height = document.getElementById('height').value.trim();
+  const region = document.getElementById('region').value.trim();
+  const orgs = Object.keys(ORG_LABELS).filter(key => document.getElementById('org-' + key).checked);
+
+  const list = loadMountains();
+  // 편집 중 이름을 다른 산의 이름으로 바꾼 경우, 그 산과 중복되지 않는지 확인.
+  const conflictIdx = list.findIndex((m, i) => m.name === name && i !== editingIndex);
+  if (conflictIdx >= 0) {
+    warnBox.style.display = 'block';
+    warnBox.textContent = `⚠ "${name}"은(는) 이미 목록의 다른 항목에 있습니다.`;
+    return;
+  }
+
+  list[editingIndex] = { name, peakStone, height, region, orgs };
+  saveMountains(list);
+  renderList();
+  resetInputForm();
+  infoBox.style.display = 'block';
+  infoBox.textContent = `ℹ "${name}" 정보를 수정했습니다.`;
 }
 
 document.getElementById('btn-add').addEventListener('click', addMountain);
+document.getElementById('btn-update').addEventListener('click', updateMountain);
 document.getElementById('btn-reset-form').addEventListener('click', resetInputForm);
+document.getElementById('mountainName').addEventListener('change', handleNameInput);
 
 renderList();
 </script>
