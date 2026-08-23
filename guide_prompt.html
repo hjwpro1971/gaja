@@ -453,6 +453,14 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         return translated;
     }
 
+    // "배경에 사용할 핵심 장소" 후보를 고를 때 지형/풍경 묘사인지 걸러내는
+    // 공용 키워드. "산"·"골"·"재" 같은 한 글자는 "산행"·"시작"처럼 무관한
+    // 일반 단어에도 우연히 매칭돼 필터 역할을 못 하므로 제외하고, 실제
+    // 지형·풍경을 가리키는 두 글자 이상 단어 위주로 구성한다. JSON
+    // 경로(parseBtn 핸들러)와 자유 텍스트 경로(parseFreeformGuideText)가
+    // 함께 쓰므로 전역으로 둔다.
+    const LANDSCAPE_KEYWORDS = /봉|령|고개|절경|비경|조망|전망|파노라마|숲|나무|단풍|설경|일출|일몰|안개|구름|암릉|능선|바위|계곡|폭포|정상|사면|봉우리/;
+
     // MOUNTAIN_DATA JSON이 아니라 산행 가이드 원문(자유 서술형 텍스트)이
     // 붙여넣어진 경우를 위한 폴백 파서. 여기서 실제로 쓰는 값은 산 이름/
     // 경유지 흐름/코스 특징 키워드뿐이므로(이미지 프롬프트 자체는 배경·
@@ -514,10 +522,6 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         // 콤마와 섞여 몇 개인지 구분이 안 됨). 전체 목록은 allFeatures로
         // 1단계 요약 화면에 그대로 보여줘 사용자가 원하면 직접 다른 항목을
         // 골라 쓸 수 있게 한다.
-        // "산"·"골"·"재" 같은 한 글자는 "산행"·"시작"처럼 무관한 일반
-        // 단어에도 우연히 매칭돼 필터 역할을 못 하므로 제외하고, 실제
-        // 지형·풍경을 가리키는 두 글자 이상 단어 위주로 구성한다.
-        const LANDSCAPE_KEYWORDS = /봉|령|고개|절경|비경|조망|전망|파노라마|숲|나무|단풍|설경|일출|일몰|안개|구름|암릉|능선|바위|계곡|폭포|정상|사면|봉우리/;
         const landscapeFeatures = Array.from(featuresSet).filter(f => LANDSCAPE_KEYWORDS.test(f));
         const topFeatures = (landscapeFeatures.length ? landscapeFeatures : Array.from(featuresSet))
             .sort((a, b) => b.length - a.length)
@@ -550,10 +554,51 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
                         if (sec.features) sec.features.forEach(f => allFeaturesSet.add(f));
                     });
                 }
+                // sections[].features는 인포그래픽 카드용으로 조사·서술어를
+                // 제거한 명사구(예: "솔숲길", "지그재그바위길")라, 이걸 그대로
+                // "배경에 사용할 핵심 장소"에 채우면 단어만 나열된 것처럼
+                // 보여 이 산의 실제 볼거리가 무엇인지 전달이 안 된다. 반면
+                // sections[].detail.bullets[].p는 완결된 문장으로 된 실제
+                // 묘사(구간 진행 안내뿐 아니라, 이제는 랜드마크 배경 설명도
+                // 여기 흡수돼 있다)이므로, 여기서 문장을 뽑아 자유 텍스트
+                // 경로와 동일한 방식(bgLocationSuggestion)으로 제공한다.
+                //
+                // 다만 bullets에는 "가파른 오르막"/"페이스 조절"처럼 랜드마크가
+                // 아닌 진행 안내형 항목도 섞여 있어, 문장 길이만으로 고르면
+                // 이런 항목이 실제 볼거리(랜드마크) 설명과 뒤섞일 수 있다.
+                // strong(소제목)이 courseRouteFlow의 실제 지명을 포함하거나
+                // (예: "천년고찰 보경사"→"보경사") 지형 키워드를 담고 있는
+                // bullet을 우선 후보로 삼는다("가파른 오르막", "페이스 조절"
+                // 같은 동작 안내형 소제목은 둘 다 해당 없어 제외됨).
+                const routeStops = Array.isArray(parsed.courseRouteFlow) ? parsed.courseRouteFlow : [];
+                function isLandmarkStrong(strong) {
+                    if (!strong) return false;
+                    if (routeStops.some(loc => loc && strong.includes(loc))) return true;
+                    return LANDSCAPE_KEYWORDS.test(strong);
+                }
+                let landmarkSentences = [];
+                let otherSentences = [];
+                if (parsed.sections) {
+                    parsed.sections.forEach(sec => {
+                        if (sec.detail && Array.isArray(sec.detail.bullets)) {
+                            sec.detail.bullets.forEach(b => {
+                                if (!b.p) return;
+                                if (isLandmarkStrong(b.strong)) landmarkSentences.push(b.p);
+                                else otherSentences.push(b.p);
+                            });
+                        }
+                    });
+                }
+                const bulletSentences = landmarkSentences.length ? landmarkSentences : otherSentences;
+                const landscapeSentences = bulletSentences.filter(s => LANDSCAPE_KEYWORDS.test(s));
+                const topSentences = (landscapeSentences.length ? landscapeSentences : bulletSentences)
+                    .sort((a, b) => b.length - a.length)
+                    .slice(0, 3);
                 parsedHikingData = {
                     mountainName: parsed.mountainName || "명산",
                     routeFlow: parsed.courseRouteFlow ? parsed.courseRouteFlow.join(" ➔ ") : "경로 정보 없음",
-                    allFeatures: Array.from(allFeaturesSet).join(", ")
+                    allFeatures: Array.from(allFeaturesSet).join(", "),
+                    bgLocationSuggestion: topSentences.join('\n')
                 };
             } catch (jsonErr) {
                 // JSON이 아니면 자유 서술형 텍스트로 간주해 휴리스틱으로 추출
