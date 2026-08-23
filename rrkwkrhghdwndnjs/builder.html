@@ -139,7 +139,7 @@
       <div id="extra-infos-container"></div>
       <button class="btn btn-add" id="btn-add-extra-info" type="button" style="margin-top:8px;">+ 다른 정보</button>
 
-      <label for="coverImage">표지 배경 사진 (선택, 없으면 기본 단색 배경 사용) <span style="font-weight:400; color:#718096;">— 권장 원본 사양: 16:9 비율, 1920×1080px 이상, 주요 피사체는 화면 중앙~약간 아래, 원경이 상하로 넉넉하게 퍼진 구도. 아래 편집기는 사진 전체가 보이는 상태(100%)에서 시작하니, 확대해 원하는 부분을 고르고 드래그로 구도를 잡으세요.</span></label>
+      <label for="coverImage">표지 배경 사진 (선택, 없으면 기본 단색 배경 사용) <span style="font-weight:400; color:#718096;">— 권장 원본 사양: 16:9 비율, 1920×1080px 이상, 주요 피사체는 화면 중앙~약간 아래, 원경이 상하로 넉넉하게 퍼진 구도. 아래 편집기에서 표지 영역(가로 960px 고정)에 맞춰 드래그로 이동하고 휠/버튼으로 확대해 구도를 잡으세요.</span></label>
       <input type="file" id="coverImage" accept="image/*">
       <div id="coverImagePreviewWrap" style="display:none; margin-top:8px;">
         <div id="coverEditorWrap" style="position:relative; width:100%; border-radius:6px; overflow:hidden; background:#edf2f7; touch-action:none;">
@@ -148,10 +148,10 @@
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
           <label for="coverEditorZoom" style="margin:0; white-space:nowrap;">확대/축소</label>
-          <input type="range" id="coverEditorZoom" min="100" max="600" value="100" step="1" style="flex:1;">
+          <input type="range" id="coverEditorZoom" min="100" max="400" value="100" step="1" style="flex:1;">
           <button type="button" id="btn-cover-zoom-reset" class="btn" style="padding:4px 10px; font-size:11px;">위치 초기화</button>
         </div>
-        <div class="charcount">100%는 사진 전체가 다 보이는 상태입니다. 여기서 슬라이더나 마우스 휠로 확대해 원하는 부분만 크게 잡고, 드래그로 상하좌우 위치를 맞추세요. 사진이 표지를 다 채우지 못하는 구간에서는 남는 공간이 표지 배경색으로 채워집니다. 보이는 그대로 결과물에 적용됩니다.</div>
+        <div class="charcount">100%가 표지를 빈틈없이 채우는 크기입니다. 슬라이더나 마우스 휠로 확대하고 드래그로 위치를 맞추세요. 표지 영역(가로 960px)에 보이는 그대로 결과물에 적용됩니다.</div>
       </div>
       <div id="coverImageHeightRow" style="display:none;">
         <label for="coverImageHeight">사진 높이 (px, 상단부터 이 높이까지만 사진이 채워짐 · 표지 전체 높이는 562px)</label>
@@ -977,8 +977,10 @@ function getCoverEditorHeight() {
   return parseInt(document.getElementById('coverImageHeight').value, 10) || 350;
 }
 
-// 여백이 생겼을 때 채울 색. TEMPLATE_HTML의 .infographic-wrapper 배경색과
-// 같은 값이라, 사진이 표지를 다 채우지 않아도 이어붙인 듯 자연스럽게 보인다.
+// 캔버스를 미리 칠해 두는 색(TEMPLATE_HTML의 .infographic-wrapper와 동일).
+// zoom=100%가 표지를 꽉 채우는 배율이라 정상 사용에서는 여백이 생기지
+// 않지만, 이미지 로딩 전 한 프레임이나 예외 상황에서 캔버스가 검게
+// 비치지 않도록 바탕을 깔아 둔다.
 const COVER_CANVAS_BG = '#f7fafc';
 
 // 편집기 캔버스에 사진을 어디에 얼마 크기로 그릴지 계산한다. 미리보기
@@ -986,14 +988,16 @@ const COVER_CANVAS_BG = '#f7fafc';
 // 내보내기(exportCoverEditorImage)가 반드시 같은 결과를 써야 하므로
 // 계산은 여기 한 곳에만 둔다.
 //
-// zoom=100%의 기준은 "사진 전체가 표지 영역 안에 다 들어오는 배율"(contain)
-// 이다. 파노라마처럼 넓은 사진을 넣을 때 먼저 전체를 보고, 거기서 줌을
-// 올려 원하는 부분만 크게 잡아 상하좌우로 옮기는 흐름을 위해서다. 예전에는
-// "빈 틈 없이 꽉 채우는 배율"(cover)이 100%여서 그보다 축소가 불가능했다.
+// zoom=100%의 기준은 "표지 영역을 빈 틈 없이 꽉 채우는 배율"(cover)이다.
+// 한때 이 기준을 contain(사진 전체가 다 보이는 배율)으로 바꿔 파노라마
+// 전체를 보고 구도를 고를 수 있게 했지만, 그러면 100% 부근에서 표지
+// 좌우에 흰 여백이 남는 결과물이 나와(2026-08-24 실제 사고) 되돌렸다.
+// 표지는 사진이 가장자리까지 꽉 차야 하므로 여백이 생기는 배율 자체를
+// 허용하지 않는다.
 function getCoverDrawGeometry(h, ignoreOffset) {
   const img = coverEditorImage;
   const zoom = coverEditorState.zoomPercent / 100;
-  const baseScale = Math.min(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
+  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
   const scale = baseScale * zoom;
   const drawW = img.naturalWidth * scale;
   const drawH = img.naturalHeight * scale;
