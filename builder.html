@@ -138,7 +138,7 @@
       <div id="extra-infos-container"></div>
       <button class="btn btn-add" id="btn-add-extra-info" type="button" style="margin-top:8px;">+ 다른 정보</button>
 
-      <label for="coverImage">표지 배경 사진 (선택, 없으면 기본 단색 배경 사용) <span style="font-weight:400; color:#718096;">— 권장 원본 사양: 16:9 비율, 1920×1080px 이상, 주요 피사체는 화면 중앙~약간 아래, 원경이 상하로 넉넉하게 퍼진 구도. 아래 편집기에서 표지 영역(가로 960px 고정)에 맞춰 드래그로 이동하고 휠/버튼으로 확대·축소해 구도를 잡으세요.</span></label>
+      <label for="coverImage">표지 배경 사진 (선택, 없으면 기본 단색 배경 사용) <span style="font-weight:400; color:#718096;">— 권장 원본 사양: 16:9 비율, 1920×1080px 이상, 주요 피사체는 화면 중앙~약간 아래, 원경이 상하로 넉넉하게 퍼진 구도. 아래 편집기는 사진 전체가 보이는 상태(100%)에서 시작하니, 확대해 원하는 부분을 고르고 드래그로 구도를 잡으세요.</span></label>
       <input type="file" id="coverImage" accept="image/*">
       <div id="coverImagePreviewWrap" style="display:none; margin-top:8px;">
         <div id="coverEditorWrap" style="position:relative; width:100%; border-radius:6px; overflow:hidden; background:#edf2f7; touch-action:none;">
@@ -147,10 +147,10 @@
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
           <label for="coverEditorZoom" style="margin:0; white-space:nowrap;">확대/축소</label>
-          <input type="range" id="coverEditorZoom" min="100" max="400" value="100" step="1" style="flex:1;">
+          <input type="range" id="coverEditorZoom" min="100" max="600" value="100" step="1" style="flex:1;">
           <button type="button" id="btn-cover-zoom-reset" class="btn" style="padding:4px 10px; font-size:11px;">위치 초기화</button>
         </div>
-        <div class="charcount">드래그로 이동, 슬라이더나 마우스 휠로 확대/축소할 수 있습니다. 표지 영역(가로 960px)에 보이는 그대로 결과물에 적용됩니다.</div>
+        <div class="charcount">100%는 사진 전체가 다 보이는 상태입니다. 여기서 슬라이더나 마우스 휠로 확대해 원하는 부분만 크게 잡고, 드래그로 상하좌우 위치를 맞추세요. 사진이 표지를 다 채우지 못하는 구간에서는 남는 공간이 표지 배경색으로 채워집니다. 보이는 그대로 결과물에 적용됩니다.</div>
       </div>
       <div id="coverImageHeightRow" style="display:none;">
         <label for="coverImageHeight">사진 높이 (px, 상단부터 이 높이까지만 사진이 채워짐 · 표지 전체 높이는 562px)</label>
@@ -893,6 +893,36 @@ function getCoverEditorHeight() {
   return parseInt(document.getElementById('coverImageHeight').value, 10) || 350;
 }
 
+// 여백이 생겼을 때 채울 색. TEMPLATE_HTML의 .infographic-wrapper 배경색과
+// 같은 값이라, 사진이 표지를 다 채우지 않아도 이어붙인 듯 자연스럽게 보인다.
+const COVER_CANVAS_BG = '#f7fafc';
+
+// 편집기 캔버스에 사진을 어디에 얼마 크기로 그릴지 계산한다. 미리보기
+// (renderCoverEditor), 드래그 범위 제한(clampCoverEditorOffset), 최종
+// 내보내기(exportCoverEditorImage)가 반드시 같은 결과를 써야 하므로
+// 계산은 여기 한 곳에만 둔다.
+//
+// zoom=100%의 기준은 "사진 전체가 표지 영역 안에 다 들어오는 배율"(contain)
+// 이다. 파노라마처럼 넓은 사진을 넣을 때 먼저 전체를 보고, 거기서 줌을
+// 올려 원하는 부분만 크게 잡아 상하좌우로 옮기는 흐름을 위해서다. 예전에는
+// "빈 틈 없이 꽉 채우는 배율"(cover)이 100%여서 그보다 축소가 불가능했다.
+function getCoverDrawGeometry(h, ignoreOffset) {
+  const img = coverEditorImage;
+  const zoom = coverEditorState.zoomPercent / 100;
+  const baseScale = Math.min(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
+  const scale = baseScale * zoom;
+  const drawW = img.naturalWidth * scale;
+  const drawH = img.naturalHeight * scale;
+  const offsetX = ignoreOffset ? 0 : coverEditorState.offsetX;
+  const offsetY = ignoreOffset ? 0 : coverEditorState.offsetY;
+  return {
+    drawW,
+    drawH,
+    drawX: (COVER_LAYER_WIDTH - drawW) / 2 + offsetX,
+    drawY: (h - drawH) / 2 + offsetY
+  };
+}
+
 // 편집기 캔버스(표시용, CSS로 실제 화면 폭에 맞춰 축소 렌더링됨)를 원본 이미지 기준으로 그림
 function renderCoverEditor() {
   if (!coverEditorImage) return;
@@ -905,32 +935,24 @@ function renderCoverEditor() {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, COVER_LAYER_WIDTH, h);
 
-  const img = coverEditorImage;
-  const zoom = coverEditorState.zoomPercent / 100;
-  // 기본(zoom=100%): 이미지가 캔버스를 완전히 덮도록(cover) 하는 배율에서 시작
-  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
-  const scale = baseScale * zoom;
-  const drawW = img.naturalWidth * scale;
-  const drawH = img.naturalHeight * scale;
+  // 여백이 생기는 배율(100%대)에서는 빈 공간이 검게 비지 않도록 표지
+  // 배경색과 같은 색으로 먼저 칠한다(TEMPLATE_HTML의 .infographic-wrapper).
+  ctx.fillStyle = COVER_CANVAS_BG;
+  ctx.fillRect(0, 0, COVER_LAYER_WIDTH, h);
 
-  const drawX = (COVER_LAYER_WIDTH - drawW) / 2 + coverEditorState.offsetX;
-  const drawY = (h - drawH) / 2 + coverEditorState.offsetY;
-  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  const g = getCoverDrawGeometry(h);
+  ctx.drawImage(coverEditorImage, g.drawX, g.drawY, g.drawW, g.drawH);
 }
 
-// 드래그 이동 범위를 캔버스 밖으로 여백이 생기지 않도록 제한
+// 드래그 이동 범위 제한. 사진이 표지 영역보다 큰 축(확대된 축)에서만
+// 이동을 허용하고, 사진이 더 작아 여백이 생기는 축은 가운데로 고정한다.
 function clampCoverEditorOffset() {
   if (!coverEditorImage) return;
-  const img = coverEditorImage;
   const h = getCoverEditorHeight();
-  const zoom = coverEditorState.zoomPercent / 100;
-  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
-  const scale = baseScale * zoom;
-  const drawW = img.naturalWidth * scale;
-  const drawH = img.naturalHeight * scale;
+  const g = getCoverDrawGeometry(h, /* ignoreOffset */ true);
 
-  const maxOffsetX = Math.max(0, (drawW - COVER_LAYER_WIDTH) / 2);
-  const maxOffsetY = Math.max(0, (drawH - h) / 2);
+  const maxOffsetX = Math.max(0, (g.drawW - COVER_LAYER_WIDTH) / 2);
+  const maxOffsetY = Math.max(0, (g.drawH - h) / 2);
   coverEditorState.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, coverEditorState.offsetX));
   coverEditorState.offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, coverEditorState.offsetY));
 }
@@ -955,15 +977,13 @@ function exportCoverEditorImage() {
   canvas.height = h;
   const ctx = canvas.getContext('2d');
 
-  const img = coverEditorImage;
-  const zoom = coverEditorState.zoomPercent / 100;
-  const baseScale = Math.max(COVER_LAYER_WIDTH / img.naturalWidth, h / img.naturalHeight);
-  const scale = baseScale * zoom;
-  const drawW = img.naturalWidth * scale;
-  const drawH = img.naturalHeight * scale;
-  const drawX = (COVER_LAYER_WIDTH - drawW) / 2 + coverEditorState.offsetX;
-  const drawY = (h - drawH) / 2 + coverEditorState.offsetY;
-  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  // JPEG는 투명도가 없어 안 칠하면 여백이 검게 나온다. 미리보기와 똑같이
+  // 표지 배경색을 깔고 그 위에 사진을 얹는다.
+  ctx.fillStyle = COVER_CANVAS_BG;
+  ctx.fillRect(0, 0, COVER_LAYER_WIDTH, h);
+
+  const g = getCoverDrawGeometry(h);
+  ctx.drawImage(coverEditorImage, g.drawX, g.drawY, g.drawW, g.drawH);
 
   return canvas.toDataURL('image/jpeg', COVER_IMAGE_JPEG_QUALITY);
 }
