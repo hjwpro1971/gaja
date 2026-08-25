@@ -88,27 +88,35 @@
     <div class="sidebar">
         <h2>GAJA TOOLS</h2>
         <!-- 버튼 클릭 시 loadPage 함수 실행. 첫 번째 버튼은 기본 활성화(active) 상태 -->
-        <button class="nav-btn active" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/builder.html', this)">산행가이드</button>
-        <button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/bloghead.html', this)">블로그헤더</button>
-        <button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/guide_prompt.html', this)">산행가이드표지</button>
+        <button class="nav-btn active" onclick="loadPage('builder.html', this)">산행가이드</button>
+        <button class="nav-btn" onclick="loadPage('bloghead.html', this)">블로그헤더</button>
+        <button class="nav-btn" onclick="loadPage('guide_prompt.html', this)">산행가이드표지</button>
         
         <!-- 새로 추가된 GPX 경로 생성 버튼 -->
-        <button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/gpx-map.html', this)">GPX 경로 생성</button>
-		<button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/hiking_summary.html', this)">산행요약 생성</button>
-        <button class="nav-btn" onclick="loadPage('https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/hundred_mountains.html', this)">100대명산 데이터</button>
+        <button class="nav-btn" onclick="loadPage('gpx-map.html', this)">GPX 경로 생성</button>
+		<button class="nav-btn" onclick="loadPage('hiking_summary.html', this)">산행요약 생성</button>
+        <button class="nav-btn" onclick="loadPage('hundred_mountains.html', this)">100대명산 데이터</button>
     </div>
 
     <!-- 우측 콘텐츠 화면 -->
     <div class="content">
         <!-- 초기 화면으로 '산행가이드' 페이지를 띄워둠 -->
-        <iframe id="mainFrame" src="https://hjwpro1971.github.io/gaja/rrkwkrhghdwndnjs/builder.html"></iframe>
+        <iframe id="mainFrame" src="builder.html"></iframe>
     </div>
 
     <!-- 스크립트: 버튼 클릭 시 아이프레임 주소 변경 및 버튼 스타일 변경 -->
     <script>
         function loadPage(url, buttonElement) {
             // 1. 우측 iframe의 주소(src)를 클릭한 버튼의 url로 변경
-            document.getElementById('mainFrame').src = url;
+            //
+            // 같은 url을 그대로 다시 넣으면 브라우저가 "바뀐 게 없다"고 보고
+            // iframe을 재로드하지 않는다. 그러면 그 페이지의 스크립트도 다시
+            // 돌지 않아, 다른 도구에서 localStorage로 넘겨준 값(예: 산행가이드
+            // → 산행가이드표지의 JSON handoff)을 읽을 기회가 없다. 실제로
+            // "표지를 이미 한 번 열어본 뒤에는 JSON이 자동으로 안 들어간다"는
+            // 증상이 여기서 나왔다. 매번 다른 쿼리를 붙여 강제로 재로드한다.
+            var bust = (url.indexOf('?') === -1 ? '?' : '&') + '_t=' + Date.now();
+            document.getElementById('mainFrame').src = url + bust;
 
             // 2. 모든 버튼에서 'active' 클래스 제거 (초기화)
             var buttons = document.querySelectorAll('.nav-btn');
