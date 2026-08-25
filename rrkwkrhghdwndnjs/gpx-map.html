@@ -330,6 +330,9 @@ let loadedPoints = null;
 // NAS에서 열더라도 링크는 항상 이 주소로 만들어야 외부인이 클릭할 수 있다.
 const GITHUB_PAGES_BASE_URL = 'https://hjwpro1971.github.io/gaja/';
 
+// 네이버지도 앱에 전달할 호출자 식별용 도메인(규격상 서비스 도메인).
+const NAVER_MAP_APP_NAME = 'hjwpro1971.github.io';
+
 const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
 
 function saveHandoffToSummary(mountainName, stats) {
@@ -500,7 +503,14 @@ function buildNaverMapDeepLinkParams(points) {
   params.set('dlat', end.lat);
   params.set('dlng', end.lon);
   params.set('dname', '날머리');
-  params.set('appname', location.href);
+  // appname은 네이버지도 앱에 "누가 호출했는지" 알리는 식별자로, 규격상
+  // 호출한 웹서비스의 도메인을 넣는 자리다. 예전에는 location.href를 통째로
+  // 넣어, 도구를 사내망 NAS에서 열면 사설 IP와 내부 경로·캐시버스터까지
+  // 그대로 실려 나갔다(2026-08-26 실제 사고: 링크 안에
+  // appname=https://192.168.219.119:8443/gpx-map.html?_t=... 가 박힘).
+  // 외부에 노출할 값도 아니고 앱 동작에도 부적절하므로, 공개 배포 도메인으로
+  // 고정한다.
+  params.set('appname', NAVER_MAP_APP_NAME);
   return params;
 }
 
