@@ -326,6 +326,10 @@ let loadedPoints = null;
 // 산행요약 생성(hiking_summary.html)이 자동으로 채워 쓸 수 있도록
 // 산행지/산행일자/거리&시간을 localStorage에 넘겨둔다. 서로 다른 iframe에서
 // 로드되는 별개 페이지라 직접 DOM 접근이 불가능해 localStorage를 매개로 사용.
+// 네이버지도 링크가 가리킬 공개 배포처. 이 도구를 로컬 파일이나 사내망
+// NAS에서 열더라도 링크는 항상 이 주소로 만들어야 외부인이 클릭할 수 있다.
+const GITHUB_PAGES_BASE_URL = 'https://hjwpro1971.github.io/gaja/';
+
 const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
 
 function saveHandoffToSummary(mountainName, stats) {
@@ -554,12 +558,18 @@ function openInNaverMapApp() {
 function buildRedirectPageUrl(points) {
   const params = buildNaverMapDeepLinkParams(points);
   const query = params.toString();
-  // nmap-redirect.html은 블로그 등에 붙여 "남이 클릭하는" 공개 링크라
-  // 도구 폴더가 아니라 사이트 루트(/gaja/)에 둔다. 이 페이지는 비공개
-  // 폴더 안에서 열리므로 상대경로로 만들면 그 폴더를 가리켜 404가 난다
-  // (2026-08-24 실제 사고: 도구를 하위 폴더로 옮긴 뒤 기존 링크가 전부
-  // 깨졌다). 한 단계 위(..)를 명시해 항상 루트를 가리키게 한다.
-  const redirectBase = new URL('../nmap-redirect.html', location.href).href;
+  // nmap-redirect.html은 블로그에 붙여 "남이 클릭하는" 공개 링크이고,
+  // 클릭하는 사람은 대개 이 도구에 접근할 수 없는 외부인·모바일이다.
+  // 그래서 이 도구를 어디서 열었든(로컬 파일, 사내망 NAS 등) 링크만은
+  // 항상 공개 배포처인 GitHub Pages를 가리켜야 한다.
+  //
+  // location.href 기준 상대경로로 만들었다가 두 번 사고가 났다:
+  //  - 2026-08-24: 도구를 하위 폴더로 옮기자 링크가 그 폴더를 가리켜 404.
+  //  - 2026-08-26: NAS(http://<사설IP>:8080)에서 도구를 열자 링크가 NAS를
+  //    가리켜, 핸드폰에서 클릭하니 NAS 로그인 인증 화면이 떴다.
+  // 그래서 상대경로를 버리고 배포 주소를 상수로 고정한다.
+  // (builder.html의 GITHUB_PAGES_BASE_URL과 같은 취지·같은 값이다.)
+  const redirectBase = GITHUB_PAGES_BASE_URL + 'nmap-redirect.html';
   const redirectParams = new URLSearchParams();
   redirectParams.set('q', query);
   if (gpxBaseName) redirectParams.set('title', gpxBaseName);
