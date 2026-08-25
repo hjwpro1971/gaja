@@ -409,13 +409,96 @@ function buildNotebookLMPrompt(mountainName, route) {
   return NOTEBOOKLM_GUIDE_PROMPT_TEMPLATE(mountainLine, routeLine + sectionLine).replace('[산이름]', mountainName || '이 산');
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [SSOT] 클립보드 복사 — 이 파일의 모든 복사 버튼은 이 함수만 쓴다.
+//
+// navigator.clipboard는 보안 컨텍스트(https / localhost)에서만 존재한다.
+// 이 페이지를 사내망 NAS의 http://<사설IP>:8080 으로 서빙하자 그 객체 자체가
+// undefined가 되어, .writeText 호출이 TypeError로 죽고 기존 .catch에도 잡히지
+// 않아 버튼이 아무 반응 없이 먹통이 됐다(2026-08-25). https였던 GitHub Pages
+// 에서는 멀쩡했기 때문에 원인이 드러나지 않았다.
+//
+// 그래서 구식 execCommand('copy')를 폴백으로 둔다. 보안 컨텍스트 제약이 없어
+// http에서도 동작한다. 두 경로 모두 실패하면 호출부가 사용자에게 알릴 수 있게
+// reject한다.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 코스별 상세 가이드 "원문" 보관.
+//
+// 원문은 AI에게 여러 번 되물어 다듬어 만든 결과물인데, 지금까지는 JSON으로
+// 변환하고 나면 그대로 버려졌다. 같은 산을 다시 만들거나 문구를 손보려면
+// 처음부터 다시 만들어야 했다. [JSON 프롬프트 복사]를 누르는 시점이 곧
+// "원문이 완성된 시점"이므로, 그때 원문을 파일로 함께 떨궈 둔다.
+//
+// 저장은 [저장 폴더 지정]과 무관하게 브라우저 기본 다운로드로 한다. 이유 둘:
+//   · 그 폴더는 가이드 HTML을 GitHub 저장소(gaja/)에 바로 떨구기 위한 것이라,
+//     원문까지 거기 넣으면 공개 저장소에 딸려 올라간다.
+//   · showDirectoryPicker는 보안 컨텍스트에서만 존재한다. 이 페이지를 사내망
+//     NAS의 http://<사설IP>:8080 으로 서빙하면 Edge/Chrome에서도 undefined가
+//     되어 폴더 지정 자체가 불가능하다(2026-08-25).
+// 다운로드는 http에서도 되고 브라우저도 가리지 않는다.
+
+// 파일명: 산이름_경로명.txt
+//
+// 값은 "마스터프롬프트용 산 이름/전체 코스 동선" 칸에서 가져온다. 이 칸은
+// 원문을 만들기 *전에* 채우는 값이라 [JSON 프롬프트 복사] 시점에 이미 들어
+// 있다. 반면 아래 기본정보의 mountainName/courseRouteFlow는 [JSON 붙여넣기]로
+// 채워지므로 이 시점엔 아직 비어 있다 — 처음 그쪽을 보게 만들었더니 파일명이
+// 늘 "산행가이드.txt"로 떨어졌다. 그래도 폴백으로는 남겨둔다(마스터프롬프트를
+// 거치지 않고 원문을 직접 붙여넣는 경우가 있다).
+//
+// 경로 구분자는 마스터프롬프트 칸이 화살표(->), 기본정보 칸이 콤마다.
+// 양쪽 다 받아 하이픈으로 잇는다.
+// Windows에서 금지된 문자는 저장이 실패하므로 제거한다.
+function buildOriginalFileName(mountainName, routeFlow) {
+  const clean = (v) => String(v || '').replace(/[\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const mt = clean(mountainName) || '산행가이드';
+  // 분리를 먼저 한다. clean을 먼저 돌리면 '->' 의 '>' 만 지워지고 '-' 가 남아
+  // "보경사 - 문수암" 처럼 구분자 흔적이 파일명에 섞인다.
+  const rt = String(routeFlow || '').split(/->|→|,/).map(x => clean(x)).filter(Boolean).join('-');
+  return (rt ? `${mt}_${rt}` : mt) + '.txt';
+}
+
+// 내려받은 파일명을 돌려준다. 실패는 throw한다.
+// 앞에 붙이는 건 UTF-8 BOM — 메모장이 한글을 깨뜨리지 않게 한다.
+function saveOriginalCourseText(courseText) {
+  const pick = (primary, fallback) =>
+    document.getElementById(primary).value.trim() || document.getElementById(fallback).value;
+  const fileName = buildOriginalFileName(
+    pick('masterPromptMountainName', 'mountainName'),
+    pick('masterPromptRoute', 'courseRouteFlow')
+  );
+  const blob = new Blob(['﻿' + courseText], { type: 'text/plain;charset=utf-8' });
+  downloadGuideFallback(blob, fileName);
+  return fileName;
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  // execCommand는 화면 밖 textarea를 실제로 선택해야 동작한다.
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length); // iOS Safari는 select()만으로 부족하다
+  try {
+    if (!document.execCommand('copy')) throw new Error('브라우저가 복사를 거부했습니다.');
+  } finally {
+    document.body.removeChild(ta);
+  }
+}
+
 function copyNotebookLMPromptToClipboard() {
   const infoBox = document.getElementById('master-prompt-copy-info');
   const mountainName = document.getElementById('masterPromptMountainName').value.trim();
   const route = document.getElementById('masterPromptRoute').value.trim();
   const finalPrompt = buildNotebookLMPrompt(mountainName, route);
 
-  navigator.clipboard.writeText(finalPrompt).then(() => {
+  copyTextToClipboard(finalPrompt).then(() => {
     infoBox.style.display = 'block';
     infoBox.textContent = 'ℹ NotebookLM용 프롬프트가 클립보드에 복사되었습니다. 산행 코스 정보가 담긴 소스를 업로드한 노트북의 채팅창에 붙여넣으세요. 대괄호가 없어 그대로 질문으로 사용할 수 있습니다. 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용하세요.';
   }).catch(err => {
@@ -446,7 +529,7 @@ function copyMasterPromptToClipboard() {
   const route = document.getElementById('masterPromptRoute').value.trim();
   const finalPrompt = buildMasterPrompt(mountainName, route);
 
-  navigator.clipboard.writeText(finalPrompt).then(() => {
+  copyTextToClipboard(finalPrompt).then(() => {
     infoBox.style.display = 'block';
     if (mountainName || route) {
       infoBox.textContent = 'ℹ 마스터 프롬프트가 클립보드에 복사되었습니다(입력한 산 이름/경로 반영됨). AI 챗봇에 붙여넣고 나머지 대괄호 [예: ...] 부분을 채워서 요청하면, 그 결과(가이드 원문)를 아래 "코스별 상세 가이드" 칸에 붙여넣어 이어서 사용할 수 있습니다.';
@@ -1729,10 +1812,20 @@ function copyPromptToClipboard() {
 
   const fullPrompt = JSON_CONVERT_PROMPT + courseText;
 
-  navigator.clipboard.writeText(fullPrompt).then(() => {
+  copyTextToClipboard(fullPrompt).then(() => {
     jsonWarnBox.style.display = 'none';
     copyInfo.style.display = 'block';
-    copyInfo.textContent = 'ℹ 프롬프트가 클립보드에 복사되었습니다. 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 이 칸에 붙여넣고 [JSON으로 붙여넣기]를 누르세요.';
+    const base = 'ℹ 프롬프트가 클립보드에 복사되었습니다. 다른 AI 챗봇에 붙여넣어 JSON을 받은 뒤, 그 JSON을 이 칸에 붙여넣고 [JSON으로 붙여넣기]를 누르세요.';
+
+    // 원문 보관은 부가 기능이다. 여기서 실패해도 복사는 이미 성공했으므로
+    // 사용자에게 알리기만 하고 복사 안내 자체는 유지한다.
+    let extra = '';
+    try {
+      extra = ` · 원문 "${saveOriginalCourseText(courseText)}" 을(를) 내려받았습니다.`;
+    } catch (e) {
+      extra = ' · ⚠ 원문 저장 실패: ' + e.message;
+    }
+    copyInfo.textContent = base + extra;
   }).catch(err => {
     jsonWarnBox.style.display = 'block';
     jsonWarnBox.textContent = '⚠ 클립보드 복사 실패: ' + err.message;
@@ -1817,10 +1910,14 @@ document.getElementById('btn-choose-save-dir').addEventListener('click', chooseS
 document.getElementById('btn-copy-deploy-url').addEventListener('click', () => {
   const input = document.getElementById('deploy-url-text');
   if (!input.value) return;
-  navigator.clipboard.writeText(input.value).then(() => {
-    const btn = document.getElementById('btn-copy-deploy-url');
-    const original = btn.textContent;
+  const btn = document.getElementById('btn-copy-deploy-url');
+  const original = btn.textContent;
+  copyTextToClipboard(input.value).then(() => {
     btn.textContent = '복사됨!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  }).catch(() => {
+    // 실패를 조용히 삼키면 사용자는 복사된 줄 안다. 버튼 자체로 알린다.
+    btn.textContent = '복사 실패';
     setTimeout(() => { btn.textContent = original; }, 1500);
   });
 });

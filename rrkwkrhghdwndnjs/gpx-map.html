@@ -554,7 +554,12 @@ function openInNaverMapApp() {
 function buildRedirectPageUrl(points) {
   const params = buildNaverMapDeepLinkParams(points);
   const query = params.toString();
-  const redirectBase = new URL('nmap-redirect.html', location.href).href;
+  // nmap-redirect.html은 블로그 등에 붙여 "남이 클릭하는" 공개 링크라
+  // 도구 폴더가 아니라 사이트 루트(/gaja/)에 둔다. 이 페이지는 비공개
+  // 폴더 안에서 열리므로 상대경로로 만들면 그 폴더를 가리켜 404가 난다
+  // (2026-08-24 실제 사고: 도구를 하위 폴더로 옮긴 뒤 기존 링크가 전부
+  // 깨졌다). 한 단계 위(..)를 명시해 항상 루트를 가리키게 한다.
+  const redirectBase = new URL('../nmap-redirect.html', location.href).href;
   const redirectParams = new URLSearchParams();
   redirectParams.set('q', query);
   if (gpxBaseName) redirectParams.set('title', gpxBaseName);
