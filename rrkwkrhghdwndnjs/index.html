@@ -288,6 +288,20 @@
             text-align: center;
         }
 
+        /* 드래그로 순서 바꾸기 */
+        .item-content[draggable="true"] { cursor: grab; }
+        .item-content.dragging {
+            opacity: 0.4;
+            cursor: grabbing;
+        }
+        /* 드롭 위치 표시: 위/아래 경계선, 폴더 안이면 테두리 */
+        .item-content.drop-before { box-shadow: inset 0 3px 0 0 #007bff; }
+        .item-content.drop-after  { box-shadow: inset 0 -3px 0 0 #007bff; }
+        .item-content.drop-inside {
+            background-color: #0d6efd33;
+            box-shadow: inset 0 0 0 2px #007bff;
+        }
+
         /* 우측 프레임 창 */
         .content-frame {
             flex-grow: 1;
@@ -366,6 +380,67 @@
     // 파일 탐색기 요소
     const browseBtn = document.getElementById('browse-btn');
     const fileInput = document.getElementById('file-input');
+
+    // ─────────────────────────────────────────────────────────────
+    // 드래그로 순서 바꾸기
+    //
+    // 트리(폴더 중첩)를 다루므로 "몇 번째"가 아니라 id로 항목을 찾는다.
+    // 드롭 위치는 세로 위치로 판정한다: 위 25%면 앞, 아래 25%면 뒤,
+    // 가운데는 대상이 폴더일 때 그 안으로 넣는다(폴더가 아니면 뒤로).
+    // ─────────────────────────────────────────────────────────────
+    let dragSourceId = null;
+
+    // id로 항목과 그것이 담긴 배열을 찾는다(재귀).
+    function findMenu(id, list = menus) {
+        for (const m of list) {
+            if (m.id === id) return { menu: m, parent: list };
+            if (m.children) {
+                const hit = findMenu(id, m.children);
+                if (hit) return hit;
+            }
+        }
+        return null;
+    }
+
+    // 폴더를 자기 자신이나 자기 자손 안으로 넣으면 트리가 끊어진다.
+    function isDescendant(ancestorId, targetId) {
+        const found = findMenu(ancestorId);
+        if (!found || !found.menu.children) return false;
+        const walk = (list) => list.some(m =>
+            m.id === targetId || (m.children && walk(m.children)));
+        return walk(found.menu.children);
+    }
+
+    function moveMenu(sourceId, targetId, position) {
+        if (sourceId === targetId) return;
+        if (isDescendant(sourceId, targetId)) {
+            alert('폴더를 자기 하위로는 옮길 수 없습니다.');
+            return;
+        }
+
+        const src = findMenu(sourceId);
+        const tgt = findMenu(targetId);
+        if (!src || !tgt) return;
+
+        // 먼저 원래 자리에서 뺀다.
+        src.parent.splice(src.parent.indexOf(src.menu), 1);
+
+        if (position === 'inside') {
+            if (!tgt.menu.children) tgt.menu.children = [];
+            tgt.menu.children.push(src.menu);
+            tgt.menu.isOpen = true;
+        } else {
+            // 제거 후 인덱스가 밀릴 수 있으므로 여기서 다시 구한다.
+            const at = tgt.parent.indexOf(tgt.menu);
+            tgt.parent.splice(position === 'before' ? at : at + 1, 0, src.menu);
+        }
+        renderMenus();
+    }
+
+    function clearDropMarks() {
+        document.querySelectorAll('.drop-before,.drop-after,.drop-inside')
+            .forEach(el => el.classList.remove('drop-before','drop-after','drop-inside'));
+    }
 
     function saveMenus() {
         localStorage.setItem('savedMenus', JSON.stringify(menus));
@@ -521,6 +596,53 @@
         
         itemContent.addEventListener('contextmenu', e => e.preventDefault());
 
+        // ── 드래그로 순서 바꾸기 ──────────────────────────────
+        itemContent.draggable = true;
+
+        itemContent.addEventListener('dragstart', (e) => {
+            cancelPress();                     // 드래그 시작 = 롱프레스 취소
+            dragSourceId = menu.id;
+            itemContent.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            // Firefox는 데이터가 있어야 드래그가 시작된다.
+            e.dataTransfer.setData('text/plain', String(menu.id));
+        });
+
+        itemContent.addEventListener('dragend', () => {
+            itemContent.classList.remove('dragging');
+            clearDropMarks();
+            dragSourceId = null;
+        });
+
+        itemContent.addEventListener('dragover', (e) => {
+            if (dragSourceId === null || dragSourceId === menu.id) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            const r = itemContent.getBoundingClientRect();
+            const ratio = (e.clientY - r.top) / r.height;
+            const pos = ratio < 0.25 ? 'before'
+                      : ratio > 0.75 ? 'after'
+                      : (menu.type === 'folder' ? 'inside' : 'after');
+
+            clearDropMarks();
+            itemContent.classList.add('drop-' + pos);
+            itemContent.dataset.dropPos = pos;
+        });
+
+        itemContent.addEventListener('dragleave', () => {
+            itemContent.classList.remove('drop-before','drop-after','drop-inside');
+        });
+
+        itemContent.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const pos = itemContent.dataset.dropPos || 'after';
+            clearDropMarks();
+            if (dragSourceId !== null) moveMenu(dragSourceId, menu.id, pos);
+            dragSourceId = null;
+        });
+
         // 클릭 이벤트 (폴더 열고닫기 또는 링크 이동)
         itemContent.addEventListener('click', (e) => {
             if (isLongPress) {
@@ -635,6 +757,29 @@
             }
         }
     }
+
+    // 목록 아래 빈 공간에 떨구면 최상위 맨 끝으로 옮긴다.
+    // (폴더 안에 들어간 항목을 다시 밖으로 빼낼 때 필요하다.)
+    menuList.addEventListener('dragover', (e) => {
+        if (dragSourceId === null) return;
+        if (e.target !== menuList) return;   // 항목 위는 각자 처리
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    });
+
+    menuList.addEventListener('drop', (e) => {
+        if (dragSourceId === null) return;
+        if (e.target !== menuList) return;
+        e.preventDefault();
+        const src = findMenu(dragSourceId);
+        if (src) {
+            src.parent.splice(src.parent.indexOf(src.menu), 1);
+            menus.push(src.menu);
+            renderMenus();
+        }
+        clearDropMarks();
+        dragSourceId = null;
+    });
 
     // 초기 화면 구성 시 렌더링 실행
     renderMenus();
