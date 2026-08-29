@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>메모 게시판</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #d1bfae;
+            background-image: url('https://www.transparenttextures.com/patterns/cork-board.png');
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .header-right {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            z-index: 1001; 
+        }
+
+        .header-right h2 {
+            margin: 0;
+            color: #4a3b32;
+            font-size: 20px;
+            text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
+            font-weight: bold;
+        }
+
+        .icon-btn {
+            background-color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            transition: transform 0.2s, background-color 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .icon-btn:hover {
+            transform: scale(1.1);
+            background-color: #f0f0f0;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .input-area {
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 40px 25px 25px 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 550px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #777;
+            padding: 0;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: #000;
+        }
+
+        .input-area h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            text-align: center;
+            font-size: 20px;
+        }
+
+        #memoInput {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            overflow-y: auto;
+            background: white;
+            font-size: 15px;
+            line-height: 1.5;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        #memoInput:empty:before {
+            content: attr(data-placeholder);
+            color: #aaa;
+            pointer-events: none;
+            display: block;
+        }
+        
+        #memoInput table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        #memoInput th, #memoInput td {
+            border: 1px solid #ccc;
+            padding: 5px;
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
+
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        .color-option.selected {
+            border-color: #333;
+            transform: scale(1.2);
+        }
+
+        #addBtn {
+            padding: 15px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        #addBtn:hover {
+            background-color: #45a049;
+        }
+
+        #board {
+            width: 100%;
+            flex-grow: 1;
+            position: relative; 
+            min-height: calc(100vh - 40px);
+        }
+
+        .post-it {
+            width: 220px;
+            min-height: 180px;
+            padding: 35px 15px 25px 15px;
+            box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.3);
+            position: absolute; 
+            transition: box-shadow 0.2s, transform 0.2s; 
+            word-wrap: break-word;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', sans-serif;
+            font-size: 14px; 
+            color: #333;
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            cursor: grab; 
+            /* 복사 및 수정을 위해 user-select 해제 */
+            resize: both; 
+            overflow: hidden; 
+        }
+
+        .post-it:active {
+            cursor: grabbing;
+        }
+
+        .post-it.dragging {
+            opacity: 0.9;
+            box-shadow: 10px 10px 25px rgba(0, 0, 0, 0.5);
+            z-index: 1000 !important;
+            transition: none; 
+        }
+
+        .post-it .content {
+            flex-grow: 1;
+            margin-bottom: 10px;
+            overflow-y: auto; 
+            pointer-events: auto; 
+            cursor: text; /* 텍스트 커서로 표시 */
+            outline: none; /* 클릭 시 테두리 안 보이게 */
+        }
+
+        /* 스크롤바 작고 이쁘게 */
+        .post-it .content::-webkit-scrollbar {
+            width: 4px;
+        }
+        .post-it .content::-webkit-scrollbar-thumb {
+            background-color: rgba(0,0,0,0.2);
+            border-radius: 2px;
+        }
+
+        .post-it table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 5px 0;
+            font-size: 0.9em;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        .post-it th, .post-it td {
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            padding: 4px;
+        }
+
+        .post-it-controls {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10;
+        }
+
+        .post-it:hover .post-it-controls {
+            opacity: 1;
+        }
+
+        .post-it-controls button {
+            background: rgba(255,255,255,0.6);
+            border: 1px solid rgba(0,0,0,0.1);
+            color: #333;
+            font-size: 12px;
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-weight: bold;
+            font-family: sans-serif;
+            transition: background 0.2s;
+        }
+
+        .post-it-controls button:hover {
+            background: rgba(255,255,255,0.9);
+        }
+
+        .post-it-controls .delete-btn {
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            color: rgba(0,0,0,0.4);
+            border-radius: 50%;
+            width: 24px;
+        }
+
+        .post-it-controls .delete-btn:hover {
+            color: black;
+            background: rgba(0,0,0,0.1);
+        }
+
+        .pin {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: #e74c3c;
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3), 2px 2px 4px rgba(0,0,0,0.4);
+            pointer-events: none;
+        }
+
+        .post-date {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            font-size: 11px;
+            color: rgba(0, 0, 0, 0.5);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: right;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-right">
+        <h2>메모 게시판</h2>
+        <button id="openModalBtn" class="icon-btn" title="새 메모 작성">📝</button>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="input-area" id="inputArea">
+            <button class="close-modal" id="closeModalBtn" title="닫기">&times;</button>
+            <h3>새 메모 작성</h3>
+            
+            <div id="memoInput" contenteditable="true" data-placeholder="이모티콘이나 엑셀 표를 붙여넣을 수 있습니다 (이미지는 불가) ..."></div>
+            
+            <div class="color-picker" id="colorPicker">
+                <div class="color-option selected" style="background-color: #fcfc99;" data-color="#fcfc99"></div>
+                <div class="color-option" style="background-color: #ffb8b8;" data-color="#ffb8b8"></div>
+                <div class="color-option" style="background-color: #b8ffb8;" data-color="#b8ffb8"></div>
+                <div class="color-option" style="background-color: #b8f4ff;" data-color="#b8f4ff"></div>
+                <div class="color-option" style="background-color: #e5b8ff;" data-color="#e5b8ff"></div>
+            </div>
+
+            <button id="addBtn">보드에 붙이기 📌</button>
+        </div>
+    </div>
+
+    <div id="board">
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const memoInput = document.getElementById('memoInput');
+            const addBtn = document.getElementById('addBtn');
+            const board = document.getElementById('board');
+            const colorOptions = document.querySelectorAll('.color-option');
+            
+            const modalOverlay = document.getElementById('modalOverlay');
+            const openModalBtn = document.getElementById('openModalBtn');
+            const closeModalBtn = document.getElementById('closeModalBtn');
+            
+            let selectedColor = '#fcfc99';
+
+            openModalBtn.addEventListener('click', () => {
+                modalOverlay.classList.add('active');
+                memoInput.focus();
+            });
+
+            function closeModal() {
+                modalOverlay.classList.remove('active');
+            }
+
+            closeModalBtn.addEventListener('click', closeModal);
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) closeModal();
+            });
+
+            colorOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    colorOptions.forEach(opt => opt.classList.remove('selected'));
+                    option.classList.add('selected');
+                    selectedColor = option.getAttribute('data-color');
+                });
+            });
+
+            function getFormattedDate() {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const date = String(now.getDate()).padStart(2, '0');
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                return `${year}.${month}.${date} ${hours}:${minutes}`;
+            }
+
+            // 붙여넣기 시 공통 처리 함수 (이미지 차단 및 XSS 방지)
+            function handlePaste(e) {
+                e.preventDefault();
+                const clipboardData = e.clipboardData || window.clipboardData;
+                let html = clipboardData.getData('text/html');
+                let text = clipboardData.getData('text/plain');
+
+                if (html) {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    
+                    const images = tempDiv.querySelectorAll('img');
+                    if (images.length > 0) {
+                        alert('저장소 용량 보호를 위해 이미지는 붙여넣을 수 없습니다. (이미지가 제거되었습니다)');
+                        images.forEach(img => img.remove());
+                    }
+                    
+                    const scripts = tempDiv.querySelectorAll('script');
+                    scripts.forEach(s => s.remove());
+
+                    document.execCommand('insertHTML', false, tempDiv.innerHTML);
+                } else {
+                    text = text.replace(/\n/g, '<br>');
+                    document.execCommand('insertHTML', false, text);
+                }
+            }
+
+            function handleDrop(e) {
+                e.preventDefault();
+                alert('이미지 드래그 앤 드롭은 지원하지 않습니다.');
+            }
+
+            memoInput.addEventListener('paste', handlePaste);
+            memoInput.addEventListener('drop', handleDrop);
+
+            let highestZIndex = 10;
+
+            function addPostIt(htmlContent, color, dateStr = null, left = null, top = null, rot = null, zIndex = null, w = null, h = null, fSize = null) {
+                if (!htmlContent.trim() || htmlContent.trim() === '<br>') return;
+
+                const postIt = document.createElement('div');
+                postIt.className = 'post-it';
+                postIt.style.backgroundColor = color;
+                
+                if (w) postIt.style.width = w;
+                if (h) postIt.style.height = h;
+                
+                const currentFontSize = fSize ? parseInt(fSize) : 14;
+                postIt.dataset.fontSize = currentFontSize;
+                postIt.style.fontSize = currentFontSize + 'px';
+                
+                const createdDate = dateStr ? dateStr : getFormattedDate();
+                
+                const randomRotation = rot !== null ? rot : (Math.floor(Math.random() * 11) - 5);
+                postIt.dataset.rotation = randomRotation;
+                
+                const applyTransform = (scale = 1) => {
+                    postIt.style.transform = `rotate(${postIt.dataset.rotation}deg) scale(${scale})`;
+                };
+                applyTransform(1);
+
+                postIt.addEventListener('mouseenter', () => {
+                    if (!postIt.classList.contains('dragging')) {
+                        applyTransform(1.05);
+                        postIt.style.zIndex = highestZIndex + 1;
+                    }
+                });
+                postIt.addEventListener('mouseleave', () => {
+                    if (!postIt.classList.contains('dragging')) {
+                        applyTransform(1);
+                        postIt.style.zIndex = postIt.dataset.zIndex || 1;
+                    }
+                });
+
+                if (left !== null && top !== null) {
+                    postIt.style.left = left;
+                    postIt.style.top = top;
+                } else {
+                    const boardWidth = board.clientWidth || window.innerWidth;
+                    const randX = (boardWidth / 2) - 110 + (Math.random() * 100 - 50);
+                    const randY = 100 + (Math.random() * 150 - 50);
+                    postIt.style.left = randX + 'px';
+                    postIt.style.top = randY + 'px';
+                }
+
+                const currentZ = zIndex !== null ? parseInt(zIndex) : ++highestZIndex;
+                postIt.style.zIndex = currentZ;
+                postIt.dataset.zIndex = currentZ;
+                if (currentZ > highestZIndex) highestZIndex = currentZ;
+
+                // content 부분에 contenteditable 속성 추가하여 직접 수정 가능하게 함
+                postIt.innerHTML = `
+                    <div class="pin"></div>
+                    <div class="post-it-controls">
+                        <button class="font-btn font-down" title="글씨 작게">A-</button>
+                        <button class="font-btn font-up" title="글씨 크게">A+</button>
+                        <button class="delete-btn" title="삭제">&times;</button>
+                    </div>
+                    <div class="content" contenteditable="true" spellcheck="false" title="클릭해서 내용 수정 가능">${htmlContent}</div>
+                    <div class="post-date">${createdDate}</div>
+                `;
+
+                // 수정 내용 자동 저장 (포커스를 잃었을 때)
+                const contentDiv = postIt.querySelector('.content');
+                contentDiv.addEventListener('blur', () => {
+                    saveMemos();
+                });
+                
+                // 포스트잇 내부에서도 이미지 붙여넣기 차단
+                contentDiv.addEventListener('paste', handlePaste);
+                contentDiv.addEventListener('drop', handleDrop);
+
+                // 삭제 기능
+                const deleteBtn = postIt.querySelector('.delete-btn');
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); 
+                    postIt.style.opacity = '0';
+                    setTimeout(() => {
+                        postIt.remove();
+                        saveMemos();
+                    }, 200);
+                });
+                
+                // 글씨 크기 조절 기능
+                const btnUp = postIt.querySelector('.font-up');
+                const btnDown = postIt.querySelector('.font-down');
+                
+                btnUp.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    let size = parseInt(postIt.dataset.fontSize);
+                    if (size < 40) size += 2;
+                    postIt.dataset.fontSize = size;
+                    postIt.style.fontSize = size + 'px';
+                    saveMemos();
+                });
+                
+                btnDown.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    let size = parseInt(postIt.dataset.fontSize);
+                    if (size > 10) size -= 2;
+                    postIt.dataset.fontSize = size;
+                    postIt.style.fontSize = size + 'px';
+                    saveMemos();
+                });
+
+                board.appendChild(postIt);
+                
+                if (!dateStr) {
+                    saveMemos(); 
+                }
+            }
+
+            addBtn.addEventListener('click', () => {
+                const htmlContent = memoInput.innerHTML.trim();
+                if (htmlContent !== '' && htmlContent !== '<br>') {
+                    addPostIt(htmlContent, selectedColor);
+                    memoInput.innerHTML = ''; 
+                    closeModal();
+                } else {
+                    alert('메모 내용을 입력해주세요!');
+                    memoInput.focus();
+                }
+            });
+
+            memoInput.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    addBtn.click();
+                }
+                if (e.key === 'Escape') closeModal();
+            });
+
+            let activeDrag = null;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            document.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return; 
+
+                const postIt = e.target.closest('.post-it');
+                
+                if (postIt && !e.target.closest('.post-it-controls')) {
+                    const rect = postIt.getBoundingClientRect();
+                    const isResizeHandle = e.clientX > rect.right - 20 && e.clientY > rect.bottom - 20;
+                    if (isResizeHandle) return; // 크기 조절 시 드래그 무시
+
+                    // 텍스트(content) 영역을 클릭했을 때는 드래그하지 않고 텍스트 커서를 허용 (복사, 수정 용도)
+                    if (e.target.closest('.content')) {
+                        return;
+                    }
+
+                    activeDrag = postIt;
+                    
+                    highestZIndex++;
+                    activeDrag.style.zIndex = highestZIndex;
+                    activeDrag.dataset.zIndex = highestZIndex;
+                    
+                    activeDrag.classList.add('dragging');
+                    activeDrag.style.transform = `rotate(0deg) scale(1.05)`; 
+
+                    xOffset = e.clientX - rect.left;
+                    yOffset = e.clientY - rect.top;
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (activeDrag) {
+                    e.preventDefault(); 
+                    const boardRect = board.getBoundingClientRect();
+                    
+                    let newLeft = e.clientX - boardRect.left - xOffset;
+                    let newTop = e.clientY - boardRect.top - yOffset;
+                    
+                    activeDrag.style.left = newLeft + 'px';
+                    activeDrag.style.top = newTop + 'px';
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (activeDrag) {
+                    activeDrag.classList.remove('dragging');
+                    activeDrag.style.transform = `rotate(${activeDrag.dataset.rotation}deg) scale(1)`;
+                    activeDrag = null;
+                    
+                    saveMemos(); 
+                } else {
+                    setTimeout(() => {
+                        saveMemos();
+                    }, 50);
+                }
+            });
+
+            function saveMemos() {
+                const memos = [];
+                Array.from(board.children).forEach(postIt => {
+                    memos.push({
+                        text: postIt.querySelector('.content').innerHTML,
+                        color: postIt.style.backgroundColor,
+                        rotation: postIt.dataset.rotation,
+                        date: postIt.querySelector('.post-date').innerText,
+                        left: postIt.style.left,
+                        top: postIt.style.top,
+                        zIndex: postIt.dataset.zIndex,
+                        width: postIt.style.width,
+                        height: postIt.style.height,
+                        fontSize: postIt.dataset.fontSize
+                    });
+                });
+                localStorage.setItem('memoBoard_memos_v4', JSON.stringify(memos));
+            }
+
+            function loadMemos() {
+                const v1 = JSON.parse(localStorage.getItem('memoBoard_memos') || 'null');
+                const v2 = JSON.parse(localStorage.getItem('memoBoard_memos_v2') || 'null');
+                const v3 = JSON.parse(localStorage.getItem('memoBoard_memos_v3') || 'null');
+                const v4 = JSON.parse(localStorage.getItem('memoBoard_memos_v4') || 'null');
+                
+                let savedMemos = v4;
+                
+                if (!savedMemos) {
+                    if (v3) savedMemos = v3;
+                    else if (v2) savedMemos = v2;
+                    else if (v1) savedMemos = v1;
+                    else savedMemos = [];
+                    
+                    localStorage.setItem('memoBoard_memos_v4', JSON.stringify(savedMemos));
+                }
+
+                savedMemos.forEach(memo => {
+                    addPostIt(
+                        memo.text, 
+                        memo.color, 
+                        memo.date, 
+                        memo.left, 
+                        memo.top, 
+                        memo.rotation, 
+                        memo.zIndex,
+                        memo.width,
+                        memo.height,
+                        memo.fontSize
+                    );
+                });
+            }
+
+            loadMemos();
+        });
+    </script>
+</body>
+</html>
