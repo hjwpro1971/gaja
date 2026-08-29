@@ -1046,6 +1046,10 @@ const COVER_LAYER_WIDTH = 960;
 let coverEditorImage = null; // Image 객체 (원본, 리사이즈 없이 그대로 유지 - 확대해도 화질 손실 최소화)
 let coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
 let coverEditorDragging = null; // { startX, startY, startOffsetX, startOffsetY }
+// 불러온 가이드의 기존 표지 사진을 사용자가 실제로 다시 편집했는지 여부.
+// false면 [가이드 생성] 시 재인코딩을 건너뛰고 원본 데이터URL을 그대로 넘겨,
+// 수정할 때마다 JPEG를 다시 굽는 데서 오는 화질 열화를 막는다.
+let coverEditorTouched = false;
 
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -1129,6 +1133,9 @@ function clampCoverEditorOffset() {
 }
 
 function updateCoverEditor() {
+  // 이동/확대/높이 변경은 전부 이 함수를 거친다. 여기서만 touched를 세워두면
+  // "사용자가 실제로 구도를 다시 잡았을 때"만 재인코딩하게 된다.
+  coverEditorTouched = true;
   clampCoverEditorOffset();
   renderCoverEditor();
 }
@@ -1137,6 +1144,14 @@ function resetCoverEditorPosition() {
   coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
   document.getElementById('coverEditorZoom').value = 100;
   updateCoverEditor();
+}
+
+// 가이드를 불러온 직후처럼 "사용자 편집이 아닌" 초기 렌더에 쓴다.
+// updateCoverEditor()가 세운 touched 플래그를 되돌려, 편집하지 않고 바로
+// [가이드 생성]을 누르면 원본 사진이 무손실로 그대로 실린다.
+function resetCoverEditorPositionAsPristine() {
+  resetCoverEditorPosition();
+  coverEditorTouched = false;
 }
 
 // [가이드 생성] 시 호출: 편집기에 보이는 그대로를 실제 960xheight 이미지로 구워 JPEG로 반환
@@ -1154,9 +1169,19 @@ function exportCoverEditorImage() {
   ctx.fillRect(0, 0, COVER_LAYER_WIDTH, h);
 
   const g = getCoverDrawGeometry(h);
-  ctx.drawImage(coverEditorImage, g.drawX, g.drawY, g.drawW, g.drawH);
 
-  return canvas.toDataURL('image/jpeg', COVER_IMAGE_JPEG_QUALITY);
+  // 여기서 실패하면(이미지 디코딩 불완전, canvas 오염 등) 절대 null을 그대로
+  // 흘려보내지 않는다 — 호출부가 그걸 coverImageDataURL에 대입하면 멀쩡히
+  // 갖고 있던 배경 사진이 조용히 지워지기 때문이다.
+  try {
+    ctx.drawImage(coverEditorImage, g.drawX, g.drawY, g.drawW, g.drawH);
+    const out = canvas.toDataURL('image/jpeg', COVER_IMAGE_JPEG_QUALITY);
+    if (!out || out.length < 100 || out.indexOf('data:image') !== 0) return null;
+    return out;
+  } catch (err) {
+    console.error('표지 사진 재인코딩 실패:', err);
+    return null;
+  }
 }
 
 function handleCoverImageSelect(e) {
@@ -1170,6 +1195,7 @@ function handleCoverImageSelect(e) {
   loadImageFromFile(file).then(img => {
     coverEditorImage = img;
     resetCoverEditorPosition();
+    coverEditorTouched = true; // 새로 고른 사진은 반드시 인코딩해야 한다
     document.getElementById('coverImagePreviewWrap').style.display = 'block';
     document.getElementById('coverImageHeightRow').style.display = 'block';
 
@@ -1181,9 +1207,12 @@ function handleCoverImageSelect(e) {
   });
 }
 
+// 표지 사진을 없애는 유일한 통로. 이 함수를 거치지 않고 배경이 사라지는
+// 경로가 생기면 그것은 버그다.
 function removeCoverImage() {
   coverImageDataURL = null;
   coverEditorImage = null;
+  coverEditorTouched = false;
   coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
   document.getElementById('coverImage').value = '';
   document.getElementById('coverImagePreviewWrap').style.display = 'none';
@@ -1240,8 +1269,22 @@ function generateGuide() {
   }
 
   const coverImageHeight = parseInt(document.getElementById('coverImageHeight').value, 10) || 350;
-  if (coverEditorImage) {
-    coverImageDataURL = exportCoverEditorImage();
+  // 표지 사진은 사용자가 [사진 제거]를 누르기 전까지 반드시 보존된다.
+  // (a) 편집기를 건드리지 않았으면 재인코딩 자체를 건너뛰어 원본을 무손실로
+  //     그대로 싣고(수정할 때마다 JPEG를 다시 굽는 화질 열화 방지),
+  // (b) 재인코딩이 실패하면 기존 데이터URL을 유지한다 — 예전에는 null이
+  //     그대로 대입돼 배경이 통째로 사라졌다.
+  if (coverEditorImage && (coverEditorTouched || !coverImageDataURL)) {
+    const reencoded = exportCoverEditorImage();
+    if (reencoded) {
+      coverImageDataURL = reencoded;
+    } else if (!coverImageDataURL) {
+      warnBox.style.display = 'block';
+      warnBox.textContent = '⚠ 표지 사진을 처리하지 못해 이번 가이드는 기본 단색 배경으로 생성됩니다. 사진을 다시 선택해 주세요.';
+    } else {
+      infoBox.style.display = 'block';
+      infoBox.textContent = 'ℹ 표지 사진의 새 구도를 적용하지 못해, 직전에 저장돼 있던 사진을 그대로 사용했습니다.';
+    }
   }
   const mountainDataJSON = buildMountainDataJSON(data);
   const finalHTML = buildFinalHTML(mountainDataJSON, coverImageDataURL, coverImageHeight);
@@ -1713,7 +1756,19 @@ function handleLoadExistingHTML(e) {
         const img = new Image();
         img.onload = () => {
           coverEditorImage = img;
-          resetCoverEditorPosition();
+          // 불러오기 직후의 초기 렌더는 "사용자 편집"이 아니므로 touched를
+          // 세우지 않는다. 그래야 구도를 안 건드리고 저장할 때 원본 사진이
+          // 재인코딩 없이 그대로 유지된다.
+          resetCoverEditorPositionAsPristine();
+        };
+        // 디코딩에 실패해도 coverImageDataURL은 절대 건드리지 않는다.
+        // 편집기만 못 쓸 뿐, 저장하면 기존 배경 사진이 그대로 다시 실린다.
+        img.onerror = () => {
+          coverEditorImage = null;
+          coverEditorTouched = false;
+          const sizeNote = document.getElementById('coverImageSizeNote');
+          sizeNote.textContent = '⚠ 기존 표지 사진을 편집기에서 열지 못했습니다. 구도 조절은 불가하지만, 사진 자체는 그대로 보존되어 [가이드 생성] 시 다시 포함됩니다.';
+          sizeNote.classList.add('over');
         };
         img.src = coverImageDataURL;
         document.getElementById('coverImagePreviewWrap').style.display = 'block';
