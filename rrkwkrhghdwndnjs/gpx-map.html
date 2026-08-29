@@ -473,15 +473,65 @@ function restoreGpxDraftIfAny() {
   }
 }
 
+// 두 좌표 사이 거리(m). 경유지가 서로 너무 붙어 있는지 판정하는 데 쓴다.
+function distanceMeters(a, b) {
+  const R = 6371000, rad = x => x * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 +
+            Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// 이미 고른 지점과 이 정도 안쪽이면 "같은 자리"로 보고 건너뛴다.
+const WAYPOINT_MIN_GAP_M = 150;
+
+// 경로에서 네이버지도에 넘길 지점을 고른다.
+//
+// 예전에는 전체 구간을 균등 분할해 그대로 썼는데, 원점회귀(왕복) 코스에서
+// 문제가 됐다. 같은 길을 되짚어 내려오므로 후반 경유지가 전반 경유지와
+// 거의 같은 좌표가 되고(실제 사례: 경유지5와 경유지1이 7m, 경유지4와
+// 경유지2가 42m 차이), 네이버지도 앱이 "같은 지점을 되돌아가는 경로"를
+// 도보 경로로 풀지 못해 "경유지가 도로 주변이 아닙니다" 오류를 냈다
+// (2026-08-27). 종주 코스는 겹치지 않아 그동안 드러나지 않았다.
+//
+// 그래서 들머리·날머리는 그대로 두고, 중간 경유지는 이미 고른 지점들과
+// WAYPOINT_MIN_GAP_M 이상 떨어진 것만 채택한다. 왕복 코스에서는 되돌아오는
+// 구간이 자연히 제외돼 경유지가 한쪽으로 몰리지 않는다.
 function pickWaypoints(points, count) {
   if (points.length === 0) return [];
-  if (points.length <= count) return points.slice();
-  const result = [];
-  for (let i = 0; i < count; i++) {
-    const idx = Math.round((i / (count - 1)) * (points.length - 1));
-    result.push(points[idx]);
+  if (points.length <= 2) return points.slice();
+  if (count <= 2) return [points[0], points[points.length - 1]];
+
+  const start = points[0];
+  const end = points[points.length - 1];
+  const middle = [];
+  const wanted = count - 2;                 // 들머리·날머리를 뺀 개수
+
+  // 균등 분할 지점을 후보로 훑되, 앞서 고른 것과 가까우면 건너뛴다.
+  const steps = Math.min(points.length - 2, wanted * 4);
+  for (let i = 1; i <= steps && middle.length < wanted; i++) {
+    const idx = Math.round((i / (steps + 1)) * (points.length - 1));
+    const p = points[idx];
+    if (!p) continue;
+    const tooClose = [start, ...middle].some(
+      q => distanceMeters(p, q) < WAYPOINT_MIN_GAP_M);
+    if (!tooClose) middle.push(p);
   }
-  return result;
+
+  // 날머리와 겹치는 마지막 경유지도 정리한다.
+  while (middle.length &&
+         distanceMeters(middle[middle.length - 1], end) < WAYPOINT_MIN_GAP_M) {
+    middle.pop();
+  }
+
+  // 원점회귀 코스는 날머리가 들머리와 사실상 같은 자리다(실측 2~13m).
+  // 출발지와 도착지가 같은 좌표면 네이버지도가 경로를 만들지 못하므로,
+  // 그럴 때는 날머리를 빼고 마지막 경유지를 도착지로 삼는다.
+  if (middle.length && distanceMeters(start, end) < WAYPOINT_MIN_GAP_M) {
+    return [start, ...middle];
+  }
+
+  return [start, ...middle, end];
 }
 
 function buildNaverMapDeepLinkParams(points) {
