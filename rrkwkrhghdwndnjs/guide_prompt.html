@@ -389,11 +389,15 @@
         let blackBearPole = "Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).";
         let pinkBearPole = "Holding exactly one trekking pole in right paw and one in left paw (total 2 poles).";
         
-        // 사진기/카메라 키워드 인식 시 등산스틱 해제
+        // 사진기/카메라 키워드 인식 시 등산스틱 해제.
+        // "곰곰이"는 곰돌이+곰순이 커플을 함께 가리키는 이름이므로, 곰곰이가
+        // 언급되면 두 캐릭터 모두에 적용한다(개별 이름이 없어도 커플 행동으로 처리).
         if (actionText.includes("사진기") || actionText.includes("카메라")) {
-            if (actionText.includes("곰돌이")) blackBearPole = "Holding a camera and taking pictures (no trekking poles).";
-            if (actionText.includes("곰순이")) pinkBearPole = "Holding a camera and taking pictures (no trekking poles).";
-            if (!actionText.includes("곰돌이") && !actionText.includes("곰순이")) {
+            const mentionsBlack = actionText.includes("곰돌이") || actionText.includes("곰곰이");
+            const mentionsPink = actionText.includes("곰순이") || actionText.includes("곰곰이");
+            if (mentionsBlack) blackBearPole = "Holding a camera and taking pictures (no trekking poles).";
+            if (mentionsPink) pinkBearPole = "Holding a camera and taking pictures (no trekking poles).";
+            if (!mentionsBlack && !mentionsPink) {
                 blackBearPole = "Holding a camera (no trekking poles).";
             }
         }
@@ -425,6 +429,11 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
     function translateKeyword(text) {
         if (!text) return "";
         const map = {
+            // "곰곰이"는 곰돌이+곰순이 커플을 함께 가리키는 이름. 정의되지 않은 채
+            // 한글이 그대로 영어 프롬프트에 섞여 들어가면 AI가 이걸 제3의 정체불명
+            // 캐릭터로 오인해 곰이 여러 마리로 늘어나는 원인이 됐다.
+            "곰곰이는": "The Black Moon Bear and Pink Moon Bear couple are",
+            "곰곰이": "the Black Moon Bear and Pink Moon Bear couple",
             "곰돌이는": "The Black Moon Bear is",
             "곰순이는": "The Pink Moon Bear is",
             "곰돌이": "Black Moon Bear",
