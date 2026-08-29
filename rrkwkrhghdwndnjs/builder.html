@@ -1213,6 +1213,7 @@ function removeCoverImage() {
   coverImageDataURL = null;
   coverEditorImage = null;
   coverEditorTouched = false;
+  clearCoverFromDB();
   coverEditorState = { offsetX: 0, offsetY: 0, zoomPercent: 100 };
   document.getElementById('coverImage').value = '';
   document.getElementById('coverImagePreviewWrap').style.display = 'none';
@@ -1300,6 +1301,8 @@ function generateGuide() {
 
   saveCourseHandoffToSummary(data);
   markGuideGeneratedInDraft();
+  // 새로고침 후에도 배경사진이 살아남도록 IndexedDB에 함께 보관한다.
+  if (coverImageDataURL) saveCoverToDB(coverImageDataURL, coverImageHeight);
 }
 
 // 산행요약 생성(hiking_summary.html)의 "코스(GPX)" 입력란이 자동으로 채워
@@ -1525,7 +1528,9 @@ async function downloadGuide() {
 }
 
 // 다른 사이트를 오가다 브라우저가 탭을 새로고침/재사용해도 입력값이 사라지지 않도록
-// 텍스트 폼 데이터만 자동 저장한다 (표지 사진은 용량 문제로 제외 — 사진은 파일로 남아있으니 재업로드).
+// 텍스트 폼 데이터만 이 키에 저장한다. 표지 사진은 용량이 커서 여기 같이
+// 넣으면 localStorage 한도를 넘기므로, 아래 IndexedDB(COVER_DB_NAME)에 따로
+// 저장해 새로고침 후에도 배경사진이 유지되게 한다.
 // index.html의 iframe 안에서 쓰일 때 다른 메뉴로 전환하면 iframe이 즉시 파기되어
 // beforeunload/디바운스 타이머가 실행되지 않을 수 있으므로, 지연 없이 매번 즉시 저장한다.
 const DRAFT_STORAGE_KEY = 'hikingGuideBuilderDraft';
@@ -1535,9 +1540,67 @@ const DRAFT_STORAGE_KEY = 'hikingGuideBuilderDraft';
 // 용량(보통 5~10MB)을 넘기기 쉽다. 그래서 결과 HTML을 직접 저장하는 대신
 // "가이드가 생성된 상태였다"는 플래그만 저장해두고, 다시 돌아왔을 때 이미
 // 캐시돼 있는 폼 데이터(draft)로 generateGuide()를 다시 실행해 미리보기를
-// 재구성한다. 커버 이미지는 draft에도 담기지 않으므로 배경만 빠진 채로
-// 자동 복원되며, 사용자가 원하면 다시 업로드하면 된다.
+// 재구성한다. 커버 이미지는 IndexedDB에서 따로 복원해 함께 적용한다.
 const GENERATED_FLAG_KEY = 'hikingGuideBuilderGeneratedFlag';
+
+// ---------------------------------------------------------------------------
+// 표지 사진 자동저장 (IndexedDB)
+//
+// 표지 사진은 base64로 보통 수백KB~수MB라, localStorage(한도 5~10MB)에 텍스트
+// draft와 함께 넣으면 한도를 넘겨 자동저장 전체가 실패한다. 그래서 원래는
+// 사진을 아예 저장하지 않았는데, 그 탓에 새로고침하면 폼은 복원되면서
+// 배경사진만 사라졌다(사용자 입장에선 "사진이 지워진" 것으로 보임).
+//
+// 용량 한도가 훨씬 큰 IndexedDB에 사진만 따로 저장한다. 실패하더라도 조용히
+// 넘어가 텍스트 draft 저장/복원에는 영향을 주지 않는다.
+// ---------------------------------------------------------------------------
+const COVER_DB_NAME = 'gajaBuilderCover';
+const COVER_DB_STORE = 'cover';
+const COVER_DB_KEY = 'current';
+
+function openCoverDB() {
+  return new Promise((resolve, reject) => {
+    let req;
+    try {
+      req = indexedDB.open(COVER_DB_NAME, 1);
+    } catch (e) {
+      reject(e); return;
+    }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(COVER_DB_STORE)) db.createObjectStore(COVER_DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function saveCoverToDB(dataURL, height) {
+  return openCoverDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(COVER_DB_STORE, 'readwrite');
+    tx.objectStore(COVER_DB_STORE).put({ dataURL: dataURL, height: height }, COVER_DB_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  })).catch(() => {});
+}
+
+function loadCoverFromDB() {
+  return openCoverDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(COVER_DB_STORE, 'readonly');
+    const req = tx.objectStore(COVER_DB_STORE).get(COVER_DB_KEY);
+    req.onsuccess = () => { db.close(); resolve(req.result || null); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  })).catch(() => null);
+}
+
+function clearCoverFromDB() {
+  return openCoverDB().then(db => new Promise(resolve => {
+    const tx = db.transaction(COVER_DB_STORE, 'readwrite');
+    tx.objectStore(COVER_DB_STORE).delete(COVER_DB_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); resolve(); };
+  })).catch(() => {});
+}
 
 function saveDraftNow() {
   try {
@@ -1597,6 +1660,7 @@ function restoreMasterPromptDraftIfAny() {
 }
 
 function clearDraft() {
+  clearCoverFromDB();
   localStorage.removeItem(DRAFT_STORAGE_KEY);
   localStorage.removeItem(GENERATED_FLAG_KEY);
   localStorage.removeItem(MOUNTAIN_NAME_HANDOFF_KEY);
@@ -1651,7 +1715,36 @@ function restoreDraftIfAny() {
     fillFormFromData(data);
     let wasGenerated = false;
     try { wasGenerated = localStorage.getItem(GENERATED_FLAG_KEY) === '1'; } catch (e) {}
-    if (wasGenerated) generateGuide();
+
+    // 배경사진은 IndexedDB에서 비동기로 읽으므로, 미리보기 재생성
+    // (generateGuide)은 사진 복원이 끝난 뒤에 해야 한다. 먼저 실행하면
+    // coverImageDataURL이 아직 null이라 배경 없는 가이드가 만들어진다.
+    loadCoverFromDB().then(saved => {
+      if (saved && saved.dataURL) {
+        coverImageDataURL = saved.dataURL;
+        document.getElementById('coverImageHeight').value = saved.height || 350;
+        document.getElementById('coverImagePreviewWrap').style.display = 'block';
+        document.getElementById('coverImageHeightRow').style.display = 'block';
+        const img = new Image();
+        img.onload = () => {
+          coverEditorImage = img;
+          // 복원 직후 렌더는 사용자 편집이 아니므로 touched를 세우지 않는다
+          // (그래야 그대로 저장할 때 원본이 무손실로 유지된다).
+          resetCoverEditorPositionAsPristine();
+          if (wasGenerated) generateGuide();
+        };
+        img.onerror = () => {
+          // 편집기에서 못 열어도 사진 자체(coverImageDataURL)는 보존되므로
+          // 저장하면 배경은 그대로 다시 실린다.
+          coverEditorImage = null;
+          coverEditorTouched = false;
+          if (wasGenerated) generateGuide();
+        };
+        img.src = saved.dataURL;
+      } else if (wasGenerated) {
+        generateGuide();
+      }
+    });
   } catch (e) {
     // 저장된 draft가 깨져 있으면 무시(폼은 빈 상태로 시작)
   }
