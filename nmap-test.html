@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>불갑산 네이버지도 스킴 테스트</title>
+<style>
+  body{margin:0;padding:16px;font-family:'Malgun Gothic',sans-serif;background:#f4f6f9;color:#222}
+  h1{font-size:1.1rem;margin:0 0 4px}
+  p.sub{margin:0 0 16px;font-size:.85rem;color:#666;line-height:1.5}
+  a.t{display:block;background:#fff;border:1px solid #d8dde3;border-radius:10px;
+      padding:14px 16px;margin-bottom:10px;text-decoration:none;color:#111;
+      box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  a.t:active{background:#eef4ff}
+  .n{font-weight:700;font-size:.95rem}
+  .d{font-size:.78rem;color:#667;margin-top:4px;line-height:1.45}
+  .box{background:#fffbe6;border:1px solid #f0d98c;border-radius:8px;
+       padding:12px 14px;font-size:.8rem;line-height:1.6;margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>불갑산 지도 열기 테스트</h1>
+<p class="sub">아래를 <b>위에서부터 하나씩</b> 눌러보고, 어떤 것이 제대로 열리는지 알려주세요.</p>
+
+<div class="box">
+  <b>보실 것</b><br>
+  · 네이버지도 앱이 열리는가<br>
+  · "경유지가 도로 주변이 아닙니다" 오류가 뜨는가<br>
+  · 지도에 경로선이나 핀이 보이는가
+</div>
+
+<a class="t" id="a"><div class="n">A. 도보 경로 (지금 방식)</div>
+<div class="d">현재 쓰는 방식. 이게 실패하는 상황입니다.</div></a>
+
+<a class="t" id="b"><div class="n">B. 자전거 경로</div>
+<div class="d">임도·산길이 자전거 경로망에 있을 수 있어 시도.</div></a>
+
+<a class="t" id="c"><div class="n">C. 자동차 경로</div>
+<div class="d">되는지만 확인용(실제로 쓸 방식은 아님).</div></a>
+
+<a class="t" id="d"><div class="n">D. 도보 · 경유지 없이 출발→도착만</div>
+<div class="d">경유지가 원인인지, 구간 자체가 원인인지 가릅니다.</div></a>
+
+<a class="t" id="e"><div class="n">E. 지점 하나만 표시</div>
+<div class="d">길찾기 없이 핀 하나. "지점만 보기"가 되는지 확인.</div></a>
+
+<a class="t" id="f"><div class="n">F. 그 위치로 지도만 열기</div>
+<div class="d">핀 없이 해당 좌표로 지도 이동.</div></a>
+
+<script>
+(function(){
+  var P={slat:'35.203775',slng:'126.539641',sname:'들머리',
+    v1lat:'35.206082',v1lng:'126.541264',v1name:'경유지1',
+    v2lat:'35.205316',v2lng:'126.544238',v2name:'경유지2',
+    v3lat:'35.204401',v3lng:'126.547689',v3name:'경유지3',
+    v4lat:'35.205697',v4lng:'126.551202',v4name:'경유지4',
+    v5lat:'35.205192',v5lng:'126.554343',v5name:'경유지5',
+    dlat:'35.200789',dlng:'126.549626',dname:'날머리',
+    appname:'hjwpro1971.github.io'};
+  var q=new URLSearchParams(P).toString();
+  var q2=new URLSearchParams({slat:P.slat,slng:P.slng,sname:P.sname,
+    dlat:P.dlat,dlng:P.dlng,dname:P.dname,appname:P.appname}).toString();
+  var isA=/Android/i.test(navigator.userAgent);
+  function set(id,path,query){
+    var nmap='nmap://'+path+'?'+query;
+    var intent='intent://'+path+'?'+query+
+      '#Intent;scheme=nmap;action=android.intent.action.VIEW;'+
+      'category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
+    document.getElementById(id).href = isA ? intent : nmap;
+  }
+  set('a','route/walk',q);
+  set('b','route/bicycle',q);
+  set('c','route/car',q);
+  set('d','route/walk',q2);
+  set('e','place','lat=35.205697&lng=126.551202&name='+
+      encodeURIComponent('불갑산 정상부')+'&appname='+P.appname);
+  set('f','map','lat=35.204401&lng=126.547689&level=13&appname='+P.appname);
+})();
+</script>
+</body>
+</html>
