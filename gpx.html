@@ -1,0 +1,201 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>산길샘 등산 코스 바로열기</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      color: #2e3d2f;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .card {
+      background: #ffffff;
+      width: 100%;
+      max-width: 440px;
+      border-radius: 24px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.1);
+      padding: 32px 24px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      background: #2e7d32;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+    .icon { font-size: 48px; margin-bottom: 8px; }
+    h1 { font-size: 22px; font-weight: 800; color: #1b5e20; margin-bottom: 12px; }
+    .course-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1b5e20;
+      background: #f1f8e9;
+      border: 2px solid #c5e1a5;
+      padding: 14px 16px;
+      border-radius: 14px;
+      margin-bottom: 24px;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .btn-main {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      padding: 18px;
+      font-size: 20px;
+      font-weight: 800;
+      color: #ffffff;
+      background: #2e7d32;
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 6px 16px rgba(46,125,50,0.35);
+      margin-bottom: 16px;
+      transition: all 0.2s ease;
+    }
+    .btn-main:active { transform: scale(0.97); background: #1b5e20; }
+    .btn-sub-wrap {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .btn-sub {
+      flex: 1;
+      min-width: 140px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #37474f;
+      background: #eceff1;
+      border-radius: 10px;
+      text-decoration: none;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      transition: background 0.2s;
+    }
+    .btn-sub:hover { background: #cfd8dc; }
+    .guide-box {
+      background: #fafafa;
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid #e0e0e0;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+      text-align: left;
+    }
+    .guide-box strong { color: #2e7d32; display: block; margin-bottom: 6px; font-size: 14px; }
+    .guide-box ol { padding-left: 18px; }
+    .guide-box li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <span class="badge">산길샘 GPX 자동 연결</span>
+  <div class="icon">⛰️</div>
+  <h1>등산 코스 불러오기</h1>
+  
+  <div class="course-title" id="courseName">코스 확인 중...</div>
+
+  <button class="btn-main" id="openBtn" onclick="launchSangilsaem()">
+    📱 산길샘으로 바로 열기
+  </button>
+
+  <div class="btn-sub-wrap">
+    <a href="#" id="downloadLink" class="btn-sub" download>💾 파일 직접 다운로드</a>
+    <a href="https://play.google.com/store/apps/details?id=com.ngt.android.nadeuri" class="btn-sub" target="_blank">📲 산길샘 앱 설치</a>
+  </div>
+
+  <div class="guide-box">
+    <strong>💡 어르신을 위한 3초 안내</strong>
+    <ol>
+      <li>위 초록색 <b>[산길샘으로 바로 열기]</b> 버튼을 터치합니다.</li>
+      <li>화면 아래에 앱 선택 창이 뜨면 <b>[산길샘]</b>을 누르고 <b>[항상]</b>을 눌러주세요.</li>
+      <li>산길샘이 켜지면서 지도에 빨간색 등산로가 나타납니다!</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  let gpxUrl = urlParams.get('url') || urlParams.get('file') || '';
+  let courseName = urlParams.get('name') || '';
+
+  if (gpxUrl) {
+    try {
+      gpxUrl = decodeURIComponent(gpxUrl);
+    } catch(e) {}
+  }
+
+  if (!courseName) {
+    if (gpxUrl) {
+      try {
+        const parts = gpxUrl.split('/');
+        const last = parts[parts.length - 1];
+        courseName = decodeURIComponent(last).replace(/\.gpx$/i, '');
+      } catch(e) {
+        courseName = '등산 코스';
+      }
+    } else {
+      courseName = '코스 정보 없음';
+    }
+  }
+
+  document.getElementById('courseName').innerText = '🚩 ' + courseName;
+  const dlLink = document.getElementById('downloadLink');
+  if (gpxUrl) {
+    dlLink.href = gpxUrl;
+    dlLink.setAttribute('download', courseName + '.gpx');
+  }
+
+  function launchSangilsaem() {
+    if (!gpxUrl) {
+      alert('GPX 파일 주소가 연결되지 않았습니다.');
+      return;
+    }
+
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    if (isAndroid) {
+      const cleanUrl = gpxUrl.replace(/^https?:\/\//, '');
+      const scheme = gpxUrl.startsWith('https') ? 'https' : 'http';
+      const intentUri = `intent://${cleanUrl}#Intent;scheme=${scheme};type=application/gpx+xml;package=com.ngt.android.nadeuri;end`;
+      
+      window.location.href = intentUri;
+
+      setTimeout(() => {
+        window.location.href = gpxUrl;
+      }, 1500);
+    } else {
+      window.location.href = gpxUrl;
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if (/Android/i.test(navigator.userAgent) && gpxUrl) {
+      setTimeout(launchSangilsaem, 600);
+    }
+  });
+</script>
+
+</body>
+</html>
