@@ -360,7 +360,7 @@
 
   function onPresetTrackSelected(filename) {
     if (!filename) return;
-    const permanentUrl = `https://hjwpro1971.github.io/gaja/tracks/${encodeURIComponent(filename)}`;
+    const permanentUrl = `https://hjwpro1971.github.io/gaja/tracks/${filename}`;
     document.getElementById('rawUrlInput').value = permanentUrl;
     processUrl();
     showToast(`🎉 '${filename}' 완성 링크가 만들어졌습니다!`);
@@ -443,7 +443,17 @@
     let baseUrl = 'https://hjwpro1971.github.io/gaja/viewer.html';
     const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
 
-    const finalUrl = `${baseUrl}?name=${encodeURIComponent(courseName)}&url=${encodeURIComponent(rawUrl)}`;
+    // 이중 인코딩 방지: 완전 해독 후 1회만 인코딩
+    let decodedRaw = rawUrl;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(decodedRaw);
+        if (next === decodedRaw) break;
+        decodedRaw = next;
+      } catch(e) { break; }
+    }
+
+    const finalUrl = `${baseUrl}?name=${encodeURIComponent(courseName)}&url=${encodeURIComponent(decodedRaw)}`;
 
     document.getElementById('finalUrlText').innerText = finalUrl;
     document.getElementById('testLinkBtn').href = finalUrl;

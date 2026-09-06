@@ -669,8 +669,16 @@
     // 외부 서버(네이버 등) 및 깃허브 tracks에서 안전하게 GPX를 가져오는 고성능 로더
   async function fetchGPXFile(targetUrl) {
     let cleanUrl = targetUrl.trim();
+    // %25EA 등 이중 인코딩된 URL을 완전 해독 후 올바른 1회 인코딩 적용
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(cleanUrl);
+        if (next === cleanUrl) break;
+        cleanUrl = next;
+      } catch(e) { break; }
+    }
     try {
-      cleanUrl = encodeURI(decodeURI(cleanUrl));
+      cleanUrl = encodeURI(cleanUrl);
     } catch(e) {}
 
     // 1. 직접 다운로드 시도 (GitHub Pages, Raw, CORS 허용 서버 등)
