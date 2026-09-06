@@ -864,7 +864,7 @@
     const total = tileUrls.length;
 
     try {
-      const cache = await caches.open('gaja-trail-cache-v3');
+      const cache = await caches.open('gaja-trail-cache-v4');
       await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
 
       let completed = 0;
@@ -1267,20 +1267,22 @@
       showSavedRouteList();
     }
 
-    // 저장된 코스 목록을 안내 모달에 렌더링한다. message가 있으면 안내
-    // 문구를 그걸로 바꾼다(예: 자동 다운로드 실패 시).
-    function showSavedRouteList(message) {
+    // 저장된 코스 목록을 안내 모달에 렌더링한다. (HTML 버튼에서 호출할 수 있도록 window 전역 바인딩)
+    window.showSavedRouteList = function(message) {
       const routes = loadSavedRoutes();
       const modal = document.getElementById('emptyModal');
       const desc = document.getElementById('modalDesc');
       const listEl = document.getElementById('savedRouteList');
 
       if (!routes.length) {
-        modal.style.display = 'none';
+        desc.innerHTML = message || '현재 오프라인으로 저장된 등산로 코스가 없습니다.<br>GPX 파일을 열거나 블로그 등산지도 링크를 누르시면 자동으로 저장됩니다.';
+        listEl.innerHTML = '';
+        listEl.style.display = 'none';
+        modal.style.display = 'flex';
         return;
       }
 
-      desc.innerHTML = message || '새로운 GPX 파일을 열거나, 이전에 저장된 코스를 바로 열 수 있습니다.';
+      desc.innerHTML = message || '저장된 코스를 터치하시면 오프라인 지도로 즉시 열립니다.';
       listEl.innerHTML = routes.map((r, i) => {
         const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
         const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
