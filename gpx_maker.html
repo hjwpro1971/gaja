@@ -313,6 +313,29 @@
     return course || '등산 코스';
   }
 
+  // GPX 첨부파일명/URL에 박힌 8자리 촬영(생산)일자를 뽑아낸다.
+  // smartExtractCourseName()은 코스명에서 이 숫자를 지워버리므로 별도로 추출한다.
+  function extractGpxDate(rawUrl) {
+    if (!rawUrl) return '';
+    let decoded = rawUrl;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch(e) { break; }
+    }
+    const m = decoded.match(/\b(20\d{6})\b/);
+    return m ? m[1] : '';
+  }
+
+  function buildRouteLabel(courseName, rawUrl) {
+    const date = extractGpxDate(rawUrl);
+    return date
+      ? `[ ⛰️ ${courseName} 오프라인 등산지도 ${date} (클릭) ]`
+      : `[ ⛰️ ${courseName} 오프라인 등산지도 (클릭) ]`;
+  }
+
   function processUrl() {
     const raw = document.getElementById('rawUrlInput').value.trim();
     if (!raw) {
@@ -340,7 +363,7 @@
     document.getElementById('finalUrlText').innerText = finalUrl;
     document.getElementById('testLinkBtn').href = finalUrl;
 
-    const label = `[ ⛰️ ${courseName} 오프라인 등산지도 (클릭) ]`;
+    const label = buildRouteLabel(courseName, rawUrl);
     document.getElementById('previewArea').innerHTML = `
       <a href="${finalUrl}" target="_blank" style="color: #2e7d32; font-weight: 800; font-size: 16px; text-decoration: underline;">
         ${label}
@@ -352,8 +375,9 @@
 
   async function copyRichHyperlink() {
     const finalUrl = document.getElementById('finalUrlText').innerText;
+    const rawUrl = document.getElementById('rawUrlInput').value.trim();
     const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
-    const label = `[ ⛰️ ${courseName} 오프라인 등산지도 (클릭) ]`;
+    const label = buildRouteLabel(courseName, rawUrl);
 
     const linkHtml = `<a href="${finalUrl}" target="_blank" style="color: #2e7d32; font-weight: bold; font-size: 16px; text-decoration: underline;">${label}</a>`;
 
