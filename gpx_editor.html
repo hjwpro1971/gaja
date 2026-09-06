@@ -518,6 +518,13 @@
         showToast('💡 빨간색 등산로 선 위를 클릭하시면 새로운 점이 삽입됩니다.');
       }
     });
+
+    // 지도 이동 시 보이는 점 핸들 갱신
+    map.on('moveend', () => {
+      if (currentEditMode !== 'waypoint' && allTrailPoints.length > 0) {
+        renderTrailAndHandles();
+      }
+    });
   }
 
   function switchLayer(type) {
@@ -961,20 +968,32 @@ ${trkpts}    </trkseg>
         <div class="res-title">⛰️ ${item.title}</div>
         <div class="res-region">📍 ${item.region}</div>
       `;
-      el.onclick = () => selectLocation(item.lat, item.lon, item.title, item.region);
+      el.onclick = (e) => { e.stopPropagation(); selectLocation(item.lat, item.lon, item.title, item.region); };
       dropdown.appendChild(el);
     });
     dropdown.style.display = 'flex';
   }
 
   function selectLocation(lat, lon, title, region) {
-    map.setView([lat, lon], 14);
-    document.getElementById('searchResultsDropdown').style.display = 'none';
+    const targetLat = parseFloat(lat);
+    const targetLon = parseFloat(lon);
+    if (isNaN(targetLat) || isNaN(targetLon)) {
+      alert('위치 좌표를 확인할 수 없습니다.');
+      return;
+    }
+    if (map) {
+      map.setView([targetLat, targetLon], 14);
+    }
+    const dropdown = document.getElementById('searchResultsDropdown');
+    if (dropdown) dropdown.style.display = 'none';
 
     const nameInput = document.getElementById('courseNameInput');
-    if (!nameInput.value.trim() || nameInput.value.includes('나만의')) {
-      const cleanTitle = title.replace(/\s*\([^)]*\)/g, '').trim().replace(/\s+/g, '_');
-      nameInput.value = `${cleanTitle}_코스`;
+    if (nameInput) {
+      const curVal = nameInput.value ? nameInput.value.trim() : '';
+      if (!curVal || curVal.includes('나만의')) {
+        const cleanTitle = title.replace(/\s*\([^)]*\)/g, '').trim().replace(/\s+/g, '_');
+        nameInput.value = `${cleanTitle}_코스`;
+      }
     }
 
     showToast(`📍 [${title}]\n${region}(으)로 이동했습니다.`);
@@ -1311,12 +1330,7 @@ ${trkpts}    </trkseg>
     });
   }
 
-  // 지도 이동 시 보이는 점 핸들 갱신
-  map.on('moveend', () => {
-    if (currentEditMode !== 'waypoint' && allTrailPoints.length > 0) {
-      renderTrailAndHandles();
-    }
-  });
+// moveend handler moved into initMap
 
   // 통계 갱신
   function updateTrailStats() {
