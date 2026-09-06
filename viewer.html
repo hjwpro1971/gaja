@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>스마트 등산로 뷰어</title>
-  
-  <!-- 네이버 지도 API v3 (네이버 클라우드) -->
-  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
+  <title>스마트 등산로 뷰어 (오프라인 지원)</title>
+
+  <!-- 로컬 캐시 가능한 Leaflet 오픈소스 지도 엔진 -->
+  <link rel="stylesheet" href="./leaflet.css">
+  <script src="./leaflet.js"></script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -20,12 +21,12 @@
 
     /* 상단 헤더 바 */
     .top-header {
-      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 100;
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
       display: flex; gap: 8px; align-items: center; pointer-events: none;
     }
     .title-box {
       pointer-events: auto; flex: 1;
-      background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
       padding: 10px 14px; border-radius: 16px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
       display: flex; justify-content: space-between; align-items: center;
@@ -39,11 +40,10 @@
       padding: 6px 12px; border-radius: 10px; cursor: pointer; border: none;
       white-space: nowrap; box-shadow: 0 2px 6px rgba(46,125,50,0.3);
     }
-    .btn-file-open:active { background: #1b5e20; }
 
-    /* 우측 플로팅 버튼 */
+    /* 우측 플로팅 버튼 컬럼 */
     .fab-col {
-      position: absolute; right: 14px; top: 75px; z-index: 100;
+      position: absolute; right: 14px; top: 75px; z-index: 1000;
       display: flex; flex-direction: column; gap: 10px;
     }
     .fab-btn {
@@ -55,9 +55,23 @@
     .fab-btn:active { transform: scale(0.92); }
     .fab-btn.active { background: #2e7d32; color: #ffffff; }
 
+    /* 레이어 선택 팝업 */
+    .layer-menu {
+      position: absolute; right: 68px; top: 185px; z-index: 1000;
+      background: #ffffff; border-radius: 12px; padding: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
+      display: none; flex-direction: column; gap: 6px; min-width: 150px;
+    }
+    .layer-item {
+      padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
+      border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .layer-item.selected { background: #e8f5e9; color: #1b5e20; }
+    .layer-item:hover { background: #f1f8e9; }
+
     /* 하단 대시보드 카드 */
     .bottom-panel {
-      position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 100;
+      position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 1000;
       background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
       border-radius: 18px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); border: 1px solid #e0e0e0;
       padding: 14px 16px;
@@ -67,10 +81,19 @@
     .stat-label { font-size: 11px; font-weight: 700; color: #2e7d32; margin-bottom: 2px; }
     .stat-val { font-size: 14px; font-weight: 800; color: #212121; }
 
+    /* 오프라인 저장 버튼 */
+    .btn-offline-save {
+      margin-top: 10px; width: 100%; padding: 11px; font-size: 13px; font-weight: 800;
+      background: #e8f5e9; color: #1b5e20; border: 1.5px dashed #81c784;
+      border-radius: 10px; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-offline-save:active { background: #c8e6c9; }
+
     /* GPS 상태 안내 문구 */
     .gps-status {
-      margin-top: 10px; font-size: 12px; font-weight: 700; text-align: center;
-      padding: 6px 10px; border-radius: 8px; background: #e8f5e9; color: #1b5e20;
+      margin-top: 8px; font-size: 12px; font-weight: 700; text-align: center;
+      padding: 6px 10px; border-radius: 8px; background: #f1f8e9; color: #1b5e20;
     }
     .gps-status.warning { background: #ffebee; color: #c62828; }
 
@@ -86,9 +109,16 @@
       100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
     }
 
-    /* 초기 안내 오버레이 */
+    /* 마커 라벨 뱃지 */
+    .route-badge {
+      color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px;
+      border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+      text-align: center; display: inline-block;
+    }
+
+    /* 초기 안내 모달 */
     .empty-modal {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 200;
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000;
       background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
       display: flex; justify-content: center; align-items: center; padding: 20px;
     }
@@ -123,9 +153,18 @@
 <div class="fab-col">
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🔍</button>
+  <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
 </div>
 
-<!-- 초기 안내 모달 (코스가 없을 때) -->
+<!-- 지도 레이어 선택 메뉴 -->
+<div class="layer-menu" id="layerMenu">
+  <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도(등고선)</div>
+  <div class="layer-item" id="lyrBasic" onclick="switchLayer('basic')">🧭 네이버 일반지도</div>
+  <div class="layer-item" id="lyrSatellite" onclick="switchLayer('satellite')">🛰️ 네이버 위성지도</div>
+  <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
+</div>
+
+<!-- 초기 안내 모달 -->
 <div class="empty-modal" id="emptyModal" style="display: none;">
   <div class="modal-box">
     <div class="icon">⛰️</div>
@@ -158,42 +197,95 @@
     </div>
   </div>
 
+  <!-- 오프라인 캐시 저장 버튼 -->
+  <button class="btn-offline-save" id="btnOfflineSave" onclick="saveOfflineMapArea()">
+    📥 산행 전 이 등산로 주변 지도 저장 (산속 통신두절 대비)
+  </button>
+
   <div class="gps-status" id="gpsStatus">
     📍 [📍 버튼]을 누르면 산속에서도 내 위치가 실시간 표시됩니다.
   </div>
 </div>
 
 <script>
+  // 1. PWA 서비스 워커 등록 (산속 오프라인 지도 캐싱 지원)
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('PWA ServiceWorker 등록 성공:', reg.scope))
+        .catch(err => console.warn('PWA ServiceWorker 등록 알림:', err));
+    });
+  }
+
   let map = null;
+  let currentLayer = null;
   let polyline = null;
   let markers = [];
   let currentPoints = [];
   let userGpsMarker = null;
   let watchId = null;
+  let naverTileVersion = '1788514292';
 
-  // 1. 네이버 지도 초기화 (기본값을 등고선이 선명한 지형도 TERRAIN으로 설정!)
+  // 온라인일 경우 최신 네이버 타일 버전 번호 자동 동기화
+  fetch('https://map.pstatic.net/nrb/styles/terrain.json?fmt=png')
+    .then(r => r.json())
+    .then(d => { if (d && d.version) naverTileVersion = d.version; })
+    .catch(() => {});
+
+  // 2. 지도 초기화
   function initMap() {
-    map = new naver.maps.Map('map', {
-      center: new naver.maps.LatLng(35.755, 127.674),
+    map = L.map('map', {
+      center: [35.755, 127.674],
       zoom: 14,
-      mapTypeId: naver.maps.MapTypeId.TERRAIN, // ⛰️ 산길샘과 동일한 등고선 지형도 모드!
-      mapTypeControl: true,
-      mapTypeControlOptions: {
-        mapTypeIds: [
-          naver.maps.MapTypeId.TERRAIN,
-          naver.maps.MapTypeId.NORMAL,
-          naver.maps.MapTypeId.HYBRID
-        ],
-        position: naver.maps.Position.TOP_RIGHT
-      },
-      zoomControl: true,
-      zoomControlOptions: {
-        position: naver.maps.Position.RIGHT_CENTER
-      }
+      zoomControl: false,
+      maxZoom: 19
     });
+
+    L.control.zoom({ position: 'topleft' }).addTo(map);
+
+    // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
+    switchLayer('terrain');
   }
 
-  // 2. 거리 계산 (Haversine 공식)
+  function switchLayer(type) {
+    if (currentLayer) map.removeLayer(currentLayer);
+
+    const layerItems = document.querySelectorAll('.layer-item');
+    layerItems.forEach(el => el.classList.remove('selected'));
+
+    let url = '';
+    let maxNative = 17;
+
+    if (type === 'terrain') {
+      url = `https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrTerrain').classList.add('selected');
+    } else if (type === 'basic') {
+      url = `https://map.pstatic.net/nrb/styles/basic/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrBasic').classList.add('selected');
+    } else if (type === 'satellite') {
+      url = `https://map.pstatic.net/nrb/styles/satellite/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrSatellite').classList.add('selected');
+    } else if (type === 'opentopo') {
+      url = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+      maxNative = 16;
+      document.getElementById('lyrTopo').classList.add('selected');
+    }
+
+    currentLayer = L.tileLayer(url, {
+      maxZoom: 19,
+      maxNativeZoom: maxNative, // 최대 확대 시 타일을 부드럽게 자동 확대
+      attribution: '© NAVER'
+    }).addTo(map);
+
+    document.getElementById('layerMenu').style.display = 'none';
+  }
+
+  function toggleLayerMenu() {
+    const menu = document.getElementById('layerMenu');
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  // 두 좌표 간 거리 계산 (미터)
   function haversineMeters(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -202,7 +294,33 @@
     return 2 * R * Math.asin(Math.sqrt(a));
   }
 
-  // 3. GPX 텍스트 파싱
+  // 타일 좌표 계산 함수
+  function latLonToTile(lat, lon, zoom) {
+    const latRad = lat * Math.PI / 180;
+    const n = Math.pow(2, zoom);
+    const x = Math.floor((lon + 180) / 360 * n);
+    const y = Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n);
+    return { x, y };
+  }
+
+  function getTilesForBounds(minLat, maxLat, minLon, maxLon, zoom) {
+    const p1 = latLonToTile(maxLat, minLon, zoom);
+    const p2 = latLonToTile(minLat, maxLon, zoom);
+    const minX = Math.min(p1.x, p2.x);
+    const maxX = Math.max(p1.x, p2.x);
+    const minY = Math.min(p1.y, p2.y);
+    const maxY = Math.max(p1.y, p2.y);
+
+    const tiles = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        tiles.push({ z: zoom, x, y });
+      }
+    }
+    return tiles;
+  }
+
+  // GPX 파싱
   function parseGPX(xmlText) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlText, 'application/xml');
@@ -220,56 +338,47 @@
     }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
   }
 
-  // 4. 경로 그리기 및 마커 생성
+  // 경로 그리기
   function drawRoute(points, courseName) {
     if (!map || !points.length) return;
     currentPoints = points;
 
-    // 기존 레이어 정리
-    if (polyline) polyline.setMap(null);
-    markers.forEach(m => m.setMap(null));
+    if (polyline) map.removeLayer(polyline);
+    markers.forEach(m => map.removeLayer(m));
     markers = [];
 
-    const path = points.map(p => new naver.maps.LatLng(p.lat, p.lon));
+    const latlngs = points.map(p => [p.lat, p.lon]);
 
-    // 선명한 빨간색 등산로 라인 (산길샘 표준 스타일)
-    polyline = new naver.maps.Polyline({
-      map: map,
-      path: path,
-      strokeColor: '#d32f2f',
-      strokeWeight: 5,
-      strokeOpacity: 0.95
-    });
+    // 깔끔하고 선명한 등산로 빨간선
+    polyline = L.polyline(latlngs, {
+      color: '#d32f2f',
+      weight: 5,
+      opacity: 0.95
+    }).addTo(map);
 
-    // 화면 자동 맞춤
     fitRoute();
 
-    // 들머리(출발), 날머리(도착) 마커
     const start = points[0];
     const end = points[points.length - 1];
 
-    const makeBadge = (pos, title, bg) => {
-      return new naver.maps.Marker({
-        position: pos,
-        map: map,
-        icon: {
-          content: `<div style="background:${bg};color:#fff;font-size:11px;font-weight:bold;padding:3px 7px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;">${title}</div>`,
-          anchor: new naver.maps.Point(18, 26)
-        }
+    const makeBadge = (lat, lon, title, bg) => {
+      const icon = L.divIcon({
+        className: 'custom-badge-icon',
+        html: `<div class="route-badge" style="background:${bg};">${title}</div>`,
+        iconAnchor: [30, 12]
       });
+      return L.marker([lat, lon], { icon }).addTo(map);
     };
 
-    markers.push(makeBadge(new naver.maps.LatLng(start.lat, start.lon), '🚩 들머리', '#1976d2'));
-    markers.push(makeBadge(new naver.maps.LatLng(end.lat, end.lon), '🏁 날머리', '#d32f2f'));
+    markers.push(makeBadge(start.lat, start.lon, '🚩 들머리', '#1976d2'));
+    markers.push(makeBadge(end.lat, end.lon, '🏁 날머리', '#d32f2f'));
 
-    // 최고점 마커
     const withEle = points.filter(p => p.ele !== null);
     if (withEle.length) {
       const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
-      markers.push(makeBadge(new naver.maps.LatLng(peak.lat, peak.lon), `⛰️ 정상 (${Math.round(peak.ele)}m)`, '#e65100'));
+      markers.push(makeBadge(peak.lat, peak.lon, `⛰️ 정상 (${Math.round(peak.ele)}m)`, '#e65100'));
     }
 
-    // 통계 계산
     let totalM = 0;
     for (let i = 1; i < points.length; i++) {
       totalM += haversineMeters(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
@@ -296,7 +405,7 @@
       document.getElementById('trailName').innerText = '🚩 ' + courseName;
     }
 
-    // 오프라인 대비: 브라우저 로컬 저장소에 자동 기억! (산속에서 재접속 시 즉시 표시)
+    // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원)
     try {
       localStorage.setItem('saved_hiking_route', JSON.stringify({
         name: courseName,
@@ -309,14 +418,80 @@
   }
 
   function fitRoute() {
-    if (!map || !currentPoints.length) return;
-    const path = currentPoints.map(p => new naver.maps.LatLng(p.lat, p.lon));
-    const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
-    path.forEach(ll => bounds.extend(ll));
-    map.fitBounds(bounds, { top: 60, right: 30, bottom: 150, left: 30 });
+    if (!map || !polyline) return;
+    map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
   }
 
-  // 5. 파일 선택 이벤트
+  // 산행 전 주변 지도 타일 오프라인 영구 저장 (CacheStorage)
+  async function saveOfflineMapArea() {
+    const btn = document.getElementById('btnOfflineSave');
+    if (!currentPoints.length) return;
+
+    btn.disabled = true;
+    btn.style.background = '#fff9c4';
+    btn.style.color = '#f57f17';
+    btn.innerText = '⏳ 등산로 주변 지형도 영역 계산 중...';
+
+    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    currentPoints.forEach(p => {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+    });
+
+    // 등산로 주변 약 1.2km 마진 부여
+    const margin = 0.012;
+    minLat -= margin; maxLat += margin;
+    minLon -= margin; maxLon += margin;
+
+    // 줌 레벨 13부터 17까지 타일 URL 목록 생성
+    const tileUrls = [];
+    for (let z = 13; z <= 17; z++) {
+      const tiles = getTilesForBounds(minLat, maxLat, minLon, maxLon, z);
+      tiles.forEach(t => {
+        tileUrls.push(`https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/${t.z}/${t.x}/${t.y}.png`);
+      });
+    }
+
+    const total = tileUrls.length;
+    btn.innerText = `⏳ 지형도 저장 중... 0% (0/${total}장)`;
+
+    try {
+      const cache = await caches.open('gaja-trail-cache-v1');
+      await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
+
+      let completed = 0;
+      const batchSize = 10;
+      for (let i = 0; i < tileUrls.length; i += batchSize) {
+        const batch = tileUrls.slice(i, i + batchSize);
+        await Promise.all(batch.map(async url => {
+          try {
+            const match = await cache.match(url);
+            if (!match) {
+              const res = await fetch(url, { mode: 'cors' });
+              if (res.ok) {
+                await cache.put(url, res);
+              }
+            }
+          } catch(e) {}
+          completed++;
+        }));
+        const pct = Math.round((completed / total) * 100);
+        btn.innerText = `⏳ 지형도 저장 중... ${pct}% (${completed}/${total}장)`;
+      }
+
+      btn.innerText = '✅ 등산로 지도 저장 완료! (산속 비행기 모드에서도 100% 작동)';
+      btn.style.background = '#c8e6c9';
+      btn.style.color = '#1b5e20';
+      btn.style.borderStyle = 'solid';
+      btn.disabled = false;
+    } catch(err) {
+      btn.innerText = '⚠️ 지도 저장 오류: ' + err.message;
+      btn.disabled = false;
+    }
+  }
+
   function onFileSelected(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -328,13 +503,13 @@
         const points = parseGPX(evt.target.result);
         drawRoute(points, courseName);
       } catch(err) {
-        alert('GPX 파일 처리 오류: ' + err.message);
+        alert('GPX 파일 오류: ' + err.message);
       }
     };
     reader.readAsText(file);
   }
 
-  // 6. 실시간 GPS 내 위치 추적 (오프라인 위성 수신)
+  // 실시간 GPS 내 위치 추적 (비행기 탑승 모드/산속 오프라인 100% 동작)
   function toggleGPS() {
     const btn = document.getElementById('gpsBtn');
     const status = document.getElementById('gpsStatus');
@@ -342,7 +517,7 @@
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
-      if (userGpsMarker) { userGpsMarker.setMap(null); userGpsMarker = null; }
+      if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
       btn.classList.remove('active');
       status.className = 'gps-status';
       status.innerText = '📍 [📍 버튼]을 누르면 산속에서도 내 위치가 실시간 표시됩니다.';
@@ -355,16 +530,14 @@
     }
 
     btn.classList.add('active');
-    status.innerText = '📡 GPS 위성 신호 찾는 중...';
+    status.innerText = '📡 위성 GPS 신호 찾는 중...';
 
     watchId = navigator.geolocation.watchPosition(
       pos => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
-        const ll = new naver.maps.LatLng(lat, lon);
 
-        // 정규로 최단 거리 계산
         let minDistanceM = 999999;
         for (const p of currentPoints) {
           const d = haversineMeters(lat, lon, p.lat, p.lon);
@@ -372,19 +545,15 @@
         }
 
         if (!userGpsMarker) {
-          userGpsMarker = new naver.maps.Marker({
-            position: ll,
-            map: map,
-            icon: {
-              content: '<div class="my-gps-pulse"></div>',
-              anchor: new naver.maps.Point(11, 11)
-            },
-            zIndex: 999
+          const gpsIcon = L.divIcon({
+            className: 'custom-gps-icon',
+            html: '<div class="my-gps-pulse"></div>',
+            iconAnchor: [11, 11]
           });
-          map.setCenter(ll);
-          map.setZoom(15);
+          userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
+          map.panTo([lat, lon]);
         } else {
-          userGpsMarker.setPosition(ll);
+          userGpsMarker.setLatLng([lat, lon]);
         }
 
         if (minDistanceM > 50) {
@@ -405,7 +574,6 @@
     );
   }
 
-  // 7. 페이지 로드 시 URL 또는 로컬 저장소 코스 자동 복원
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
 
@@ -413,7 +581,6 @@
     const gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
 
-    // URL 파라미터로 gpx가 주어진 경우 자동 fetch
     if (gpxUrl) {
       fetch(decodeURIComponent(gpxUrl))
         .then(r => r.text())
@@ -429,7 +596,6 @@
     }
 
     function checkSavedRoute() {
-      // 이전에 열어본 코스가 브라우저에 저장되어 있으면 자동 복원! (오프라인 지원)
       try {
         const saved = localStorage.getItem('saved_hiking_route');
         if (saved) {

@@ -187,8 +187,8 @@
   </div>
 
   <div class="form-group">
-    <label>3. 웹서버 주소 (gpx.html 파일이 있는 웹 주소)</label>
-    <input type="text" id="baseUrlInput" placeholder="예: https://내도메인/gpx.html" oninput="saveAndupdateBaseUrl()">
+    <label>3. 웹서버 주소 (등산로 뷰어 viewer.html 주소)</label>
+    <input type="text" id="baseUrlInput" placeholder="예: https://hjwpro1971.github.io/gaja/viewer.html" oninput="saveAndupdateBaseUrl()">
     <div class="help-hint">💡 실제 운영 중이신 웹서버 주소를 입력하시면 브라우저에 자동 기억됩니다.</div>
   </div>
 
@@ -224,7 +224,11 @@
 
 <script>
   // 저장된 웹서버 주소 불러오기
-  const savedBase = localStorage.getItem('gpx_base_url') || 'https://hjwpro1971.github.io/gaja/gpx.html';
+  let savedBase = localStorage.getItem('gpx_base_url');
+  if (!savedBase || savedBase.includes('gpx.html')) {
+    savedBase = 'https://hjwpro1971.github.io/gaja/viewer.html';
+    localStorage.setItem('gpx_base_url', savedBase);
+  }
   document.getElementById('baseUrlInput').value = savedBase;
 
   function saveAndupdateBaseUrl() {
@@ -295,7 +299,7 @@
       return;
     }
 
-    let baseUrl = document.getElementById('baseUrlInput').value.trim() || 'https://hjwpro1971.github.io/gaja/gpx.html';
+    let baseUrl = document.getElementById('baseUrlInput').value.trim() || 'https://hjwpro1971.github.io/gaja/viewer.html';
     const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
 
     const finalUrl = `${baseUrl}?name=${encodeURIComponent(courseName)}&url=${encodeURIComponent(rawUrl)}`;
@@ -303,7 +307,7 @@
     document.getElementById('finalUrlText').innerText = finalUrl;
     document.getElementById('testLinkBtn').href = finalUrl;
 
-    const label = `[ ⛰️ 산길샘으로 ${courseName} 바로 열기 (클릭) ]`;
+    const label = `[ ⛰️ ${courseName} 등산로 지도 열기 (클릭) ]`;
     document.getElementById('previewArea').innerHTML = `
       <a href="${finalUrl}" target="_blank" style="color: #2e7d32; font-weight: 800; font-size: 16px; text-decoration: underline;">
         ${label}
@@ -316,7 +320,7 @@
   async function copyRichHyperlink() {
     const finalUrl = document.getElementById('finalUrlText').innerText;
     const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
-    const label = `[ ⛰️ 산길샘으로 ${courseName} 바로 열기 (클릭) ]`;
+    const label = `[ ⛰️ ${courseName} 등산로 지도 열기 (클릭) ]`;
 
     const linkHtml = `<a href="${finalUrl}" target="_blank" style="color: #2e7d32; font-weight: bold; font-size: 16px; text-decoration: underline;">${label}</a>`;
 
