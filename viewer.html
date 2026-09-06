@@ -27,9 +27,9 @@
     .title-box {
       pointer-events: auto; flex: 1;
       background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      padding: 10px 18px; border-radius: 16px;
+      padding: 8px 16px; border-radius: 16px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
-      display: flex; justify-content: center; align-items: center; text-align: center;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
     }
     .title-box h1 {
       font-size: 16px; font-weight: 800; color: #1b5e20;
@@ -139,6 +139,8 @@
 <div class="top-header">
   <div class="title-box">
     <h1 id="trailName">🚩 등산로 뷰어</h1>
+    <label for="gpxFileInput" class="btn-file-open" title="내 PC/스마트폰에서 GPX 파일 열기">📂 GPX 열기</label>
+    <input type="file" id="gpxFileInput" accept=".gpx" style="display: none;" onchange="onFileSelected(event)">
   </div>
 </div>
 
@@ -157,13 +159,24 @@
   <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
 </div>
 
-<!-- 초기 안내 모달: 저장된 코스가 없을 때 안내 문구, 있을 때 코스 목록(오프라인에서도 동작) -->
+<!-- 초기 안내 모달: PC/스마트폰 파일 불러오기 창 및 저장된 코스 목록 -->
 <div class="empty-modal" id="emptyModal" style="display: none;">
   <div class="modal-box">
+    <button class="modal-close-btn" onclick="closeModal()" title="닫기">✕</button>
     <div class="icon">⛰️</div>
-    <h2 id="modalTitle">등산로 안내</h2>
-    <p id="modalDesc">등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.</p>
-    <div class="saved-route-list" id="savedRouteList" style="display: none;"></div>
+    <h2 id="modalTitle">등산로 GPX 열기</h2>
+    <p id="modalDesc">내 PC나 스마트폰에 저장된 <b>.gpx 등산로 파일</b>을 선택하시면 네이버 등고선 지형도 위에 코스가 즉시 표시됩니다.</p>
+    
+    <button class="btn-select-main" onclick="document.getElementById('gpxFileInput').click()">
+      📂 내 PC / 스마트폰에서 GPX 파일 선택
+    </button>
+    
+    <div style="margin-top: 14px; font-size: 12px; color: #666; line-height: 1.5;">
+      💡 PC에서는 <b>.gpx 파일</b>을 이 화면으로 마우스로 끌어다 놓아도 바로 열립니다.
+    </div>
+
+    <!-- 저장된 코스 목록이 있을 때 아래에 표시 -->
+    <div class="saved-route-list" id="savedRouteList" style="display: none; margin-top: 16px;"></div>
   </div>
 </div>
 
@@ -512,6 +525,29 @@
     }
   }
 
+  // 모달 닫기
+  function closeModal() {
+    const modal = document.getElementById('emptyModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // PC 드래그 앤 드롭(Drag & Drop) 파일 열기 지원
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.name.toLowerCase().endsWith('.gpx')) {
+        const fakeEvt = { target: { files: [file] } };
+        onFileSelected(fakeEvt);
+      } else {
+        alert('.gpx 등산로 파일만 열 수 있습니다.');
+      }
+    }
+  });
+
   function onFileSelected(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -521,6 +557,7 @@
     reader.onload = function(evt) {
       try {
         const points = parseGPX(evt.target.result);
+        closeModal();
         drawRoute(points, courseName);
       } catch(err) {
         alert('GPX 파일 오류: ' + err.message);
@@ -717,14 +754,14 @@
       const listEl = document.getElementById('savedRouteList');
 
       if (!routes.length) {
-        desc.innerHTML = message || '등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.';
+        desc.innerHTML = message || '내 PC나 스마트폰의 <b>.gpx 파일</b>을 선택하시면 네이버 지형도 위에 코스가 바로 열립니다.';
         listEl.style.display = 'none';
         listEl.innerHTML = '';
         modal.style.display = 'flex';
         return;
       }
 
-      desc.innerHTML = message || '저장된 등산로 코스입니다.<br>오프라인 상태에서도 바로 열 수 있습니다.';
+      desc.innerHTML = message || '새로운 GPX 파일을 열거나, 이전에 저장된 코스를 바로 열 수 있습니다.';
       listEl.innerHTML = routes.map((r, i) => {
         const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
         const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
