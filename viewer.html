@@ -353,9 +353,13 @@
     autoSaveOfflineMap(points);
   }
 
+  // 코스를 화면 시각적 정중앙에 정확히 배치 (상단 헤더 여백 보정)
   function fitRoute() {
     if (!map || !polyline) return;
-    map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+    map.fitBounds(polyline.getBounds(), {
+      paddingTopLeft: [40, 85],
+      paddingBottomRight: [40, 45]
+    });
   }
 
   // 지도가 열리면 자동으로 주변 지형도 타일을 백그라운드 캐싱 (산속 통신두절 대비)
@@ -375,6 +379,7 @@
     badge.style.opacity = '1';
     badge.innerText = '💾 오프라인 등산지도 자동 저장 중... (0%)';
 
+    // 경로의 기하학적 중심 계산
     let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
     points.forEach(p => {
       if (p.lat < minLat) minLat = p.lat;
@@ -383,13 +388,30 @@
       if (p.lon > maxLon) maxLon = p.lon;
     });
 
-    const margin = 0.012; // 약 1.2km 마진
-    minLat -= margin; maxLat += margin;
-    minLon -= margin; maxLon += margin;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
 
+    // 위도 및 경도 방향의 실제 거리(km) 계산
+    const latDistKm = (maxLat - minLat) * 111.0;
+    const lonDistKm = (maxLon - minLon) * 111.0 * Math.cos(centerLat * Math.PI / 180);
+
+    // 한쪽으로 치우치지 않도록 더 긴 축 기준으로 동서남북 사방 동일 반경(정사각형 대칭) 설정
+    const maxHalfKm = Math.max(latDistKm, lonDistKm) / 2.0;
+    const padKm = 1.6; // 사방 균일 여유 마진 (약 1.6km)
+    const radiusKm = maxHalfKm + padKm;
+
+    const dLat = radiusKm / 111.0;
+    const dLon = radiusKm / (111.0 * Math.cos(centerLat * Math.PI / 180));
+
+    const symMinLat = centerLat - dLat;
+    const symMaxLat = centerLat + dLat;
+    const symMinLon = centerLon - dLon;
+    const symMaxLon = centerLon + dLon;
+
+    // 사방 대칭 정사각형 영역으로 줌 13~17 타일 목록 생성
     const tileUrls = [];
     for (let z = 13; z <= 17; z++) {
-      const tiles = getTilesForBounds(minLat, maxLat, minLon, maxLon, z);
+      const tiles = getTilesForBounds(symMinLat, symMaxLat, symMinLon, symMaxLon, z);
       tiles.forEach(t => {
         tileUrls.push(`https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/${t.z}/${t.x}/${t.y}.png`);
       });
