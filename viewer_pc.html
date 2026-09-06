@@ -638,50 +638,93 @@
     }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
   }
 
-  // 산에서 여러 코스를 오프라인으로 골라볼 수 있도록, 코스를 하나만 덮어쓰지
-  // 않고 여러 개를 배열로 보관한다. 저장 키는 이름이 아니라 원본 GPX
-  // 주소(sourceUrl)다 — "남덕유산_20250501.gpx"와 "남덕유산_20251217.gpx"처럼
-  // 이름은 같아도 실제로는 다른 코스인 경우가 있기 때문이다.
+  // 산에서 여러 코스를 오프라인으로 골라볼 수 있도록 배열로 보관하되,
+  // 같은 GPX 파일이나 같은 코스는 반드시 1개만 유지하며 최신 내용으로 갱신(upsert)한다.
   const SAVED_ROUTES_KEY = 'saved_hiking_routes_v1';
   const MAX_SAVED_ROUTES = 5;
+
+  function extractGpxFileName(str) {
+    if (!str) return '';
+    try { str = decodeURIComponent(str); } catch(e) {}
+    const m = str.match(/([^\/\?#&=:"']+\.gpx)/i);
+    return m ? m[1].toLowerCase().replace(/\.gpx$/i, '').trim() : '';
+  }
+
+  function normalizeCourseKey(name, url) {
+    const file = extractGpxFileName(url) || extractGpxFileName(name);
+    if (file) {
+      return file.replace(/[_-\s]+/g, '').toLowerCase();
+    }
+    if (name) {
+      let n = name;
+      try { n = decodeURIComponent(n); } catch(e) {}
+      return n.replace(/^🚩\s*/, '')
+              .replace(/등산지도|등산로|지도/g, '')
+              .replace(/[_-\s]+/g, '')
+              .toLowerCase()
+              .trim();
+    }
+    return '';
+  }
+
+  function isSameRoute(a, b) {
+    if (!a || !b) return false;
+    if (a.sourceUrl && b.sourceUrl && a.sourceUrl === b.sourceUrl) return true;
+    const keyA = normalizeCourseKey(a.name, a.sourceUrl);
+    const keyB = normalizeCourseKey(b.name, b.sourceUrl);
+    if (keyA && keyB && keyA === keyB) return true;
+    return false;
+  }
 
   function loadSavedRoutes() {
     try {
       const raw = localStorage.getItem(SAVED_ROUTES_KEY);
       const list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list : [];
+      if (!Array.isArray(list)) return [];
+
+      // 기존 저장 목록에 동일 코스가 중복 누적된 경우 최신 1개만 남기고 자동 정리
+      const unique = [];
+      list.forEach(item => {
+        if (!unique.some(u => isSameRoute(u, item))) {
+          unique.push(item);
+        }
+      });
+      if (unique.length !== list.length) {
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(unique));
+      }
+      return unique;
     } catch(e) { return []; }
   }
 
   function saveRouteToStorage(courseName, sourceUrl, points) {
     try {
-      let list = loadSavedRoutes();
-      const key = sourceUrl || null;
-      // 같은 원본 주소가 이미 있으면 최신 내용으로 갱신하고 맨 앞으로 올린다.
-      // key가 없는(직접 파일 선택) 경우는 항상 새 항목으로 추가한다.
-      if (key) list = list.filter(r => r.sourceUrl !== key);
-      list.unshift({
+      const newRoute = {
         name: courseName,
-        sourceUrl: key,
+        sourceUrl: sourceUrl || null,
         points: points,
         savedAt: Date.now()
-      });
+      };
+      let list = loadSavedRoutes();
+      // 같은 코스가 이미 있으면 기존 항목을 모두 제거하고 최신으로 맨 앞에 1개만 등록
+      list = list.filter(r => !isSameRoute(r, newRoute));
+      list.unshift(newRoute);
       if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
       localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
     } catch(e) {
-      // 용량 초과 등으로 저장 실패 시, 가장 오래된 절반을 지우고 한 번 더 시도한다.
       try {
         let list = loadSavedRoutes();
         list = list.slice(0, Math.ceil(list.length / 2));
-        list.unshift({ name: courseName, sourceUrl: sourceUrl || null, points: points, savedAt: Date.now() });
+        const newRoute = { name: courseName, sourceUrl: sourceUrl || null, points: points, savedAt: Date.now() };
+        list = list.filter(r => !isSameRoute(r, newRoute));
+        list.unshift(newRoute);
         localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
       } catch(e2) {}
     }
   }
 
-  function findSavedRouteByUrl(url) {
-    if (!url) return null;
-    return loadSavedRoutes().find(r => r.sourceUrl === url) || null;
+  function findSavedRoute(courseName, url) {
+    const target = { name: courseName, sourceUrl: url };
+    return loadSavedRoutes().find(r => isSameRoute(r, target)) || null;
   }
 
   // 경로 그리기
@@ -891,12 +934,13 @@
     if (!file) return;
 
     const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+    const sourceUrl = 'file:' + file.name;
     const reader = new FileReader();
     reader.onload = function(evt) {
       try {
         const points = parseGPX(evt.target.result);
         closeModal();
-        drawRoute(points, courseName);
+        drawRoute(points, courseName, sourceUrl);
       } catch(err) {
         alert('GPX 파일 오류: ' + err.message);
       }
@@ -1179,11 +1223,14 @@
     // "남덕유산_20251217.gpx"처럼 코스명은 같아도 실제로는 전혀 다른 GPX인
     // 경우가 있어, 이름만 보고 캐시를 재사용하면 엉뚱한 지도가 뜨는 버그가
     // 있었다.
-    if (gpxUrl) {
-      const cached = findSavedRouteByUrl(gpxUrl);
+    // 🌟 핵심: 다운받기 전에 캐시에 이미 저장되어 있는지 먼저 체크!
+    // 동일한 GPX 파일명 또는 코스명이 이미 있으면 외부 다운로드를 하지 않고 캐시에서 즉시 복원 (0.001초 로딩 & 중복 방지)
+    if (gpxUrl || decodedCourseName) {
+      const cached = findSavedRoute(decodedCourseName, gpxUrl);
       if (cached) {
-        drawRoute(cached.points, cached.name, cached.sourceUrl);
-        gpxUrl = null;
+        console.log('⚡ 이미 저장된 등산로 코스가 캐시에 있어 외부 다운로드를 생략하고 즉시 엽니다:', cached.name);
+        drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl);
+        gpxUrl = null; // 외부 다운로드 생략
       }
     }
 
