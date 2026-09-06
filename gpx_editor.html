@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>등산로 GPX 직접 제작기 - 지도에서 경로 찍기</title>
+
+  <!-- Leaflet 지도 엔진 (오프라인/로컬 지원) -->
+  <link rel="stylesheet" href="./leaflet.css">
+  <script src="./leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
+      background: #1e293b;
+    }
+
+    #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+
+    /* 상단 통합 헤더 바 */
+    .top-header {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+      display: flex; gap: 8px; align-items: center; pointer-events: none;
+      flex-wrap: wrap;
+    }
+    .header-panel {
+      pointer-events: auto; flex: 1; min-width: 280px;
+      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
+      padding: 8px 14px; border-radius: 16px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.15); border: 1.5px solid #81c784;
+      display: flex; gap: 10px; align-items: center; justify-content: space-between;
+    }
+    .brand-title {
+      font-size: 15px; font-weight: 900; color: #1b5e20; white-space: nowrap;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .input-course-name {
+      flex: 1; max-width: 240px; padding: 7px 12px; font-size: 13px; font-weight: 700;
+      border: 1.5px solid #a5d6a7; border-radius: 10px; outline: none;
+      background: #f1f8e9; color: #1b5e20;
+    }
+    .input-course-name:focus { border-color: #2e7d32; background: #ffffff; }
+
+    .header-actions {
+      display: flex; gap: 6px; align-items: center; pointer-events: auto;
+    }
+    .btn-action {
+      padding: 8px 14px; font-size: 13px; font-weight: 800; border-radius: 10px;
+      border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;
+      white-space: nowrap; transition: all 0.2s;
+    }
+    .btn-action:active { transform: scale(0.95); }
+    .btn-save-gpx {
+      background: #2e7d32; color: #ffffff; box-shadow: 0 3px 10px rgba(46,125,50,0.35);
+    }
+    .btn-save-gpx:hover { background: #1b5e20; }
+    .btn-preview {
+      background: #e8f5e9; color: #1b5e20; border: 1.5px solid #a5d6a7;
+    }
+    .btn-preview:hover { background: #c8e6c9; }
+    .btn-nav-maker {
+      background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; text-decoration: none;
+    }
+
+    /* 산 / 지명 검색창 */
+    .search-box {
+      position: absolute; top: 72px; left: 14px; z-index: 1000;
+      display: flex; gap: 6px; pointer-events: auto;
+    }
+    .input-search {
+      width: 200px; padding: 8px 12px; font-size: 13px; font-weight: 600;
+      border-radius: 10px; border: 1.5px solid #c8e6c9; background: rgba(255,255,255,0.95);
+      box-shadow: 0 3px 12px rgba(0,0,0,0.12); outline: none;
+    }
+    .input-search:focus { width: 240px; border-color: #2e7d32; }
+    .btn-search {
+      padding: 8px 12px; background: #2e7d32; color: #fff; font-size: 13px; font-weight: 700;
+      border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 3px 10px rgba(46,125,50,0.3);
+    }
+
+    /* 하단 통계 및 조작 패널 */
+    .bottom-panel {
+      position: absolute; bottom: 20px; left: 14px; right: 14px; z-index: 1000;
+      pointer-events: none; display: flex; justify-content: center;
+    }
+    .status-card {
+      pointer-events: auto; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
+      padding: 12px 20px; border-radius: 20px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.18); border: 1.5px solid #c8e6c9;
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center;
+    }
+    .stat-item {
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .stat-label { font-size: 11px; font-weight: 700; color: #64748b; }
+    .stat-val { font-size: 18px; font-weight: 900; color: #1b5e20; }
+
+    .control-divider { width: 1px; height: 32px; background: #cbd5e1; }
+
+    .tool-btn-group {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .btn-tool {
+      padding: 8px 14px; font-size: 13px; font-weight: 800; border-radius: 10px;
+      border: 1.5px solid #cbd5e1; background: #ffffff; color: #334155; cursor: pointer;
+      display: flex; align-items: center; gap: 5px; transition: all 0.2s;
+    }
+    .btn-tool:hover { background: #f1f5f9; }
+    .btn-tool.active { background: #e8f5e9; border-color: #2e7d32; color: #1b5e20; }
+    .btn-tool.danger { color: #dc2626; border-color: #fca5a5; }
+    .btn-tool.danger:hover { background: #fee2e2; }
+
+    /* 우측 지도 레이어 메뉴 버튼 */
+    .fab-col {
+      position: absolute; right: 14px; top: 72px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .fab-btn {
+      width: 46px; height: 46px; border-radius: 50%; background: #ffffff;
+      border: 1.5px solid #c8e6c9; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex; justify-content: center; align-items: center;
+      font-size: 20px; cursor: pointer; color: #2e7d32; transition: all 0.2s;
+    }
+    .fab-btn:active { transform: scale(0.92); }
+
+    .layer-menu {
+      position: absolute; right: 68px; top: 72px; z-index: 1000;
+      background: #ffffff; border-radius: 12px; padding: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
+      display: none; flex-direction: column; gap: 6px; min-width: 170px;
+    }
+    .layer-item {
+      padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
+      border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .layer-item.selected { background: #e8f5e9; color: #1b5e20; }
+    .layer-item:hover { background: #f1f8e9; }
+
+    /* 마커 뱃지 */
+    .route-badge {
+      color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px;
+      border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+    }
+
+    /* 알림 토스트 */
+    .toast {
+      position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 9999;
+      background: rgba(15, 23, 42, 0.95); color: #ffffff; font-size: 13px; font-weight: 700;
+      padding: 10px 22px; border-radius: 20px; box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+      backdrop-filter: blur(4px); pointer-events: none; transition: opacity 0.4s ease;
+      display: none; text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 상단 헤더 -->
+<div class="top-header">
+  <div class="header-panel">
+    <div class="brand-title">
+      <span>⛰️</span>
+      <span>등산로 GPX 제작기</span>
+    </div>
+
+    <input type="text" id="courseNameInput" class="input-course-name" placeholder="코스 이름 (예: 남덕유산_종주)">
+
+    <div class="header-actions">
+      <button class="btn-action btn-save-gpx" onclick="exportGPX()">
+        💾 GPX 파일 저장
+      </button>
+      <button class="btn-action btn-preview" onclick="previewInViewer()" title="내 등산로 뷰어에서 오프라인 지도로 바로 테스트">
+        🚀 뷰어로 테스트
+      </button>
+      <a href="./gpx_maker.html" class="btn-action btn-nav-maker" title="블로그 링크 생성기로 이동">
+        🔗 블로그 도구
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- 산 / 지명 검색창 -->
+<div class="search-box">
+  <input type="text" id="searchInput" class="input-search" placeholder="산 이름 검색 (예: 지리산, 설악산)" onkeypress="if(event.key==='Enter') searchLocation()">
+  <button class="btn-search" onclick="searchLocation()">🔍 검색</button>
+</div>
+
+<!-- 우측 플로팅 버튼 -->
+<div class="fab-col">
+  <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+  <button class="fab-btn" onclick="fitRoute()" title="전체 코스 한눈에">🔍</button>
+  <label for="importGpxInput" class="fab-btn" title="기존 GPX 파일 불러와서 이어그리기" style="cursor: pointer;">
+    📂
+    <input type="file" id="importGpxInput" accept=".gpx" style="display: none;" onchange="importGPX(event)">
+  </label>
+</div>
+
+<!-- 지도 레이어 선택 메뉴 -->
+<div class="layer-menu" id="layerMenu">
+  <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도 (등고선)</div>
+  <div class="layer-item" id="lyrBasic" onclick="switchLayer('basic')">🧭 네이버 일반지도</div>
+  <div class="layer-item" id="lyrSatellite" onclick="switchLayer('satellite')">🛰️ 네이버 위성사진</div>
+  <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (전세계)</div>
+</div>
+
+<!-- 하단 통계 및 조작 패널 -->
+<div class="bottom-panel">
+  <div class="status-card">
+    <div class="stat-item">
+      <span class="stat-label">총 거리</span>
+      <span class="stat-val" id="totalDist">0.0 km</span>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="stat-item">
+      <span class="stat-label">경유지</span>
+      <span class="stat-val" id="pointCount">0 개</span>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="stat-item">
+      <span class="stat-label">예상 시간</span>
+      <span class="stat-val" id="estTime">0분</span>
+    </div>
+
+    <div class="control-divider"></div>
+
+    <div class="tool-btn-group">
+      <button class="btn-tool active" id="drawModeBtn" onclick="toggleDrawMode()">
+        ✏️ 경유지 찍기 (ON)
+      </button>
+      <button class="btn-tool" onclick="undoLastPoint()" title="방금 찍은 마지막 점 1개 취소">
+        ↩️ 취소 (Undo)
+      </button>
+      <button class="btn-tool danger" onclick="clearAllPoints()" title="모든 경유지 지우고 처음부터">
+        🗑️ 전체 초기화
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let map = null;
+  let currentLayer = null;
+  let polyline = null;
+  let points = [];          // [{lat, lon}]
+  let pointMarkers = [];     // 중간 작은 점 마커들
+  let startMarker = null;    // 들머리 마커
+  let endMarker = null;      // 날머리 마커
+  let isDrawMode = true;
+  let naverTileVersion = '1788514292';
+
+  // 최신 네이버 타일 버전 자동 조회
+  fetch('https://map.pstatic.net/nrb/styles/terrain.json?fmt=png')
+    .then(r => r.json())
+    .then(d => { if (d && d.version) naverTileVersion = d.version; })
+    .catch(() => {});
+
+  function initMap() {
+    map = L.map('map', {
+      center: [35.755, 127.674], // 기본 위치: 남덕유산/지리산 인근
+      zoom: 14,
+      zoomControl: false,
+      maxZoom: 19
+    });
+
+    L.control.zoom({ position: 'topleft' }).addTo(map);
+
+    switchLayer('terrain');
+
+    // 지도 클릭 시 경유지 찍기
+    map.on('click', function(e) {
+      if (!isDrawMode) return;
+      addPoint(e.latlng.lat, e.latlng.lng);
+    });
+  }
+
+  function switchLayer(type) {
+    if (currentLayer) map.removeLayer(currentLayer);
+    document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
+
+    let url = '';
+    let maxNative = 17;
+
+    if (type === 'terrain') {
+      url = `https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrTerrain').classList.add('selected');
+    } else if (type === 'basic') {
+      url = `https://map.pstatic.net/nrb/styles/basic/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrBasic').classList.add('selected');
+    } else if (type === 'satellite') {
+      url = `https://map.pstatic.net/nrb/styles/satellite/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrSatellite').classList.add('selected');
+    } else if (type === 'opentopo') {
+      url = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+      maxNative = 16;
+      document.getElementById('lyrTopo').classList.add('selected');
+    }
+
+    currentLayer = L.tileLayer(url, {
+      maxZoom: 19,
+      maxNativeZoom: maxNative,
+      attribution: '© NAVER'
+    }).addTo(map);
+
+    document.getElementById('layerMenu').style.display = 'none';
+  }
+
+  function toggleLayerMenu() {
+    const menu = document.getElementById('layerMenu');
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  // 거리 계산 (Haversine 공식, km 단위)
+  function calcDistanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371.0;
+    const dLat = (lat2 - lat1) * Math.PI / 180.0;
+    const dLon = (lon2 - lon1) * Math.PI / 180.0;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180.0) * Math.cos(lat2 * Math.PI / 180.0) *
+              Math.sin(dLon / 2) ** 2;
+    return 2.0 * R * Math.asin(Math.sqrt(a));
+  }
+
+  // 점 추가
+  function addPoint(lat, lon) {
+    points.push({ lat, lon });
+    updatePath();
+  }
+
+  // 마지막 점 취소 (Undo)
+  function undoLastPoint() {
+    if (points.length === 0) {
+      showToast('취소할 경유지가 없습니다.');
+      return;
+    }
+    points.pop();
+    updatePath();
+    showToast('마지막 경유지를 취소했습니다.');
+  }
+
+  // 전체 초기화
+  function clearAllPoints() {
+    if (points.length === 0) return;
+    if (!confirm('정말 모든 경유지를 지우고 새로 시작하시겠습니까?')) return;
+    points = [];
+    updatePath();
+    showToast('모든 경유지가 초기화되었습니다.');
+  }
+
+  // 그리기 모드 토글
+  function toggleDrawMode() {
+    isDrawMode = !isDrawMode;
+    const btn = document.getElementById('drawModeBtn');
+    if (isDrawMode) {
+      btn.classList.add('active');
+      btn.innerText = '✏️ 경유지 찍기 (ON)';
+      showToast('경유지 찍기 모드가 켜졌습니다. 지도를 클릭하세요.');
+    } else {
+      btn.classList.remove('active');
+      btn.innerText = '✋ 지도 이동 모드 (OFF)';
+      showToast('지도 이동 모드입니다. 클릭해도 점이 찍히지 않습니다.');
+    }
+  }
+
+  // 경로 및 마커 재렌더링 & 통계 갱신
+  function updatePath() {
+    if (!polyline) {
+      polyline = L.polyline([], { color: '#d32f2f', weight: 5, opacity: 0.95 }).addTo(map);
+    }
+
+    const latlngs = points.map(p => [p.lat, p.lon]);
+    polyline.setLatLngs(latlngs);
+
+    // 기존 중간 마커 제거
+    pointMarkers.forEach(m => map.removeLayer(m));
+    pointMarkers = [];
+
+    // 중간 점 원형 마커 표시 (클릭 시 해당 점 정보)
+    points.forEach((p, idx) => {
+      if (idx > 0 && idx < points.length - 1) {
+        const circle = L.circleMarker([p.lat, p.lon], {
+          radius: 4,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#d32f2f',
+          fillOpacity: 1
+        }).addTo(map);
+        circle.bindTooltip(`경유지 ${idx + 1}`, { direction: 'top' });
+        pointMarkers.push(circle);
+      }
+    });
+
+    // 시작점 (들머리) 마커
+    if (startMarker) map.removeLayer(startMarker);
+    startMarker = null;
+    if (points.length > 0) {
+      const p = points[0];
+      const icon = L.divIcon({
+        className: 'custom-badge-icon',
+        html: '<div class="route-badge" style="background:#1976d2;">🚩 들머리</div>',
+        iconAnchor: [30, 12]
+      });
+      startMarker = L.marker([p.lat, p.lon], { icon }).addTo(map);
+    }
+
+    // 끝점 (날머리) 마커
+    if (endMarker) map.removeLayer(endMarker);
+    endMarker = null;
+    if (points.length > 1) {
+      const p = points[points.length - 1];
+      const icon = L.divIcon({
+        className: 'custom-badge-icon',
+        html: '<div class="route-badge" style="background:#d32f2f;">🏁 날머리</div>',
+        iconAnchor: [30, 12]
+      });
+      endMarker = L.marker([p.lat, p.lon], { icon }).addTo(map);
+    }
+
+    // 총 거리 계산
+    let totalKm = 0.0;
+    for (let i = 1; i < points.length; i++) {
+      totalKm += calcDistanceKm(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+    }
+
+    // 예상 소요 시간 계산 (평균 산행 시속 2.5km)
+    const hours = totalKm / 2.5;
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    let timeStr = '';
+    if (h > 0) timeStr = `${h}시간 ${m}분`;
+    else timeStr = `${m}분`;
+
+    document.getElementById('totalDist').innerText = `${totalKm.toFixed(2)} km`;
+    document.getElementById('pointCount').innerText = `${points.length} 개`;
+    document.getElementById('estTime').innerText = points.length > 1 ? timeStr : '0분';
+  }
+
+  // 전체 코스 화면에 맞추기
+  function fitRoute() {
+    if (!polyline || points.length === 0) {
+      showToast('그려진 코스가 없습니다.');
+      return;
+    }
+    map.fitBounds(polyline.getBounds(), { padding: [60, 60] });
+  }
+
+  // 산 / 지명 검색 (OpenStreetMap Nominatim 사용)
+  async function searchLocation() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+
+    showToast(`🔍 '${q}' 위치를 찾는 중...`);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' 대한민국')}&countrycodes=kr&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const item = data[0];
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        map.setView([lat, lon], 14);
+        showToast(`📍 '${item.display_name.split(',')[0]}'(으)로 이동했습니다.`);
+      } else {
+        showToast(`'${q}' 검색 결과를 찾지 못했습니다.`);
+      }
+    } catch(err) {
+      showToast('검색 중 오류가 발생했습니다.');
+    }
+  }
+
+  // 표준 GPX 1.1 파일 생성 및 다운로드
+  function exportGPX() {
+    if (points.length < 2) {
+      alert('최소 2개 이상의 경유지를 찍어야 GPX 파일로 저장할 수 있습니다.');
+      return;
+    }
+
+    let courseName = document.getElementById('courseNameInput').value.trim();
+    if (!courseName) courseName = '나만의_등산로_코스';
+
+    const now = new Date().toISOString();
+
+    let trkpts = '';
+    points.forEach(p => {
+      trkpts += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">
+        <ele>0</ele>
+        <time>${now}</time>
+      </trkpt>\n`;
+    });
+
+    const gpxXml = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="gaja-trail-editor" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${courseName}</name>
+    <time>${now}</time>
+  </metadata>
+  <trk>
+    <name>${courseName}</name>
+    <trkseg>
+${trkpts}    </trkseg>
+  </trk>
+</gpx>`;
+
+    const blob = new Blob([gpxXml], { type: 'application/gpx+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${courseName}.gpx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`🎉 '${courseName}.gpx' 파일이 다운로드되었습니다!`);
+  }
+
+  // 내 뷰어로 바로 테스트 (로컬스토리지 연동)
+  function previewInViewer() {
+    if (points.length < 2) {
+      alert('최소 2개 이상의 경유지를 찍어주세요.');
+      return;
+    }
+
+    let courseName = document.getElementById('courseNameInput').value.trim();
+    if (!courseName) courseName = '직접 제작한 등산로';
+
+    try {
+      localStorage.setItem('saved_hiking_route', JSON.stringify({
+        name: courseName,
+        points: points.map(p => ({ lat: p.lat, lon: p.lon, ele: null }))
+      }));
+      window.open('./viewer.html', '_blank');
+    } catch(e) {
+      alert('뷰어 연동 중 오류: ' + e.message);
+    }
+  }
+
+  // 기존 GPX 파일 불러와서 이어그리기
+  function importGPX(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+    document.getElementById('courseNameInput').value = courseName;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const text = evt.target.result;
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'text/xml');
+        const trkpts = Array.from(xml.querySelectorAll('trkpt'));
+        if (!trkpts.length) throw new Error('GPX 파일 안에 트랙 포인트가 없습니다.');
+
+        points = trkpts.map(pt => ({
+          lat: parseFloat(pt.getAttribute('lat')),
+          lon: parseFloat(pt.getAttribute('lon'))
+        })).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+        updatePath();
+        fitRoute();
+        showToast(`📂 '${courseName}' GPX를 불러왔습니다. 이어서 점을 찍을 수 있습니다!`);
+      } catch(err) {
+        alert('GPX 불러오기 오류: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.innerText = msg;
+    t.style.display = 'block';
+    t.style.opacity = '1';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.style.opacity = '0';
+      setTimeout(() => { t.style.display = 'none'; }, 400);
+    }, 2500);
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    showToast('💡 지도를 클릭하여 나만의 등산로 코스를 그려보세요!');
+  });
+</script>
+
+</body>
+</html>
