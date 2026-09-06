@@ -69,29 +69,15 @@
     .layer-item.selected { background: #e8f5e9; color: #1b5e20; }
     .layer-item:hover { background: #f1f8e9; }
 
-    /* 하단 대시보드 카드 */
-    .bottom-panel {
-      position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 1000;
-      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      border-radius: 16px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); border: 1px solid #e0e0e0;
-      padding: 10px 14px;
+    /* 플로팅 GPS 상태 안내 토스트 */
+    .gps-toast {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+      background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px);
+      border-radius: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 1.5px solid #81c784;
+      padding: 8px 18px; font-size: 13px; font-weight: 700; color: #1b5e20;
+      white-space: nowrap; display: none; pointer-events: none;
     }
-
-    /* 오프라인 저장 버튼 */
-    .btn-offline-save {
-      width: 100%; padding: 11px; font-size: 13px; font-weight: 800;
-      background: #e8f5e9; color: #1b5e20; border: 1.5px dashed #81c784;
-      border-radius: 10px; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 6px;
-      transition: all 0.2s;
-    }
-    .btn-offline-save:active { background: #c8e6c9; }
-
-    /* GPS 상태 안내 문구 */
-    .gps-status {
-      margin-top: 8px; font-size: 12px; font-weight: 700; text-align: center;
-      padding: 6px 10px; border-radius: 8px; background: #f1f8e9; color: #1b5e20;
-    }
-    .gps-status.warning { background: #ffebee; color: #c62828; }
+    .gps-toast.warning { background: #ffebee; border-color: #ef5350; color: #c62828; }
 
     /* 현재 내 위치 GPS 펄스 핀 */
     .my-gps-pulse {
@@ -172,17 +158,8 @@
   </div>
 </div>
 
-<!-- 하단 정보 카드 -->
-<div class="bottom-panel" id="bottomPanel" style="display: none;">
-  <!-- 오프라인 캐시 저장 버튼 -->
-  <button class="btn-offline-save" id="btnOfflineSave" onclick="saveOfflineMapArea()">
-    📥 산행 전 이 등산로 주변 지도 저장 (산속 통신두절 대비)
-  </button>
-
-  <div class="gps-status" id="gpsStatus">
-    📍 [📍 버튼]을 누르면 산속에서도 내 위치가 실시간 표시됩니다.
-  </div>
-</div>
+<!-- 플로팅 GPS 상태 뱃지 (내 위치 켰을 때만 표시) -->
+<div class="gps-toast" id="gpsToast"></div>
 
 <script>
   // 1. PWA 서비스 워커 등록 (산속 오프라인 지도 캐싱 지원)
@@ -371,7 +348,9 @@
     } catch(e) {}
 
     document.getElementById('emptyModal').style.display = 'none';
-    document.getElementById('bottomPanel').style.display = 'block';
+
+    // 지도가 열리는 즉시 백그라운드에서 오프라인 등산지도 자동 캐시 저장!
+    autoSaveOfflineMap(points);
   }
 
   function fitRoute() {
@@ -379,30 +358,35 @@
     map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
   }
 
-  // 산행 전 주변 지도 타일 오프라인 영구 저장 (CacheStorage)
-  async function saveOfflineMapArea() {
-    const btn = document.getElementById('btnOfflineSave');
-    if (!currentPoints.length) return;
+  // 지도가 열리면 자동으로 주변 지형도 타일을 백그라운드 캐싱 (산속 통신두절 대비)
+  let isSavingCache = false;
+  async function autoSaveOfflineMap(points) {
+    if (isSavingCache || !points || !points.length) return;
+    isSavingCache = true;
 
-    btn.disabled = true;
-    btn.style.background = '#fff9c4';
-    btn.style.color = '#f57f17';
-    btn.innerText = '⏳ 등산로 주변 지형도 영역 계산 중...';
+    // 상단 자동 저장 미니 알림 뱃지
+    let badge = document.getElementById('offlineAutoBadge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'offlineAutoBadge';
+      badge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#ffffff; font-size:12px; font-weight:700; padding:8px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.2); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.6s ease;';
+      document.body.appendChild(badge);
+    }
+    badge.style.opacity = '1';
+    badge.innerText = '💾 오프라인 등산지도 자동 저장 중... (0%)';
 
     let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-    currentPoints.forEach(p => {
+    points.forEach(p => {
       if (p.lat < minLat) minLat = p.lat;
       if (p.lat > maxLat) maxLat = p.lat;
       if (p.lon < minLon) minLon = p.lon;
       if (p.lon > maxLon) maxLon = p.lon;
     });
 
-    // 등산로 주변 약 1.2km 마진 부여
-    const margin = 0.012;
+    const margin = 0.012; // 약 1.2km 마진
     minLat -= margin; maxLat += margin;
     minLon -= margin; maxLon += margin;
 
-    // 줌 레벨 13부터 17까지 타일 URL 목록 생성
     const tileUrls = [];
     for (let z = 13; z <= 17; z++) {
       const tiles = getTilesForBounds(minLat, maxLat, minLon, maxLon, z);
@@ -412,14 +396,13 @@
     }
 
     const total = tileUrls.length;
-    btn.innerText = `⏳ 지형도 저장 중... 0% (0/${total}장)`;
 
     try {
       const cache = await caches.open('gaja-trail-cache-v1');
       await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
 
       let completed = 0;
-      const batchSize = 10;
+      const batchSize = 12;
       for (let i = 0; i < tileUrls.length; i += batchSize) {
         const batch = tileUrls.slice(i, i + batchSize);
         await Promise.all(batch.map(async url => {
@@ -435,17 +418,18 @@
           completed++;
         }));
         const pct = Math.round((completed / total) * 100);
-        btn.innerText = `⏳ 지형도 저장 중... ${pct}% (${completed}/${total}장)`;
+        badge.innerText = `💾 오프라인 등산지도 자동 저장 중... (${pct}%)`;
       }
 
-      btn.innerText = '✅ 등산로 지도 저장 완료! (산속 비행기 모드에서도 100% 작동)';
-      btn.style.background = '#c8e6c9';
-      btn.style.color = '#1b5e20';
-      btn.style.borderStyle = 'solid';
-      btn.disabled = false;
+      badge.innerText = '✅ 오프라인 등산지도 저장 완료! (산속 통신두절 대비)';
+      badge.style.background = 'rgba(46,125,50,0.95)';
+      setTimeout(() => {
+        badge.style.opacity = '0';
+        setTimeout(() => badge.remove(), 600);
+      }, 3000);
     } catch(err) {
-      btn.innerText = '⚠️ 지도 저장 오류: ' + err.message;
-      btn.disabled = false;
+      console.warn('오프라인 캐시 자동 저장 실패:', err);
+      badge.remove();
     }
   }
 
@@ -469,15 +453,14 @@
   // 실시간 GPS 내 위치 추적 (비행기 탑승 모드/산속 오프라인 100% 동작)
   function toggleGPS() {
     const btn = document.getElementById('gpsBtn');
-    const status = document.getElementById('gpsStatus');
+    const toast = document.getElementById('gpsToast');
 
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
       if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
       btn.classList.remove('active');
-      status.className = 'gps-status';
-      status.innerText = '📍 [📍 버튼]을 누르면 산속에서도 내 위치가 실시간 표시됩니다.';
+      toast.style.display = 'none';
       return;
     }
 
@@ -487,7 +470,9 @@
     }
 
     btn.classList.add('active');
-    status.innerText = '📡 위성 GPS 신호 찾는 중...';
+    toast.style.display = 'block';
+    toast.className = 'gps-toast';
+    toast.innerText = '📡 위성 GPS 신호 수신 중...';
 
     watchId = navigator.geolocation.watchPosition(
       pos => {
@@ -514,16 +499,16 @@
         }
 
         if (minDistanceM > 50) {
-          status.className = 'gps-status warning';
-          status.innerText = `⚠️ 등산로 이탈 주의! (코스에서 ${Math.round(minDistanceM)}m 벗어남)`;
+          toast.className = 'gps-toast warning';
+          toast.innerText = `⚠️ 등산로 이탈 주의! (코스에서 ${Math.round(minDistanceM)}m 벗어남)`;
         } else {
-          status.className = 'gps-status';
-          status.innerText = `✅ 정상 등산로 진행 중 (위치 오차 ±${accuracy}m)`;
+          toast.className = 'gps-toast';
+          toast.innerText = `✅ 정상 등산로 진행 중 (오차 ±${accuracy}m)`;
         }
       },
       err => {
-        status.className = 'gps-status warning';
-        status.innerText = '⚠️ GPS 신호를 찾을 수 없습니다. 스마트폰 위치 권한을 확인하세요.';
+        toast.className = 'gps-toast warning';
+        toast.innerText = '⚠️ GPS 신호 수신 실패 (위치 권한 확인 필요)';
         btn.classList.remove('active');
         watchId = null;
       },
