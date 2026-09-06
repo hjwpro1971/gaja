@@ -176,13 +176,13 @@
   let currentPoints = [];
   let userGpsMarker = null;
   let watchId = null;
-  let naverTileVersion = '1788514292';
-
-  // 온라인일 경우 최신 네이버 타일 버전 번호 자동 동기화
-  fetch('https://map.pstatic.net/nrb/styles/terrain.json?fmt=png')
-    .then(r => r.json())
-    .then(d => { if (d && d.version) naverTileVersion = d.version; })
-    .catch(() => {});
+  // 버전 번호를 고정한다. 온라인일 때마다 최신 버전을 새로 받아오면, 이전에
+  // 저장해둔 오프라인 타일 캐시의 URL(버전 포함)과 새 요청 URL이 달라져
+  // 캐시가 있어도 매번 다시 다운로드하는 문제가 있었다. 네이버 타일 서버의
+  // 버전 문자열은 실제로 거의 바뀌지 않으므로 고정값으로 캐시 재사용을
+  // 보장하고, 버전이 바뀌어 지도가 깨지는 게 확인되면 이 값만 수동으로
+  // 갱신한다.
+  const naverTileVersion = '1788514292';
 
   // 2. 지도 초기화
   function initMap() {
