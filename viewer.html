@@ -800,6 +800,7 @@
       await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
 
       let completed = 0;
+      let failedCount = 0;
       const batchSize = 12;
       for (let i = 0; i < tileUrls.length; i += batchSize) {
         const batch = tileUrls.slice(i, i + batchSize);
@@ -810,17 +811,26 @@
               const res = await fetch(url, { mode: 'cors' });
               if (res.ok) {
                 await cache.put(url, res);
+              } else {
+                failedCount++;
               }
             }
-          } catch(e) {}
+          } catch(e) {
+            failedCount++;
+          }
           completed++;
         }));
         const pct = Math.round((completed / total) * 100);
         badge.innerText = `💾 오프라인 등산지도 자동 저장 중... (${pct}%)`;
       }
 
-      badge.innerText = '✅ 오프라인 등산지도 저장 완료! (산속 통신두절 대비)';
-      badge.style.background = 'rgba(46,125,50,0.95)';
+      if (failedCount === 0) {
+        badge.innerText = '✅ 오프라인 등산지도 저장 완료! (산속 통신두절 대비)';
+        badge.style.background = 'rgba(46,125,50,0.95)';
+      } else {
+        badge.innerText = `⚠️ 오프라인 저장 완료 (일부 타일 ${failedCount}개 실패 — 오프라인 시 해당 구간 미표시될 수 있음)`;
+        badge.style.background = 'rgba(230,81,0,0.95)';
+      }
       setTimeout(() => {
         badge.style.opacity = '0';
         setTimeout(() => badge.remove(), 600);
@@ -1012,8 +1022,7 @@
     }
   }
 
-  // 블로그 등 외부 서버의 CORS 제한을 우회하여 GPX 내용을 즉시 가져오는 함수
-    // 외부 서버(네이버 등) 및 깃허브 tracks에서 안전하게 GPX를 가져오는 고성능 로더
+  // 외부 서버(네이버 등) 및 깃허브 tracks에서 안전하게 GPX를 가져오는 고성능 로더
   async function fetchGPXFile(targetUrl) {
     let cleanUrl = targetUrl.trim();
     // %25EA 등 이중 인코딩된 URL을 완전 해독 후 올바른 1회 인코딩 적용
@@ -1028,6 +1037,8 @@
       cleanUrl = encodeURI(cleanUrl);
     } catch(e) {}
 
+    const errors = [];
+
     // 1. 직접 다운로드 시도 (GitHub Pages, Raw, CORS 허용 서버 등)
     try {
       const res = await fetchWithTimeout(cleanUrl, 5000);
@@ -1036,8 +1047,13 @@
         if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
           return text;
         }
+        errors.push(`1) 직접 다운로드: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`1) 직접 다운로드 실패: HTTP ${res.status}`);
       }
-    } catch(e) {}
+    } catch(e) {
+      errors.push(`1) 직접 다운로드 실패: ${e.message || '네트워크/CORS 제한'}`);
+    }
 
     // 2. 🌟 핵심 복구 기능: 네이버 블로그 링크가 만료(403)되었을 때
     // URL 속 파일명(예: 남덕유산_20250501.gpx)을 추출하여 우리 tracks 저장소에서 즉시 대체 로드!
@@ -1063,8 +1079,13 @@
             }
           } catch(e) {}
         }
+        errors.push(`2) 저장소 대체 복구: '${fname}' 파일 없음`);
+      } else {
+        errors.push(`2) 저장소 대체 복구: 파일명 추출 불가`);
       }
-    } catch(e) {}
+    } catch(e) {
+      errors.push(`2) 저장소 대체 복구 실패: ${e.message}`);
+    }
 
     // 3. allorigins 공개 프록시 시도
     try {
@@ -1074,8 +1095,13 @@
         if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
           return text;
         }
+        errors.push(`3) 공개 프록시: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`3) 공개 프록시 실패: HTTP ${res.status}`);
       }
-    } catch(e) {}
+    } catch(e) {
+      errors.push(`3) 공개 프록시 실패: ${e.message || '타임아웃'}`);
+    }
 
     // 4. 나스 서버 로컬 프록시 시도
     try {
@@ -1085,10 +1111,15 @@
         if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
           return text;
         }
+        errors.push(`4) 로컬 프록시: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`4) 로컬 프록시 실패: HTTP ${res.status}`);
       }
-    } catch(e) {}
+    } catch(e) {
+      errors.push(`4) 로컬 프록시 실패: ${e.message || '연결 불가'}`);
+    }
 
-    throw new Error('GPX 첨부파일 링크가 만료되었거나 접근할 수 없습니다.');
+    throw new Error('모든 방식으로 등산로 파일을 불러오지 못했습니다.\n[상세 사유]\n' + errors.join('\n'));
   }
 
   window.addEventListener('DOMContentLoaded', async () => {

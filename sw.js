@@ -36,9 +36,9 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   const url = req.url;
 
-  // 1. viewer.html 등 웹페이지 문서는 "Network-First"
+  // 1. viewer.html / viewer_pc.html 등 웹페이지 문서는 "Network-First"
   // 온라인이면 항상 최신 코드를 즉시 받아오고, 인터넷이 안 되는 산속(오프라인)일 때만 캐시 사용!
-  if (req.mode === 'navigate' || url.includes('viewer.html') || url.endsWith('/gaja/')) {
+  if (req.mode === 'navigate' || url.includes('viewer.html') || url.includes('viewer_pc.html') || url.endsWith('/gaja/')) {
     event.respondWith(
       fetch(req).then(networkResponse => {
         if (networkResponse && networkResponse.status === 200) {
@@ -47,7 +47,8 @@ self.addEventListener('fetch', event => {
         }
         return networkResponse;
       }).catch(() => {
-        return caches.match(req).then(cached => cached || caches.match('./viewer.html'));
+        const fallbackTarget = url.includes('viewer_pc.html') ? './viewer_pc.html' : './viewer.html';
+        return caches.match(req).then(cached => cached || caches.match(fallbackTarget));
       })
     );
     return;

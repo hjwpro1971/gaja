@@ -811,9 +811,10 @@
 
     let trkpts = '';
     allTrailPoints.forEach(p => {
-      trkpts += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">
-        <ele>0</ele>
-        <time>${now}</time>
+      const eleTag = (p.ele !== null && p.ele !== undefined && !isNaN(p.ele)) ? `\n        <ele>${p.ele}</ele>` : '';
+      const timeStr = p.time ? (p.time instanceof Date ? p.time.toISOString() : p.time) : now;
+      trkpts += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">${eleTag}
+        <time>${timeStr}</time>
       </trkpt>\n`;
     });
 
@@ -1007,6 +1008,40 @@ ${trkpts}    </trkseg>
     }
   });
 
+  // viewer.html의 스키마와 동일하게 저장 (saved_hiking_routes_v1)
+  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v1';
+  const MAX_SAVED_ROUTES = 5;
+
+  function loadSavedRoutes() {
+    try {
+      const raw = localStorage.getItem(SAVED_ROUTES_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch(e) { return []; }
+  }
+
+  function saveRouteToViewerStorage(courseName, sourceKey, points) {
+    try {
+      let list = loadSavedRoutes();
+      if (sourceKey) list = list.filter(r => r.sourceUrl !== sourceKey);
+      list.unshift({
+        name: courseName,
+        sourceUrl: sourceKey,
+        points: points,
+        savedAt: Date.now()
+      });
+      if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+    } catch(e) {
+      try {
+        let list = loadSavedRoutes();
+        list = list.slice(0, Math.ceil(list.length / 2));
+        list.unshift({ name: courseName, sourceUrl: sourceKey, points: points, savedAt: Date.now() });
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      } catch(e2) {}
+    }
+  }
+
   // 내 뷰어로 바로 테스트
   async function previewInViewer() {
     if (waypoints.length < 2) {
@@ -1022,10 +1057,15 @@ ${trkpts}    </trkseg>
     if (!courseName) courseName = '직접 제작한 등산로';
 
     try {
-      localStorage.setItem('saved_hiking_route', JSON.stringify({
-        name: courseName,
-        points: allTrailPoints.map(p => ({ lat: p.lat, lon: p.lon, ele: null }))
+      // editor:접두사를 부여하여 동일 이름으로 다시 테스트 시 중복 슬롯 소진 없이 갱신(upsert)
+      const sourceKey = 'editor:' + courseName;
+      const pointsToSave = allTrailPoints.map(p => ({
+        lat: p.lat,
+        lon: p.lon,
+        ele: (p.ele !== undefined ? p.ele : null),
+        time: p.time || null
       }));
+      saveRouteToViewerStorage(courseName, sourceKey, pointsToSave);
       window.open('./viewer.html', '_blank');
     } catch(e) {
       alert('뷰어 연동 중 오류: ' + e.message);
@@ -1049,10 +1089,20 @@ ${trkpts}    </trkseg>
         const trkpts = Array.from(xml.querySelectorAll('trkpt'));
         if (!trkpts.length) throw new Error('GPX 파일 안에 트랙 포인트가 없습니다.');
 
-        allTrailPoints = trkpts.map(pt => ({
-          lat: parseFloat(pt.getAttribute('lat')),
-          lon: parseFloat(pt.getAttribute('lon'))
-        })).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+        allTrailPoints = trkpts.map(pt => {
+          const lat = parseFloat(pt.getAttribute('lat'));
+          const lon = parseFloat(pt.getAttribute('lon'));
+          const eleEl = pt.querySelector('ele') || pt.getElementsByTagName('ele')[0];
+          const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+          const timeEl = pt.querySelector('time') || pt.getElementsByTagName('time')[0];
+          const time = timeEl ? timeEl.textContent.trim() : null;
+          return {
+            lat,
+            lon,
+            ele: (ele !== null && !isNaN(ele) ? ele : null),
+            time: time || null
+          };
+        }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
 
         waypoints = [allTrailPoints[0], allTrailPoints[allTrailPoints.length - 1]];
 
