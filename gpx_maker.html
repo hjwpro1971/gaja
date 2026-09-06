@@ -210,6 +210,28 @@
     .file-badge.done { background: #c8e6c9; color: #1b5e20; }
     .file-badge.error { background: #ffcdd2; color: #b71c1c; }
 
+  
+    .btn-telegram {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+      background: linear-gradient(135deg, #29b6f6 0%, #0288d1 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(2,136,209,0.3);
+      transition: all 0.2s;
+    }
+    .btn-telegram:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(2,136,209,0.4); }
+    .btn-telegram:active { transform: translateY(0); }
+
   </style>
 </head>
 <body>
@@ -299,6 +321,10 @@
 
       <button class="btn-super-copy" onclick="copyRichHyperlink()">
         📋 링크 걸린 버튼 복사하기 (블로그에 바로 붙여넣기용)
+      </button>
+
+      <button type="button" class="btn-telegram" onclick="shareToTelegram()">
+        ✈️ 텔레그램으로 등산지도 보내기
       </button>
     </div>
 
@@ -828,6 +854,24 @@
       document.body.removeChild(container);
       showToast('🎉 링크가 내장된 버튼이 복사되었습니다!\n블로그 본문에서 바로 Ctrl+V (붙여넣기) 하세요.');
     }
+  }
+
+  // ✈️ 텔레그램으로 등산지도 링크 보내기
+  function shareToTelegram() {
+    const finalUrl = document.getElementById('finalUrlText').innerText.trim();
+    if (!finalUrl) {
+      alert('먼저 위에서 등산로 코스를 선택해주세요.');
+      return;
+    }
+    const rawUrl = document.getElementById('rawUrlInput').value.trim();
+    const courseName = document.getElementById('courseNameInput').value.trim() || '등산로 코스';
+    const label = buildRouteLabel(courseName, rawUrl);
+    
+    const text = `${label}\n인터넷이 터지지 않는 산속에서도 작동하는 gajago 오프라인 스마트 등산지도입니다.\n`;
+    const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(finalUrl)}&text=${encodeURIComponent(text)}`;
+    
+    window.open(tgUrl, '_blank');
+    showToast('✈️ 텔레그램 공유 창이 열렸습니다!');
   }
 
   function copyPlainUrl() {
