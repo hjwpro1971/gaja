@@ -128,6 +128,33 @@
     .btn-super-copy:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(46,125,50,0.4); }
     .btn-super-copy:active { transform: translateY(0); }
 
+    .btn-telegram {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+      background: linear-gradient(135deg, #2AABEE 0%, #229ED9 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(42, 171, 238, 0.35);
+      transition: all 0.2s;
+    }
+    .btn-telegram:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(42, 171, 238, 0.45);
+      background: linear-gradient(135deg, #229ED9 0%, #1d8bc0 100%);
+    }
+    .btn-telegram:active {
+      transform: translateY(0);
+    }
+
     .btn-sub-copy {
       padding: 10px 14px;
       font-size: 13px;
@@ -249,7 +276,10 @@
       <label style="color: #1b5e20; font-size: 16px; font-weight: 800; margin: 0;">⛰️ 등산로 코스 찾기 (검색 또는 파일 선택)</label>
       <div style="display: flex; gap: 6px;">
         <button type="button" onclick="openTokenModal()" style="background: #ffffff; border: 1.5px solid #2e7d32; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #1b5e20; cursor: pointer;">
-          🔑 깃허브 토큰 설정
+          🔑 깃허브 토큰
+        </button>
+        <button type="button" onclick="openTelegramModal()" style="background: #ffffff; border: 1.5px solid #0288d1; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0277bd; cursor: pointer;">
+          🤖 텔레그램 설정
         </button>
         <button type="button" onclick="loadPresetTracks()" style="background: #ffffff; border: 1.5px solid #81c784; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #2e7d32; cursor: pointer;">
           🔄 새로고침
@@ -323,8 +353,8 @@
         📋 링크 걸린 버튼 복사하기 (블로그에 바로 붙여넣기용)
       </button>
 
-      <button type="button" class="btn-telegram" onclick="shareToTelegram()">
-        ✈️ 텔레그램으로 등산지도 보내기
+      <button type="button" class="btn-telegram" id="btnTelegramSend" onclick="sendToGajagoBot()">
+        🤖 텔레그램 gajago_bot으로 전송하기
       </button>
     </div>
 
@@ -856,22 +886,137 @@
     }
   }
 
-  // ✈️ 텔레그램으로 등산지도 링크 보내기
-  function shareToTelegram() {
+  // HTML 특수문자 변환
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // 🤖 텔레그램 gajago_bot 연동 키
+  const TG_TOKEN_STORAGE_KEY = 'gajago_tg_bot_token';
+  const TG_CHAT_STORAGE_KEY = 'gajago_tg_chat_id';
+
+  function openTelegramModal() {
+    const modal = document.getElementById('telegramModal');
+    const tokenInput = document.getElementById('tgTokenInput');
+    const chatInput = document.getElementById('tgChatInput');
+    if (tokenInput) tokenInput.value = localStorage.getItem(TG_TOKEN_STORAGE_KEY) || '';
+    if (chatInput) chatInput.value = localStorage.getItem(TG_CHAT_STORAGE_KEY) || '';
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeTelegramModal() {
+    const modal = document.getElementById('telegramModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function saveTelegramConfigAndClose() {
+    const tokenInput = document.getElementById('tgTokenInput');
+    const chatInput = document.getElementById('tgChatInput');
+    const token = tokenInput ? tokenInput.value.trim() : '';
+    const chat = chatInput ? chatInput.value.trim() : '';
+
+    if (!token) {
+      alert('텔레그램 봇 토큰(Bot Token)을 입력해주세요.');
+      return;
+    }
+    if (!chat) {
+      alert('메시지를 수신할 텔레그램 대화방 ID(Chat ID)를 입력해주세요.');
+      return;
+    }
+
+    localStorage.setItem(TG_TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(TG_CHAT_STORAGE_KEY, chat);
+    closeTelegramModal();
+    showToast('💾 텔레그램 연동 정보가 브라우저에 안전하게 저장되었습니다!');
+  }
+
+  function deleteTelegramConfig() {
+    if (confirm('저장된 텔레그램 연동 정보를 삭제하시겠습니까?')) {
+      localStorage.removeItem(TG_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TG_CHAT_STORAGE_KEY);
+      const tokenInput = document.getElementById('tgTokenInput');
+      const chatInput = document.getElementById('tgChatInput');
+      if (tokenInput) tokenInput.value = '';
+      if (chatInput) chatInput.value = '';
+      showToast('🗑️ 텔레그램 연동 정보가 삭제되었습니다.');
+    }
+  }
+
+  async function sendToGajagoBot() {
     const finalUrl = document.getElementById('finalUrlText').innerText.trim();
     if (!finalUrl) {
       alert('먼저 위에서 등산로 코스를 선택해주세요.');
       return;
     }
-    const rawUrl = document.getElementById('rawUrlInput').value.trim();
-    const courseName = document.getElementById('courseNameInput').value.trim() || '등산로 코스';
-    const label = buildRouteLabel(courseName, rawUrl);
+
+    const botToken = localStorage.getItem(TG_TOKEN_STORAGE_KEY);
+    const chatId = localStorage.getItem(TG_CHAT_STORAGE_KEY);
+
+    if (!botToken || !chatId) {
+      alert('텔레그램 연동 설정(봇 토큰 및 Chat ID)이 필요합니다.\n설정 창을 엽니다.');
+      openTelegramModal();
+      return;
+    }
+
+    const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
     
-    const text = `${label}\n인터넷이 터지지 않는 산속에서도 작동하는 gajago 오프라인 스마트 등산지도입니다.\n`;
-    const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(finalUrl)}&text=${encodeURIComponent(text)}`;
-    
-    window.open(tgUrl, '_blank');
-    showToast('✈️ 텔레그램 공유 창이 열렸습니다!');
+    // 버튼 클릭 시 최종 확인 팝업 (실수 방지 및 사용자 명시적 확인)
+    const confirmed = confirm(`⛰️ [텔레그램 gajago_bot 전송 확인]\n\n코스명: ${courseName}\n\n이 등산지도 링크를 텔레그램 gajago_bot으로 전송하시겠습니까?`);
+    if (!confirmed) {
+      return;
+    }
+
+    // 텔레그램 HTML 모드 (URL 내 & 기호를 &amp;로 치환하여 파싱 오류 방지)
+    const escapedUrlForHref = finalUrl.replace(/&/g, '&amp;');
+    const safeCourseName = escapeHtml(courseName);
+
+    // 긴 URL 주소를 화면에 노출하지 않고 '코스명 오프라인 등산지도' 텍스트 자체에 하이퍼링크 연결
+    const messageHtml = `⛰️ <a href="${escapedUrlForHref}"><b>${safeCourseName} 오프라인 등산지도</b></a>\n\n💡 위 파란색 글씨나 아래 버튼을 터치하시면 스마트폰에서 지도가 바로 열립니다.`;
+
+    const btn = document.getElementById('btnTelegramSend');
+    const origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ gajago_bot으로 전송 중...';
+
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: messageHtml,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: `🗺️ ${courseName} 지도 열기`, url: finalUrl }
+              ]
+            ]
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        btn.innerHTML = '✅ gajago_bot 전송 완료!';
+        showToast('🎉 텔레그램 gajago_bot으로 등산지도가 전송되었습니다! 📱');
+        setTimeout(() => {
+          btn.innerHTML = origText;
+          btn.disabled = false;
+        }, 2500);
+      } else {
+        throw new Error(data.description || '전송 실패');
+      }
+    } catch(err) {
+      alert('텔레그램 전송 중 오류: ' + err.message);
+      btn.innerHTML = origText;
+      btn.disabled = false;
+    }
   }
 
   function copyPlainUrl() {
@@ -930,6 +1075,46 @@
         토큰 삭제
       </button>
       <button type="button" onclick="saveTokenAndClose()" style="background: #2e7d32; border: none; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        저장하기
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 텔레그램 연동 설정 모달 -->
+<div class="modal-backdrop" id="telegramModal">
+  <div class="modal-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+      <h3 style="margin: 0; color: #0277bd; font-size: 18px; font-weight: 800;">🤖 텔레그램 gajago_bot 연동 설정</h3>
+      <button type="button" onclick="closeTelegramModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #757575;">✕</button>
+    </div>
+    
+    <p style="font-size: 13px; color: #424242; line-height: 1.5; margin-bottom: 14px;">
+      생성된 등산지도 링크를 텔레그램 봇으로 전송하기 위한 설정입니다.<br>
+      <span style="color: #0277bd; font-weight: bold;">입력하신 토큰과 대화방 ID는 깃허브에 공유되지 않으며, 내 브라우저(localStorage)에만 안전하게 보관됩니다.</span>
+    </p>
+
+    <div style="margin-bottom: 14px;">
+      <label style="display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: #333;">1. 텔레그램 봇 토큰 (Bot Token):</label>
+      <input type="password" id="tgTokenInput" placeholder="예: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz..." style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #4fc3f7; font-size: 14px; box-sizing: border-box;">
+      <div style="font-size: 12px; color: #666; margin-top: 6px;">
+        💡 텔레그램 @BotFather에게 발급받은 봇 토큰을 입력합니다.
+      </div>
+    </div>
+
+    <div style="margin-bottom: 18px;">
+      <label style="display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: #333;">2. 내 대화방 ID (Chat ID):</label>
+      <input type="text" id="tgChatInput" placeholder="예: 123456789" style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #4fc3f7; font-size: 14px; box-sizing: border-box;">
+      <div style="font-size: 12px; color: #666; margin-top: 6px;">
+        💡 메시지를 수신할 본인의 텔레그램 Chat ID를 입력합니다.
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button type="button" onclick="deleteTelegramConfig()" style="background: #f5f5f5; border: 1px solid #ccc; color: #d32f2f; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        설정 삭제
+      </button>
+      <button type="button" onclick="saveTelegramConfigAndClose()" style="background: #0288d1; border: none; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
         저장하기
       </button>
     </div>
