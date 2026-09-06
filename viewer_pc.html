@@ -3,7 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>스마트 등산로 뷰어 (PC 전용)</title>
+  <title>등산지도</title>
+  <script>
+    (function() {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        let n = p.get('name') || p.get('title');
+        let u = p.get('url') || p.get('file');
+        if (!n && u) {
+          const m = decodeURIComponent(u).match(/([^\/\?#&=:"']+\.gpx)/i);
+          if (m && m[1]) {
+            n = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+          }
+        }
+        if (n) {
+          let name = decodeURIComponent(n).trim();
+          if (!name.includes('등산지도') && !name.includes('등산로') && !name.includes('지도')) {
+            name = name + ' 등산지도';
+          }
+          document.title = name;
+        }
+      } catch(e) {}
+    })();
+  </script>
 
   <!-- 로컬 캐시 가능한 Leaflet 오픈소스 지도 엔진 -->
   <link rel="stylesheet" href="./leaflet.css">
@@ -430,6 +452,13 @@
 
     if (courseName) {
       document.getElementById('trailName').innerText = '🚩 ' + courseName;
+      let cleanTitle = courseName.replace(/^🚩\s*/, '').trim();
+      if (!cleanTitle.includes('등산지도') && !cleanTitle.includes('등산로') && !cleanTitle.includes('지도')) {
+        cleanTitle += ' 등산지도';
+      }
+      document.title = cleanTitle;
+      const meta = document.getElementById('appleAppTitle');
+      if (meta) meta.content = cleanTitle;
     }
 
     // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원,
@@ -751,7 +780,26 @@
     const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
     let gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
-    const decodedCourseName = courseName ? decodeURIComponent(courseName) : '등산로 코스';
+    let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
+
+    if (!decodedCourseName && gpxUrl) {
+      const m = decodeURIComponent(gpxUrl).match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (m && m[1]) {
+        decodedCourseName = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+      }
+    }
+    if (!decodedCourseName) decodedCourseName = '등산로 코스';
+
+    // 페이지 진입 즉시 상단 헤더 및 창 타이틀에 산 이름 반영
+    const trailEl = document.getElementById('trailName');
+    if (trailEl) trailEl.innerText = '🚩 ' + decodedCourseName;
+    let pageTitle = decodedCourseName;
+    if (!pageTitle.includes('등산지도') && !pageTitle.includes('등산로') && !pageTitle.includes('지도')) {
+      pageTitle += ' 등산지도';
+    }
+    document.title = pageTitle;
+    const appleMeta = document.getElementById('appleAppTitle');
+    if (appleMeta) appleMeta.content = pageTitle;
 
     // 같은 코스를 다시 열 때 매번 외부 프록시를 거쳐 GPX를 재다운로드하지
     // 않도록, url 파라미터가 있으면 먼저 localStorage에 같은 원본 GPX
