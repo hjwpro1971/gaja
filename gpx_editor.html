@@ -203,6 +203,103 @@
       backdrop-filter: blur(4px); pointer-events: none; transition: opacity 0.4s ease;
       display: none; text-align: center; max-width: 90%;
     }
+    /* 🌟 편집 모드 툴바 및 핸들 스타일 */
+    .edit-toolbar {
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(10px);
+      padding: 6px 12px;
+      border-radius: 18px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      border: 1.5px solid #81c784;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .tool-mode-group {
+      display: flex;
+      gap: 4px;
+      background: #f1f5f9;
+      padding: 3px;
+      border-radius: 12px;
+    }
+    .btn-mode {
+      padding: 7px 13px;
+      font-size: 13px;
+      font-weight: 800;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: #475569;
+      cursor: pointer;
+      transition: all 0.18s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .btn-mode:hover { background: #e2e8f0; }
+    .btn-mode.active {
+      background: #1b5e20;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(27,94,32,0.35);
+    }
+    .tool-actions-sub {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .btn-sub-tool {
+      padding: 6px 12px;
+      font-size: 12.5px;
+      font-weight: 700;
+      border-radius: 9px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #334155;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-sub-tool:hover { background: #f8fafc; }
+    .btn-sub-tool.danger { color: #dc2626; border-color: #fca5a5; }
+    .btn-sub-tool.danger:hover { background: #fee2e2; }
+
+    /* 궤적 점 수정 핸들 마커 */
+    .custom-vertex-icon {
+      overflow: visible !important;
+    }
+    .trail-vertex-handle {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 3px solid #d32f2f;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      cursor: grab;
+      transition: transform 0.1s, background-color 0.15s;
+    }
+    .trail-vertex-handle:hover {
+      transform: scale(1.4);
+      background: #ffcdd2;
+      border-color: #b71c1c;
+    }
+    .trail-vertex-handle:active {
+      cursor: grabbing;
+      transform: scale(1.2);
+    }
+    .trail-vertex-handle.delete-mode {
+      border-color: #e53935;
+      background: #ffebee;
+      cursor: pointer;
+    }
+    .trail-vertex-handle.delete-mode:hover {
+      background: #d32f2f;
+      transform: scale(1.5);
+    }
+
   </style>
 </head>
 <body>
@@ -263,6 +360,35 @@
 
 <!-- 하단 통계 및 조작 패널 -->
 <div class="bottom-panel">
+  <!-- 🌟 편집 모드 툴바 -->
+  <div class="edit-toolbar" id="editToolbar">
+    <div class="tool-mode-group">
+      <button class="btn-mode active" id="btnModeWaypoint" onclick="setEditMode('waypoint')" title="경유지를 클릭해 새로 추가하거나 드래그하여 이동">
+        📍 1. 경유지 찍기
+      </button>
+      <button class="btn-mode" id="btnModeEditTrail" onclick="setEditMode('editTrail')" title="완성된 등산로의 점을 드래그하여 이동하거나 선을 클릭해 새 점 삽입">
+        ✏️ 2. 궤적 직접 수정 (점 이동/추가)
+      </button>
+      <button class="btn-mode" id="btnModeDelete" onclick="setEditMode('delete')" title="잘못 연결된 점을 클릭하여 삭제">
+        ✂️ 3. 점 삭제 (지우개)
+      </button>
+      <button class="btn-mode" id="btnModeAppend" onclick="setEditMode('append')" title="등산로 끝에 이어서 계속 점 찍기">
+        ➕ 4. 끝에 이어그리기
+      </button>
+    </div>
+    <div class="tool-actions-sub">
+      <button class="btn-sub-tool" onclick="undoHistory()" title="실행 취소 (Ctrl + Z)">
+        ↩️ 실행 취소
+      </button>
+      <button class="btn-sub-tool" onclick="redoHistory()" title="다시 실행 (Ctrl + Y)">
+        ↪️ 다시 실행
+      </button>
+      <button class="btn-sub-tool danger" onclick="clearAllPoints()" title="모든 경유지 및 등산로 초기화">
+        🗑️ 전체 초기화
+      </button>
+    </div>
+  </div>
+
   <!-- 🌟 핵심 액션: 등산로 만들기 버튼 -->
   <button class="btn-create-trail" id="btnCreateTrail" onclick="createTrailRoute()">
     🥾 등산로 만들기 (산길 자동 연결)
@@ -277,7 +403,7 @@
     <div class="control-divider"></div>
 
     <div class="stat-item">
-      <span class="stat-label">경유지</span>
+      <span class="stat-label">좌표 / 경유지</span>
       <span class="stat-val" id="pointCount">0 개</span>
     </div>
 
@@ -286,17 +412,6 @@
     <div class="stat-item">
       <span class="stat-label">예상 시간</span>
       <span class="stat-val" id="estTime">0분</span>
-    </div>
-
-    <div class="control-divider"></div>
-
-    <div class="tool-btn-group">
-      <button class="btn-tool" onclick="undoLastPoint()" title="마지막 찍은 경유지 1개 취소">
-        ↩️ 취소 (Undo)
-      </button>
-      <button class="btn-tool danger" onclick="clearAllPoints()" title="모든 경유지 지우고 처음부터">
-        🗑️ 전체 초기화
-      </button>
     </div>
   </div>
 </div>
@@ -388,10 +503,20 @@
 
     switchLayer('terrain');
 
-    // 마우스 클릭 시 경유지 추가
+    // 마우스 클릭 시 모드별 분기 처리
     map.on('click', function(e) {
       if (isCalculating) return;
-      addWaypoint(e.latlng.lat, e.latlng.lng);
+      if (currentEditMode === 'waypoint') {
+        addWaypoint(e.latlng.lat, e.latlng.lng);
+      } else if (currentEditMode === 'append') {
+        saveHistory();
+        allTrailPoints.push({ lat: e.latlng.lat, lon: e.latlng.lng });
+        renderTrailAndHandles();
+        updateTrailStats();
+        showToast('➕ 등산로 끝에 새 점을 추가했습니다.');
+      } else if (currentEditMode === 'editTrail') {
+        showToast('💡 빨간색 등산로 선 위를 클릭하시면 새로운 점이 삽입됩니다.');
+      }
     });
   }
 
@@ -444,6 +569,7 @@
 
   // 1단계: 마우스로 경유지 찍기
   function addWaypoint(lat, lon) {
+    saveHistory();
     waypoints.push({ lat, lon });
 
     // 새로운 경유지가 추가되면 기존에 생성했던 등산로는 초기화하고 새로 계산 대기 상태로
@@ -500,7 +626,21 @@
         iconAnchor: [30, 12]
       });
 
-      const m = L.marker([wp.lat, wp.lon], { icon, interactive: false }).addTo(map);
+      const m = L.marker([wp.lat, wp.lon], { icon, draggable: true }).addTo(map);
+      m.on('dragend', (e) => {
+        saveHistory();
+        const pos = e.target.getLatLng();
+        waypoints[idx] = { lat: pos.lat, lon: pos.lng };
+        renderWaypoints();
+        showToast(`📍 ${idx + 1}번 경유지 위치를 변경했습니다.`);
+      });
+      m.on('contextmenu', (e) => {
+        L.DomEvent.stopPropagation(e);
+        saveHistory();
+        waypoints.splice(idx, 1);
+        renderWaypoints();
+        showToast(`🗑️ ${idx + 1}번 경유지를 삭제했습니다.`);
+      });
       markerLayers.push(m);
 
       const circle = L.circleMarker([wp.lat, wp.lon], {
@@ -626,9 +766,11 @@
 
       map.fitBounds(trailPolyline.getBounds(), { padding: [60, 60] });
 
+      saveHistory();
       btn.classList.remove('loading');
       btn.innerText = '✅ 등산로 완성! (다시 만들기 가능)';
-      showToast(`🎉 축하합니다! 실제 산길을 따라 ${allTrailPoints.length}개 좌표로 완성되었습니다.\n이제 상단 [💾 GPX 파일 저장]을 누르시면 마무리됩니다!`);
+      setEditMode('editTrail');
+      showToast(`🎉 등산로가 완성되었습니다!\n잘못된 구간은 점을 마우스로 드래그하거나 우클릭하여 바로 수정하실 수 있습니다.`);
     } catch(err) {
       alert('등산로 계산 중 오류가 발생했습니다: ' + err.message);
       btn.classList.remove('loading');
@@ -908,7 +1050,9 @@ ${trkpts}    </trkseg>
         trailPolyline.setLatLngs(allTrailPoints.map(p => [p.lat, p.lon]));
         map.fitBounds(trailPolyline.getBounds(), { padding: [60, 60] });
 
-        showToast(`📂 '${courseName}' GPX를 불러왔습니다!`);
+        saveHistory();
+        setEditMode('editTrail');
+        showToast(`📂 '${courseName}' GPX를 불러왔습니다!\n점을 드래그하거나 우클릭하여 자유롭게 수정하세요.`);
       } catch(err) {
         alert('GPX 불러오기 오류: ' + err.message);
       }
@@ -927,6 +1071,272 @@ ${trkpts}    </trkseg>
       setTimeout(() => { t.style.display = 'none'; }, 400);
     }, 2800);
   }
+
+  // ==========================================
+  // 상태 변수 및 실행 취소/다시 실행 스택
+  // ==========================================
+  let currentEditMode = 'waypoint'; // 'waypoint', 'editTrail', 'delete', 'append'
+  let vertexMarkerGroup = null;
+  let undoStack = [];
+  let redoStack = [];
+
+  function saveHistory() {
+    undoStack.push({
+      allTrailPoints: JSON.parse(JSON.stringify(allTrailPoints)),
+      waypoints: JSON.parse(JSON.stringify(waypoints))
+    });
+    if (undoStack.length > 40) undoStack.shift();
+    redoStack = [];
+  }
+
+  function undoHistory() {
+    if (undoStack.length === 0) {
+      if (waypoints.length > 0) {
+        undoLastPoint();
+        return;
+      }
+      showToast('↩️ 더 이상 되돌릴 작업이 없습니다.');
+      return;
+    }
+    redoStack.push({
+      allTrailPoints: JSON.parse(JSON.stringify(allTrailPoints)),
+      waypoints: JSON.parse(JSON.stringify(waypoints))
+    });
+
+    const prev = undoStack.pop();
+    allTrailPoints = prev.allTrailPoints;
+    waypoints = prev.waypoints;
+
+    renderWaypoints();
+    renderTrailAndHandles();
+    updateTrailStats();
+    showToast('↩️ 이전 상태로 되돌렸습니다. (Undo)');
+  }
+
+  function redoHistory() {
+    if (redoStack.length === 0) {
+      showToast('↪️ 다시 실행할 작업이 없습니다.');
+      return;
+    }
+    undoStack.push({
+      allTrailPoints: JSON.parse(JSON.stringify(allTrailPoints)),
+      waypoints: JSON.parse(JSON.stringify(waypoints))
+    });
+
+    const next = redoStack.pop();
+    allTrailPoints = next.allTrailPoints;
+    waypoints = next.waypoints;
+
+    renderWaypoints();
+    renderTrailAndHandles();
+    updateTrailStats();
+    showToast('↪️ 다시 실행했습니다. (Redo)');
+  }
+
+  // 키보드 단축키 지원 (Ctrl + Z, Ctrl + Y)
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        redoHistory();
+      } else {
+        undoHistory();
+      }
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      redoHistory();
+    }
+  });
+
+  // 편집 모드 변경
+  function setEditMode(mode) {
+    currentEditMode = mode;
+    document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
+
+    const activeBtn = {
+      'waypoint': document.getElementById('btnModeWaypoint'),
+      'editTrail': document.getElementById('btnModeEditTrail'),
+      'delete': document.getElementById('btnModeDelete'),
+      'append': document.getElementById('btnModeAppend')
+    }[mode];
+    if (activeBtn) activeBtn.classList.add('active');
+
+    // 모드 전환에 따른 안내 및 레이어 갱신
+    if (mode === 'waypoint') {
+      if (vertexMarkerGroup) vertexMarkerGroup.clearLayers();
+      showToast('📍 [경유지 찍기 모드]\n지도 위를 마우스로 클릭하여 경유지를 추가하세요. 이미 찍힌 경유지는 드래그하여 옮길 수 있습니다.');
+    } else if (mode === 'editTrail') {
+      if (allTrailPoints.length === 0 && waypoints.length >= 2) {
+        createTrailRoute().then(() => renderTrailAndHandles());
+      } else {
+        renderTrailAndHandles();
+      }
+      showToast('✏️ [궤적 직접 수정 모드]\n- 흰색 점을 드래그하여 원하는 등산로로 옮기세요.\n- 빨간색 선 위를 클릭하면 새로운 점이 추가됩니다.\n- 점 위에서 마우스 우클릭 시 삭제됩니다.');
+    } else if (mode === 'delete') {
+      renderTrailAndHandles();
+      showToast('✂️ [점 삭제 지우개 모드]\n지우고 싶은 점을 마우스로 클릭하면 쏙쏙 삭제되며 등산로가 매끄럽게 연결됩니다.');
+    } else if (mode === 'append') {
+      renderTrailAndHandles();
+      showToast('➕ [끝에 이어그리기 모드]\n지도 위를 클릭하시면 현재 등산로의 끝부분에 좌표가 계속해서 추가됩니다.');
+    }
+  }
+
+  // 선분과 점 사이의 거리 계산 (선 위 클릭 시 가장 가까운 세그먼트 찾기)
+  function sqr(x) { return x * x; }
+  function dist2(v, w) { return sqr(v.lat - w.lat) + sqr(v.lon - w.lon); }
+  function distToSegmentSquared(p, v, w) {
+    const l2 = dist2(v, w);
+    if (l2 === 0) return dist2(p, v);
+    let t = ((p.lat - v.lat) * (w.lat - v.lat) + (p.lon - v.lon) * (w.lon - v.lon)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return dist2(p, { lat: v.lat + t * (w.lat - v.lat), lon: v.lon + t * (w.lon - v.lon) });
+  }
+
+  function findClosestSegmentIndex(lat, lon) {
+    let minD = Infinity;
+    let bestIdx = 0;
+    for (let i = 0; i < allTrailPoints.length - 1; i++) {
+      const p1 = allTrailPoints[i];
+      const p2 = allTrailPoints[i + 1];
+      const d = distToSegmentSquared({ lat, lon }, p1, p2);
+      if (d < minD) {
+        minD = d;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }
+
+  // 점 삭제 함수
+  function deletePoint(index) {
+    if (allTrailPoints.length <= 2) {
+      alert('등산로는 최소 2개 이상의 점이 있어야 합니다.');
+      return;
+    }
+    saveHistory();
+    allTrailPoints.splice(index, 1);
+    renderTrailAndHandles();
+    updateTrailStats();
+    showToast(`✂️ ${index + 1}번째 점을 삭제했습니다. 앞뒤 등산로가 연결되었습니다.`);
+  }
+
+  // 등산로 궤적 및 핸들 마커 렌더링
+  function renderTrailAndHandles() {
+    if (!trailPolyline) {
+      trailPolyline = L.polyline([], {
+        color: '#d32f2f',
+        weight: 6,
+        opacity: 0.95,
+        interactive: true
+      }).addTo(map);
+
+      // 빨간 선 클릭 시 새로운 중간 점 삽입!
+      trailPolyline.on('click', (e) => {
+        if (currentEditMode === 'editTrail' || currentEditMode === 'waypoint') {
+          const clickLat = e.latlng.lat;
+          const clickLon = e.latlng.lng;
+          const insertIdx = findClosestSegmentIndex(clickLat, clickLon);
+          saveHistory();
+          allTrailPoints.splice(insertIdx + 1, 0, { lat: clickLat, lon: clickLon });
+          renderTrailAndHandles();
+          updateTrailStats();
+          showToast('📍 선 위에 새로운 점이 삽입되었습니다! 드래그하여 위치를 조정하세요.');
+        }
+      });
+    }
+
+    trailPolyline.setLatLngs(allTrailPoints.map(p => [p.lat, p.lon]));
+
+    if (!vertexMarkerGroup) {
+      vertexMarkerGroup = L.layerGroup().addTo(map);
+    }
+    vertexMarkerGroup.clearLayers();
+
+    if (currentEditMode === 'waypoint') {
+      return; // 경유지 모드일 때는 궤적 점 핸들 숨김
+    }
+
+    if (!allTrailPoints || allTrailPoints.length === 0) return;
+
+    // 현재 화면(지도 바운드)에 보이는 점들만 고속 렌더링 (대용량 GPX도 60 FPS 유지)
+    const bounds = map.getBounds().pad(0.15);
+
+    allTrailPoints.forEach((pt, idx) => {
+      if (!bounds.contains([pt.lat, pt.lon])) return;
+
+      const isDelete = (currentEditMode === 'delete');
+      const iconHtml = `<div class="trail-vertex-handle ${isDelete ? 'delete-mode' : ''}" title="${idx + 1}번 점 (드래그: 이동 / 우클릭: 삭제)"></div>`;
+      const vIcon = L.divIcon({
+        className: 'custom-vertex-icon',
+        html: iconHtml,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+
+      const m = L.marker([pt.lat, pt.lon], {
+        icon: vIcon,
+        draggable: (currentEditMode === 'editTrail'),
+        zIndexOffset: 600
+      });
+
+      // 점 드래그 실시간 선 갱신
+      m.on('drag', (e) => {
+        const pos = e.target.getLatLng();
+        allTrailPoints[idx] = { lat: pos.lat, lon: pos.lng };
+        trailPolyline.setLatLngs(allTrailPoints.map(p => [p.lat, p.lon]));
+      });
+
+      // 드래그 완료 시 히스토리 저장
+      m.on('dragend', () => {
+        saveHistory();
+        updateTrailStats();
+        showToast(`📍 ${idx + 1}번째 점을 이동했습니다.`);
+      });
+
+      // 마우스 우클릭 시 점 즉시 삭제
+      m.on('contextmenu', (e) => {
+        L.DomEvent.stopPropagation(e);
+        deletePoint(idx);
+      });
+
+      // 삭제 모드일 때 클릭 시 삭제
+      m.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (currentEditMode === 'delete') {
+          deletePoint(idx);
+        }
+      });
+
+      vertexMarkerGroup.addLayer(m);
+    });
+  }
+
+  // 지도 이동 시 보이는 점 핸들 갱신
+  map.on('moveend', () => {
+    if (currentEditMode !== 'waypoint' && allTrailPoints.length > 0) {
+      renderTrailAndHandles();
+    }
+  });
+
+  // 통계 갱신
+  function updateTrailStats() {
+    if (!allTrailPoints || allTrailPoints.length < 2) {
+      return;
+    }
+    let totalKm = 0.0;
+    for (let i = 1; i < allTrailPoints.length; i++) {
+      totalKm += calcDistanceKm(allTrailPoints[i-1].lat, allTrailPoints[i-1].lon, allTrailPoints[i].lat, allTrailPoints[i].lon);
+    }
+    const hours = totalKm / 2.5;
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    const timeStr = h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+
+    document.getElementById('totalDist').innerText = `${totalKm.toFixed(2)} km`;
+    document.getElementById('estTime').innerText = timeStr;
+    document.getElementById('pointCount').innerText = `${allTrailPoints.length} 개 (완성)`;
+  }
+
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
