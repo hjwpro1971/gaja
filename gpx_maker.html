@@ -158,6 +158,58 @@
       text-align: center;
       line-height: 1.4;
     }
+  
+    /* GitHub 토큰 모달 및 업로드 큐 스타일 */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(3px);
+    }
+    .modal-backdrop.active {
+      display: flex;
+    }
+    .modal-card {
+      background: #ffffff;
+      width: 90%;
+      max-width: 520px;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.3);
+      box-sizing: border-box;
+      animation: modalFadeIn 0.2s ease-out;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .file-item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ffffff;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      border: 1px solid #e0e0e0;
+      font-size: 13px;
+    }
+    .file-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .file-badge.pending { background: #e0e0e0; color: #616161; }
+    .file-badge.uploading { background: #bbdefb; color: #0d47a1; }
+    .file-badge.done { background: #c8e6c9; color: #1b5e20; }
+    .file-badge.error { background: #ffcdd2; color: #b71c1c; }
+
   </style>
 </head>
 <body>
@@ -173,19 +225,39 @@
   <div class="form-group" style="background: #e8f5e9; padding: 20px; border-radius: 18px; border: 2px solid #81c784;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <label style="color: #1b5e20; font-size: 16px; font-weight: 800; margin: 0;">⛰️ 등산로 코스 찾기 (검색 또는 파일 선택)</label>
-      <button type="button" onclick="loadPresetTracks()" style="background: #ffffff; border: 1.5px solid #81c784; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #2e7d32; cursor: pointer;">
-        🔄 새로고침
-      </button>
+      <div style="display: flex; gap: 6px;">
+        <button type="button" onclick="openTokenModal()" style="background: #ffffff; border: 1.5px solid #2e7d32; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #1b5e20; cursor: pointer;">
+          🔑 깃허브 토큰 설정
+        </button>
+        <button type="button" onclick="loadPresetTracks()" style="background: #ffffff; border: 1.5px solid #81c784; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #2e7d32; cursor: pointer;">
+          🔄 새로고침
+        </button>
+      </div>
     </div>
 
-    <!-- 방법 A: 1초 만에 파일 바로 선택 (가장 빠름!) -->
-    <div style="margin-bottom: 14px; background: #ffffff; padding: 14px; border-radius: 12px; border: 1.5px dashed #81c784; text-align: center;">
-      <input type="file" id="localGpxPicker" accept=".gpx" onchange="onLocalFilePicked(event)" style="display: none;">
-      <button type="button" onclick="document.getElementById('localGpxPicker').click()" style="background: #2e7d32; color: #fff; border: none; padding: 10px 22px; border-radius: 10px; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 3px 8px rgba(46,125,50,0.25);">
-        📂 내 컴퓨터에서 GPX 파일 바로 선택
-      </button>
-      <div style="font-size: 12px; color: #666; margin-top: 8px;">
-        💡 마우스로 <b>.gpx 파일</b>을 이 화면 아무 곳에나 끌어다 놓아도 바로 인식됩니다!
+    <!-- 🚀 깃허브 tracks/ 다중 파일 직접 배포 상자 -->
+    <div id="dropZone" style="margin-bottom: 14px; background: #ffffff; padding: 16px; border-radius: 14px; border: 2px dashed #66bb6a; text-align: center; transition: all 0.2s;">
+      <input type="file" id="localGpxPicker" accept=".gpx" multiple onchange="onFilesSelected(event)" style="display: none;">
+      <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+        <button type="button" onclick="document.getElementById('localGpxPicker').click()" style="background: #2e7d32; color: #fff; border: none; padding: 11px 22px; border-radius: 10px; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 3px 8px rgba(46,125,50,0.25);">
+          📂 내 컴퓨터에서 GPX 파일 선택 (여러 개 가능)
+        </button>
+      </div>
+      <div style="font-size: 12px; color: #555; margin-top: 8px;">
+        💡 마우스로 <b>여러 개의 .gpx 파일</b>을 이곳에 끌어다 놓아도 바로 인식됩니다!
+      </div>
+
+      <!-- 선택된 파일 대기 목록 영역 -->
+      <div id="fileQueueContainer" style="display: none; margin-top: 14px; text-align: left;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 13px; font-weight: 800; color: #1b5e20;" id="fileQueueCountText">선택된 파일 (0개)</span>
+          <button type="button" onclick="clearSelectedFiles()" style="background: none; border: none; color: #d32f2f; font-size: 12px; cursor: pointer; font-weight: bold;">✕ 목록 비우기</button>
+        </div>
+        <div id="fileQueueList" style="max-height: 170px; overflow-y: auto; background: #f9fbf9; border-radius: 10px; border: 1px solid #c8e6c9; padding: 8px;"></div>
+        
+        <button type="button" id="btnStartUpload" onclick="startBatchUpload()" style="width: 100%; margin-top: 10px; padding: 13px; background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%); color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 3px 10px rgba(21,101,192,0.3);">
+          🚀 GitHub tracks/ 에 업로드 및 배포 시작
+        </button>
       </div>
     </div>
 
@@ -332,31 +404,275 @@
     }
   }
 
-  // 내 컴퓨터에서 파일 직접 선택 시
-  function onLocalFilePicked(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    handleGpxFile(file.name);
+  // ==========================================
+  // 🚀 GPX 다중 파일 선택 & GitHub tracks/ 업로드 로직
+  // ==========================================
+  const GH_REPO_OWNER = 'hjwpro1971';
+  const GH_REPO_NAME = 'gaja';
+  const GH_TRACKS_PATH = 'tracks';
+  const TOKEN_STORAGE_KEY = 'gh_gaja_upload_token';
+
+  let selectedFilesQueue = []; // [{ file, status: 'pending'|'uploading'|'done'|'error', errorMsg: '' }]
+
+  // 토큰 모달 관리
+  function openTokenModal() {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+    document.getElementById('ghTokenInput').value = token;
+    document.getElementById('tokenModal').classList.add('active');
   }
 
-  function handleGpxFile(filename) {
-    if (!filename.toLowerCase().endsWith('.gpx')) {
+  function closeTokenModal() {
+    document.getElementById('tokenModal').classList.remove('active');
+  }
+
+  function saveTokenAndClose() {
+    const token = document.getElementById('ghTokenInput').value.trim();
+    if (!token) {
+      alert('GitHub 토큰을 입력해주세요.');
+      return;
+    }
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    showToast('🔑 GitHub 연동 토큰이 안전하게 저장되었습니다!');
+    closeTokenModal();
+  }
+
+  function deleteSavedToken() {
+    if (confirm('저장된 GitHub 토큰을 삭제하시겠습니까?')) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      document.getElementById('ghTokenInput').value = '';
+      showToast('🗑️ 토큰이 삭제되었습니다.');
+      closeTokenModal();
+    }
+  }
+
+  // 파일 선택 처리 (다중 파일 지원)
+  function onFilesSelected(e) {
+    const files = Array.from(e.target.files || []);
+    addFilesToQueue(files);
+    e.target.value = ''; // 동일 파일 재선택 허용
+  }
+
+  function addFilesToQueue(files) {
+    const gpxFiles = files.filter(f => f.name.toLowerCase().endsWith('.gpx'));
+    if (gpxFiles.length === 0) {
       alert('.gpx 등산로 파일만 선택 가능합니다.');
       return;
     }
-    onPresetTrackSelected(filename);
-    showToast(`📂 '${filename}' 코스가 바로 선택되었습니다!`);
+
+    gpxFiles.forEach(file => {
+      // 중복 체크
+      if (!selectedFilesQueue.some(item => item.file.name === file.name)) {
+        selectedFilesQueue.push({ file, status: 'pending', errorMsg: '' });
+      }
+    });
+
+    renderFileQueue();
   }
 
-  // 마우스 드래그 & 드롭 지원
-  window.addEventListener('dragover', (e) => { e.preventDefault(); });
+  function removeFileFromQueue(index) {
+    selectedFilesQueue.splice(index, 1);
+    renderFileQueue();
+  }
+
+  function clearSelectedFiles() {
+    selectedFilesQueue = [];
+    renderFileQueue();
+  }
+
+  function renderFileQueue() {
+    const container = document.getElementById('fileQueueContainer');
+    const list = document.getElementById('fileQueueList');
+    const countText = document.getElementById('fileQueueCountText');
+
+    if (selectedFilesQueue.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'block';
+    countText.innerText = `선택된 파일 (${selectedFilesQueue.length}개)`;
+    list.innerHTML = '';
+
+    selectedFilesQueue.forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.className = 'file-item-row';
+
+      const kbSize = (item.file.size / 1024).toFixed(1);
+      const sizeText = kbSize > 1024 ? `${(kbSize/1024).toFixed(2)} MB` : `${kbSize} KB`;
+
+      let badgeHtml = '<span class="file-badge pending">대기중</span>';
+      if (item.status === 'uploading') badgeHtml = '<span class="file-badge uploading">업로드 중...</span>';
+      else if (item.status === 'done') badgeHtml = '<span class="file-badge done">완료 ✅</span>';
+      else if (item.status === 'error') badgeHtml = `<span class="file-badge error" title="${item.errorMsg}">실패 ❌</span>`;
+
+      row.innerHTML = `
+        <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;">
+          <b style="color: #2e7d32;">📄 ${item.file.name}</b>
+          <span style="color: #888; font-size: 11px; margin-left: 6px;">(${sizeText})</span>
+          ${item.errorMsg ? `<div style="color: #d32f2f; font-size: 11px;">${item.errorMsg}</div>` : ''}
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          ${badgeHtml}
+          ${item.status === 'pending' ? `<button type="button" onclick="removeFileFromQueue(${idx})" style="background: none; border: none; color: #999; cursor: pointer; font-size: 14px;">✕</button>` : ''}
+        </div>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  // 드래그 앤 드롭 이벤트
+  const dropZone = document.getElementById('dropZone');
+  ['dragenter', 'dragover'].forEach(eventName => {
+    window.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      if (dropZone) dropZone.style.background = '#f1f8e9';
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    window.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      if (dropZone) dropZone.style.background = '#ffffff';
+    });
+  });
+
   window.addEventListener('drop', (e) => {
     e.preventDefault();
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      handleGpxFile(file.name);
+      addFilesToQueue(Array.from(e.dataTransfer.files));
     }
   });
+
+  // Base64 변환 함수 (한글 UTF-8 바이너리 완벽 보존)
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        let binary = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
+        resolve(btoa(binary));
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // 파일 단건 업로드 API 호출
+  async function uploadSingleFileToGitHub(fileItem, token) {
+    const filename = fileItem.file.name;
+    const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/${GH_TRACKS_PATH}/${encodeURIComponent(filename)}`;
+
+    // 1. 기존 파일 존재 여부 및 SHA 조회 (덮어쓰기 지원)
+    let sha = null;
+    try {
+      const getRes = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        sha = getData.sha;
+      }
+    } catch(e) {
+      console.warn('기존 SHA 조회 건너뜀:', e);
+    }
+
+    // 2. Base64 인코딩
+    const base64Content = await fileToBase64(fileItem.file);
+
+    // 3. PUT 요청으로 커밋/푸시
+    const payload = {
+      message: `Upload GPX track: ${filename} via GPX Maker`,
+      content: base64Content
+    };
+    if (sha) payload.sha = sha;
+
+    const putRes = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!putRes.ok) {
+      const errJson = await putRes.json().catch(() => ({}));
+      throw new Error(errJson.message || `HTTP ${putRes.status}`);
+    }
+
+    return await putRes.json();
+  }
+
+  // 일괄 업로드 실행
+  async function startBatchUpload() {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!token) {
+      alert('GitHub 토큰이 설정되지 않았습니다.\n[🔑 깃허브 토큰 설정] 창에서 토큰을 먼저 입력해주세요.');
+      openTokenModal();
+      return;
+    }
+
+    const pendingItems = selectedFilesQueue.filter(item => item.status === 'pending' || item.status === 'error');
+    if (pendingItems.length === 0) {
+      alert('업로드할 대기 파일이 없습니다.');
+      return;
+    }
+
+    const btn = document.getElementById('btnStartUpload');
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btn.innerText = '⏳ 깃허브로 업로드 진행 중...';
+
+    let successCount = 0;
+    let firstSuccessFilename = '';
+
+    for (const item of pendingItems) {
+      item.status = 'uploading';
+      item.errorMsg = '';
+      renderFileQueue();
+
+      try {
+        await uploadSingleFileToGitHub(item, token);
+        item.status = 'done';
+        successCount++;
+        if (!firstSuccessFilename) firstSuccessFilename = item.file.name;
+      } catch (err) {
+        console.error('업로드 실패:', item.file.name, err);
+        item.status = 'error';
+        item.errorMsg = err.message || '업로드 오류';
+      }
+      renderFileQueue();
+    }
+
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.innerText = '🚀 GitHub tracks/ 에 업로드 및 배포 시작';
+
+    if (successCount > 0) {
+      showToast(`🎉 ${successCount}개 파일이 깃허브에 성공적으로 배포되었습니다!`);
+      // 목록 새로고침 및 첫 번째 등록 코스 자동 선택
+      await loadPresetTracks();
+      if (firstSuccessFilename) {
+        setTimeout(() => {
+          const sel = document.getElementById('presetTracksSelect');
+          if (sel) {
+            sel.value = firstSuccessFilename;
+            onPresetTrackSelected(firstSuccessFilename);
+          }
+        }, 500);
+      }
+    } else {
+      alert('업로드에 실패했습니다. 토큰 권한(repo)과 인터넷 연결을 확인해주세요.');
+    }
+  }
 
   function onPresetTrackSelected(filename) {
     if (!filename) return;
@@ -529,6 +845,47 @@
     loadPresetTracks();
   });
 </script>
+
+
+<!-- 깃허브 토큰 설정 모달 -->
+<div class="modal-backdrop" id="tokenModal">
+  <div class="modal-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+      <h3 style="margin: 0; color: #1b5e20; font-size: 18px; font-weight: 800;">🔑 GitHub 연동 토큰(PAT) 설정</h3>
+      <button type="button" onclick="closeTokenModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #757575;">✕</button>
+    </div>
+    
+    <p style="font-size: 13px; color: #424242; line-height: 1.5; margin-bottom: 14px;">
+      웹 브라우저에서 내 컴퓨터의 GPX 파일을 깃허브(<code>hjwpro1971/gaja/tracks/</code>)에 직접 업로드하기 위해 GitHub Personal Access Token이 필요합니다.<br>
+      <span style="color: #2e7d32; font-weight: bold;">최초 1회만 설정하면 본인 브라우저에 안전하게 기억됩니다!</span>
+    </p>
+
+    <div style="margin-bottom: 14px;">
+      <label style="display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: #333;">GitHub Personal Access Token (PAT):</label>
+      <input type="password" id="ghTokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx 또는 github_pat_..." style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #81c784; font-size: 14px; box-sizing: border-box;">
+      <div style="font-size: 12px; color: #666; margin-top: 6px;">
+        💡 필요한 권한: <b>repo</b> (저장소 파일 쓰기 권한)
+      </div>
+    </div>
+
+    <div style="background: #f1f8e9; padding: 12px; border-radius: 10px; font-size: 12px; color: #33691e; line-height: 1.5; margin-bottom: 18px;">
+      <b>토큰 발급 방법 (1분 소요):</b><br>
+      1. <a href="https://github.com/settings/tokens" target="_blank" style="color: #1b5e20; font-weight: bold; text-decoration: underline;">GitHub 토큰 발급 페이지 열기 (클릭)</a><br>
+      2. <b>Generate new token (classic)</b> 클릭<br>
+      3. Note에 <code>gaja-uploader</code> 입력 후 <b>repo</b> 에 체크<br>
+      4. 생성된 초록색 토큰을 복사하여 위 칸에 붙여넣기
+    </div>
+
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button type="button" onclick="deleteSavedToken()" style="background: #f5f5f5; border: 1px solid #ccc; color: #d32f2f; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        토큰 삭제
+      </button>
+      <button type="button" onclick="saveTokenAndClose()" style="background: #2e7d32; border: none; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        저장하기
+      </button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
