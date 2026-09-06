@@ -1,5 +1,5 @@
-// gaja 등산로 뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v4)
-const CACHE_NAME = 'gaja-trail-cache-v4';
+// gaja 등산로 뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v5)
+const CACHE_NAME = 'gaja-trail-cache-v5';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',
@@ -40,7 +40,7 @@ self.addEventListener('fetch', event => {
   // 온라인이면 항상 최신 코드를 즉시 받아오고, 인터넷이 안 되는 산속(오프라인)일 때만 캐시 사용!
   if (req.mode === 'navigate' || url.includes('viewer.html') || url.includes('viewer_pc.html') || url.endsWith('/gaja/')) {
     event.respondWith(
-      fetch(req).then(networkResponse => {
+      fetch(req, { cache: 'no-cache' }).then(networkResponse => {
         if (networkResponse && networkResponse.status === 200) {
           const clone = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
@@ -66,7 +66,7 @@ self.addEventListener('fetch', event => {
         if (cachedResponse) {
           return cachedResponse;
         }
-        return fetch(req).then(networkResponse => {
+        return fetch(req, { cache: 'no-cache' }).then(networkResponse => {
           if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
             const clone = networkResponse.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
