@@ -180,6 +180,22 @@
     </div>
   </div>
 
+    <div class="form-group" style="background: #e8f5e9; padding: 16px; border-radius: 14px; border: 1.5px solid #a5d6a7;">
+    <label style="color: #1b5e20;">⭐ [영구 보관 추천] 내 서버/깃허브 저장 코스 바로 선택</label>
+    <div style="font-size: 13px; color: #444; margin-bottom: 8px;">
+      네이버 블로그 첨부파일은 시간이 지나면 주소가 만료됩니다. 아래 보관된 코스를 선택하시면 <b>평생 만료되지 않는 초고속 링크</b>가 만들어집니다!
+    </div>
+    <select id="presetTracksSelect" onchange="onPresetTrackSelected(this.value)" style="width: 100%; padding: 12px; font-size: 15px; border-radius: 10px; border: 2px solid #81c784; background: #fff; font-weight: bold; color: #1b5e20;">
+      <option value="">-- 보관된 등산로 코스 선택하기 --</option>
+      <option value="남덕유산_20250501.gpx">⛰️ 남덕유산 (2025-05-01 코스)</option>
+      <option value="남덕유산1.gpx">⛰️ 남덕유산 1코스</option>
+      <option value="지리산백무동_260826.gpx">⛰️ 지리산 백무동 코스</option>
+      <option value="지리산한신계곡-260827.gpx">⛰️ 지리산 한신계곡 코스</option>
+      <option value="정선가리왕산_20260815.gpx">⛰️ 정선 가리왕산 코스</option>
+      <option value="가평 연인산_20260704.gpx">⛰️ 가평 연인산 코스</option>
+    </select>
+  </div>
+
   <div class="form-group">
     <label>1. 네이버 블로그 GPX 첨부파일 링크</label>
     <textarea id="rawUrlInput" rows="3" placeholder="https://download.blog.naver.com/open/... 또는 https://blogfiles.pstatic.net/... 주소를 붙여넣으세요" oninput="processUrl()"></textarea>
@@ -447,6 +463,14 @@
       toast.style.display = 'none';
     }, 2500);
   }
+  function onPresetTrackSelected(filename) {
+    if (!filename) return;
+    const permanentUrl = `https://hjwpro1971.github.io/gaja/tracks/${encodeURIComponent(filename)}`;
+    document.getElementById('rawUrlInput').value = permanentUrl;
+    processUrl();
+    showToast(`🎉 평생 만료되지 않는 '${filename}' 영구 링크가 적용되었습니다!`);
+  }
+
 </script>
 
 </body>

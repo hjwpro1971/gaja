@@ -645,49 +645,74 @@
   }
 
   // 블로그 등 외부 서버의 CORS 제한을 우회하여 GPX 내용을 즉시 가져오는 함수
+    // 외부 서버(네이버 등) 및 깃허브 tracks에서 안전하게 GPX를 가져오는 고성능 로더
   async function fetchGPXFile(targetUrl) {
     let cleanUrl = targetUrl.trim();
     try {
       cleanUrl = encodeURI(decodeURI(cleanUrl));
     } catch(e) {}
 
-    // 1. 초고속 corsproxy.io 경유 (네이버 블로그 다운로드 링크 100% 지원)
-    try {
-      const res = await fetchWithTimeout('https://corsproxy.io/?' + encodeURIComponent(cleanUrl), 5000);
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.includes('<trkpt')) return text;
-      }
-    } catch(e) {}
-
-    // 2. codetabs 프록시 경유 (보조 우회망)
-    try {
-      const res = await fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(cleanUrl), 5000);
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.includes('<trkpt')) return text;
-      }
-    } catch(e) {}
-
-    // 3. 직접 다운로드 시도 (동일 도메인 또는 CORS 허용 서버)
+    // 1. 직접 다운로드 시도 (GitHub Pages, Raw, CORS 허용 서버 등)
     try {
       const res = await fetchWithTimeout(cleanUrl, 5000);
       if (res.ok) {
         const text = await res.text();
-        if (text && text.includes('<trkpt')) return text;
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
       }
     } catch(e) {}
 
-    // 4. 나스 서버 로컬 프록시 경유 (마지막 시도라 조금 더 여유를 둔다)
+    // 2. 🌟 핵심 복구 기능: 네이버 블로그 링크가 만료(403)되었을 때
+    // URL 속 파일명(예: 남덕유산_20250501.gpx)을 추출하여 우리 tracks 저장소에서 즉시 대체 로드!
     try {
-      const res = await fetchWithTimeout('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl), 8000);
+      const match = cleanUrl.match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (match && match[1]) {
+        let fname = match[1];
+        try { fname = decodeURIComponent(fname); } catch(e) {}
+        const fallbacks = [
+          `./tracks/${encodeURIComponent(fname)}`,
+          `https://hjwpro1971.github.io/gaja/tracks/${encodeURIComponent(fname)}`,
+          `https://raw.githubusercontent.com/hjwpro1971/gaja/main/tracks/${encodeURIComponent(fname)}`
+        ];
+        for (const fb of fallbacks) {
+          try {
+            const res = await fetchWithTimeout(fb, 5000);
+            if (res.ok) {
+              const text = await res.text();
+              if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+                console.log('대체 트랙 저장소에서 복구 성공:', fb);
+                return text;
+              }
+            }
+          } catch(e) {}
+        }
+      }
+    } catch(e) {}
+
+    // 3. allorigins 공개 프록시 시도
+    try {
+      const res = await fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(cleanUrl), 6000);
       if (res.ok) {
         const text = await res.text();
-        if (text && text.includes('<trkpt')) return text;
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
       }
     } catch(e) {}
 
-    throw new Error('GPX 파일을 자동으로 불러올 수 없습니다.');
+    // 4. 나스 서버 로컬 프록시 시도
+    try {
+      const res = await fetchWithTimeout('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl), 6000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+      }
+    } catch(e) {}
+
+    throw new Error('GPX 첨부파일 링크가 만료되었거나 접근할 수 없습니다.');
   }
 
   window.addEventListener('DOMContentLoaded', async () => {
@@ -734,7 +759,8 @@
         if (document.getElementById('gpxLoadingBadge')) {
           document.getElementById('gpxLoadingBadge').remove();
         }
-        showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.<br>대신 저장된 코스를 골라볼 수 있습니다.');
+        alert('⚠️ 등산로 GPX 파일을 불러오지 못했습니다.\n\n원인: ' + err.message + '\n\n💡 네이버 블로그 다운로드 링크는 생성 후 시간이 지나면 네이버 보안 정책상 주소가 만료됩니다.\n[등산로 지도 링크 생성기]에서 영구 보관된 코스를 선택하시거나 새 링크를 확인해 주세요.');
+        showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.');
       }
     } else if (!hadGpxUrl) {
       // url 파라미터 없이 열린 경우(즐겨찾기 등) — 저장된 코스 목록을 보여준다.
