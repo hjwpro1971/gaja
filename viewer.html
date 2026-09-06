@@ -27,9 +27,9 @@
     .title-box {
       pointer-events: auto; flex: 1;
       background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      padding: 10px 14px; border-radius: 16px;
+      padding: 10px 18px; border-radius: 16px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
-      display: flex; justify-content: space-between; align-items: center;
+      display: flex; justify-content: center; align-items: center; text-align: center;
     }
     .title-box h1 {
       font-size: 16px; font-weight: 800; color: #1b5e20;
@@ -126,8 +126,6 @@
 <div class="top-header">
   <div class="title-box">
     <h1 id="trailName">🚩 등산로 뷰어</h1>
-    <label for="gpxFileInput" class="btn-file-open">📂 GPX 열기</label>
-    <input type="file" id="gpxFileInput" accept=".gpx" style="display: none;" onchange="onFileSelected(event)">
   </div>
 </div>
 
@@ -146,15 +144,12 @@
   <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
 </div>
 
-<!-- 초기 안내 모달 -->
+<!-- 초기 안내 모달 (필요시에만 텍스트 안내) -->
 <div class="empty-modal" id="emptyModal" style="display: none;">
   <div class="modal-box">
     <div class="icon">⛰️</div>
-    <h2 id="modalTitle">등산로 불러오기</h2>
-    <p>스마트폰에 저장된 <b>.gpx 등산로 파일</b>을 선택하시면 네이버 지형도(등고선) 위에 코스가 즉시 표시됩니다.</p>
-    <button class="btn-select-main" onclick="document.getElementById('gpxFileInput').click()">
-      📂 내 폰에서 GPX 파일 선택
-    </button>
+    <h2 id="modalTitle">등산로 안내</h2>
+    <p>등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.</p>
   </div>
 </div>
 
