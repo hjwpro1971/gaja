@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>등산로 GPX 직접 제작기 - 지도에서 경로 찍기</title>
 
-  <!-- Leaflet 지도 엔진 (오프라인/로컬 지원) -->
+  <!-- Leaflet 지도 엔진 (로컬 캐시) -->
   <link rel="stylesheet" href="./leaflet.css">
   <script src="./leaflet.js"></script>
 
@@ -17,7 +17,24 @@
       background: #1e293b;
     }
 
-    #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+    #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; cursor: crosshair; }
+
+    /* 화면 중앙 조준 십자선 (스마트폰 정밀 타겟팅) */
+    .crosshair-target {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 40px; height: 40px; pointer-events: none; z-index: 900;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .crosshair-circle {
+      width: 14px; height: 14px; border: 2.5px solid #d32f2f; border-radius: 50%;
+      background: rgba(211, 47, 47, 0.25); box-shadow: 0 0 8px rgba(211, 47, 47, 0.6);
+    }
+    .crosshair-line-h {
+      position: absolute; width: 36px; height: 2px; background: rgba(211, 47, 47, 0.8);
+    }
+    .crosshair-line-v {
+      position: absolute; height: 36px; width: 2px; background: rgba(211, 47, 47, 0.8);
+    }
 
     /* 상단 통합 헤더 바 */
     .top-header {
@@ -59,12 +76,11 @@
     .btn-preview {
       background: #e8f5e9; color: #1b5e20; border: 1.5px solid #a5d6a7;
     }
-    .btn-preview:hover { background: #c8e6c9; }
     .btn-nav-maker {
       background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; text-decoration: none;
     }
 
-        /* 산 / 지명 검색창 및 결과 드롭다운 */
+    /* 산 / 지명 검색창 및 결과 드롭다운 */
     .search-box {
       position: absolute; top: 72px; left: 14px; z-index: 1000;
       display: flex; flex-direction: column; pointer-events: auto;
@@ -72,6 +88,17 @@
     .search-input-row {
       display: flex; gap: 6px; align-items: center;
     }
+    .input-search {
+      width: 210px; padding: 8px 12px; font-size: 13px; font-weight: 600;
+      border-radius: 10px; border: 1.5px solid #c8e6c9; background: rgba(255,255,255,0.95);
+      box-shadow: 0 3px 12px rgba(0,0,0,0.12); outline: none;
+    }
+    .input-search:focus { width: 240px; border-color: #2e7d32; }
+    .btn-search {
+      padding: 8px 12px; background: #2e7d32; color: #fff; font-size: 13px; font-weight: 700;
+      border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 3px 10px rgba(46,125,50,0.3);
+    }
+
     .search-results-dropdown {
       margin-top: 6px; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
       border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.22); border: 1.5px solid #81c784;
@@ -95,50 +122,52 @@
     .res-empty {
       padding: 14px; font-size: 13px; color: #64748b; text-align: center;
     }
-    .input-search {
-      width: 200px; padding: 8px 12px; font-size: 13px; font-weight: 600;
-      border-radius: 10px; border: 1.5px solid #c8e6c9; background: rgba(255,255,255,0.95);
-      box-shadow: 0 3px 12px rgba(0,0,0,0.12); outline: none;
-    }
-    .input-search:focus { width: 240px; border-color: #2e7d32; }
-    .btn-search {
-      padding: 8px 12px; background: #2e7d32; color: #fff; font-size: 13px; font-weight: 700;
-      border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 3px 10px rgba(46,125,50,0.3);
+
+    /* 하단 통계 및 점 찍기 패널 */
+    .bottom-panel {
+      position: absolute; bottom: 18px; left: 12px; right: 12px; z-index: 1000;
+      pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 10px;
     }
 
-    /* 하단 통계 및 조작 패널 */
-    .bottom-panel {
-      position: absolute; bottom: 20px; left: 14px; right: 14px; z-index: 1000;
-      pointer-events: none; display: flex; justify-content: center;
+    /* 중앙 메인 '여기에 점 추가' 액션 버튼 */
+    .btn-add-center-point {
+      pointer-events: auto;
+      padding: 13px 26px; font-size: 15px; font-weight: 900; color: #ffffff;
+      background: linear-gradient(135deg, #2e7d32, #1b5e20);
+      border: 2px solid #ffffff; border-radius: 30px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35); cursor: pointer;
+      display: flex; align-items: center; gap: 8px; transition: all 0.15s;
     }
+    .btn-add-center-point:active { transform: scale(0.93); }
+
     .status-card {
       pointer-events: auto; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      padding: 12px 20px; border-radius: 20px;
+      padding: 10px 18px; border-radius: 18px;
       box-shadow: 0 6px 24px rgba(0,0,0,0.18); border: 1.5px solid #c8e6c9;
-      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center;
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
     }
     .stat-item {
       display: flex; flex-direction: column; align-items: center;
     }
     .stat-label { font-size: 11px; font-weight: 700; color: #64748b; }
-    .stat-val { font-size: 18px; font-weight: 900; color: #1b5e20; }
+    .stat-val { font-size: 17px; font-weight: 900; color: #1b5e20; }
 
-    .control-divider { width: 1px; height: 32px; background: #cbd5e1; }
+    .control-divider { width: 1px; height: 28px; background: #cbd5e1; }
 
     .tool-btn-group {
-      display: flex; gap: 8px; align-items: center;
+      display: flex; gap: 6px; align-items: center;
     }
     .btn-tool {
-      padding: 8px 14px; font-size: 13px; font-weight: 800; border-radius: 10px;
+      padding: 7px 12px; font-size: 12.5px; font-weight: 800; border-radius: 9px;
       border: 1.5px solid #cbd5e1; background: #ffffff; color: #334155; cursor: pointer;
-      display: flex; align-items: center; gap: 5px; transition: all 0.2s;
+      display: flex; align-items: center; gap: 4px; transition: all 0.2s;
     }
     .btn-tool:hover { background: #f1f5f9; }
     .btn-tool.active { background: #e8f5e9; border-color: #2e7d32; color: #1b5e20; }
     .btn-tool.danger { color: #dc2626; border-color: #fca5a5; }
     .btn-tool.danger:hover { background: #fee2e2; }
 
-    /* 우측 지도 레이어 메뉴 버튼 */
+    /* 우측 플로팅 버튼 */
     .fab-col {
       position: absolute; right: 14px; top: 72px; z-index: 1000;
       display: flex; flex-direction: column; gap: 10px;
@@ -168,6 +197,7 @@
     .route-badge {
       color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px;
       border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+      pointer-events: none;
     }
 
     /* 알림 토스트 */
@@ -184,6 +214,13 @@
 
 <div id="map"></div>
 
+<!-- 화면 중앙 십자선 조준경 -->
+<div class="crosshair-target" id="crosshair">
+  <div class="crosshair-line-h"></div>
+  <div class="crosshair-line-v"></div>
+  <div class="crosshair-circle"></div>
+</div>
+
 <!-- 상단 헤더 -->
 <div class="top-header">
   <div class="header-panel">
@@ -192,7 +229,7 @@
       <span>등산로 GPX 제작기</span>
     </div>
 
-    <input type="text" id="courseNameInput" class="input-course-name" placeholder="코스 이름 (예: 남덕유산_종주)">
+    <input type="text" id="courseNameInput" class="input-course-name" placeholder="코스 이름 (예: 남덕유산_코스)">
 
     <div class="header-actions">
       <button class="btn-action btn-save-gpx" onclick="exportGPX()">
@@ -214,7 +251,6 @@
     <input type="text" id="searchInput" class="input-search" placeholder="산 이름 검색 (예: 지리산, 금오산)" onkeypress="if(event.key==='Enter') searchLocation()" onfocus="if(this.value.trim()) searchLocation()">
     <button class="btn-search" onclick="searchLocation()">🔍 검색</button>
   </div>
-  <!-- 검색 결과 선택 드롭다운 목록 -->
   <div class="search-results-dropdown" id="searchResultsDropdown"></div>
 </div>
 
@@ -238,6 +274,11 @@
 
 <!-- 하단 통계 및 조작 패널 -->
 <div class="bottom-panel">
+  <!-- 스마트폰/PC 어디서나 한 치 오차 없는 점 찍기 버튼 -->
+  <button class="btn-add-center-point" onclick="addCenterPoint()" title="화면 정중앙 십자선 위치에 경유지를 추가합니다">
+    📍 여기에 경유지 찍기 (화면 중앙)
+  </button>
+
   <div class="status-card">
     <div class="stat-item">
       <span class="stat-label">총 거리</span>
@@ -262,7 +303,7 @@
 
     <div class="tool-btn-group">
       <button class="btn-tool active" id="drawModeBtn" onclick="toggleDrawMode()">
-        ✏️ 경유지 찍기 (ON)
+        ✏️ 지도 터치로 찍기 (ON)
       </button>
       <button class="btn-tool" onclick="undoLastPoint()" title="방금 찍은 마지막 점 1개 취소">
         ↩️ 취소 (Undo)
@@ -277,6 +318,61 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  // 대한민국 주요 명산 및 동명이산(同名異山) 정밀 DB
+  const MOUNTAIN_PRESETS = [
+    { name: "지리산 (천왕봉 1,915m)", region: "경남 산청군 시천면 / 함양군", lat: 35.3370, lon: 127.7306, kw: ["지리산", "천왕봉", "산청", "함양"] },
+    { name: "지리산 (반야봉 / 뱀사골)", region: "전북 남원시 산내면", lat: 35.3583, lon: 127.5683, kw: ["지리산", "반야봉", "뱀사골", "남원"] },
+    { name: "지리산 (노고단 / 성삼재)", region: "전남 구례군 산동면", lat: 35.2952, lon: 127.5298, kw: ["지리산", "노고단", "성삼재", "구례"] },
+    { name: "지리산 (바래봉 / 정령치)", region: "전북 남원시 운봉읍", lat: 35.4344, lon: 127.5348, kw: ["지리산", "바래봉", "정령치", "남원"] },
+    { name: "사량도 지리산 (지리망산 398m)", region: "경남 통영시 사량면 (섬산행)", lat: 34.8466, lon: 128.2005, kw: ["지리산", "사량도", "사량도지리산", "통영"] },
+    { name: "덕유산 (향적봉 1,614m)", region: "전북 무주군 설천면", lat: 35.8617, lon: 127.7478, kw: ["덕유산", "향적봉", "무주"] },
+    { name: "남덕유산 (1,507m)", region: "경남 함양군 서상면 / 거창군", lat: 35.7554, lon: 127.6748, kw: ["남덕유산", "덕유산", "함양", "거창"] },
+    { name: "설악산 (대청봉 1,708m)", region: "강원 양양군 / 속초시 / 인제군", lat: 38.1192, lon: 128.4653, kw: ["설악산", "대청봉", "양양", "속초"] },
+    { name: "설악산 (공룡능선 / 마등령)", region: "강원 속초시 설악동", lat: 38.1408, lon: 128.4800, kw: ["설악산", "공룡능선", "속초"] },
+    { name: "남설악 (오색약수 / 주전골)", region: "강원 양양군 서면", lat: 38.0872, lon: 128.4485, kw: ["설악산", "남설악", "오색", "양양"] },
+    { name: "북한산 (백운대 836m)", region: "서울 강북구 / 경기 고양시", lat: 37.6586, lon: 126.9778, kw: ["북한산", "백운대", "서울", "고양"] },
+    { name: "북한산 (비봉 / 사모바위)", region: "서울 은평구 / 종로구", lat: 37.6258, lon: 126.9536, kw: ["북한산", "비봉", "은평", "종로"] },
+    { name: "도봉산 (자운봉 740m)", region: "서울 도봉구 / 경기 의정부시", lat: 37.7005, lon: 127.0189, kw: ["도봉산", "자운봉", "서울", "의정부"] },
+    { name: "금오산 (현월봉 976m)", region: "경북 구미시 / 칠곡군", lat: 36.0850, lon: 128.3075, kw: ["금오산", "구미", "칠곡"] },
+    { name: "금오산 (향일암 323m)", region: "전남 여수시 돌산읍", lat: 34.5916, lon: 127.7983, kw: ["금오산", "여수", "향일암"] },
+    { name: "금오산 (금오산성 849m)", region: "경남 하동군 금남면", lat: 35.0064, lon: 127.8767, kw: ["금오산", "하동"] },
+    { name: "팔공산 (비로봉 1,193m)", region: "대구 동구 / 경북 군위군 / 영천시", lat: 35.9869, lon: 128.6942, kw: ["팔공산", "대구", "군위", "영천"] },
+    { name: "팔공산 (1,151m)", region: "전북 장수군 장수읍", lat: 35.6322, lon: 127.4644, kw: ["팔공산", "장수"] },
+    { name: "백운산 (상봉 1,222m)", region: "전남 광양시 옥룡면", lat: 35.0886, lon: 127.6167, kw: ["백운산", "광양"] },
+    { name: "백운산 (마한산 904m)", region: "강원 정선군 / 평창군 (동강)", lat: 37.3325, lon: 128.6250, kw: ["백운산", "정선", "평창"] },
+    { name: "백운산 (904m)", region: "경기 포천시 이동면", lat: 38.0833, lon: 127.4333, kw: ["백운산", "포천"] },
+    { name: "백운산 (1,279m)", region: "경남 함양군 백전면", lat: 35.6267, lon: 127.6533, kw: ["백운산", "함양"] },
+    { name: "가야산 (상왕봉 1,432m)", region: "경남 합천군 / 경북 성주군", lat: 35.8228, lon: 128.1258, kw: ["가야산", "합천", "성주"] },
+    { name: "가야산 (원효봉 678m)", region: "충남 서산시 / 예산군", lat: 36.7028, lon: 126.6028, kw: ["가야산", "서산", "예산"] },
+    { name: "남산 (목멱산 262m)", region: "서울 중구 / 용산구", lat: 37.5512, lon: 126.9882, kw: ["남산", "서울"] },
+    { name: "경주 남산 (고위봉 494m)", region: "경북 경주시 남산동", lat: 35.7833, lon: 129.2278, kw: ["남산", "경주", "경주남산"] },
+    { name: "방장산 (743m)", region: "전남 장성군 / 전북 고창군", lat: 35.3992, lon: 126.7383, kw: ["방장산", "장성", "고창"] },
+    { name: "무등산 (천왕봉 1,187m)", region: "광주 동구 / 전남 담양군 / 화순군", lat: 35.1378, lon: 126.9883, kw: ["무등산", "광주", "화순", "담양"] },
+    { name: "월출산 (천황봉 809m)", region: "전남 영암군 / 강진군", lat: 34.7578, lon: 126.6975, kw: ["월출산", "영암", "강진"] },
+    { name: "조계산 (장군봉 884m)", region: "전남 순천시 송광면", lat: 34.9961, lon: 127.3278, kw: ["조계산", "순천", "송광사"] },
+    { name: "두륜산 (가련봉 703m)", region: "전남 해남군 삼산면", lat: 34.4844, lon: 126.6214, kw: ["두륜산", "해남", "대흥사"] },
+    { name: "속리산 (천왕봉 1,058m)", region: "충북 보은군 / 경북 상주시", lat: 36.5333, lon: 127.8333, kw: ["속리산", "보은", "상주"] },
+    { name: "주왕산 (주봉 721m)", region: "경북 청송군 부동면", lat: 36.4028, lon: 129.1764, kw: ["주왕산", "청송"] },
+    { name: "월악산 (영봉 1,097m)", region: "충북 제천시 덕산면 / 충주시", lat: 36.8583, lon: 128.0917, kw: ["월악산", "제천", "충주"] },
+    { name: "치악산 (비로봉 1,288m)", region: "강원 원주시 소초면", lat: 37.3625, lon: 128.0542, kw: ["치악산", "원주"] },
+    { name: "소백산 (비로봉 1,439m)", region: "충북 단양군 / 경북 영주시", lat: 36.9572, lon: 128.5147, kw: ["소백산", "단양", "영주"] },
+    { name: "태백산 (장군봉 1,567m)", region: "강원 태백시 / 경북 봉화군", lat: 37.0983, lon: 128.9197, kw: ["태백산", "태백", "봉화"] },
+    { name: "오대산 (비로봉 1,563m)", region: "강원 평창군 / 홍천군", lat: 37.7958, lon: 128.5444, kw: ["오대산", "평창", "홍천"] },
+    { name: "가지산 (1,241m)", region: "울산 울주군 / 경남 밀양시 / 청도군", lat: 35.6208, lon: 129.0142, kw: ["가지산", "울산", "밀양", "청도"] },
+    { name: "신불산 (1,159m)", region: "울산 울주군 삼남면 / 양산시", lat: 35.5342, lon: 129.0533, kw: ["신불산", "울산", "양산"] },
+    { name: "화왕산 (757m)", region: "경남 창녕군 창녕읍", lat: 35.5367, lon: 128.5300, kw: ["화왕산", "창녕"] },
+    { name: "황매산 (1,113m)", region: "경남 합천군 가회면 / 산청군", lat: 35.4939, lon: 127.9733, kw: ["황매산", "합천", "산청"] },
+    { name: "계룡산 (천황봉 845m)", region: "충남 공주시 / 논산시 / 계룡시", lat: 36.3556, lon: 127.2083, kw: ["계룡산", "공주", "논산"] },
+    { name: "대둔산 (마천대 878m)", region: "충남 논산시 / 금산군 / 전북 완주군", lat: 36.1264, lon: 127.3208, kw: ["대둔산", "완주", "논산", "금산"] },
+    { name: "마이산 (암마이봉 687m)", region: "전북 진안군 진안읍", lat: 35.7611, lon: 127.4144, kw: ["마이산", "진안"] },
+    { name: "관악산 (연주대 629m)", region: "서울 관악구 / 경기 안양시 / 과천시", lat: 37.4444, lon: 126.9639, kw: ["관악산", "서울", "안양", "과천"] },
+    { name: "청계산 (망경대 618m)", region: "서울 서초구 / 경기 성남시 / 과천시", lat: 37.4278, lon: 127.0528, kw: ["청계산", "서울", "성남", "과천"] },
+    { name: "수락산 (주봉 638m)", region: "서울 노원구 / 경기 의정부시 / 남양주시", lat: 37.6833, lon: 127.0833, kw: ["수락산", "서울", "의정부", "남양주"] },
+    { name: "불암산 (508m)", region: "서울 노원구 / 경기 남양주시", lat: 37.6500, lon: 127.0833, kw: ["불암산", "서울", "노원", "남양주"] },
+    { name: "마니산 (참성단 472m)", region: "인천 강화군 화도면", lat: 37.6167, lon: 126.4333, kw: ["마니산", "강화", "인천"] },
+    { name: "한라산 (백록담 1,947m)", region: "제주 서귀포시 / 제주시", lat: 33.3617, lon: 126.5332, kw: ["한라산", "백록담", "제주", "서귀포"] }
+  ];
+
   let map = null;
   let currentLayer = null;
   let polyline = null;
@@ -295,17 +391,18 @@
 
   function initMap() {
     map = L.map('map', {
-      center: [35.755, 127.674], // 기본 위치: 남덕유산/지리산 인근
+      center: [35.755, 127.674], // 기본 위치: 남덕유산
       zoom: 14,
       zoomControl: false,
-      maxZoom: 19
+      maxZoom: 19,
+      tap: false // 모바일 터치 이벤트 충돌 방지 (필수!)
     });
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     switchLayer('terrain');
 
-    // 지도 클릭 시 경유지 찍기
+    // 1. 지도 직접 클릭/터치 시 경유지 찍기 (PC & 모바일 공통)
     map.on('click', function(e) {
       if (!isDrawMode) return;
       addPoint(e.latlng.lat, e.latlng.lng);
@@ -359,10 +456,28 @@
     return 2.0 * R * Math.asin(Math.sqrt(a));
   }
 
-  // 점 추가
+  // 화면 중앙 십자선 위치의 점 추가 (모바일 정밀 조준 기능)
+  function addCenterPoint() {
+    if (!map) return;
+    const c = map.getCenter();
+    addPoint(c.lat, c.lng);
+  }
+
+  // 점 추가 공통 함수
   function addPoint(lat, lon) {
     points.push({ lat, lon });
     updatePath();
+
+    // 햅틱 진동 피드백
+    if (navigator.vibrate) {
+      try { navigator.vibrate(35); } catch(e) {}
+    }
+
+    if (points.length === 1) {
+      showToast('🚩 1번째 경유지(들머리)가 찍혔습니다!\n지도를 움직이며 다음 경유지를 계속 찍어주세요.');
+    } else {
+      showToast(`📍 ${points.length}번째 경유지 추가 완료!`);
+    }
   }
 
   // 마지막 점 취소 (Undo)
@@ -391,46 +506,36 @@
     const btn = document.getElementById('drawModeBtn');
     if (isDrawMode) {
       btn.classList.add('active');
-      btn.innerText = '✏️ 경유지 찍기 (ON)';
-      showToast('경유지 찍기 모드가 켜졌습니다. 지도를 클릭하세요.');
+      btn.innerText = '✏️ 지도 터치로 찍기 (ON)';
+      showToast('지도 터치로 찍기 ON! 화면을 누르거나 중앙 버튼을 누르세요.');
     } else {
       btn.classList.remove('active');
-      btn.innerText = '✋ 지도 이동 모드 (OFF)';
-      showToast('지도 이동 모드입니다. 클릭해도 점이 찍히지 않습니다.');
+      btn.innerText = '✋ 지도 터치 끄기 (OFF)';
+      showToast('지도 터치 OFF! 이제 [📍 여기에 경유지 찍기] 버튼으로만 점이 찍힙니다.');
     }
   }
 
   // 경로 및 마커 재렌더링 & 통계 갱신
   function updatePath() {
     if (!polyline) {
-      polyline = L.polyline([], { color: '#d32f2f', weight: 5, opacity: 0.95 }).addTo(map);
+      polyline = L.polyline([], {
+        color: '#d32f2f',
+        weight: 6,
+        opacity: 0.95,
+        interactive: false
+      }).addTo(map);
     }
 
     const latlngs = points.map(p => [p.lat, p.lon]);
     polyline.setLatLngs(latlngs);
 
-    // 기존 중간 마커 제거
+    // 기존 마커들 전체 정리
     pointMarkers.forEach(m => map.removeLayer(m));
     pointMarkers = [];
-
-    // 중간 점 원형 마커 표시 (클릭 시 해당 점 정보)
-    points.forEach((p, idx) => {
-      if (idx > 0 && idx < points.length - 1) {
-        const circle = L.circleMarker([p.lat, p.lon], {
-          radius: 4,
-          color: '#ffffff',
-          weight: 2,
-          fillColor: '#d32f2f',
-          fillOpacity: 1
-        }).addTo(map);
-        circle.bindTooltip(`경유지 ${idx + 1}`, { direction: 'top' });
-        pointMarkers.push(circle);
-      }
-    });
+    if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+    if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
 
     // 시작점 (들머리) 마커
-    if (startMarker) map.removeLayer(startMarker);
-    startMarker = null;
     if (points.length > 0) {
       const p = points[0];
       const icon = L.divIcon({
@@ -438,20 +543,54 @@
         html: '<div class="route-badge" style="background:#1976d2;">🚩 들머리</div>',
         iconAnchor: [30, 12]
       });
-      startMarker = L.marker([p.lat, p.lon], { icon }).addTo(map);
+      startMarker = L.marker([p.lat, p.lon], { icon, interactive: false }).addTo(map);
+
+      // 시작점 펄스 원 (한 눈에 보이도록)
+      const startCircle = L.circleMarker([p.lat, p.lon], {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2.5,
+        fillColor: '#1976d2',
+        fillOpacity: 1,
+        interactive: false
+      }).addTo(map);
+      pointMarkers.push(startCircle);
     }
 
+    // 중간 점 원형 마커 표시
+    points.forEach((p, idx) => {
+      if (idx > 0 && idx < points.length - 1) {
+        const circle = L.circleMarker([p.lat, p.lon], {
+          radius: 5,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#d32f2f',
+          fillOpacity: 1,
+          interactive: false
+        }).addTo(map);
+        pointMarkers.push(circle);
+      }
+    });
+
     // 끝점 (날머리) 마커
-    if (endMarker) map.removeLayer(endMarker);
-    endMarker = null;
     if (points.length > 1) {
       const p = points[points.length - 1];
       const icon = L.divIcon({
         className: 'custom-badge-icon',
-        html: '<div class="route-badge" style="background:#d32f2f;">🏁 날머리</div>',
+        html: `<div class="route-badge" style="background:#d32f2f;">🏁 ${points.length}번 날머리</div>`,
         iconAnchor: [30, 12]
       });
-      endMarker = L.marker([p.lat, p.lon], { icon }).addTo(map);
+      endMarker = L.marker([p.lat, p.lon], { icon, interactive: false }).addTo(map);
+
+      const endCircle = L.circleMarker([p.lat, p.lon], {
+        radius: 7,
+        color: '#ffffff',
+        weight: 2.5,
+        fillColor: '#d32f2f',
+        fillOpacity: 1,
+        interactive: false
+      }).addTo(map);
+      pointMarkers.push(endCircle);
     }
 
     // 총 거리 계산
@@ -460,13 +599,11 @@
       totalKm += calcDistanceKm(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
     }
 
-    // 예상 소요 시간 계산 (평균 산행 시속 2.5km)
+    // 예상 소요 시간 (시속 2.5km)
     const hours = totalKm / 2.5;
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
-    let timeStr = '';
-    if (h > 0) timeStr = `${h}시간 ${m}분`;
-    else timeStr = `${m}분`;
+    let timeStr = h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 
     document.getElementById('totalDist').innerText = `${totalKm.toFixed(2)} km`;
     document.getElementById('pointCount').innerText = `${points.length} 개`;
@@ -481,91 +618,6 @@
     }
     map.fitBounds(polyline.getBounds(), { padding: [60, 60] });
   }
-
-
-  // 대한민국 주요 명산 및 동명이산(同名異山) 정밀 DB
-  const MOUNTAIN_PRESETS = [
-    // 1. 지리산
-    { name: "지리산 (천왕봉 1,915m)", region: "경남 산청군 시천면 / 함양군", lat: 35.3370, lon: 127.7306, kw: ["지리산", "천왕봉", "산청", "함양"] },
-    { name: "지리산 (반야봉 / 뱀사골)", region: "전북 남원시 산내면", lat: 35.3583, lon: 127.5683, kw: ["지리산", "반야봉", "뱀사골", "남원"] },
-    { name: "지리산 (노고단 / 성삼재)", region: "전남 구례군 산동면", lat: 35.2952, lon: 127.5298, kw: ["지리산", "노고단", "성삼재", "구례"] },
-    { name: "지리산 (바래봉 / 정령치)", region: "전북 남원시 운봉읍", lat: 35.4344, lon: 127.5348, kw: ["지리산", "바래봉", "정령치", "남원"] },
-    { name: "사량도 지리산 (지리망산 398m)", region: "경남 통영시 사량면 (섬산행)", lat: 34.8466, lon: 128.2005, kw: ["지리산", "사량도", "사량도지리산", "통영"] },
-
-    // 2. 덕유산
-    { name: "덕유산 (향적봉 1,614m)", region: "전북 무주군 설천면", lat: 35.8617, lon: 127.7478, kw: ["덕유산", "향적봉", "무주"] },
-    { name: "남덕유산 (1,507m)", region: "경남 함양군 서상면 / 거창군", lat: 35.7554, lon: 127.6748, kw: ["남덕유산", "덕유산", "함양", "거창"] },
-
-    // 3. 설악산
-    { name: "설악산 (대청봉 1,708m)", region: "강원 양양군 / 속초시 / 인제군", lat: 38.1192, lon: 128.4653, kw: ["설악산", "대청봉", "양양", "속초"] },
-    { name: "설악산 (공룡능선 / 마등령)", region: "강원 속초시 설악동", lat: 38.1408, lon: 128.4800, kw: ["설악산", "공룡능선", "속초"] },
-    { name: "남설악 (오색약수 / 주전골)", region: "강원 양양군 서면", lat: 38.0872, lon: 128.4485, kw: ["설악산", "남설악", "오색", "양양"] },
-
-    // 4. 북한산 / 도봉산
-    { name: "북한산 (백운대 836m)", region: "서울 강북구 / 경기 고양시", lat: 37.6586, lon: 126.9778, kw: ["북한산", "백운대", "서울", "고양"] },
-    { name: "북한산 (비봉 / 사모바위)", region: "서울 은평구 / 종로구", lat: 37.6258, lon: 126.9536, kw: ["북한산", "비봉", "은평", "종로"] },
-    { name: "도봉산 (자운봉 740m)", region: "서울 도봉구 / 경기 의정부시", lat: 37.7005, lon: 127.0189, kw: ["도봉산", "자운봉", "서울", "의정부"] },
-
-    // 5. 금오산 (동명산)
-    { name: "금오산 (현월봉 976m)", region: "경북 구미시 / 칠곡군", lat: 36.0850, lon: 128.3075, kw: ["금오산", "구미", "칠곡"] },
-    { name: "금오산 (향일암 323m)", region: "전남 여수시 돌산읍", lat: 34.5916, lon: 127.7983, kw: ["금오산", "여수", "향일암"] },
-    { name: "금오산 (금오산성 849m)", region: "경남 하동군 금남면", lat: 35.0064, lon: 127.8767, kw: ["금오산", "하동"] },
-
-    // 6. 팔공산 (동명산)
-    { name: "팔공산 (비로봉 1,193m)", region: "대구 동구 / 경북 군위군 / 영천시", lat: 35.9869, lon: 128.6942, kw: ["팔공산", "대구", "군위", "영천"] },
-    { name: "팔공산 (1,151m)", region: "전북 장수군 장수읍", lat: 35.6322, lon: 127.4644, kw: ["팔공산", "장수"] },
-
-    // 7. 백운산 (동명산)
-    { name: "백운산 (상봉 1,222m)", region: "전남 광양시 옥룡면", lat: 35.0886, lon: 127.6167, kw: ["백운산", "광양"] },
-    { name: "백운산 (마한산 904m)", region: "강원 정선군 / 평창군 (동강)", lat: 37.3325, lon: 128.6250, kw: ["백운산", "정선", "평창"] },
-    { name: "백운산 (904m)", region: "경기 포천시 이동면", lat: 38.0833, lon: 127.4333, kw: ["백운산", "포천"] },
-    { name: "백운산 (1,279m)", region: "경남 함양군 백전면", lat: 35.6267, lon: 127.6533, kw: ["백운산", "함양"] },
-
-    // 8. 가야산 (동명산)
-    { name: "가야산 (상왕봉 1,432m)", region: "경남 합천군 / 경북 성주군", lat: 35.8228, lon: 128.1258, kw: ["가야산", "합천", "성주"] },
-    { name: "가야산 (원효봉 678m)", region: "충남 서산시 / 예산군", lat: 36.7028, lon: 126.6028, kw: ["가야산", "서산", "예산"] },
-
-    // 9. 남산 (동명산)
-    { name: "남산 (목멱산 262m)", region: "서울 중구 / 용산구", lat: 37.5512, lon: 126.9882, kw: ["남산", "서울"] },
-    { name: "경주 남산 (고위봉 494m)", region: "경북 경주시 남산동", lat: 35.7833, lon: 129.2278, kw: ["남산", "경주", "경주남산"] },
-
-    // 10. 방장산 / 무등산 / 월출산 / 조계산 / 두륜산
-    { name: "방장산 (743m)", region: "전남 장성군 / 전북 고창군", lat: 35.3992, lon: 126.7383, kw: ["방장산", "장성", "고창"] },
-    { name: "무등산 (천왕봉 1,187m)", region: "광주 동구 / 전남 담양군 / 화순군", lat: 35.1378, lon: 126.9883, kw: ["무등산", "광주", "화순", "담양"] },
-    { name: "월출산 (천황봉 809m)", region: "전남 영암군 / 강진군", lat: 34.7578, lon: 126.6975, kw: ["월출산", "영암", "강진"] },
-    { name: "조계산 (장군봉 884m)", region: "전남 순천시 송광면", lat: 34.9961, lon: 127.3278, kw: ["조계산", "순천", "송광사"] },
-    { name: "두륜산 (가련봉 703m)", region: "전남 해남군 삼산면", lat: 34.4844, lon: 126.6214, kw: ["두륜산", "해남", "대흥사"] },
-
-    // 11. 속리산 / 주왕산 / 월악산 / 치악산 / 소백산 / 태백산 / 오대산
-    { name: "속리산 (천왕봉 1,058m)", region: "충북 보은군 / 경북 상주시", lat: 36.5333, lon: 127.8333, kw: ["속리산", "보은", "상주"] },
-    { name: "주왕산 (주봉 721m)", region: "경북 청송군 부동면", lat: 36.4028, lon: 129.1764, kw: ["주왕산", "청송"] },
-    { name: "월악산 (영봉 1,097m)", region: "충북 제천시 덕산면 / 충주시", lat: 36.8583, lon: 128.0917, kw: ["월악산", "제천", "충주"] },
-    { name: "치악산 (비로봉 1,288m)", region: "강원 원주시 소초면", lat: 37.3625, lon: 128.0542, kw: ["치악산", "원주"] },
-    { name: "소백산 (비로봉 1,439m)", region: "충북 단양군 / 경북 영주시", lat: 36.9572, lon: 128.5147, kw: ["소백산", "단양", "영주"] },
-    { name: "태백산 (장군봉 1,567m)", region: "강원 태백시 / 경북 봉화군", lat: 37.0983, lon: 128.9197, kw: ["태백산", "태백", "봉화"] },
-    { name: "오대산 (비로봉 1,563m)", region: "강원 평창군 / 홍천군", lat: 37.7958, lon: 128.5444, kw: ["오대산", "평창", "홍천"] },
-
-    // 12. 영남알프스 (가지산 / 신불산 / 재약산 / 화왕산)
-    { name: "가지산 (1,241m)", region: "울산 울주군 / 경남 밀양시 / 청도군", lat: 35.6208, lon: 129.0142, kw: ["가지산", "울산", "밀양", "청도"] },
-    { name: "신불산 (1,159m)", region: "울산 울주군 삼남면 / 양산시", lat: 35.5342, lon: 129.0533, kw: ["신불산", "울산", "양산"] },
-    { name: "화왕산 (757m)", region: "경남 창녕군 창녕읍", lat: 35.5367, lon: 128.5300, kw: ["화왕산", "창녕"] },
-    { name: "황매산 (1,113m)", region: "경남 합천군 가회면 / 산청군", lat: 35.4939, lon: 127.9733, kw: ["황매산", "합천", "산청"] },
-
-    // 13. 계룡산 / 대둔산 / 마이산
-    { name: "계룡산 (천황봉 845m)", region: "충남 공주시 / 논산시 / 계룡시", lat: 36.3556, lon: 127.2083, kw: ["계룡산", "공주", "논산"] },
-    { name: "대둔산 (마천대 878m)", region: "충남 논산시 / 금산군 / 전북 완주군", lat: 36.1264, lon: 127.3208, kw: ["대둔산", "완주", "논산", "금산"] },
-    { name: "마이산 (암마이봉 687m)", region: "전북 진안군 진안읍", lat: 35.7611, lon: 127.4144, kw: ["마이산", "진안"] },
-
-    // 14. 수도권 명산 (관악산, 청계산, 수락산, 불암산, 마니산)
-    { name: "관악산 (연주대 629m)", region: "서울 관악구 / 경기 안양시 / 과천시", lat: 37.4444, lon: 126.9639, kw: ["관악산", "서울", "안양", "과천"] },
-    { name: "청계산 (망경대 618m)", region: "서울 서초구 / 경기 성남시 / 과천시", lat: 37.4278, lon: 127.0528, kw: ["청계산", "서울", "성남", "과천"] },
-    { name: "수락산 (주봉 638m)", region: "서울 노원구 / 경기 의정부시 / 남양주시", lat: 37.6833, lon: 127.0833, kw: ["수락산", "서울", "의정부", "남양주"] },
-    { name: "불암산 (508m)", region: "서울 노원구 / 경기 남양주시", lat: 37.6500, lon: 127.0833, kw: ["불암산", "서울", "노원", "남양주"] },
-    { name: "마니산 (참성단 472m)", region: "인천 강화군 화도면", lat: 37.6167, lon: 126.4333, kw: ["마니산", "강화", "인천"] },
-
-    // 15. 한라산
-    { name: "한라산 (백록담 1,947m)", region: "제주 서귀포시 / 제주시", lat: 33.3617, lon: 126.5332, kw: ["한라산", "백록담", "제주", "서귀포"] }
-  ];
 
   // 산 / 지명 검색 (동명산 구분 목록 & 지역명 선택 기능)
   async function searchLocation() {
@@ -607,12 +659,10 @@
         data.forEach(d => {
           const parts = d.display_name.split(',').map(s => s.trim());
           const placeName = parts[0];
-          // 중복 방지 (이미 프리셋에 동일 좌표나 이름이 있으면 생략)
           const lat = parseFloat(d.lat);
           const lon = parseFloat(d.lon);
           const isDup = matchedList.some(m => calcDistanceKm(m.lat, m.lon, lat, lon) < 1.0);
           if (!isDup) {
-            // 시/도/군/구 추출
             let regStr = parts.slice(1).reverse().join(' ');
             if (d.address) {
               const addr = d.address;
@@ -666,7 +716,7 @@
     map.setView([lat, lon], 14);
     document.getElementById('searchResultsDropdown').style.display = 'none';
 
-    // 코스 이름에 산 이름 자동 반영 (비어있거나 기본값일 때)
+    // 코스 이름에 산 이름 자동 반영
     const nameInput = document.getElementById('courseNameInput');
     if (!nameInput.value.trim() || nameInput.value.includes('나만의')) {
       const cleanTitle = title.replace(/\s*\([^)]*\)/g, '').trim().replace(/\s+/g, '_');
@@ -684,7 +734,6 @@
       if (dropdown) dropdown.style.display = 'none';
     }
   });
-
 
   // 표준 GPX 1.1 파일 생성 및 다운로드
   function exportGPX() {
@@ -799,7 +848,7 @@ ${trkpts}    </trkseg>
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
-    showToast('💡 지도를 클릭하여 나만의 등산로 코스를 그려보세요!');
+    showToast('💡 지도를 움직여 중앙 [📍 여기에 경유지 찍기]를 누르거나 화면을 터치하세요!');
   });
 </script>
 
