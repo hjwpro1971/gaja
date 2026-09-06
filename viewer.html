@@ -536,6 +536,20 @@
     );
   }
 
+  // 느린 프록시에서 무한정 기다리지 않도록 각 시도마다 제한시간을 둔다.
+  // 스마트폰 이동통신망에서는 corsproxy.io 응답이 수십 초씩 걸리는 경우가
+  // 실제로 있었는데, 타임아웃이 없으면 다음 단계(더 빠를 수 있는 경로)로
+  // 못 넘어가고 그 프록시 하나만 계속 기다리게 된다.
+  async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // 블로그 등 외부 서버의 CORS 제한을 우회하여 GPX 내용을 즉시 가져오는 함수
   async function fetchGPXFile(targetUrl) {
     let cleanUrl = targetUrl.trim();
@@ -545,7 +559,7 @@
 
     // 1. 초고속 corsproxy.io 경유 (네이버 블로그 다운로드 링크 100% 지원)
     try {
-      const res = await fetch('https://corsproxy.io/?' + encodeURIComponent(cleanUrl));
+      const res = await fetchWithTimeout('https://corsproxy.io/?' + encodeURIComponent(cleanUrl), 5000);
       if (res.ok) {
         const text = await res.text();
         if (text && text.includes('<trkpt')) return text;
@@ -554,7 +568,7 @@
 
     // 2. codetabs 프록시 경유 (보조 우회망)
     try {
-      const res = await fetch('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(cleanUrl));
+      const res = await fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(cleanUrl), 5000);
       if (res.ok) {
         const text = await res.text();
         if (text && text.includes('<trkpt')) return text;
@@ -563,16 +577,16 @@
 
     // 3. 직접 다운로드 시도 (동일 도메인 또는 CORS 허용 서버)
     try {
-      const res = await fetch(cleanUrl);
+      const res = await fetchWithTimeout(cleanUrl, 5000);
       if (res.ok) {
         const text = await res.text();
         if (text && text.includes('<trkpt')) return text;
       }
     } catch(e) {}
 
-    // 4. 나스 서버 로컬 프록시 경유
+    // 4. 나스 서버 로컬 프록시 경유 (마지막 시도라 조금 더 여유를 둔다)
     try {
-      const res = await fetch('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl));
+      const res = await fetchWithTimeout('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl), 8000);
       if (res.ok) {
         const text = await res.text();
         if (text && text.includes('<trkpt')) return text;
