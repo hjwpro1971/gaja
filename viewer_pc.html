@@ -195,9 +195,10 @@
 
     /* 초기 안내 모달 */
     .empty-modal {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000;
-      background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
-      display: flex; justify-content: center; align-items: center; padding: 20px;
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(5px);
+      display: none; justify-content: center; align-items: center; padding: 20px;
+      box-sizing: border-box;
     }
     .modal-box {
       background: #ffffff; padding: 28px 22px; border-radius: 20px;
@@ -933,6 +934,69 @@
     if (modal) modal.style.display = 'none';
   }
 
+  // 🌟 저장된 등산로 코스 목록 팝업 열기 (전역 함수로 언제든지 즉시 호출 가능)
+  function showSavedRouteList(message) {
+    const routes = loadSavedRoutes();
+    const modal = document.getElementById('emptyModal');
+    if (!modal) return;
+    const desc = document.getElementById('modalDesc');
+    const listEl = document.getElementById('savedRouteList');
+
+    if (!routes || routes.length === 0) {
+      if (desc) desc.innerHTML = message || '내 PC의 <b>.gpx 파일</b>을 선택하시거나 화면으로 끌어다 놓으시면 지형도 위에 등산로가 바로 열립니다.';
+      if (listEl) {
+        listEl.innerHTML = '';
+        listEl.style.display = 'none';
+      }
+      modal.style.display = 'flex';
+      return;
+    }
+
+    if (desc) desc.innerHTML = message || '저장된 코스를 클릭하시면 오프라인 지도로 즉시 열립니다.';
+    if (listEl) {
+      listEl.innerHTML = routes.map((r, i) => {
+        const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
+        const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
+        return `
+          <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
+            <div class="saved-route-info">
+              <div class="saved-route-name">⛰️ ${safeName}</div>
+              <div class="saved-route-date">저장일: ${dateStr}</div>
+            </div>
+            <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
+              🗑️
+            </button>
+          </div>
+        `;
+      }).join('');
+      listEl.style.display = 'flex';
+    }
+    modal.style.display = 'flex';
+  }
+  window.showSavedRouteList = showSavedRouteList;
+
+  function openSavedRouteByIndex(index) {
+    const routes = loadSavedRoutes();
+    const r = routes[index];
+    if (!r) return;
+    closeModal();
+    drawRoute(r.points, r.name, r.sourceUrl);
+  }
+  window.openSavedRouteByIndex = openSavedRouteByIndex;
+
+  function deleteSavedRouteByIndex(event, index) {
+    if (event) event.stopPropagation();
+    const routes = loadSavedRoutes();
+    const target = routes[index];
+    const targetName = target ? target.name : '이 코스';
+    if (confirm(`'${targetName}' 코스를 저장 목록에서 삭제하시겠습니까?`)) {
+      routes.splice(index, 1);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+      showSavedRouteList();
+    }
+  }
+  window.deleteSavedRouteByIndex = deleteSavedRouteByIndex;
+
   // PC 드래그 앤 드롭(Drag & Drop) 파일 열기 지원
   window.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -1285,59 +1349,7 @@
       showSavedRouteList();
     }
 
-    // 저장된 코스 목록을 안내 모달에 렌더링한다. (HTML 버튼에서 호출할 수 있도록 window 전역 바인딩)
-    window.showSavedRouteList = function(message) {
-      const routes = loadSavedRoutes();
-      const modal = document.getElementById('emptyModal');
-      const desc = document.getElementById('modalDesc');
-      const listEl = document.getElementById('savedRouteList');
 
-      if (!routes.length) {
-        desc.innerHTML = message || '내 PC의 <b>.gpx 파일</b>을 선택하시거나 화면으로 끌어다 놓으시면 지형도 위에 등산로가 바로 열립니다.';
-        listEl.style.display = 'none';
-        listEl.innerHTML = '';
-        modal.style.display = 'flex';
-        return;
-      }
-
-      desc.innerHTML = message || '저장된 코스를 클릭하시면 오프라인 지도로 즉시 열립니다.';
-      listEl.innerHTML = routes.map((r, i) => {
-        const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
-        const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
-        return `
-          <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
-            <div class="saved-route-info">
-              <div class="saved-route-name">⛰️ ${safeName}</div>
-              <div class="saved-route-date">저장일: ${dateStr}</div>
-            </div>
-            <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
-              🗑️
-            </button>
-          </div>
-        `;
-      }).join('');
-      listEl.style.display = 'flex';
-      modal.style.display = 'flex';
-    }
-
-    window.openSavedRouteByIndex = function(index) {
-      const routes = loadSavedRoutes();
-      const r = routes[index];
-      if (!r) return;
-      drawRoute(r.points, r.name, r.sourceUrl);
-    };
-
-    window.deleteSavedRouteByIndex = function(event, index) {
-      if (event) event.stopPropagation();
-      const routes = loadSavedRoutes();
-      const target = routes[index];
-      const targetName = target ? target.name : '이 코스';
-      if (confirm(`'${targetName}' 코스를 저장 목록에서 삭제하시겠습니까?`)) {
-        routes.splice(index, 1);
-        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
-        showSavedRouteList();
-      }
-    };
   });
 </script>
 
