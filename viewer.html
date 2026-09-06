@@ -271,6 +271,34 @@
       transition: all 0.2s;
     }
     .btn-route-list:hover { background: #c8e6c9; }
+  
+    /* 화면 오른쪽 하단 줌 컨트롤 (+/-) 스타일 */
+    .leaflet-bottom.leaflet-right {
+      margin-bottom: 24px !important;
+      margin-right: 14px !important;
+    }
+    .leaflet-control-zoom {
+      border: 1.5px solid #c8e6c9 !important;
+      border-radius: 12px !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.2) !important;
+    }
+    .leaflet-control-zoom a {
+      width: 40px !important;
+      height: 40px !important;
+      line-height: 40px !important;
+      font-size: 22px !important;
+      font-weight: 900 !important;
+      color: #1b5e20 !important;
+      background-color: #ffffff !important;
+      transition: background 0.15s;
+    }
+    .leaflet-control-zoom a:active,
+    .leaflet-control-zoom a:hover {
+      background-color: #e8f5e9 !important;
+      color: #2e7d32 !important;
+    }
+
   </style>
 </head>
 <body>
@@ -565,7 +593,7 @@
       maxZoom: 19
     });
 
-    L.control.zoom({ position: 'topleft' }).addTo(map);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
     switchLayer('terrain');
