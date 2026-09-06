@@ -600,8 +600,18 @@
     initMap();
 
     const urlParams = new URLSearchParams(window.location.search);
+    const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
     let gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
+    const decodedCourseName = courseName ? decodeURIComponent(courseName) : '등산로 코스';
+
+    // 같은 코스를 다시 열 때 매번 외부 프록시를 거쳐 GPX를 재다운로드하지
+    // 않도록, url 파라미터가 있어도 먼저 localStorage에 같은 코스명으로
+    // 저장된 좌표가 있으면 그걸 즉시 쓴다. 코스명이 다르면(새 링크) 정상적으로
+    // 새로 다운로드한다.
+    if (gpxUrl && tryRestoreSavedRoute(decodedCourseName)) {
+      gpxUrl = null;
+    }
 
     if (gpxUrl) {
       // 로딩 안내 뱃지 화면 상단 표시
@@ -614,7 +624,7 @@
       try {
         const xml = await fetchGPXFile(gpxUrl);
         const points = parseGPX(xml);
-        drawRoute(points, courseName ? decodeURIComponent(courseName) : '등산로 코스');
+        drawRoute(points, decodedCourseName);
         if (document.getElementById('gpxLoadingBadge')) {
           document.getElementById('gpxLoadingBadge').remove();
         }
@@ -625,8 +635,22 @@
         }
         checkSavedRoute();
       }
-    } else {
+    } else if (!hadGpxUrl) {
       checkSavedRoute();
+    }
+
+    // 코스명이 일치하는 저장된 경로를 즉시 복원한다. 복원에 성공하면 true.
+    function tryRestoreSavedRoute(name) {
+      try {
+        const saved = localStorage.getItem('saved_hiking_route');
+        if (!saved) return false;
+        const data = JSON.parse(saved);
+        if (data.points && data.points.length && data.name === name) {
+          drawRoute(data.points, data.name);
+          return true;
+        }
+      } catch(e) {}
+      return false;
     }
 
     function checkSavedRoute() {
