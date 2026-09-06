@@ -187,9 +187,17 @@
   </div>
 
   <div class="form-group">
-    <label>3. 웹서버 주소 (등산로 뷰어 viewer.html 주소)</label>
+    <label>3. 연결할 등산로 뷰어 주소 (독자 스마트폰에서 열릴 주소)</label>
+    <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+      <button type="button" id="btnPresetGithub" onclick="applyPreset('github')" style="padding: 8px 12px; font-size: 13px; font-weight: 700; border-radius: 8px; border: 1.5px solid #2e7d32; background: #e8f5e9; color: #1b5e20; cursor: pointer;">
+        🌐 [추천] 깃허브 공개 뷰어 (블로그 독자용)
+      </button>
+      <button type="button" id="btnPresetNas" onclick="applyPreset('nas')" style="padding: 8px 12px; font-size: 13px; font-weight: 700; border-radius: 8px; border: 1.5px solid #90caf9; background: #e3f2fd; color: #1565c0; cursor: pointer;">
+        🏠 나스 서버 뷰어 (사내/집 내부용)
+      </button>
+    </div>
     <input type="text" id="baseUrlInput" placeholder="예: https://hjwpro1971.github.io/gaja/viewer.html" oninput="saveAndupdateBaseUrl()">
-    <div class="help-hint">💡 실제 운영 중이신 웹서버 주소를 입력하시면 브라우저에 자동 기억됩니다.</div>
+    <div class="help-hint" id="serverHint">💡 블로그 본문에 넣으실 때는 독자분들이 밖에서 열어볼 수 있도록 <b>[🌐 깃허브 공개 뷰어]</b> 주소를 권장합니다.</div>
   </div>
 
   <!-- 결과 출력 영역 -->
@@ -223,6 +231,26 @@
 <div class="toast" id="toast">📋 복사되었습니다!</div>
 
 <script>
+  // 실행 환경 감지 및 배지 표시
+  const isNas = window.location.hostname.includes('192.168') || window.location.hostname.includes('nas') || window.location.port === '8991' || window.location.port === '8443';
+  if (isNas) {
+    const headerEl = document.querySelector('.header p');
+    if (headerEl) {
+      headerEl.innerHTML += '<br><span style="display:inline-block; margin-top:6px; font-size:12px; font-weight:700; background:#e8f5e9; color:#1b5e20; padding:3px 10px; border-radius:12px; border:1px solid #a5d6a7;">🏠 우리집 QNAP 나스 서버(NASLittle)에서 실행 중</span>';
+    }
+  }
+
+  function applyPreset(type) {
+    let url = 'https://hjwpro1971.github.io/gaja/viewer.html';
+    if (type === 'nas') {
+      const origin = window.location.origin;
+      url = origin.includes('192.168') ? `${origin}/gaja-tools/viewer.html` : 'http://192.168.219.119/gaja-tools/viewer.html';
+    }
+    document.getElementById('baseUrlInput').value = url;
+    localStorage.setItem('gpx_base_url', url);
+    updateResult();
+  }
+
   // 저장된 웹서버 주소 불러오기
   let savedBase = localStorage.getItem('gpx_base_url');
   if (!savedBase || savedBase.includes('gpx.html')) {
