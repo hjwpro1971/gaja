@@ -3,248 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>산길샘 등산 코스 열기</title>
+  <title>산길샘 실행 중...</title>
+  <script>
+    // 페이지가 로딩되자마자 화면을 띄우지 않고 0초 만에 산길샘 앱을 바로 실행합니다.
+    (function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      let gpxUrl = urlParams.get('url') || urlParams.get('file') || '';
+      
+      if (!gpxUrl) return;
+
+      try { gpxUrl = decodeURIComponent(gpxUrl); } catch(e) {}
+
+      const isAndroid = /Android/i.test(navigator.userAgent);
+
+      if (isAndroid) {
+        const cleanUrl = gpxUrl.replace(/^https?:\/\//, '');
+        const scheme = gpxUrl.startsWith('https') ? 'https' : 'http';
+        
+        // 안드로이드 산길샘 앱 다이렉트 실행 인텐트
+        const intentUri = `intent://${cleanUrl}#Intent;scheme=${scheme};action=android.intent.action.VIEW;type=application/gpx+xml;package=com.ngt.android.nadeuri;end`;
+        
+        // 즉시 산길샘 앱 호출
+        window.location.replace(intentUri);
+
+        // 만약 앱 실행이 차단되었을 때 1초 후 다운로드 폴백
+        setTimeout(function() {
+          window.location.href = gpxUrl;
+        }, 1200);
+      } else {
+        // 아이폰 / PC는 파일 다운로드
+        window.location.replace(gpxUrl);
+      }
+    })();
+  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
-      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-      color: #2e3d2f;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
+      background-color: #f8faf8;
       display: flex;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      padding: 16px;
-    }
-    .card {
-      background: #ffffff;
-      width: 100%;
-      max-width: 440px;
-      border-radius: 24px;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.12);
-      padding: 30px 22px;
       text-align: center;
+      padding: 20px;
     }
-    .badge {
-      display: inline-block;
-      background: #2e7d32;
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-      padding: 4px 14px;
+    .box {
+      background: white;
+      padding: 30px;
       border-radius: 20px;
-      margin-bottom: 12px;
-    }
-    .icon { font-size: 48px; margin-bottom: 6px; }
-    h1 { font-size: 22px; font-weight: 800; color: #1b5e20; margin-bottom: 12px; }
-    .course-title {
-      font-size: 18px;
-      font-weight: 700;
-      color: #1b5e20;
-      background: #f1f8e9;
-      border: 2px solid #a5d6a7;
-      padding: 14px 16px;
-      border-radius: 14px;
-      margin-bottom: 20px;
-      word-break: break-all;
-      line-height: 1.4;
-    }
-    
-    .status-box {
-      background: #e8f5e9;
-      border: 1px solid #81c784;
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 20px;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.4); }
-      70% { box-shadow: 0 0 0 10px rgba(46, 125, 50, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0); }
-    }
-    .status-box h3 { font-size: 17px; color: #1b5e20; margin-bottom: 6px; }
-    .status-box p { font-size: 13px; color: #388e3c; font-weight: 600; }
-
-    .step-card {
-      background: #fffde7;
-      border: 2px solid #fff59d;
-      border-radius: 16px;
-      padding: 18px 14px;
-      margin-bottom: 20px;
-      text-align: left;
-    }
-    .step-title {
-      font-size: 15px;
-      font-weight: 800;
-      color: #f57f17;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .step-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 10px;
-      font-size: 14px;
-      color: #424242;
-      line-height: 1.4;
-    }
-    .step-num {
-      background: #fbc02d;
-      color: #ffffff;
-      font-weight: 800;
-      font-size: 12px;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .step-item strong { color: #d84315; font-weight: 800; }
-
-    .btn-main {
-      display: flex;
-      justify-content: center;
-      align-items: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      max-width: 360px;
       width: 100%;
-      padding: 16px;
-      font-size: 18px;
-      font-weight: 800;
-      color: #ffffff;
-      background: #2e7d32;
-      border: none;
-      border-radius: 14px;
-      cursor: pointer;
-      text-decoration: none;
-      box-shadow: 0 4px 12px rgba(46,125,50,0.3);
-      margin-bottom: 12px;
     }
-    .btn-main:active { transform: scale(0.98); background: #1b5e20; }
-
-    .btn-sub-wrap {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #2e7d32;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
     }
-    .btn-sub {
-      flex: 1;
-      padding: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      color: #555;
-      background: #f5f5f5;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      text-decoration: none;
-      text-align: center;
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { font-size: 18px; color: #1b5e20; margin-bottom: 8px; }
+    p { font-size: 13px; color: #666; line-height: 1.4; }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <span class="badge">산길샘 GPX 코스 열기</span>
-  <div class="icon">⛰️</div>
-  <h1>등산로 불러오기</h1>
-  
-  <div class="course-title" id="courseName">등산 코스 준비 중...</div>
-
-  <div class="status-box">
-    <h3>📥 GPX 파일이 다운로드됩니다</h3>
-    <p>다운로드 완료 후 아래 순서대로 눌러주세요!</p>
-  </div>
-
-  <!-- 어르신을 위한 3단계 열기 가이드 -->
-  <div class="step-card">
-    <div class="step-title">👉 산길샘 지도 여는 방법 (초간단 3단계)</div>
-    
-    <div class="step-item">
-      <div class="step-num">1</div>
-      <div>화면 상단(또는 아래)에 뜬 <strong>[다운로드 완료 / 열기]</strong>를 누릅니다.</div>
-    </div>
-    
-    <div class="step-item">
-      <div class="step-num">2</div>
-      <div>연결 프로그램에서 <strong>[산길샘]</strong> 선택 후 <strong>[항상]</strong>을 누릅니다.</div>
-    </div>
-    
-    <div class="step-item">
-      <div class="step-num">3</div>
-      <div>산길샘이 켜지면서 지도에 <strong>등산로(빨간선)</strong>가 바로 뜹니다!</div>
-    </div>
-  </div>
-
-  <!-- 다시 다운로드 버튼 -->
-  <button class="btn-main" id="retryBtn" onclick="triggerDownload()">
-    🔄 파일 다시 다운로드하기
-  </button>
-
-  <div class="btn-sub-wrap">
-    <a href="https://play.google.com/store/apps/details?id=com.ngt.android.nadeuri" class="btn-sub" target="_blank">📲 산길샘 앱 설치하기</a>
-  </div>
+<div class="box">
+  <div class="spinner"></div>
+  <h2>산길샘 앱을 실행하고 있습니다</h2>
+  <p>잠시만 기다려 주세요...</p>
 </div>
-
-<script>
-  const urlParams = new URLSearchParams(window.location.search);
-  let gpxUrl = urlParams.get('url') || urlParams.get('file') || '';
-  let courseName = urlParams.get('name') || '';
-
-  if (gpxUrl) {
-    try { gpxUrl = decodeURIComponent(gpxUrl); } catch(e) {}
-  }
-
-  if (!courseName) {
-    if (gpxUrl) {
-      try {
-        const gpxMatch = gpxUrl.match(/([^\/\?#&=:"']+\.gpx)/i);
-        if (gpxMatch && gpxMatch[1]) {
-          courseName = gpxMatch[1].replace(/\.gpx$/i, '');
-        } else {
-          const parts = gpxUrl.split(/[/?#&=]/).filter(p => 
-            p && !p.includes('nmap-redirect') && !p.includes('.html') && 
-            !p.includes('blog.naver') && !p.includes('pstatic') && p.length > 1
-          );
-          courseName = parts.reverse().find(p => /[가-힣]/.test(p)) || parts[0] || '등산 코스';
-        }
-        courseName = courseName
-          .replace(/_\d{8}$/, '')
-          .replace(/\b\d{8}\b/g, '')
-          .replace(/^_+|_+$/g, '')
-          .replace(/_{2,}/g, ' ')
-          .replace(/_/g, ' ')
-          .trim();
-      } catch(e) {
-        courseName = '등산 코스';
-      }
-    } else {
-      courseName = '코스 정보 없음';
-    }
-  }
-
-  document.getElementById('courseName').innerText = '🚩 ' + (courseName || '등산 코스');
-
-  function triggerDownload() {
-    if (!gpxUrl) {
-      alert('GPX 파일 주소가 연결되지 않았습니다.');
-      return;
-    }
-    // 다운로드 실행
-    window.location.href = gpxUrl;
-  }
-
-  // 페이지 열리자마자 0.3초 후 파일 자동 다운로드 시작
-  window.addEventListener('DOMContentLoaded', () => {
-    if (gpxUrl) {
-      setTimeout(triggerDownload, 300);
-    }
-  });
-</script>
 
 </body>
 </html>
