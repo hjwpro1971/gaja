@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>등산로 코스 뷰어</title>
+  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
+      background: #f8faf8;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* 상단 타이틀 바 */
+    .top-bar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      pointer-events: none;
+    }
+    .title-card {
+      pointer-events: auto;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 12px 18px;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      border: 1px solid #e0e0e0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .title-card h1 {
+      font-size: 17px;
+      font-weight: 800;
+      color: #1b5e20;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 우측 플로팅 액션 버튼 */
+    .fab-col {
+      position: absolute;
+      right: 14px;
+      top: 80px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .fab-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 1px solid #c8e6c9;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 20px;
+      cursor: pointer;
+      color: #2e7d32;
+      transition: all 0.2s;
+    }
+    .fab-btn:active { transform: scale(0.92); background: #e8f5e9; }
+    .fab-btn.active { background: #2e7d32; color: #ffffff; }
+
+    /* 파일 선택 오버레이 (파일이 없을 때) */
+    .empty-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(8px);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .empty-card {
+      background: #ffffff;
+      padding: 32px 24px;
+      border-radius: 24px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+      max-width: 380px;
+      width: 100%;
+      border: 2px solid #c8e6c9;
+    }
+    .empty-card .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-card h2 { font-size: 20px; font-weight: 800; color: #1b5e20; margin-bottom: 8px; }
+    .empty-card p { font-size: 14px; color: #555; line-height: 1.5; margin-bottom: 22px; }
+    .btn-file-select {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      font-size: 17px;
+      font-weight: 800;
+      color: #ffffff;
+      background: #2e7d32;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(46,125,50,0.35);
+    }
+    .btn-file-select:active { transform: scale(0.98); background: #1b5e20; }
+
+    /* 하단 대시보드 카드 */
+    .bottom-sheet {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      right: 14px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.12);
+      border: 1px solid #e0e0e0;
+      padding: 16px 18px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .stat-item {
+      background: #f1f8e9;
+      padding: 8px 4px;
+      border-radius: 12px;
+    }
+    .stat-label { font-size: 11px; font-weight: 700; color: #2e7d32; margin-bottom: 2px; }
+    .stat-val { font-size: 15px; font-weight: 800; color: #1a202c; }
+
+    .btn-naver-app {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      padding: 12px;
+      background: #03c75a;
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 800;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      gap: 6px;
+      box-shadow: 0 3px 10px rgba(3, 199, 90, 0.3);
+    }
+    .btn-naver-app:active { transform: scale(0.98); }
+
+    /* 현재 내 위치 마커 */
+    .gps-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #007bff;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 8px rgba(0, 123, 255, 0.8);
+      animation: gpsPulse 2s infinite;
+    }
+    @keyframes gpsPulse {
+      0% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.6); }
+      70% { box-shadow: 0 0 0 14px rgba(0, 123, 255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0); }
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 상단 타이틀 바 -->
+<div class="top-bar">
+  <div class="title-card">
+    <h1 id="courseTitle">🚩 등산로 뷰어</h1>
+    <label for="hiddenFileInput" style="background:#e8f5e9; color:#2e7d32; font-size:12px; font-weight:700; padding:6px 12px; border-radius:8px; cursor:pointer;">
+      📂 파일 열기
+    </label>
+    <input type="file" id="hiddenFileInput" accept=".gpx" style="display: none;" onchange="handleFileSelect(event)">
+  </div>
+</div>
+
+<!-- 우측 플로팅 액션 버튼 -->
+<div class="fab-col">
+  <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치 보기">📍</button>
+  <button class="fab-btn" onclick="fitRoute()" title="경로 전체보기">🔍</button>
+</div>
+
+<!-- 파일 선택 안내 오버레이 (초기 상태) -->
+<div class="empty-overlay" id="emptyOverlay" style="display: none;">
+  <div class="empty-card">
+    <div class="icon">⛰️</div>
+    <h2 id="overlayTitle">등산로 불러오기</h2>
+    <p>다운로드받은 <b>.gpx 등산로 파일</b>을 선택하시면 지도 위에 빨간색 코스선이 즉시 펼쳐집니다.</p>
+    <button class="btn-file-select" onclick="document.getElementById('hiddenFileInput').click()">
+      📂 내 폰에서 GPX 파일 선택하기
+    </button>
+  </div>
+</div>
+
+<!-- 하단 정보 카드 -->
+<div class="bottom-sheet" id="bottomSheet" style="display: none;">
+  <div class="stats-grid">
+    <div class="stat-item">
+      <div class="stat-label">총 거리</div>
+      <div class="stat-val" id="statDistance">-</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">최고 고도</div>
+      <div class="stat-val" id="statMaxAlt">-</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">최저 고도</div>
+      <div class="stat-val" id="statMinAlt">-</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">산행 시간</div>
+      <div class="stat-val" id="statDuration">-</div>
+    </div>
+  </div>
+
+  <button class="btn-naver-app" id="btnNaverApp" onclick="openNaverMapApp()">
+    📱 네이버지도 앱으로 안내받기
+  </button>
+</div>
+
+<script>
+  let map = null;
+  let polyline = null;
+  let markers = [];
+  let currentPoints = [];
+  let userGpsMarker = null;
+  let watchId = null;
+
+  // 1. 지도 초기화
+  function initMap() {
+    try {
+      map = new naver.maps.Map('map', {
+        center: new naver.maps.LatLng(36.5, 127.8),
+        zoom: 7,
+        scaleControl: true,
+        logoControl: false,
+        mapDataControl: false,
+        zoomControl: false
+      });
+    } catch(e) {
+      console.warn('네이버 지도 로드 실패:', e);
+    }
+  }
+
+  // 2. 거리 계산 함수 (Haversine)
+  function haversineKm(a, b) {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLon = (b.lon - a.lon) * Math.PI / 180;
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.asin(Math.sqrt(h));
+  }
+
+  // 3. GPX 텍스트 파싱
+  function parseGpxText(xmlText) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'application/xml');
+    const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+    if (!trkpts.length) throw new Error('트랙 좌표를 찾을 수 없습니다.');
+
+    return trkpts.map(pt => {
+      const lat = parseFloat(pt.getAttribute('lat'));
+      const lon = parseFloat(pt.getAttribute('lon'));
+      const eleEl = pt.getElementsByTagName('ele')[0];
+      const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+      const timeEl = pt.getElementsByTagName('time')[0];
+      const time = timeEl ? new Date(timeEl.textContent) : null;
+      return { lat, lon, ele, time };
+    }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+  }
+
+  // 4. 경로 그리기
+  function renderRoute(points, name) {
+    if (!map || !points.length) return;
+    currentPoints = points;
+
+    // 기존 레이어 정리
+    if (polyline) polyline.setMap(null);
+    markers.forEach(m => m.setMap(null));
+    markers = [];
+
+    const path = points.map(p => new naver.maps.LatLng(p.lat, p.lon));
+
+    // 빨간색 등산로 경로선
+    polyline = new naver.maps.Polyline({
+      map: map,
+      path: path,
+      strokeColor: '#e53935',
+      strokeWeight: 5,
+      strokeOpacity: 0.95
+    });
+
+    // 지도 범위 자동 맞춤
+    const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
+    path.forEach(ll => bounds.extend(ll));
+    map.fitBounds(bounds, { top: 70, right: 30, bottom: 160, left: 30 });
+
+    // 들머리 / 날머리 / 정상 마커
+    const start = points[0];
+    const end = points[points.length - 1];
+
+    const makeLabel = (ll, text, bg) => {
+      return new naver.maps.Marker({
+        position: ll,
+        map: map,
+        icon: {
+          content: `<div style="background:${bg};color:#fff;font-size:12px;font-weight:bold;padding:4px 8px;border-radius:6px;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;">${text}</div>`,
+          anchor: new naver.maps.Point(15, 25)
+        }
+      });
+    };
+
+    markers.push(makeLabel(new naver.maps.LatLng(start.lat, start.lon), '🚩 들머리(출발)', '#1976d2'));
+    markers.push(makeLabel(new naver.maps.LatLng(end.lat, end.lon), '🏁 날머리(도착)', '#d32f2f'));
+
+    // 최고점 찾기
+    const withEle = points.filter(p => p.ele !== null);
+    if (withEle.length) {
+      const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+      markers.push(makeLabel(new naver.maps.LatLng(peak.lat, peak.lon), `⛰️ 최고점 (${Math.round(peak.ele)}m)`, '#f57c00'));
+    }
+
+    // 통계 계산
+    let totalKm = 0;
+    for (let i = 1; i < points.length; i++) totalKm += haversineKm(points[i - 1], points[i]);
+    const elevs = withEle.map(p => p.ele);
+    const maxAlt = elevs.length ? Math.round(Math.max(...elevs)) : null;
+    const minAlt = elevs.length ? Math.round(Math.min(...elevs)) : null;
+
+    document.getElementById('statDistance').innerText = totalKm.toFixed(1) + 'km';
+    document.getElementById('statMaxAlt').innerText = maxAlt ? maxAlt + 'm' : '-';
+    document.getElementById('statMinAlt').innerText = minAlt ? minAlt + 'm' : '-';
+
+    const withTime = points.filter(p => p.time && !isNaN(p.time.getTime()));
+    if (withTime.length >= 2) {
+      const mins = Math.round((withTime[withTime.length - 1].time - withTime[0].time) / 60000);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      document.getElementById('statDuration').innerText = (h > 0 ? `${h}시간 ` : '') + `${m}분`;
+    } else {
+      document.getElementById('statDuration').innerText = '-';
+    }
+
+    if (name) {
+      document.getElementById('courseTitle').innerText = '🚩 ' + name;
+    }
+
+    document.getElementById('emptyOverlay').style.display = 'none';
+    document.getElementById('bottomSheet').style.display = 'block';
+  }
+
+  function fitRoute() {
+    if (!map || !currentPoints.length) return;
+    const path = currentPoints.map(p => new naver.maps.LatLng(p.lat, p.lon));
+    const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
+    path.forEach(ll => bounds.extend(ll));
+    map.fitBounds(bounds, { top: 70, right: 30, bottom: 160, left: 30 });
+  }
+
+  // 5. 파일 선택 핸들러
+  function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const points = parseGpxText(evt.target.result);
+        renderRoute(points, courseName);
+      } catch(err) {
+        alert('GPX 파일을 읽을 수 없습니다: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // 6. 실시간 GPS 내 위치 토글
+  function toggleGPS() {
+    const btn = document.getElementById('gpsBtn');
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      if (userGpsMarker) { userGpsMarker.setMap(null); userGpsMarker = null; }
+      btn.classList.remove('active');
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      alert('스마트폰 위치 정보(GPS)를 지원하지 않는 브라우저입니다.');
+      return;
+    }
+
+    btn.classList.add('active');
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const ll = new naver.maps.LatLng(lat, lon);
+
+        if (!userGpsMarker) {
+          userGpsMarker = new naver.maps.Marker({
+            position: ll,
+            map: map,
+            icon: {
+              content: '<div class="gps-dot"></div>',
+              anchor: new naver.maps.Point(9, 9)
+            },
+            zIndex: 999
+          });
+          map.setCenter(ll);
+          map.setZoom(14);
+        } else {
+          userGpsMarker.setPosition(ll);
+        }
+      },
+      err => {
+        alert('위치 정보를 가져올 수 없습니다. GPS 권한을 확인하세요.');
+        btn.classList.remove('active');
+        watchId = null;
+      },
+      { enableHighAccuracy: true, maximumAge: 3000 }
+    );
+  }
+
+  // 7. 네이버지도 앱 연동 딥링크
+  function openNaverMapApp() {
+    if (!currentPoints.length) return;
+    const start = currentPoints[0];
+    const end = currentPoints[currentPoints.length - 1];
+
+    const params = new URLSearchParams();
+    params.set('slat', start.lat);
+    params.set('slng', start.lon);
+    params.set('sname', '들머리');
+    params.set('dlat', end.lat);
+    params.set('dlng', end.lon);
+    params.set('dname', '날머리');
+    params.set('appname', 'hjwpro1971.github.io');
+
+    const query = params.toString();
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    if (isAndroid) {
+      location.href = `intent://route/walk?${query}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
+    } else {
+      location.href = `nmap://route/walk?${query}`;
+    }
+  }
+
+  // 8. 초기 실행 (URL 파라미터 확인)
+  window.addEventListener('DOMContentLoaded', () => {
+    initMap();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const gpxUrl = urlParams.get('url') || urlParams.get('file');
+    const courseName = urlParams.get('name') || '등산로 코스';
+
+    if (courseName) {
+      document.getElementById('courseTitle').innerText = '🚩 ' + decodeURIComponent(courseName);
+      document.getElementById('overlayTitle').innerText = '🚩 ' + decodeURIComponent(courseName);
+    }
+
+    if (gpxUrl) {
+      // CORS 가능한 URL인 경우 fetch 시도
+      fetch(decodeURIComponent(gpxUrl))
+        .then(res => {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(xml => {
+          const points = parseGpxText(xml);
+          renderRoute(points, decodeURIComponent(courseName));
+        })
+        .catch(err => {
+          console.warn('URL 직접 로드 실패 (CORS/만료):', err);
+          document.getElementById('emptyOverlay').style.display = 'flex';
+        });
+    } else {
+      document.getElementById('emptyOverlay').style.display = 'flex';
+    }
+  });
+</script>
+
+</body>
+</html>
