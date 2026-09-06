@@ -237,7 +237,7 @@
 
 <script>
   // 실행 환경 감지 및 배지 표시
-  const isNas = window.location.hostname.includes('192.168') || window.location.hostname.includes('nas') || window.location.port === '8991' || window.location.port === '8443';
+  const isNas = window.location.hostname.includes('192.168') || window.location.hostname.includes('nas') || window.location.port === '8991' || window.location.port === '8444';
   if (isNas) {
     const headerEl = document.querySelector('.header p');
     if (headerEl) {
@@ -249,7 +249,7 @@
     let url = 'https://hjwpro1971.github.io/gaja/viewer.html';
     if (type === 'nas') {
       const origin = window.location.origin;
-      url = origin.includes('192.168') ? `${origin}/gaja-tools/viewer.html` : 'http://192.168.219.119/gaja-tools/viewer.html';
+      url = origin.includes('192.168') ? `${origin}/viewer.html` : 'https://192.168.219.119:8444/viewer.html';
     }
     document.getElementById('baseUrlInput').value = url;
     localStorage.setItem('gpx_base_url', url);
