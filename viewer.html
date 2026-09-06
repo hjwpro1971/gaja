@@ -291,7 +291,11 @@
   }
 
   // 경로 그리기
-  function drawRoute(points, courseName) {
+  // sourceUrl: 로컬 저장소 캐시 키로 쓰는 GPX 원본 주소. 코스명(courseName)만
+  // 으로는 서로 다른 GPX가 같은 이름("남덕유산_20250501.gpx"와
+  // "남덕유산_20251217.gpx"처럼 날짜만 다른 경우)으로 뽑혀 캐시가 뒤섞이는
+  // 문제가 있었다 — 반드시 원본 URL로 구분해야 한다.
+  function drawRoute(points, courseName, sourceUrl) {
     if (!map || !points.length) return;
     currentPoints = points;
 
@@ -338,9 +342,13 @@
     }
 
     // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원)
+    // 캐시 키는 원본 GPX 주소(sourceUrl)로 한다 — 이름이 같아도 실제로는
+    // 다른 코스일 수 있기 때문(직접 파일 선택 등 sourceUrl이 없는 경우는
+    // 이름으로 대체).
     try {
       localStorage.setItem('saved_hiking_route', JSON.stringify({
         name: courseName,
+        sourceUrl: sourceUrl || null,
         points: points
       }));
     } catch(e) {}
@@ -606,10 +614,13 @@
     const decodedCourseName = courseName ? decodeURIComponent(courseName) : '등산로 코스';
 
     // 같은 코스를 다시 열 때 매번 외부 프록시를 거쳐 GPX를 재다운로드하지
-    // 않도록, url 파라미터가 있어도 먼저 localStorage에 같은 코스명으로
-    // 저장된 좌표가 있으면 그걸 즉시 쓴다. 코스명이 다르면(새 링크) 정상적으로
-    // 새로 다운로드한다.
-    if (gpxUrl && tryRestoreSavedRoute(decodedCourseName)) {
+    // 않도록, url 파라미터가 있어도 먼저 localStorage에 같은 원본 GPX
+    // 주소(sourceUrl)로 저장된 좌표가 있으면 그걸 즉시 쓴다. 코스명이 아니라
+    // 반드시 원본 주소로 비교해야 한다 — "남덕유산_20250501.gpx"와
+    // "남덕유산_20251217.gpx"처럼 코스명은 같아도 실제로는 전혀 다른 GPX인
+    // 경우가 있어, 이름만 보고 캐시를 재사용하면 엉뚱한(먼저 저장된) 지도가
+    // 계속 뜨는 버그가 있었다.
+    if (gpxUrl && tryRestoreSavedRoute(gpxUrl)) {
       gpxUrl = null;
     }
 
@@ -624,7 +635,7 @@
       try {
         const xml = await fetchGPXFile(gpxUrl);
         const points = parseGPX(xml);
-        drawRoute(points, decodedCourseName);
+        drawRoute(points, decodedCourseName, gpxUrl);
         if (document.getElementById('gpxLoadingBadge')) {
           document.getElementById('gpxLoadingBadge').remove();
         }
@@ -639,14 +650,15 @@
       checkSavedRoute();
     }
 
-    // 코스명이 일치하는 저장된 경로를 즉시 복원한다. 복원에 성공하면 true.
-    function tryRestoreSavedRoute(name) {
+    // 저장된 경로의 원본 GPX 주소가 일치할 때만 즉시 복원한다. 복원에
+    // 성공하면 true.
+    function tryRestoreSavedRoute(url) {
       try {
         const saved = localStorage.getItem('saved_hiking_route');
         if (!saved) return false;
         const data = JSON.parse(saved);
-        if (data.points && data.points.length && data.name === name) {
-          drawRoute(data.points, data.name);
+        if (data.points && data.points.length && data.sourceUrl && data.sourceUrl === url) {
+          drawRoute(data.points, data.name, data.sourceUrl);
           return true;
         }
       } catch(e) {}
@@ -659,7 +671,7 @@
         if (saved) {
           const data = JSON.parse(saved);
           if (data.points && data.points.length) {
-            drawRoute(data.points, data.name || '등산로 코스');
+            drawRoute(data.points, data.name || '등산로 코스', data.sourceUrl);
             return;
           }
         }
