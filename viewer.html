@@ -531,23 +531,75 @@
     );
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
+  // 블로그 등 외부 서버의 CORS 제한을 우회하여 GPX 내용을 즉시 가져오는 함수
+  async function fetchGPXFile(targetUrl) {
+    let cleanUrl = targetUrl.trim();
+    // 더블 인코딩 방지 및 한글 파라미터 안전 보정
+    try {
+      cleanUrl = encodeURI(decodeURI(cleanUrl));
+    } catch(e) {}
+
+    // 1. 직접 다운로드 시도 (동일 도메인 또는 CORS 허용 서버)
+    try {
+      const res = await fetch(cleanUrl);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('<trkpt')) return text;
+      }
+    } catch(e) {}
+
+    // 2. 고속 프록시 proxy.cors.sh 경유 (네이버 블로그 첨부파일 CORS 즉시 우회)
+    try {
+      const res = await fetch('https://proxy.cors.sh/' + cleanUrl, {
+        headers: { 'x-requested-with': 'XMLHttpRequest' }
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('<trkpt')) return text;
+      }
+    } catch(e) {}
+
+    // 3. 나스 서버 로컬 프록시 경유
+    try {
+      const res = await fetch('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl));
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('<trkpt')) return text;
+      }
+    } catch(e) {}
+
+    throw new Error('GPX 파일을 자동으로 불러올 수 없습니다.');
+  }
+
+  window.addEventListener('DOMContentLoaded', async () => {
     initMap();
 
     const urlParams = new URLSearchParams(window.location.search);
-    const gpxUrl = urlParams.get('url') || urlParams.get('file');
+    let gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
 
     if (gpxUrl) {
-      fetch(decodeURIComponent(gpxUrl))
-        .then(r => r.text())
-        .then(xml => {
-          const points = parseGPX(xml);
-          drawRoute(points, courseName ? decodeURIComponent(courseName) : '등산로 코스');
-        })
-        .catch(() => {
-          checkSavedRoute();
-        });
+      // 로딩 안내 뱃지 화면 상단 표시
+      const loadingEl = document.createElement('div');
+      loadingEl.id = 'gpxLoadingBadge';
+      loadingEl.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#fff; font-size:13px; font-weight:700; padding:10px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.25); backdrop-filter:blur(4px); pointer-events:none;';
+      loadingEl.innerText = '⏳ 등산로 코스를 불러오는 중입니다...';
+      document.body.appendChild(loadingEl);
+
+      try {
+        const xml = await fetchGPXFile(gpxUrl);
+        const points = parseGPX(xml);
+        drawRoute(points, courseName ? decodeURIComponent(courseName) : '등산로 코스');
+        if (document.getElementById('gpxLoadingBadge')) {
+          document.getElementById('gpxLoadingBadge').remove();
+        }
+      } catch(err) {
+        console.warn('자동 GPX 다운로드 실패:', err);
+        if (document.getElementById('gpxLoadingBadge')) {
+          document.getElementById('gpxLoadingBadge').remove();
+        }
+        checkSavedRoute();
+      }
     } else {
       checkSavedRoute();
     }
