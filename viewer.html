@@ -73,17 +73,13 @@
     .bottom-panel {
       position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 1000;
       background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      border-radius: 18px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); border: 1px solid #e0e0e0;
-      padding: 14px 16px;
+      border-radius: 16px; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); border: 1px solid #e0e0e0;
+      padding: 10px 14px;
     }
-    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
-    .stat-cell { background: #f1f8e9; padding: 6px 2px; border-radius: 10px; }
-    .stat-label { font-size: 11px; font-weight: 700; color: #2e7d32; margin-bottom: 2px; }
-    .stat-val { font-size: 14px; font-weight: 800; color: #212121; }
 
     /* 오프라인 저장 버튼 */
     .btn-offline-save {
-      margin-top: 10px; width: 100%; padding: 11px; font-size: 13px; font-weight: 800;
+      width: 100%; padding: 11px; font-size: 13px; font-weight: 800;
       background: #e8f5e9; color: #1b5e20; border: 1.5px dashed #81c784;
       border-radius: 10px; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 6px;
       transition: all 0.2s;
@@ -178,25 +174,6 @@
 
 <!-- 하단 정보 카드 -->
 <div class="bottom-panel" id="bottomPanel" style="display: none;">
-  <div class="stats-row">
-    <div class="stat-cell">
-      <div class="stat-label">총 거리</div>
-      <div class="stat-val" id="statDist">-</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-label">최고 고도</div>
-      <div class="stat-val" id="statMax">-</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-label">최저 고도</div>
-      <div class="stat-val" id="statMin">-</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-label">소요 시간</div>
-      <div class="stat-val" id="statTime">-</div>
-    </div>
-  </div>
-
   <!-- 오프라인 캐시 저장 버튼 -->
   <button class="btn-offline-save" id="btnOfflineSave" onclick="saveOfflineMapArea()">
     📥 산행 전 이 등산로 주변 지도 저장 (산속 통신두절 대비)
@@ -379,27 +356,7 @@
       markers.push(makeBadge(peak.lat, peak.lon, `⛰️ 정상 (${Math.round(peak.ele)}m)`, '#e65100'));
     }
 
-    let totalM = 0;
-    for (let i = 1; i < points.length; i++) {
-      totalM += haversineMeters(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
-    }
-    const elevs = withEle.map(p => p.ele);
-    const maxAlt = elevs.length ? Math.round(Math.max(...elevs)) : null;
-    const minAlt = elevs.length ? Math.round(Math.min(...elevs)) : null;
-
-    document.getElementById('statDist').innerText = (totalM / 1000).toFixed(1) + 'km';
-    document.getElementById('statMax').innerText = maxAlt ? maxAlt + 'm' : '-';
-    document.getElementById('statMin').innerText = minAlt ? minAlt + 'm' : '-';
-
-    const withTime = points.filter(p => p.time && !isNaN(p.time.getTime()));
-    if (withTime.length >= 2) {
-      const mins = Math.round((withTime[withTime.length - 1].time - withTime[0].time) / 60000);
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      document.getElementById('statTime').innerText = (h > 0 ? `${h}시간 ` : '') + `${m}분`;
-    } else {
-      document.getElementById('statTime').innerText = '-';
-    }
+    // 거리 및 고도 정보 계산 생략 (지도 화면 극대화)
 
     if (courseName) {
       document.getElementById('trailName').innerText = '🚩 ' + courseName;
