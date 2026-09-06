@@ -172,7 +172,7 @@
   <div class="header">
     <div class="icon">⛰️</div>
     <h1>등산로 지도 링크 생성기</h1>
-    <p>블로그 GPX 첨부파일 주소만 넣으면 <b>지도가 바로 열리는 완성 버튼</b>을 복사해 드립니다.</p>
+    <p>블로그 GPX 첨부파일 주소만 넣으면 <b>스마트폰 오프라인 지도가 바로 열리는 링크 & QR코드</b>를 생성합니다.</p>
     <div style="margin-top: 14px; display: flex; justify-content: center; gap: 10px; display: none;">
       <a href="./gpx_editor.html" style="display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: #2e7d32; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 800; border-radius: 20px; box-shadow: 0 4px 12px rgba(46,125,50,0.3);">
         ✏️ 네이버 지도에서 직접 GPX 경로 만들기 👉
@@ -220,6 +220,20 @@
       <button class="btn-super-copy" onclick="copyRichHyperlink()">
         📋 링크 걸린 버튼 복사하기 (블로그에 바로 붙여넣기용)
       </button>
+    </div>
+
+        <!-- 📱 스마트폰 QR 코드 바로 열기 -->
+    <div class="output-card" style="background: #f1f8e9; border: 1.5px solid #81c784;">
+      <div class="output-title">📱 스마트폰 카메라로 비춰서 바로 열기 (QR 코드)</div>
+      <div class="output-desc">스마트폰 기본 카메라 앱을 켜서 아래 QR 코드를 비추면, 스마트폰 브라우저에서 지도가 즉시 열리고 <b>오프라인 등산지도가 폰 안에 자동 저장</b>됩니다!</div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0;">
+        <div style="background: #ffffff; padding: 12px; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #c8e6c9;">
+          <img id="qrCodeImg" src="" alt="스마트폰 바로열기 QR코드" style="width: 170px; height: 170px; display: block;">
+        </div>
+        <div style="font-size: 13px; font-weight: 700; color: #2e7d32;">
+          📷 스마트폰 카메라를 화면의 QR코드에 비추시면 링크가 뜹니다!
+        </div>
+      </div>
     </div>
 
     <div class="output-card" style="background: #fafafa; border-color: #e0e0e0;">
@@ -325,7 +339,11 @@
         decoded = next;
       } catch(e) { break; }
     }
-    const m = decoded.match(/\b(20\d{6})\b/);
+    // \b(단어 경계)를 쓰면 "남덕유산_20160110.gpx"처럼 날짜 앞이 밑줄(_)인
+    // 경우 매치가 안 된다 — 정규식에서 _는 \w에 포함되어 밑줄과 숫자
+    // 사이는 단어 경계로 인식되지 않기 때문. 파일명에 8자리 숫자가 오는
+    // 경우는 거의 항상 날짜이므로 \b 없이 그냥 찾는다.
+    const m = decoded.match(/(20\d{6})/);
     return m ? m[1] : '';
   }
 
@@ -362,6 +380,10 @@
 
     document.getElementById('finalUrlText').innerText = finalUrl;
     document.getElementById('testLinkBtn').href = finalUrl;
+
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=4&data=${encodeURIComponent(finalUrl)}`;
+    const qrImg = document.getElementById('qrCodeImg');
+    if (qrImg) qrImg.src = qrUrl;
 
     const label = buildRouteLabel(courseName, rawUrl);
     document.getElementById('previewArea').innerHTML = `
