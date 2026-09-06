@@ -2,81 +2,30 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>산길샘 실행 중...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>스마트 등산로 지도로 이동 중...</title>
   <script>
-    // 페이지가 로딩되자마자 화면을 띄우지 않고 0초 만에 산길샘 앱을 바로 실행합니다.
     (function() {
       const urlParams = new URLSearchParams(window.location.search);
-      let gpxUrl = urlParams.get('url') || urlParams.get('file') || '';
-      
-      if (!gpxUrl) return;
+      const gpxUrl = urlParams.get('url') || urlParams.get('file') || '';
+      const courseName = urlParams.get('name') || '';
 
-      try { gpxUrl = decodeURIComponent(gpxUrl); } catch(e) {}
-
-      const isAndroid = /Android/i.test(navigator.userAgent);
-
-      if (isAndroid) {
-        const cleanUrl = gpxUrl.replace(/^https?:\/\//, '');
-        const scheme = gpxUrl.startsWith('https') ? 'https' : 'http';
-        
-        // 안드로이드 산길샘 앱 다이렉트 실행 인텐트
-        const intentUri = `intent://${cleanUrl}#Intent;scheme=${scheme};action=android.intent.action.VIEW;type=application/gpx+xml;package=com.ngt.android.nadeuri;end`;
-        
-        // 즉시 산길샘 앱 호출
-        window.location.replace(intentUri);
-
-        // 만약 앱 실행이 차단되었을 때 1초 후 다운로드 폴백
-        setTimeout(function() {
-          window.location.href = gpxUrl;
-        }, 1200);
+      if (gpxUrl) {
+        window.location.replace(`viewer.html?name=${encodeURIComponent(courseName)}&url=${encodeURIComponent(gpxUrl)}`);
       } else {
-        // 아이폰 / PC는 파일 다운로드
-        window.location.replace(gpxUrl);
+        window.location.replace('viewer.html');
       }
     })();
   </script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
-      background-color: #f8faf8;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      text-align: center;
-      padding: 20px;
-    }
-    .box {
-      background: white;
-      padding: 30px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-      max-width: 360px;
-      width: 100%;
-    }
-    .spinner {
-      width: 44px;
-      height: 44px;
-      border: 4px solid #e0e0e0;
-      border-top-color: #2e7d32;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    h2 { font-size: 18px; color: #1b5e20; margin-bottom: 8px; }
-    p { font-size: 13px; color: #666; line-height: 1.4; }
+    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8faf8; }
+    .box { text-align: center; padding: 20px; }
   </style>
 </head>
 <body>
-
-<div class="box">
-  <div class="spinner"></div>
-  <h2>산길샘 앱을 실행하고 있습니다</h2>
-  <p>잠시만 기다려 주세요...</p>
-</div>
-
+  <div class="box">
+    <h2>🗺️ 스마트 등산로 지도로 연결하고 있습니다...</h2>
+    <p>잠시만 기다려 주세요.</p>
+  </div>
 </body>
 </html>
