@@ -236,7 +236,12 @@
     .saved-route-info { flex: 1; min-width: 0; }
     .saved-route-name { font-size: 14px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .saved-route-date { font-size: 11px; color: #689f38; margin-top: 2px; }
-    .saved-route-del { font-size: 18px; color: #bbb; padding: 4px 8px; }
+    .saved-route-del {
+      background: none; border: none; font-size: 18px; cursor: pointer;
+      padding: 6px 8px; border-radius: 8px; color: #9e9e9e; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .saved-route-del:hover { background: #ffebee; color: #d32f2f; transform: scale(1.18); }
   </style>
 </head>
 <body>
@@ -1219,6 +1224,9 @@
               <div class="saved-route-name">⛰️ ${safeName}</div>
               <div class="saved-route-date">저장일: ${dateStr}</div>
             </div>
+            <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
+              🗑️
+            </button>
           </div>
         `;
       }).join('');
@@ -1231,6 +1239,18 @@
       const r = routes[index];
       if (!r) return;
       drawRoute(r.points, r.name, r.sourceUrl);
+    };
+
+    window.deleteSavedRouteByIndex = function(event, index) {
+      if (event) event.stopPropagation();
+      const routes = loadSavedRoutes();
+      const target = routes[index];
+      const targetName = target ? target.name : '이 코스';
+      if (confirm(`'${targetName}' 코스를 저장 목록에서 삭제하시겠습니까?`)) {
+        routes.splice(index, 1);
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+        showSavedRouteList();
+      }
     };
   });
 </script>
