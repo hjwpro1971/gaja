@@ -2,7 +2,11 @@
 const CACHE_NAME = 'gaja-trail-cache-v2';
 const CORE_ASSETS = [
   './leaflet.js',
-  './leaflet.css'
+  './leaflet.css',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './favicon.png'
 ];
 
 self.addEventListener('install', event => {
