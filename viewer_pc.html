@@ -83,6 +83,30 @@
     }
     .fab-btn:active { transform: scale(0.92); }
     .fab-btn.active { background: #2e7d32; color: #ffffff; }
+    .compass-btn {
+      flex-direction: column !important;
+      gap: 0 !important;
+      padding: 3px 0 !important;
+      overflow: hidden !important;
+    }
+    .compass-dial {
+      width: 26px;
+      height: 26px;
+      transform-origin: center center;
+      transition: transform 0.12s ease-out;
+    }
+    .compass-needle-svg {
+      width: 26px;
+      height: 26px;
+      display: block;
+    }
+    .compass-deg {
+      font-size: 9.5px;
+      font-weight: 900;
+      color: #1b5e20;
+      line-height: 1;
+      margin-top: 1px;
+    }
 
     /* 레이어 선택 팝업 */
     .layer-menu {
@@ -235,6 +259,22 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
+  <!-- 🧭 실시간 회전 나침반 (빨간 바늘이 항상 북쪽을 가리킴) -->
+  <button class="fab-btn compass-btn" id="compassBtn" onclick="toggleCompassMode()" title="나침반 (북쪽 방향)">
+    <div class="compass-dial" id="compassDial">
+      <svg viewBox="0 0 36 36" class="compass-needle-svg">
+        <!-- 북쪽(N) 빨간 바늘 -->
+        <polygon points="18,3 23,18 18,15 13,18" fill="#e53935"/>
+        <!-- 남쪽(S) 은회색 바늘 -->
+        <polygon points="18,33 23,18 18,21 13,18" fill="#b0bec5"/>
+        <!-- N 영문 표기 -->
+        <text x="18" y="8" font-size="5.5" font-weight="900" fill="#ffffff" text-anchor="middle">N</text>
+        <!-- 중심 핀 -->
+        <circle cx="18" cy="18" r="2.5" fill="#37474f"/>
+      </svg>
+    </div>
+    <div class="compass-deg" id="compassDeg">북</div>
+  </button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🔍</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
@@ -305,6 +345,12 @@
     return dirs[idx];
   }
 
+  function getKoreanDirectionShort(deg) {
+    const dirs = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    return dirs[idx];
+  }
+
   function calculateBearing(lat1, lon1, lat2, lon2) {
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
@@ -316,18 +362,42 @@
 
   function updateHeadingDisplay(heading) {
     if (heading === null || isNaN(heading)) return;
-    currentHeading = heading;
+    currentHeading = ((heading % 360) + 360) % 360;
+
+    // 1. 지도 위 내 위치 파란 점의 전방 조명 빔 & 화살표 회전 (+heading: 내가 보는 방향)
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
-      wrapper.style.transform = `rotate(${heading}deg)`;
+      wrapper.style.transform = `rotate(${currentHeading}deg)`;
+    }
+
+    // 2. 🧭 화면 우측 플로팅 나침반 바늘 회전 (-currentHeading: 빨간 N극 바늘이 항상 북쪽을 가리킴)
+    const dial = document.getElementById('compassDial');
+    if (dial) {
+      dial.style.transform = `rotate(${-currentHeading}deg)`;
+    }
+    const degEl = document.getElementById('compassDeg');
+    if (degEl) {
+      degEl.innerText = getKoreanDirectionShort(currentHeading);
+    }
+
+    // 3. GPS 활성화 중이면 하단 상태 토스트 실시간 방향 갱신
+    if (watchId !== null) {
+      const toast = document.getElementById('gpsToast');
+      if (toast && toast.style.display !== 'none' && !toast.innerText.includes('이탈')) {
+        const headStr = `${getKoreanDirection(currentHeading)} (${Math.round(currentHeading)}°)`;
+        toast.innerText = `🧭 진행방향: ${headStr} · 등산로 진행 중`;
+      }
     }
   }
 
   function handleOrientation(e) {
     let heading = null;
+    // iOS Safari
     if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
       heading = e.webkitCompassHeading;
-    } else if (e.alpha !== undefined && e.alpha !== null) {
+    } 
+    // Android Chrome / Samsung Internet
+    else if (e.alpha !== undefined && e.alpha !== null) {
       heading = (360 - e.alpha) % 360;
     }
     if (heading !== null && !isNaN(heading)) {
@@ -348,12 +418,38 @@
         })
         .catch(() => {});
     } else {
-      if ('ondeviceorientationabsolute' in window) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      } else if ('ondeviceorientation' in window) {
-        window.addEventListener('deviceorientation', handleOrientation, true);
-      }
+      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.addEventListener('deviceorientation', handleOrientation, true);
     }
+  }
+
+  // 나침반 버튼 클릭 시 설명 및 8자 보정 안내 토스트
+  function toggleCompassMode() {
+    initCompass();
+    if (currentHeading !== null) {
+      const dirStr = getKoreanDirection(currentHeading);
+      showToastBadge(`🧭 현재 진행방향: ${Math.round(currentHeading)}° (${dirStr}쪽)\n🔴 나침반 빨간 바늘(N)이 가리키는 곳이 북쪽입니다.`);
+    } else {
+      showToastBadge('🧭 나침반 센서 작동 중...\n스마트폰을 공중에서 8자 모양으로 2~3회 흔들어주시면 나침반이 정밀해집니다.');
+    }
+  }
+
+  function showToastBadge(msg) {
+    let b = document.getElementById('compassNoticeToast');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'compassNoticeToast';
+      b.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.95); color:#fff; font-size:13px; font-weight:700; padding:10px 20px; border-radius:20px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:center; backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.4s; line-height:1.5; white-space:pre-line;';
+      document.body.appendChild(b);
+    }
+    b.innerText = msg;
+    b.style.opacity = '1';
+    b.style.display = 'block';
+    clearTimeout(b._timer);
+    b._timer = setTimeout(() => {
+      b.style.opacity = '0';
+      setTimeout(() => { b.style.display = 'none'; }, 400);
+    }, 3200);
   }
 
   function stopCompass() {
