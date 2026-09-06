@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>스마트 등산로 뷰어 (오프라인 지원)</title>
+  <title>스마트 등산로 뷰어 (PC 전용)</title>
 
   <!-- 로컬 캐시 가능한 Leaflet 오픈소스 지도 엔진 -->
   <link rel="stylesheet" href="./leaflet.css">
@@ -27,9 +27,9 @@
     .title-box {
       pointer-events: auto; flex: 1;
       background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      padding: 10px 18px; border-radius: 16px;
+      padding: 8px 16px; border-radius: 16px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
-      display: flex; justify-content: center; align-items: center; text-align: center;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
     }
     .title-box h1 {
       font-size: 16px; font-weight: 800; color: #1b5e20;
@@ -105,24 +105,34 @@
       display: flex; justify-content: center; align-items: center; padding: 20px;
     }
     .modal-box {
-      position: relative;
       background: #ffffff; padding: 28px 22px; border-radius: 20px;
       text-align: center; max-width: 360px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
-    .modal-close-btn {
-      position: absolute; top: 12px; right: 12px;
-      background: none; border: none; font-size: 20px; color: #888;
-      cursor: pointer; padding: 4px; border-radius: 50%; width: 32px; height: 32px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .modal-close-btn:hover { background: #f0f0f0; color: #111; }
     .modal-box .icon { font-size: 44px; margin-bottom: 8px; }
     .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
     .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
     .btn-select-main {
       width: 100%; padding: 15px; font-size: 16px; font-weight: 800; color: #ffffff;
       background: #2e7d32; border: none; border-radius: 12px; cursor: pointer;
-      box-shadow: 0 4px 12px rgba(46,125,50,0.3);
+      box-shadow: 0 4px 12px rgba(46,125,50,0.3); transition: background 0.2s;
+    }
+    .btn-select-main:hover { background: #1b5e20; }
+    .modal-box {
+      position: relative;
+      background: #ffffff; padding: 32px 24px; border-radius: 20px;
+      text-align: center; max-width: 400px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .modal-close-btn {
+      position: absolute; top: 12px; right: 12px;
+      background: none; border: none; font-size: 20px; color: #888;
+      cursor: pointer; padding: 4px; border-radius: 50%; width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+    }
+    .modal-close-btn:hover { background: #f0f0f0; color: #111; }
+    .dnd-hint-box {
+      margin-top: 15px; font-size: 13px; color: #2e7d32; line-height: 1.5;
+      background: #f1f8e9; border: 1.5px dashed #81c784; padding: 12px; border-radius: 12px;
+      text-align: left;
     }
 
     /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
@@ -143,10 +153,12 @@
 
 <div id="map"></div>
 
-<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) -->
+<!-- 상단 헤더 (PC 전용) -->
 <div class="top-header">
   <div class="title-box">
-    <h1 id="trailName">🚩 등산로 뷰어</h1>
+    <h1 id="trailName">🖥️ 등산로 뷰어 (PC)</h1>
+    <label for="gpxFileInput" class="btn-file-open" title="내 PC에서 GPX 파일 열기">📂 GPX 열기</label>
+    <input type="file" id="gpxFileInput" accept=".gpx" style="display: none;" onchange="onFileSelected(event)">
   </div>
 </div>
 
@@ -165,13 +177,22 @@
   <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
 </div>
 
-<!-- 저장된 코스 목록 모달 (오프라인 코스 선택 전용) -->
+<!-- 초기 안내 모달: PC 파일 불러오기 창 및 저장된 코스 목록 -->
 <div class="empty-modal" id="emptyModal" style="display: none;">
   <div class="modal-box">
     <button class="modal-close-btn" onclick="closeModal()" title="닫기">✕</button>
     <div class="icon">⛰️</div>
-    <h2 id="modalTitle">저장된 등산로 코스</h2>
-    <p id="modalDesc">이전에 열어보았거나 저장된 등산로 코스 목록입니다.</p>
+    <h2 id="modalTitle">등산로 GPX 열기</h2>
+    <p id="modalDesc">내 PC에 저장된 <b>.gpx 등산로 파일</b>을 선택하시면 네이버 등고선 지형도 위에 코스가 즉시 표시됩니다.</p>
+    
+    <button class="btn-select-main" onclick="document.getElementById('gpxFileInput').click()">
+      📂 내 PC에서 GPX 파일 선택
+    </button>
+    
+    <div class="dnd-hint-box">
+      💡 <b>마우스 드래그 & 드롭 지원</b><br>
+      PC에서는 내 컴퓨터 탐색기에서 <b>.gpx 파일</b>을 마우스로 끌어서 이 브라우저 창 위에 놓으셔도 바로 열립니다!
+    </div>
 
     <!-- 저장된 코스 목록이 있을 때 아래에 표시 -->
     <div class="saved-route-list" id="savedRouteList" style="display: none; margin-top: 16px;"></div>
@@ -752,7 +773,10 @@
       const listEl = document.getElementById('savedRouteList');
 
       if (!routes.length) {
-        modal.style.display = 'none';
+        desc.innerHTML = message || '내 PC의 <b>.gpx 파일</b>을 선택하시거나 화면으로 끌어다 놓으시면 지형도 위에 등산로가 바로 열립니다.';
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        modal.style.display = 'flex';
         return;
       }
 
