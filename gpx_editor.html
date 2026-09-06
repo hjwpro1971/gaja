@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>등산로 GPX 제작기 - 산길 자동 길찾기</title>
+  <title>등산로 GPX 제작기 - 마우스로 경유지 찍기</title>
 
   <!-- Leaflet 지도 엔진 -->
   <link rel="stylesheet" href="./leaflet.css">
@@ -17,23 +17,9 @@
       background: #1e293b;
     }
 
-    #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; cursor: crosshair; }
-
-    /* 화면 중앙 조준 십자선 (스마트폰 정밀 타겟팅) */
-    .crosshair-target {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      width: 44px; height: 44px; pointer-events: none; z-index: 900;
-      display: flex; justify-content: center; align-items: center;
-    }
-    .crosshair-circle {
-      width: 16px; height: 16px; border: 2.5px solid #d32f2f; border-radius: 50%;
-      background: rgba(211, 47, 47, 0.25); box-shadow: 0 0 10px rgba(211, 47, 47, 0.6);
-    }
-    .crosshair-line-h {
-      position: absolute; width: 40px; height: 2px; background: rgba(211, 47, 47, 0.85);
-    }
-    .crosshair-line-v {
-      position: absolute; height: 40px; width: 2px; background: rgba(211, 47, 47, 0.85);
+    #map {
+      width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;
+      cursor: crosshair; /* 마우스 커서를 정밀 조준 십자선으로 표시 */
     }
 
     /* 상단 통합 헤더 바 */
@@ -123,28 +109,16 @@
       padding: 14px; font-size: 13px; color: #64748b; text-align: center;
     }
 
-    /* 하단 통계 및 점 찍기 패널 */
+    /* 하단 통계 및 조작 패널 (마우스 조작 최적화) */
     .bottom-panel {
-      position: absolute; bottom: 18px; left: 12px; right: 12px; z-index: 1000;
-      pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      position: absolute; bottom: 20px; left: 12px; right: 12px; z-index: 1000;
+      pointer-events: none; display: flex; justify-content: center;
     }
-
-    /* 중앙 메인 '여기에 점 추가' 액션 버튼 */
-    .btn-add-center-point {
-      pointer-events: auto;
-      padding: 14px 28px; font-size: 15px; font-weight: 900; color: #ffffff;
-      background: linear-gradient(135deg, #2e7d32, #1b5e20);
-      border: 2.5px solid #ffffff; border-radius: 30px;
-      box-shadow: 0 6px 22px rgba(0,0,0,0.35); cursor: pointer;
-      display: flex; align-items: center; gap: 8px; transition: all 0.15s;
-    }
-    .btn-add-center-point:active { transform: scale(0.93); }
-
     .status-card {
       pointer-events: auto; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
-      padding: 10px 18px; border-radius: 18px;
-      box-shadow: 0 6px 24px rgba(0,0,0,0.18); border: 1.5px solid #c8e6c9;
-      display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
+      padding: 10px 20px; border-radius: 20px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.2); border: 1.5px solid #c8e6c9;
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center;
     }
     .stat-item {
       display: flex; flex-direction: column; align-items: center;
@@ -155,12 +129,12 @@
     .control-divider { width: 1px; height: 28px; background: #cbd5e1; }
 
     .tool-btn-group {
-      display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
     }
     .btn-tool {
-      padding: 7px 12px; font-size: 12.5px; font-weight: 800; border-radius: 9px;
+      padding: 8px 14px; font-size: 13px; font-weight: 800; border-radius: 10px;
       border: 1.5px solid #cbd5e1; background: #ffffff; color: #334155; cursor: pointer;
-      display: flex; align-items: center; gap: 4px; transition: all 0.2s;
+      display: flex; align-items: center; gap: 5px; transition: all 0.2s;
     }
     .btn-tool:hover { background: #f1f5f9; }
     .btn-tool.active { background: #e8f5e9; border-color: #2e7d32; color: #1b5e20; }
@@ -213,13 +187,6 @@
 <body>
 
 <div id="map"></div>
-
-<!-- 화면 중앙 십자선 조준경 -->
-<div class="crosshair-target" id="crosshair">
-  <div class="crosshair-line-h"></div>
-  <div class="crosshair-line-v"></div>
-  <div class="crosshair-circle"></div>
-</div>
 
 <!-- 상단 헤더 -->
 <div class="top-header">
@@ -274,11 +241,6 @@
 
 <!-- 하단 통계 및 조작 패널 -->
 <div class="bottom-panel">
-  <!-- 스마트폰/PC 어디서나 한 치 오차 없는 점 찍기 버튼 -->
-  <button class="btn-add-center-point" onclick="addCenterPoint()" title="화면 정중앙 십자선 위치에 경유지를 추가합니다">
-    📍 여기에 경유지 찍기 (화면 중앙)
-  </button>
-
   <div class="status-card">
     <div class="stat-item">
       <span class="stat-label">총 거리</span>
@@ -303,11 +265,8 @@
 
     <div class="tool-btn-group">
       <!-- 산길 자동 따라가기 모드 토글 -->
-      <button class="btn-tool active" id="autoRouteBtn" onclick="toggleAutoRoute()" title="클릭 시 실제 등산로 길을 따라 자동으로 굽이굽이 연결합니다">
+      <button class="btn-tool active" id="autoRouteBtn" onclick="toggleAutoRoute()" title="마우스 클릭 시 실제 등산로 길을 따라 자동으로 굽이굽이 연결합니다">
         🥾 산길 자동 연결 (ON)
-      </button>
-      <button class="btn-tool active" id="drawModeBtn" onclick="toggleDrawMode()" title="화면을 손가락으로 콕 터치해서 찍기">
-        ✏️ 터치 찍기 (ON)
       </button>
       <button class="btn-tool" onclick="undoLastPoint()" title="마지막 경유지 구간 취소">
         ↩️ 취소 (Undo)
@@ -380,12 +339,11 @@
   let map = null;
   let currentLayer = null;
   let polyline = null;
-  let waypoints = [];       // 사용자가 찍은 주요 지점 [{lat, lon, label, points: [...]}]
-  let allPoints = [];       // 지도에 그려지는 실제 세부 등산로 좌표들 [{lat, lon}]
+  let waypoints = [];       // 사용자가 마우스로 찍은 주요 경유지 [{lat, lon, label, segment: [...]}]
+  let allPoints = [];       // 실제 등산로 세부 좌표들 [{lat, lon}]
   let markerLayers = [];    // 마커 레이어들
-  let isAutoRoute = true;   // 산길 자동 따라가기 모드 (기본 ON)
-  let isDrawMode = true;    // 지도 터치로 찍기 모드
-  let isRouting = false;    // 현재 경로 계산 중 여부
+  let isAutoRoute = true;   // 산길 자동 연결 모드 (기본 ON)
+  let isRouting = false;    // 경로 계산 중 플래그
   let naverTileVersion = '1788514292';
 
   // 최신 네이버 타일 버전 조회
@@ -400,16 +358,16 @@
       zoom: 14,
       zoomControl: false,
       maxZoom: 19,
-      tap: false
+      doubleClickZoom: false // 더블클릭 줌을 꺼서 마우스 클릭 즉시 반응!
     });
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     switchLayer('terrain');
 
-    // 지도 직접 클릭 시 경유지 추가
+    // 마우스로 지도 위를 클릭하면 그 자리에 즉시 경유지 추가!
     map.on('click', function(e) {
-      if (!isDrawMode || isRouting) return;
+      if (isRouting) return;
       handleUserAddPoint(e.latlng.lat, e.latlng.lng);
     });
   }
@@ -461,16 +419,9 @@
     return 2.0 * R * Math.asin(Math.sqrt(a));
   }
 
-  // 화면 중앙 십자선 위치에 점 추가
-  function addCenterPoint() {
-    if (!map || isRouting) return;
-    const c = map.getCenter();
-    handleUserAddPoint(c.lat, c.lng);
-  }
-
   // 두 지점 사이의 실제 등산로 산길 경로 자동 탐색 (OSRM Foot -> BRouter 백업)
   async function fetchTrailRoute(fromLat, fromLon, toLat, toLon) {
-    // 1. OSRM Foot (등산로/보행자 최적화)
+    // 1. OSRM Foot (등산로/보행자 고속 라우팅)
     try {
       const osrmUrl = `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
       const res = await fetch(osrmUrl);
@@ -508,13 +459,9 @@
     return [{ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon }];
   }
 
-  // 사용자 점 추가 통합 핸들러
+  // 마우스 클릭 시 경유지 추가 핸들러
   async function handleUserAddPoint(lat, lon) {
-    if (navigator.vibrate) {
-      try { navigator.vibrate(35); } catch(e) {}
-    }
-
-    // 첫 번째 점 (들머리)
+    // 첫 번째 클릭 (들머리)
     if (waypoints.length === 0) {
       waypoints.push({
         lat: lat,
@@ -523,16 +470,16 @@
         segment: [{ lat, lon }]
       });
       rebuildAllPoints();
-      showToast('🚩 1번째 들머리가 지정되었습니다!\n다음 경유지나 정상 위치를 찍어주세요.');
+      showToast('🚩 1번째 들머리가 찍혔습니다!\n다음 경유지나 정상 위치를 마우스로 클릭하세요.');
       return;
     }
 
     const prevWp = waypoints[waypoints.length - 1];
 
     if (isAutoRoute) {
-      // 산길 자동 따라가기 모드
+      // 산길 자동 연결 모드 (등산로를 따라 구불구불 자동 연결)
       isRouting = true;
-      showToast('🥾 실제 산길 등산로를 자동으로 찾는 중...');
+      showToast('🥾 마우스 클릭 지점까지 실제 등산로를 찾는 중...');
       try {
         const segment = await fetchTrailRoute(prevWp.lat, prevWp.lon, lat, lon);
         waypoints.push({
@@ -544,7 +491,6 @@
         rebuildAllPoints();
         showToast(`🎉 실제 산길을 따라 ${segment.length}개 좌표가 자동 연결되었습니다!`);
       } catch(err) {
-        // 오류 시 직선 연결
         waypoints.push({
           lat: lat,
           lon: lon,
@@ -556,7 +502,7 @@
         isRouting = false;
       }
     } else {
-      // 수동 직선 모드
+      // 직선 모드
       waypoints.push({
         lat: lat,
         lon: lon,
@@ -564,18 +510,17 @@
         segment: [{ lat: prevWp.lat, lon: prevWp.lon }, { lat, lon }]
       });
       rebuildAllPoints();
-      showToast(`📍 ${waypoints.length}번째 경유지 추가 완료!`);
+      showToast(`📍 ${waypoints.length}번째 경유지가 추가되었습니다.`);
     }
   }
 
-  // waypoints 기반으로 전체 세부 좌표 allPoints 재구성 및 화면 렌더링
+  // waypoints 기반으로 전체 세부 좌표 allPoints 재구성 및 렌더링
   function rebuildAllPoints() {
     allPoints = [];
     waypoints.forEach((wp, wIdx) => {
       if (wIdx === 0) {
         allPoints.push({ lat: wp.lat, lon: wp.lon });
       } else if (wp.segment && wp.segment.length > 0) {
-        // 첫 번째 점은 이전 세그먼트 끝점과 겹칠 수 있으므로 slice(1)
         wp.segment.slice(1).forEach(p => allPoints.push(p));
       }
     });
@@ -583,7 +528,7 @@
     renderMapPath();
   }
 
-  // 경로 및 마커 지도 렌더링
+  // 경로 및 마커 렌더링
   function renderMapPath() {
     if (!polyline) {
       polyline = L.polyline([], {
@@ -597,11 +542,10 @@
     const latlngs = allPoints.map(p => [p.lat, p.lon]);
     polyline.setLatLngs(latlngs);
 
-    // 기존 마커 전체 제거
+    // 마커 갱신
     markerLayers.forEach(m => map.removeLayer(m));
     markerLayers = [];
 
-    // waypoints 마커 렌더링
     waypoints.forEach((wp, idx) => {
       let badgeTitle = '';
       let badgeBg = '#2e7d32';
@@ -613,14 +557,14 @@
         badgeTitle = `🏁 ${idx + 1}번 날머리`;
         badgeBg = '#d32f2f';
       } else {
-        badgeTitle = `📍 경유지 ${idx + 1}`;
+        badgeTitle = `📍 ${idx + 1}번`;
         badgeBg = '#e65100';
       }
 
       const icon = L.divIcon({
         className: 'custom-badge-icon',
         html: `<div class="route-badge" style="background:${badgeBg};">${badgeTitle}</div>`,
-        iconAnchor: [32, 12]
+        iconAnchor: [30, 12]
       });
 
       const m = L.marker([wp.lat, wp.lon], { icon, interactive: false }).addTo(map);
@@ -637,7 +581,7 @@
       markerLayers.push(circle);
     });
 
-    // 실제 산길 굽이굽이 누적 거리(km) 정밀 계산
+    // 실제 산길 굽이굽이 누적 거리 계산
     let totalKm = 0.0;
     for (let i = 1; i < allPoints.length; i++) {
       totalKm += calcDistanceKm(allPoints[i-1].lat, allPoints[i-1].lon, allPoints[i].lat, allPoints[i].lon);
@@ -674,33 +618,18 @@
     showToast('모든 코스가 초기화되었습니다.');
   }
 
-  // 산길 자동 따라가기 모드 토글
+  // 산길 자동 연결 모드 토글
   function toggleAutoRoute() {
     isAutoRoute = !isAutoRoute;
     const btn = document.getElementById('autoRouteBtn');
     if (isAutoRoute) {
       btn.classList.add('active');
       btn.innerText = '🥾 산길 자동 연결 (ON)';
-      showToast('🥾 산길 자동 연결 ON! 다음 점을 찍으면 실제 등산로를 따라 연결됩니다.');
+      showToast('🥾 산길 자동 연결 ON! 마우스로 클릭하면 실제 등산로를 따라 연결됩니다.');
     } else {
       btn.classList.remove('active');
       btn.innerText = '📏 직선 찍기 모드 (OFF)';
-      showToast('📏 직선 찍기 모드입니다. 점과 점 사이가 직선으로 연결됩니다.');
-    }
-  }
-
-  // 화면 터치 찍기 모드 토글
-  function toggleDrawMode() {
-    isDrawMode = !isDrawMode;
-    const btn = document.getElementById('drawModeBtn');
-    if (isDrawMode) {
-      btn.classList.add('active');
-      btn.innerText = '✏️ 터치 찍기 (ON)';
-      showToast('화면 터치로 점 찍기가 켜졌습니다.');
-    } else {
-      btn.classList.remove('active');
-      btn.innerText = '✋ 터치 끄기 (OFF)';
-      showToast('터치 끄기 완료! 이제 [📍 여기에 경유지 찍기] 버튼으로만 점이 추가됩니다.');
+      showToast('📏 직선 찍기 모드입니다. 마우스 클릭 지점 사이가 직선으로 이어집니다.');
     }
   }
 
@@ -713,7 +642,7 @@
     map.fitBounds(polyline.getBounds(), { padding: [60, 60] });
   }
 
-  // 산 / 지명 검색 (동명산 구분 & 지역명 선택)
+  // 산 / 지명 검색
   async function searchLocation() {
     const q = document.getElementById('searchInput').value.trim();
     const dropdown = document.getElementById('searchResultsDropdown');
@@ -825,10 +754,10 @@
     }
   });
 
-  // 표준 GPX 1.1 파일 생성 및 다운로드 (산길 굽이굽이 모든 점 완벽 저장)
+  // 표준 GPX 1.1 파일 생성 및 다운로드
   function exportGPX() {
     if (allPoints.length < 2) {
-      alert('최소 2개 이상의 경유지를 찍어야 GPX 파일로 저장할 수 있습니다.');
+      alert('최소 2개 이상의 경유지를 마우스로 찍어야 GPX 파일로 저장할 수 있습니다.');
       return;
     }
 
@@ -874,7 +803,7 @@ ${trkpts}    </trkseg>
   // 내 뷰어로 바로 테스트
   function previewInViewer() {
     if (allPoints.length < 2) {
-      alert('최소 2개 이상의 경유지를 찍어주세요.');
+      alert('최소 2개 이상의 경유지를 마우스로 찍어주세요.');
       return;
     }
 
@@ -928,7 +857,7 @@ ${trkpts}    </trkseg>
 
         rebuildAllPoints();
         fitRoute();
-        showToast(`📂 '${courseName}' GPX를 불러왔습니다. 이어서 점을 찍을 수 있습니다!`);
+        showToast(`📂 '${courseName}' GPX를 불러왔습니다. 이어서 마우스로 점을 찍을 수 있습니다!`);
       } catch(err) {
         alert('GPX 불러오기 오류: ' + err.message);
       }
@@ -950,7 +879,7 @@ ${trkpts}    </trkseg>
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
-    showToast('💡 출발지와 경유지를 찍으면 실제 산길을 따라 자동으로 연결됩니다!');
+    showToast('💡 마우스로 지도 위를 클릭하면 실제 등산로가 자동으로 척척 연결됩니다!');
   });
 </script>
 
