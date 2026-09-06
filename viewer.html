@@ -116,6 +116,19 @@
       background: #2e7d32; border: none; border-radius: 12px; cursor: pointer;
       box-shadow: 0 4px 12px rgba(46,125,50,0.3);
     }
+
+    /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
+    .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
+    .saved-route-item {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      background: #f1f8e9; border: 1.5px solid #c8e6c9; border-radius: 12px;
+      padding: 12px 14px; cursor: pointer;
+    }
+    .saved-route-item:active { background: #e8f5e9; }
+    .saved-route-info { flex: 1; min-width: 0; }
+    .saved-route-name { font-size: 14px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .saved-route-date { font-size: 11px; color: #689f38; margin-top: 2px; }
+    .saved-route-del { font-size: 18px; color: #bbb; padding: 4px 8px; }
   </style>
 </head>
 <body>
@@ -144,12 +157,13 @@
   <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
 </div>
 
-<!-- 초기 안내 모달 (필요시에만 텍스트 안내) -->
+<!-- 초기 안내 모달: 저장된 코스가 없을 때 안내 문구, 있을 때 코스 목록(오프라인에서도 동작) -->
 <div class="empty-modal" id="emptyModal" style="display: none;">
   <div class="modal-box">
     <div class="icon">⛰️</div>
     <h2 id="modalTitle">등산로 안내</h2>
-    <p>등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.</p>
+    <p id="modalDesc">등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.</p>
+    <div class="saved-route-list" id="savedRouteList" style="display: none;"></div>
   </div>
 </div>
 
@@ -290,11 +304,56 @@
     }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
   }
 
+  // 산에서 여러 코스를 오프라인으로 골라볼 수 있도록, 코스를 하나만 덮어쓰지
+  // 않고 여러 개를 배열로 보관한다. 저장 키는 이름이 아니라 원본 GPX
+  // 주소(sourceUrl)다 — "남덕유산_20250501.gpx"와 "남덕유산_20251217.gpx"처럼
+  // 이름은 같아도 실제로는 다른 코스인 경우가 있기 때문이다.
+  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v1';
+  const MAX_SAVED_ROUTES = 10;
+
+  function loadSavedRoutes() {
+    try {
+      const raw = localStorage.getItem(SAVED_ROUTES_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch(e) { return []; }
+  }
+
+  function saveRouteToStorage(courseName, sourceUrl, points) {
+    try {
+      let list = loadSavedRoutes();
+      const key = sourceUrl || null;
+      // 같은 원본 주소가 이미 있으면 최신 내용으로 갱신하고 맨 앞으로 올린다.
+      // key가 없는(직접 파일 선택) 경우는 항상 새 항목으로 추가한다.
+      if (key) list = list.filter(r => r.sourceUrl !== key);
+      list.unshift({
+        name: courseName,
+        sourceUrl: key,
+        points: points,
+        savedAt: Date.now()
+      });
+      if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+    } catch(e) {
+      // 용량 초과 등으로 저장 실패 시, 가장 오래된 절반을 지우고 한 번 더 시도한다.
+      try {
+        let list = loadSavedRoutes();
+        list = list.slice(0, Math.ceil(list.length / 2));
+        list.unshift({ name: courseName, sourceUrl: sourceUrl || null, points: points, savedAt: Date.now() });
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      } catch(e2) {}
+    }
+  }
+
+  function findSavedRouteByUrl(url) {
+    if (!url) return null;
+    return loadSavedRoutes().find(r => r.sourceUrl === url) || null;
+  }
+
   // 경로 그리기
-  // sourceUrl: 로컬 저장소 캐시 키로 쓰는 GPX 원본 주소. 코스명(courseName)만
-  // 으로는 서로 다른 GPX가 같은 이름("남덕유산_20250501.gpx"와
-  // "남덕유산_20251217.gpx"처럼 날짜만 다른 경우)으로 뽑혀 캐시가 뒤섞이는
-  // 문제가 있었다 — 반드시 원본 URL로 구분해야 한다.
+  // sourceUrl: 로컬 저장소 키로 쓰는 GPX 원본 주소. 코스명(courseName)만으로는
+  // 서로 다른 GPX가 같은 이름으로 뽑혀 캐시가 뒤섞이는 문제가 있었다 —
+  // 반드시 원본 URL로 구분해야 한다.
   function drawRoute(points, courseName, sourceUrl) {
     if (!map || !points.length) return;
     currentPoints = points;
@@ -341,17 +400,9 @@
       document.getElementById('trailName').innerText = '🚩 ' + courseName;
     }
 
-    // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원)
-    // 캐시 키는 원본 GPX 주소(sourceUrl)로 한다 — 이름이 같아도 실제로는
-    // 다른 코스일 수 있기 때문(직접 파일 선택 등 sourceUrl이 없는 경우는
-    // 이름으로 대체).
-    try {
-      localStorage.setItem('saved_hiking_route', JSON.stringify({
-        name: courseName,
-        sourceUrl: sourceUrl || null,
-        points: points
-      }));
-    } catch(e) {}
+    // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원,
+    // 여러 코스를 동시에 보관해 오프라인 상태에서도 목록에서 골라볼 수 있다)
+    saveRouteToStorage(courseName, sourceUrl, points);
 
     document.getElementById('emptyModal').style.display = 'none';
 
@@ -614,14 +665,18 @@
     const decodedCourseName = courseName ? decodeURIComponent(courseName) : '등산로 코스';
 
     // 같은 코스를 다시 열 때 매번 외부 프록시를 거쳐 GPX를 재다운로드하지
-    // 않도록, url 파라미터가 있어도 먼저 localStorage에 같은 원본 GPX
-    // 주소(sourceUrl)로 저장된 좌표가 있으면 그걸 즉시 쓴다. 코스명이 아니라
+    // 않도록, url 파라미터가 있으면 먼저 localStorage에 같은 원본 GPX
+    // 주소(sourceUrl)로 저장된 좌표가 있는지 찾아본다. 코스명이 아니라
     // 반드시 원본 주소로 비교해야 한다 — "남덕유산_20250501.gpx"와
     // "남덕유산_20251217.gpx"처럼 코스명은 같아도 실제로는 전혀 다른 GPX인
-    // 경우가 있어, 이름만 보고 캐시를 재사용하면 엉뚱한(먼저 저장된) 지도가
-    // 계속 뜨는 버그가 있었다.
-    if (gpxUrl && tryRestoreSavedRoute(gpxUrl)) {
-      gpxUrl = null;
+    // 경우가 있어, 이름만 보고 캐시를 재사용하면 엉뚱한 지도가 뜨는 버그가
+    // 있었다.
+    if (gpxUrl) {
+      const cached = findSavedRouteByUrl(gpxUrl);
+      if (cached) {
+        drawRoute(cached.points, cached.name, cached.sourceUrl);
+        gpxUrl = null;
+      }
     }
 
     if (gpxUrl) {
@@ -644,40 +699,54 @@
         if (document.getElementById('gpxLoadingBadge')) {
           document.getElementById('gpxLoadingBadge').remove();
         }
-        checkSavedRoute();
+        showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.<br>대신 저장된 코스를 골라볼 수 있습니다.');
       }
     } else if (!hadGpxUrl) {
-      checkSavedRoute();
+      // url 파라미터 없이 열린 경우(즐겨찾기 등) — 저장된 코스 목록을 보여준다.
+      // 산속에서 완전히 오프라인이어도 이전에 저장해둔 여러 코스 중 하나를
+      // 골라 바로 열어볼 수 있어야 한다는 게 이 기능의 목적이다.
+      showSavedRouteList();
     }
 
-    // 저장된 경로의 원본 GPX 주소가 일치할 때만 즉시 복원한다. 복원에
-    // 성공하면 true.
-    function tryRestoreSavedRoute(url) {
-      try {
-        const saved = localStorage.getItem('saved_hiking_route');
-        if (!saved) return false;
-        const data = JSON.parse(saved);
-        if (data.points && data.points.length && data.sourceUrl && data.sourceUrl === url) {
-          drawRoute(data.points, data.name, data.sourceUrl);
-          return true;
-        }
-      } catch(e) {}
-      return false;
+    // 저장된 코스 목록을 안내 모달에 렌더링한다. message가 있으면 안내
+    // 문구를 그걸로 바꾼다(예: 자동 다운로드 실패 시).
+    function showSavedRouteList(message) {
+      const routes = loadSavedRoutes();
+      const modal = document.getElementById('emptyModal');
+      const desc = document.getElementById('modalDesc');
+      const listEl = document.getElementById('savedRouteList');
+
+      if (!routes.length) {
+        desc.innerHTML = message || '등산로 코스 정보를 불러오는 중입니다.<br>잠시만 기다려 주세요.';
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+        modal.style.display = 'flex';
+        return;
+      }
+
+      desc.innerHTML = message || '저장된 등산로 코스입니다.<br>오프라인 상태에서도 바로 열 수 있습니다.';
+      listEl.innerHTML = routes.map((r, i) => {
+        const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
+        const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
+        return `
+          <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
+            <div class="saved-route-info">
+              <div class="saved-route-name">⛰️ ${safeName}</div>
+              <div class="saved-route-date">저장일: ${dateStr}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      listEl.style.display = 'flex';
+      modal.style.display = 'flex';
     }
 
-    function checkSavedRoute() {
-      try {
-        const saved = localStorage.getItem('saved_hiking_route');
-        if (saved) {
-          const data = JSON.parse(saved);
-          if (data.points && data.points.length) {
-            drawRoute(data.points, data.name || '등산로 코스', data.sourceUrl);
-            return;
-          }
-        }
-      } catch(e) {}
-      document.getElementById('emptyModal').style.display = 'flex';
-    }
+    window.openSavedRouteByIndex = function(index) {
+      const routes = loadSavedRoutes();
+      const r = routes[index];
+      if (!r) return;
+      drawRoute(r.points, r.name, r.sourceUrl);
+    };
   });
 </script>
 
