@@ -304,6 +304,17 @@
       transition: all 0.2s;
     }
     .btn-route-list:hover { background: #c8e6c9; }
+    /* 홈 화면에 추가 안내 버튼 — 실제 설치(beforeinstallprompt)는 쓰지
+       않는다. Google Play Protect가 처음 보는 PWA 설치 요청을 "안전하지
+       않은 앱"으로 오탐 차단한 전례가 있어, 대신 브라우저 표준 메뉴에서
+       직접 하도록 안내만 한다. */
+    .btn-install {
+      background: #e3f2fd; border: 1.5px solid #90caf9; color: #1565c0;
+      font-size: 12.5px; font-weight: 800; padding: 6px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-install:hover { background: #bbdefb; }
 
     /* 화면 오른쪽 하단 줌 컨트롤 (+/-) 스타일 */
     .leaflet-bottom.leaflet-right {
@@ -344,6 +355,9 @@
 <div class="top-header">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🚩 gajago 등산지도</h1>
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가">
+      📲 바로가기
+    </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기">
       📋 내 코스
     </button>
@@ -418,6 +432,31 @@
         .catch(err => console.warn('PWA ServiceWorker 등록 알림:', err));
     });
   }
+
+  // 1-1. "홈 화면에 추가" 안내. beforeinstallprompt로 자동 설치를 걸면
+  // Google Play Protect가 처음 보는 PWA를 "안전하지 않은 앱"으로 오탐
+  // 차단한 전례가 있어, 실제 설치는 하지 않고 브라우저 메뉴로 유도하는
+  // 안내만 보여준다. 이미 홈 화면에서 실행 중이면(standalone) 버튼을
+  // 숨긴다.
+  function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true; // iOS Safari 전용 플래그
+  }
+
+  function showInstallGuide() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const msg = isIOS
+      ? '📲 홈 화면에 추가하기\n\n하단 [공유] 버튼(⬆️)을 누른 뒤\n"홈 화면에 추가"를 선택하세요.'
+      : '📲 홈 화면에 추가하기\n\n우측 상단 메뉴(⋮)를 누른 뒤\n"홈 화면에 추가"를 선택하세요.';
+    showToastBadge(msg, 5000);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (isRunningStandalone()) {
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.style.display = 'none';
+    }
+  });
 
   let map = null;
   let currentLayer = null;
@@ -635,7 +674,7 @@
     }
   }
 
-  function showToastBadge(msg) {
+  function showToastBadge(msg, durationMs) {
     let b = document.getElementById('compassNoticeToast');
     if (!b) {
       b = document.createElement('div');
@@ -650,7 +689,7 @@
     b._timer = setTimeout(() => {
       b.style.opacity = '0';
       setTimeout(() => { b.style.display = 'none'; }, 400);
-    }, 3200);
+    }, durationMs || 3200);
   }
 
   function stopCompass() {
