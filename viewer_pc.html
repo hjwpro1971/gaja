@@ -664,6 +664,71 @@
     return 2 * R * Math.asin(Math.sqrt(a));
   }
 
+  // 점(사용자 위치)에서 등산로 선분(GPX의 연속된 두 점을 잇는 선)까지의
+  // 최단거리를 미터로 계산한다. GPX는 점(waypoint)들의 나열이라, 점까지의
+  // 거리만 재면 점 간격이 넓은 구간(30~40m씩 떨어진 경우가 실제로 있다)에서는
+  // 산길 정중앙에 서 있어도 "가장 가까운 점"까지 30m 넘게 떨어진 것으로
+  // 잘못 계산되어 실제로는 이탈이 아닌데 이탈로 오판했다. 점이 아니라
+  // 산길 자체(선분)까지의 거리를 재야 이 문제가 없다.
+  //
+  // 등산로 규모(길어야 수 km)에서는 위경도를 평면으로 근사해도 오차가
+  // 무시할 만큼 작으므로, 매 GPS 갱신마다 무거운 구면삼각법을 반복하는 대신
+  // 등장방형 투영(위도 1도=111320m, 경도는 위도의 cos만큼 보정)으로
+  // 로컬 평면 좌표를 만들어 계산한다.
+  function pointToSegmentMeters(plat, plon, alat, alon, blat, blon) {
+    const latRef = plat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+
+    const px = (plon - alon) * mPerDegLon;
+    const py = (plat - alat) * mPerDegLat;
+    const bx = (blon - alon) * mPerDegLon;
+    const by = (blat - alat) * mPerDegLat;
+
+    const segLenSq = bx * bx + by * by;
+    let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = bx * t;
+    const closestY = by * t;
+    const dx = px - closestX;
+    const dy = py - closestY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
+  // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
+  // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
+  function nearestPointOnTrail(lat, lon, points) {
+    if (!points || points.length === 0) {
+      return { distance: 999999, point: null, index: -1 };
+    }
+    if (points.length === 1) {
+      return { distance: haversineMeters(lat, lon, points[0].lat, points[0].lon), point: points[0], index: 0 };
+    }
+
+    let minDist = Infinity;
+    let nearestPoint = points[0];
+    let nearestIdx = 0;
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      if (d < minDist) {
+        minDist = d;
+        nearestIdx = i;
+        // 안내선(guideLine)이 이어질 대상 지점은 두 점 중 사용자와 더
+        // 가까운 쪽으로 잡아 시각적으로 자연스럽게 한다.
+        const dA = haversineMeters(lat, lon, a.lat, a.lon);
+        const dB = haversineMeters(lat, lon, b.lat, b.lon);
+        nearestPoint = dA <= dB ? a : b;
+      }
+    }
+
+    return { distance: minDist, point: nearestPoint, index: nearestIdx };
+  }
+
   // 타일 좌표 계산 함수
   function latLonToTile(lat, lon, zoom) {
     const latRad = lat * Math.PI / 180;
@@ -1133,19 +1198,12 @@
         }
         prevGpsPos = { lat, lon };
 
-        // 등산로 상 가장 가까운 지점 탐색
-        let minDistanceM = 999999;
-        let nearestPoint = null;
-        if (currentPoints && currentPoints.length > 0) {
-          for (let i = 0; i < currentPoints.length; i++) {
-            const p = currentPoints[i];
-            const d = haversineMeters(lat, lon, p.lat, p.lon);
-            if (d < minDistanceM) {
-              minDistanceM = d;
-              nearestPoint = p;
-            }
-          }
-        }
+        // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
+        // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
+        // 구간에서 산길 위에 서 있는데도 이탈로 오판되지 않는다.
+        const nearest = nearestPointOnTrail(lat, lon, currentPoints);
+        const minDistanceM = nearest.distance;
+        const nearestPoint = nearest.point;
 
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
