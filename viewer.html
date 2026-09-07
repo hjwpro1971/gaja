@@ -710,10 +710,13 @@
       }
     }, 100);
 
-    // 사용자가 손가락으로 지도를 드래그하여 둘러볼 때는 회전 모드를 정북 고정으로 자동 전환 (자유 탐색)
-    map.on('dragstart', () => {
-      if (isHeadingUp) {
-        setHeadingUpMode(false, true);
+    // 길찾기 회전 모드에서는 손가락으로 확대/축소(핀치줌, 더블탭)해도
+    // 화면 중심이 내 위치를 벗어나지 않아야 한다. Leaflet의 핀치줌은
+    // 손가락 중심점 기준으로 확대되어 중심이 살짝씩 밀릴 수 있으므로,
+    // 줌 동작이 끝날 때마다 다시 내 위치로 중심을 맞춘다.
+    map.on('zoomend', () => {
+      if (isHeadingUp && lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: false });
       }
     });
 
@@ -1294,6 +1297,32 @@
     }
   }
 
+  // 화면 자동 꺼짐 방지 (Wake Lock) — 길찾기 회전 모드(화살표 ON, 2클릭)
+  // 동안에는 화면을 계속 봐야 하므로 자동 잠금을 막는다. 지원 안 하는
+  // 브라우저(구형 iOS Safari 등)에서는 조용히 무시한다.
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } catch (e) {}
+  }
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+  // 화면이 잠깐 꺼졌다 켜지면(예: 전화 수신 후 복귀) Wake Lock이 자동
+  // 해제되어 있으므로, 길찾기 모드가 여전히 켜져 있다면 다시 요청한다.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && showHeadingArrow) {
+      requestWakeLock();
+    }
+  });
+
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
     const btn = document.getElementById('gpsBtn');
@@ -1312,12 +1341,14 @@
             iconAnchor: [40, 40]
           }));
         }
-        showToastBadge('🧭 [방향 화살표 ON]\n핸드폰 위쪽이 내가 갈 방향입니다.\n(화면을 드래그하면 북쪽 고정으로 돌아갑니다)');
+        requestWakeLock();
+        showToastBadge('🧭 [방향 화살표 ON]\n핸드폰 위쪽이 내가 갈 방향입니다.\n(화면이 자동으로 꺼지지 않습니다)');
         return;
       }
       // 3단계: 화살표까지 나와 있을 때 누르면 -> GPS 종료 (배터리 절약)
       setHeadingUpMode(false, true);
       showHeadingArrow = false;
+      releaseWakeLock();
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
       stopCompass();
