@@ -508,27 +508,14 @@
     return diff;
   }
 
-  // ⭐ 3D 틸트 보정 나침반 각도 계산 함수 (스마트폰을 45도 기울여 쥐고 걸어도 수평 정확도 완벽 유지)
-  function computeTiltCompensatedHeading(alpha, beta, gamma) {
-    if (alpha === null || alpha === undefined) return null;
-    const degToRad = Math.PI / 180;
-    const _x = (beta || 0) * degToRad;
-    const _y = (gamma || 0) * degToRad;
-    const _z = (alpha || 0) * degToRad;
-
-    const cY = Math.cos(_y);
-    const cZ = Math.cos(_z);
-    const sX = Math.sin(_x);
-    const sY = Math.sin(_y);
-    const sZ = Math.sin(_z);
-
-    const Vx = -cZ * sY - sZ * sX * cY;
-    const Vy = -sZ * sY + cZ * sX * cY;
-
-    let heading = Math.atan2(Vx, Vy) * (180 / Math.PI);
-    if (heading < 0) heading += 360;
-    return (360 - heading) % 360;
-  }
+  // 네이버지도/카카오맵/산길샘과 같은 방식: 걷고 있을 때는 나침반(자기장
+  // 센서)을 아예 쓰지 않고 GPS가 알려주는 실제 이동 방향만 쓴다. 나침반은
+  // 건물·자동차·손 안의 금속 등 자기장 교란에 취약해서, 3D 틸트 보정
+  // 같은 복잡한 계산을 얹어도 "정면으로 향한 건물이 화면 위쪽과 안 맞는"
+  // 문제가 계속 생겼다 — 반면 GPS 이동 방향은 자기장과 무관해 훨씬
+  // 안정적이다. 나침반은 멈춰 서 있어서 GPS로 방향을 알 수 없을 때만
+  // 보조로 쓰고, 그때도 복잡한 회전행렬 보정 없이 alpha 값을 그대로 쓴다
+  // (표준 스펙상 alpha 자체가 이미 "북쪽에서 얼마나 돌았는지"다).
 
   // ⭐ 저주파 오일 감쇠 필터 적용 (2도 이하 미세 떨림 무시 + 0.12 가중치로 묵직하고 부드러운 회전)
   function applySmoothedHeading(rawHeading) {
@@ -589,21 +576,25 @@
     }
   }
 
-  // 나침반 센서 이벤트 수신
+  // 나침반 센서 이벤트 수신 — 걷는 중(최근 3초 안에 GPS 이동 방향이
+  // 갱신됨)에는 나침반을 아예 무시한다. GPS 이동 방향이 그 자리를
+  // 대신하므로 두 값이 서로 경쟁하며 튀는 일이 없다.
   function handleOrientation(e) {
-    // 걷는 중(GPS 이동 3초 이내)에는 센서 오차 대신 실제 걸어가는 방향을 우선하여 센서 왜곡 원천 차단
     if (gpsMovementHeading !== null && Date.now() - lastGpsMoveTime < 3000) {
       return;
     }
 
     let rawHeading = null;
-    // iOS Safari
     if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+      // iOS Safari: 이미 보정된 나침반 방향을 그대로 준다.
       rawHeading = e.webkitCompassHeading;
-    } 
-    // Android Chrome / Samsung Internet (3D 틸트 보정)
-    else if (e.alpha !== undefined && e.alpha !== null) {
-      rawHeading = computeTiltCompensatedHeading(e.alpha, e.beta, e.gamma);
+    } else if (e.alpha !== undefined && e.alpha !== null) {
+      // Android: alpha가 표준 스펙상 이미 "북쪽에서 시계 방향으로 얼마나
+      // 돌았는지"다. 복잡한 3D 회전행렬 보정을 얹었더니 beta/gamma의
+      // 미세한 흔들림이 삼각함수를 거치며 오히려 방향을 크게 틀어지게
+      // 만드는 문제가 있어(정면 건물이 화면 위쪽과 안 맞음), 걷는 중이
+      // 아닌 이 정지 상태 보조용으로는 alpha를 그대로 쓴다.
+      rawHeading = (360 - e.alpha) % 360;
     }
 
     if (rawHeading !== null && !isNaN(rawHeading)) {
