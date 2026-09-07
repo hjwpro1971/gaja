@@ -503,13 +503,18 @@
     }
 
     const diff = shortestAngleDiff(rawHeading, smoothedHeading);
-    // 2.0도 이하의 미세한 손떨림 및 센서 전기 노이즈는 완전히 무시하여 바늘/지도 흔들림 100% 차단!
-    if (Math.abs(diff) < 2.0) {
+    // 실내(철제 구조물·가전제품 근처)에서는 자력계가 6~8도까지도 흔들리는
+    // 것으로 확인되어, 기존 2도 임계값으로는 걸러지지 않고 지도가 가만히
+    // 있어도 계속 도는 것처럼 보였다. 임계값을 6도로 올려 실내 노이즈를
+    // 더 넉넉히 차단한다.
+    if (Math.abs(diff) < 6.0) {
       return;
     }
 
-    // 고급 오일 나침반처럼 부드러운 평활화
-    continuousHeading += diff * 0.12;
+    // 고급 오일 나침반처럼 부드러운 평활화 (기존 0.12 → 0.08로 낮춰 실제
+    // 방향 전환 때도 더 묵직하고 느긋하게 반응하도록 해, 노이즈성 순간
+    // 변화가 화면에 크게 티나지 않게 한다)
+    continuousHeading += diff * 0.08;
     smoothedHeading = ((continuousHeading % 360) + 360) % 360;
 
     updateHeadingDisplay(smoothedHeading, continuousHeading);
