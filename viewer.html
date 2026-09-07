@@ -449,6 +449,7 @@
   }
 
   let isHeadingUp = false;      // 🧭 길찾기 회전 모드 (스마트폰 위쪽이 항상 갈 방향)
+  let showHeadingArrow = false; // 🧭 방향 화살표(시야각 빔) 표시 여부 — GPS 1클릭째는 숨기고, 2클릭째부터 표시
   let smoothedHeading = null;
   let continuousHeading = 0;   // 360도 경계 스핀 방지용 연속 각도
   let lastToastUpdate = 0;
@@ -650,8 +651,9 @@
 
   function createGpsIconHtml(heading) {
     const rot = (heading !== null && !isNaN(heading)) ? heading : 0;
-    return `
-      <div class="gps-marker-container">
+    // GPS를 처음 켰을 때(1클릭)는 방향 화살표 없이 단순 위치 점만 보여주고,
+    // [내 위치] 버튼을 한 번 더 눌러야(2클릭) 방향 화살표가 나타난다.
+    const arrowHtml = showHeadingArrow ? `
         <div class="gps-heading-wrapper" id="gpsHeadingWrapper" style="transform: rotate(${rot}deg);">
           <svg viewBox="0 0 80 80" class="gps-heading-svg">
             <defs>
@@ -667,6 +669,10 @@
             <polygon points="40,3 48,23 40,19 32,23" fill="#0d47a1" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
           </svg>
         </div>
+    ` : '';
+    return `
+      <div class="gps-marker-container">
+        ${arrowHtml}
         <div class="my-gps-pulse"></div>
         <div class="my-gps-dot"></div>
       </div>
@@ -1269,9 +1275,11 @@
         toast.innerText = `⚠️ 등산로 반대 방향으로 걷고 있습니다! (뒤로 돌아서세요)`;
       } else {
         toast.className = 'gps-toast';
-        toast.innerText = isHeadingUp
+        toast.innerText = showHeadingArrow
           ? `🧭 [길찾기 회전 모드] ⬆️ 스마트폰 위쪽(화살표 방향)으로 따라가세요 (±${accuracy}m)`
-          : `🧭 진행방향: ${headStr} · 등산로 정상 진행 중 (±${accuracy}m)`;
+          : isHeadingUp
+            ? `🧭 [길찾기 회전 모드] 지도가 진행 방향으로 회전 중 · 등산로 정상 진행 중 (±${accuracy}m)`
+            : `🧭 진행방향: ${headStr} · 등산로 정상 진행 중 (±${accuracy}m)`;
       }
     } else {
       toast.className = 'gps-toast';
@@ -1287,16 +1295,24 @@
     const toast = document.getElementById('gpsToast');
 
     if (watchId !== null) {
-      // 1단계: GPS가 켜져 있을 때 [내 위치] 버튼을 또 누르면 -> 길찾기 회전 모드 ON!
-      if (!isHeadingUp) {
-        setHeadingUpMode(true);
-        if (lastKnownPos) {
-          map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: true });
+      // 2단계: GPS는 켜져 있고 아직 방향 화살표가 없을 때 또 누르면 -> 화살표 표시!
+      // (지도 회전 자체는 이미 1클릭째부터 켜져 있다.)
+      if (!showHeadingArrow) {
+        showHeadingArrow = true;
+        if (userGpsMarker) {
+          userGpsMarker.setIcon(L.divIcon({
+            className: 'custom-gps-icon',
+            html: createGpsIconHtml(currentHeading),
+            iconSize: [80, 80],
+            iconAnchor: [40, 40]
+          }));
         }
+        showToastBadge('🧭 [방향 화살표 ON]\n핸드폰 위쪽이 내가 갈 방향입니다.\n(화면을 드래그하면 북쪽 고정으로 돌아갑니다)');
         return;
       }
-      // 2단계: 이미 회전 모드일 때 누르면 -> GPS 종료 (배터리 절약)
+      // 3단계: 화살표까지 나와 있을 때 누르면 -> GPS 종료 (배터리 절약)
       setHeadingUpMode(false, true);
+      showHeadingArrow = false;
       navigator.geolocation.clearWatch(watchId);
       watchId = null;
       stopCompass();
@@ -1315,6 +1331,7 @@
 
     // 나침반 센서 즉시 활성화
     initCompass();
+    showHeadingArrow = false;
 
     btn.classList.add('active');
     toast.style.display = 'block';
@@ -1369,6 +1386,11 @@
           });
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
           map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+          // GPS를 처음 켜는 순간(1클릭)부터 지도 회전(길찾기 모드)은 바로 시작한다.
+          // 방향 화살표만 2클릭째까지 숨겨둔다(showHeadingArrow).
+          if (!isHeadingUp) {
+            setHeadingUpMode(true, true);
+          }
         } else {
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {
