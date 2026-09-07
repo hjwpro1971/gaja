@@ -90,7 +90,12 @@
       left: 50% !important;
       margin-left: -75vmax !important;
       margin-top: -75vmax !important;
-      transition: transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1);
+      /* 화살표(.gps-heading-wrapper, 0.22s)와 같은 시간으로 맞춰야 회전이
+         엇박자 없이 함께 움직인다. 지도는 150vmax짜리 큰 레이어라 브라우저가
+         회전을 그리는 데 더 오래 걸려 체감상 뒤처지므로, will-change로
+         합성 레이어를 미리 만들어 렌더링 부담을 줄인다. */
+      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.4, 1);
+      will-change: transform;
     }
 
     /* 상단 헤더 바 */
