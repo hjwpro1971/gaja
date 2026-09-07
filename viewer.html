@@ -1325,7 +1325,7 @@
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
       const toTrailDir = getKoreanDirection(toTrailBearing);
       toast.className = 'gps-toast warning';
-      toast.innerText = `⚠️ 코스 이탈 (${Math.round(minDistanceM)}m) 👉 복귀 방향: ${toTrailDir}쪽 [녹색 점선]`;
+      toast.innerText = `⚠️ 이탈 ${Math.round(minDistanceM)}m · ${toTrailDir}쪽으로`;
     } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
       // 등산로 진행 방향 대조 (다음 5개 포인트 앞의 각도)
       const nextIdx = Math.min(nearestIdx + 5, currentPoints.length - 1);
@@ -1338,20 +1338,20 @@
       if (angleDiff > 125) {
         // 역주행 감지 (산길을 반대로 걷고 있을 때 경고)
         toast.className = 'gps-toast warning';
-        toast.innerText = `⚠️ 등산로 반대 방향으로 걷고 있습니다! (뒤로 돌아서세요)`;
+        toast.innerText = `⚠️ 반대 방향입니다`;
       } else {
         toast.className = 'gps-toast';
         toast.innerText = showHeadingArrow
-          ? `🧭 [길찾기 회전 모드] ⬆️ 스마트폰 위쪽(화살표 방향)으로 따라가세요`
+          ? `🧭 위쪽으로 따라가세요`
           : isHeadingUp
-            ? `🧭 [길찾기 회전 모드] 지도가 진행 방향으로 회전 중 · 등산로 정상 진행 중`
-            : `🧭 진행방향: ${headStr} · 등산로 정상 진행 중`;
+            ? `🧭 정상 진행 중`
+            : `🧭 ${headStr}`;
       }
     } else {
       toast.className = 'gps-toast';
       toast.innerText = isHeadingUp
-        ? `🧭 [길찾기 회전 모드] ⬆️ 스마트폰 위쪽(화살표 방향)으로 따라가세요`
-        : `🧭 진행방향: ${headStr} · 등산로 진행 중`;
+        ? `🧭 위쪽으로 따라가세요`
+        : `🧭 ${headStr}`;
     }
   }
 
@@ -1430,7 +1430,7 @@
     btn.classList.add('active');
     toast.style.display = 'block';
     toast.className = 'gps-toast';
-    toast.innerText = '📡 위성 GPS 신호 및 나침반 방향 수신 중...';
+    toast.innerText = '📡 GPS 수신 중...';
 
     let isFirstFix = true;
     let prevGpsTime = 0;
@@ -1518,7 +1518,7 @@
       },
       err => {
         toast.className = 'gps-toast warning';
-        toast.innerText = '⚠️ GPS 신호 수신 실패 (스마트폰 위치 권한 허용 필요)';
+        toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
         btn.classList.remove('active');
         watchId = null;
         stopCompass();
