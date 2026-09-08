@@ -555,15 +555,15 @@
     }
 
     // 적응형 게인: 실제로 몸을 돌린 큰 변화(방향 전환)는 즉시 따라가고,
-    // 작은 흔들림은 기존처럼 느긋하게 반응해 화면이 떨리지 않게 한다.
-    // 기존 고정 게인(0.08)은 GPS가 초당 1회만 갱신되는 상황에서 90도
-    // 회전에도 20초 넘게 걸려, 화살표는 이미 바뀌었는데 지도만 한참 뒤늦게
-    // 따라오는 것처럼 보이는 원인이었다.
+    // 작은 흔들림은 느긋하게 반응해 화면이 떨리지 않게 한다.
+    // 정지 시 오탐 이동(위 confirmedMoving 검증)을 이미 차단했으므로,
+    // 여기서는 노이즈 걱정 없이 전반적으로 게인을 더 올려 체감 반응을
+    // 빠르게 한다.
     let gain;
-    if (absDiff > 60)      gain = 0.90;  // 급격한 방향 전환 → 거의 즉시
-    else if (absDiff > 30) gain = 0.55;
-    else if (absDiff > 15) gain = 0.30;
-    else                   gain = 0.15;
+    if (absDiff > 45)      gain = 1.0;   // 큰 방향 전환 → 즉시 (지연 없음)
+    else if (absDiff > 20) gain = 0.70;
+    else if (absDiff > 8)  gain = 0.45;
+    else                   gain = 0.25;
 
     continuousHeading += diff * gain;
     smoothedHeading = ((continuousHeading % 360) + 360) % 360;
@@ -1717,12 +1717,27 @@
         const speed = pos.coords.speed; // m/s
         lastKnownPos = { lat, lon };
 
-        // GPS 실제 이동 속도가 시속 2.5km (0.7m/s) 이상일 때만 이동 벡터를 방향에 반영 (정지 상태 GPS 튐 완전 무시)
-        if (pos.coords.heading !== null && !isNaN(pos.coords.heading) && speed !== null && speed > 0.7) {
+        // ⚠️ pos.coords.speed와 pos.coords.heading은 기기/상황에 따라
+        // 정지 중에도 순간적으로 오차가 커서(특히 accuracy가 낮을 때)
+        // "이동 중"으로 잘못 찍히는 경우가 실제로 있다. speed 필드 하나만
+        // 믿지 않고, 직접 계산한 이동거리(moveDist)로 한 번 더 검증한다.
+        let confirmedMoving = false;
+        if (prevGpsPos) {
+          const instMoveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+          const instTimeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
+          const instSpeed = instTimeDiff > 0 ? (instMoveDist / instTimeDiff) : 0;
+          // GPS 정확도(accuracy)보다 실제 이동거리가 확실히 커야
+          // "진짜 이동"으로 인정 — 그렇지 않으면 오차 범위 내의 제자리 흔들림이다.
+          confirmedMoving = instMoveDist > Math.max(4.0, accuracy * 0.5) && instSpeed > 0.7 && instSpeed < 5.0;
+        }
+
+        // GPS 실제 이동 속도가 시속 2.5km (0.7m/s) 이상 + 위 검증까지 통과했을 때만
+        // 이동 벡터를 방향에 반영 (정지 상태 GPS 튐 완전 무시)
+        if (confirmedMoving && pos.coords.heading !== null && !isNaN(pos.coords.heading) && speed !== null && speed > 0.7) {
           gpsMovementHeading = pos.coords.heading;
           lastGpsMoveTime = Date.now();
           applySmoothedHeading(pos.coords.heading);
-        } else if (prevGpsPos) {
+        } else if (confirmedMoving && prevGpsPos) {
           const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
           const timeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
           const calcSpeed = timeDiff > 0 ? (moveDist / timeDiff) : 0;
@@ -1732,6 +1747,12 @@
             lastGpsMoveTime = Date.now();
             applySmoothedHeading(moveHeading);
           }
+        } else {
+          // 정지 확인됨 — GPS 이동 방향 정보를 즉시 무효화해 나침반이
+          // 곧바로 방향 계산을 넘겨받을 수 있게 한다. 이걸 안 하면
+          // handleOrientation()의 "최근 3초 이내 이동" 조건에 걸려
+          // 정지 중에도 최대 3초간 나침반이 계속 무시된다.
+          gpsMovementHeading = null;
         }
         prevGpsPos = { lat, lon };
         prevGpsTime = Date.now();
