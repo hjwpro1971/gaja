@@ -104,7 +104,7 @@
       /* 화살표(.gps-heading-wrapper)와 같은 계열의 시간으로 맞춰야 회전이
          엇박자 없이 함께 움직인다. linear 대신 ease-out을 써서, 무거운
          레이어가 프레임을 못 따라갈 때 튀는 느낌(흔들림)을 줄인다. */
-      transition: transform 0.15s ease-out;
+      transition: transform 0.1s ease-out;
       will-change: transform;
       backface-visibility: hidden;
     }
@@ -221,7 +221,7 @@
       top: 0;
       left: 0;
       transform-origin: 40px 40px;
-      transition: transform 0.12s linear;
+      transition: transform 0.08s linear;
       pointer-events: none;
     }
     .gps-heading-svg {
@@ -494,7 +494,10 @@
     constructor(config = {}) {
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
-        MIN_INTERVAL_MS: 1000,   // 최소 수신 간격 — 중복 픽스 방지
+        MIN_INTERVAL_MS: 400,    // 최소 수신 간격 — 원래 1000ms였으나 갱신 주기 자체가
+                                 // 체감 반응속도의 병목이 되어 400ms로 단축. 진짜 중복
+                                 // 픽스(수십 ms 내 재수신)만 걸러내고, GPS가 실제로 주는
+                                 // 갱신은 대부분 통과시킨다.
         MIN_DISTANCE: 4.0,       // 이전 확정점 대비 최소 이동 인정 거리(m)
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
         BEARING_THRESHOLD: 15.0, // 이 각도(deg) 미만 변화는 무시(freeze)
