@@ -512,12 +512,15 @@
     reset() { this.cov = NaN; this.x = NaN; } // 새 코스 시작 시 이전 궤적의 필터 상태 초기화용
   }
 
-  // 등산 보행 속도(시속 3~4km)에 맞춘 파라미터.
-  // R을 너무 낮추면 부드러워지는 대신 실제 방향 전환도 늦게 반영되어
-  // (검증된 라이브러리 사용 후기에서도 보고된 "지연" 문제) 위험할 수 있어,
-  // 반응성과 안정성의 균형점으로 설정했다. 실측 후 필요시 조정한다.
-  const gpsLatFilter = new KalmanFilter({ R: 0.01, Q: 3 });
-  const gpsLonFilter = new KalmanFilter({ R: 0.01, Q: 3 });
+  // 등산 보행 속도(시속 3~4km, 초당 약 1m 이동)에 맞춘 파라미터.
+  // 이전 값(R: 0.01)은 "과정 노이즈"를 지나치게 작게 잡아, 필터가
+  // "실제 위치는 거의 안 변한다"고 강하게 믿어버리는 바람에 걸어도
+  // 필터링된 좌표가 실제 이동을 거의 반영하지 못해 지도가 고정된 것처럼
+  // 보이는 원인이었다. R을 100배 키워 걷는 속도의 실제 위치 변화량을
+  // 제때 따라가게 하고, Q(측정 노이즈=GPS 오차 추정)는 스마트폰 GPS의
+  // 통상 오차 범위(5~15m)를 반영해 유지한다.
+  const gpsLatFilter = new KalmanFilter({ R: 1, Q: 3 });
+  const gpsLonFilter = new KalmanFilter({ R: 1, Q: 3 });
   // ────────────────────────────────────────────────────────────────
 
   let map = null;
@@ -1685,9 +1688,24 @@
   }
   // 화면이 잠깐 꺼졌다 켜지면(예: 전화 수신 후 복귀) Wake Lock이 자동
   // 해제되어 있으므로, 길찾기 모드가 여전히 켜져 있다면 다시 요청한다.
+  // 또한 화면이 꺼져 있던 동안(수 초~수 분) 실제로는 계속 이동했을 수
+  // 있는데, 칼만 필터와 방향 평활화는 "숨기기 직전 위치"를 여전히
+  // 정답으로 믿고 있다가 갑자기 새 위치가 들어오면 그 격차를 급하게
+  // 좁히려 하면서 지도·나침반·화살표가 한꺼번에 튀는 원인이 되었다.
+  // 화면 복귀 시점에 관련 상태를 전부 초기화해 "새로 시작하는 것"처럼
+  // 처리하면 이 문제가 없다.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && showHeadingArrow) {
-      requestWakeLock();
+    if (document.visibilityState === 'visible') {
+      if (showHeadingArrow) {
+        requestWakeLock();
+      }
+      if (watchId !== null) {
+        gpsLatFilter.reset();
+        gpsLonFilter.reset();
+        smoothedHeading = null;
+        gpsMovementHeading = null;
+        prevGpsPos = null; // 다음 GPS 갱신에서 이동거리 계산을 처음부터 다시 시작
+      }
     }
   });
 
@@ -1804,7 +1822,14 @@
           const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
           const timeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
           const calcSpeed = timeDiff > 0 ? (moveDist / timeDiff) : 0;
-          if (moveDist > 6.0 && calcSpeed > 0.7 && calcSpeed < 5.0 && accuracy < 20) {
+          // 고정 6.0m 임계값은 코너를 돌 때 6m(약 6초)를 더 걸어야 방향이
+          // 갱신되는 지연의 원인이었다. 무작정 낮추면(예: 3.0m) 스마트폰 GPS
+          // 통상 오차(5~15m) 범위 안에 들어와 제자리 흔들림을 다시 이동으로
+          // 오판할 위험이 있다 — 애초에 6.0을 쓴 이유와 정면 충돌한다.
+          // 대신 GPS 신호 품질(accuracy)에 연동해 신호가 좋을 때만
+          // 임계값을 낮추고, 신호가 나쁠 때는 기존처럼 보수적으로 유지한다.
+          const dynamicMoveThreshold = Math.max(3.0, accuracy * 0.6);
+          if (moveDist > dynamicMoveThreshold && calcSpeed > 0.7 && calcSpeed < 5.0 && accuracy < 20) {
             const moveHeading = calculateBearing(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
             gpsMovementHeading = moveHeading;
             lastGpsMoveTime = Date.now();
