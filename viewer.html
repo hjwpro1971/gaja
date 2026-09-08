@@ -1731,13 +1731,13 @@
           confirmedMoving = instMoveDist > Math.max(4.0, accuracy * 0.5) && instSpeed > 0.7 && instSpeed < 5.0;
         }
 
-        // GPS 실제 이동 속도가 시속 2.5km (0.7m/s) 이상 + 위 검증까지 통과했을 때만
-        // 이동 벡터를 방향에 반영 (정지 상태 GPS 튐 완전 무시)
-        if (confirmedMoving && pos.coords.heading !== null && !isNaN(pos.coords.heading) && speed !== null && speed > 0.7) {
-          gpsMovementHeading = pos.coords.heading;
-          lastGpsMoveTime = Date.now();
-          applySmoothedHeading(pos.coords.heading);
-        } else if (confirmedMoving && prevGpsPos) {
+        // 방향 계산은 좌표 기반(calculateBearing)을 우선으로 쓴다.
+        // pos.coords.heading은 GPS 칩/OS 단의 블랙박스 추정치(도플러 효과 기반)라
+        // 기기·상황에 따라 실제 이동 방향과 수십 도씩 어긋나는 경우가 실측에서
+        // 확인됐다. 반면 연속된 두 좌표 간 방위각(calculateBearing)은 실제로
+        // 어디서 어디로 움직였는지를 순수 기하학으로 계산하므로 훨씬 신뢰도가
+        // 높고, 등산 내비게이션 앱들도 이 방식을 기본으로 사용한다.
+        if (confirmedMoving && prevGpsPos) {
           const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
           const timeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
           const calcSpeed = timeDiff > 0 ? (moveDist / timeDiff) : 0;
