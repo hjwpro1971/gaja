@@ -497,24 +497,21 @@
         MIN_INTERVAL_MS: 400,    // 최소 수신 간격
         MIN_DISTANCE: 4.0,       // 이전 확정점 대비 최소 이동 인정 거리(m)
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
-        // 회전 반응이 느렸던 진짜 원인은 MIN_INTERVAL_MS가 아니라 이
-        // 두 값의 조합이었다. WINDOW_SIZE=5(이동평균 5개)는 방향을 실제로
-        // 튼 순간부터 그 변화가 평균에 충분히 반영되기까지 5번의 GPS
-        // 갱신(약 2~5초)이 걸리게 만들고, 그 위에 BEARING_THRESHOLD=15도
-        // 문턱까지 겹쳐 이중으로 보수적이었다. 정지 시 안정성은 이미
-        // 확인됐으므로 두 값을 낮춰 반응 속도를 우선한다.
-        BEARING_THRESHOLD: 8.0,  // 15도 → 8도로 완화
-        WINDOW_SIZE: 3,          // 5개 → 3개로 축소 (평균 반영 지연 단축)
+        // 회전 반응이 느렸던 진짜 원인은 이동평균(WINDOW_SIZE)이었다.
+        // 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어 새
+        // 방향에 완전히 수렴하기까지 여러 번의 갱신(체감 2~3초 이상)이
+        // 걸리는 구조적 지연이 있었다. 이동평균을 제거하고 원시 좌표를
+        // 그대로 쓰는 대신, 문턱값(BEARING_THRESHOLD)만으로 미세한
+        // 흔들림을 걸러낸다.
+        BEARING_THRESHOLD: 6.0,  // 미세 흔들림만 걸러내는 최소 문턱
         ...config
       };
-      this.window = [];
       this.lastConfirmed = null;
       this.totalDistance = 0;
     }
 
     // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
     reset() {
-      this.window = [];
       this.lastConfirmed = null;
       this.totalDistance = 0;
     }
@@ -531,7 +528,6 @@
       // 첫 포인트는 그대로 확정 (비교 대상이 없으므로)
       if (!this.lastConfirmed) {
         this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, timestamp: raw.timestamp };
-        this.window = [raw];
         return {
           latitude: raw.latitude, longitude: raw.longitude,
           bearing: null, totalDistance: 0, isStopped: false, timestamp: raw.timestamp
@@ -551,13 +547,16 @@
         };
       }
 
-      // 3단계: 좌표 스무딩 (이동평균)
-      this.window.push(raw);
-      if (this.window.length > this.config.WINDOW_SIZE) this.window.shift();
-      const smoothLat = this.window.reduce((acc, p) => acc + p.latitude, 0) / this.window.length;
-      const smoothLon = this.window.reduce((acc, p) => acc + p.longitude, 0) / this.window.length;
+      // 3단계: 좌표 스무딩 — 이동평균(3~5개)을 제거했다.
+      // 이동평균은 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어
+      // 새 방향에 완전히 수렴하기까지 여러 번의 갱신(체감 2~3초 이상)이
+      // 걸리는 구조적 지연이 있었다 — 파라미터를 아무리 낮춰도 이 지연
+      // 자체는 없어지지 않았다. 정지 판정(2단계)이 이미 노이즈로 인한
+      // 오탐을 걸러주므로, 여기서는 최신 원시 좌표를 그대로 쓴다.
+      const smoothLat = raw.latitude;
+      const smoothLon = raw.longitude;
 
-      // 방위각 계산 및 히스테리시스 — 15도 미만 변화는 이전 방향 유지
+      // 방위각 계산 및 히스테리시스 — 문턱 미만 변화는 이전 방향 유지
       let newBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
       if (this.lastConfirmed.bearing !== null) {
         const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
@@ -593,6 +592,7 @@
   let currentHeading = null;
   let lastKnownPos = null;
   let isCompassActive = false;
+  let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태 — 나침반 사용 여부 결정에 참조
   let guideLine = null; // 등산로 연결 점선 가이드
 
   function getKoreanDirection(deg) {
@@ -698,15 +698,28 @@
     }
   }
 
-  // 나침반(지자기 센서) 기반 방향 계산은 비활성화한다.
-  // 실측 결과 나침반은 자기장 교란에 취약해 정지 중 방향을 오히려
-  // 불안정하게 흔드는 원인이었다. 대신 GPS 이동 방향만 신뢰하고,
-  // 정지 중(GPS로 방향을 계산할 수 없는 상태)에는 이 함수가 아무 동작도
-  //하지 않아 화살표가 마지막으로 확정된 방향에 그대로 고정된다.
-  // deviceorientation 이벤트 자체는 계속 등록돼 있어도 무해하다 —
-  // 여기서 바로 반환하므로 화면에 아무 영향을 주지 않는다.
+  // 나침반(지자기 센서)은 완전히 정지한 상태(GpsFilterEngine이 isStopped로
+  // 판정한 상태)에서만 보조로 사용한다. 걷는 중에는 여전히 GPS 이동
+  // 방향만 신뢰한다 — 나침반은 자기장 교란에 취약해 걷는 중에 섞어 쓰면
+  // 방향이 불안정해지는 문제가 있었다. 반면 완전 정지 후 몸만 돌리는
+  // 경우(GPS 좌표 자체가 안 바뀌어 이동 방향을 계산할 수 없는 상황)에는
+  // 나침반이 유일한 방향 정보원이므로 이때만 반영한다.
   function handleOrientation(e) {
-    return; // 나침반 기반 방향 갱신 완전 비활성화
+    if (!isCurrentlyStopped) return; // 걷는 중이면 나침반 완전 무시
+
+    let rawHeading = null;
+    if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+      // iOS Safari: 이미 보정된 나침반 방향을 그대로 준다.
+      rawHeading = e.webkitCompassHeading;
+    } else if (e.alpha !== undefined && e.alpha !== null) {
+      // Android: alpha가 표준 스펙상 이미 "북쪽에서 시계 방향으로 얼마나
+      // 돌았는지"다.
+      rawHeading = (360 - e.alpha) % 360;
+    }
+
+    if (rawHeading !== null && !isNaN(rawHeading)) {
+      applySmoothedHeading(rawHeading);
+    }
   }
 
   function initCompass() {
@@ -1734,6 +1747,7 @@
         gpsFilterEngine.reset();
         smoothedHeading = null;
         gpsMovementHeading = null;
+        isCurrentlyStopped = false; // 다음 GPS 픽스가 판정하기 전까지는 나침반이 섣불리 반영되지 않도록
       }
     }
   });
@@ -1832,19 +1846,19 @@
           return;
         }
 
+        isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태 갱신
+
         // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
-        // 화면 회전에 반영한다. (엔진 내부에서 이미 15도 미만 변화는
+        // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
         // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
           applySmoothedHeading(result.bearing);
         }
-        // 정지 상태(result.isStopped)일 때는 아무 것도 하지 않는다.
-        // 나침반을 쓰지 않기로 했으므로 방향을 새로 계산할 방법이 없고,
-        // applySmoothedHeading을 호출하지 않으면 화면 회전값(continuousHeading)이
-        // 그대로 유지되어 화살표·지도가 자연스럽게 "마지막 확정 방향"에
-        // 고정된 채로 남는다.
+        // 정지 상태(result.isStopped)일 때는 GPS 쪽에서는 아무 것도 하지
+        // 않는다. 이 상태에서는 handleOrientation()이 나침반 값으로
+        // 방향을 갱신하므로, 제자리에서 몸을 돌리면 그쪽에서 반영된다.
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
