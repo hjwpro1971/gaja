@@ -91,8 +91,13 @@
        "요소 자기 자신 크기의 절반"만큼 당겨 화면 비율과 무관하게 항상
        뷰포트 정중앙에 고정한다. */
     #map.heading-up {
-      width: 160vh !important;
-      height: 160vh !important;
+      /* 160vh는 회전 중 모서리가 절대 안 잘리도록 넉넉히 잡은 값이었지만,
+         그만큼 브라우저가 매 프레임 다시 그려야 할 픽셀(타일 이미지 포함)
+         양이 많아 회전 애니메이션이 프레임을 못 따라가 "느리게" 보이는
+         원인이 되었다. 스마트폰 화면 대각선을 충분히 커버하면서도
+         레이어를 작게 유지하는 120vh로 축소해 렌더링 부담을 줄인다. */
+      width: 120vh !important;
+      height: 120vh !important;
       top: 50% !important;
       left: 50% !important;
       transform: translate(-50%, -50%) rotate(0deg);
@@ -687,30 +692,15 @@
     }
   }
 
-  // 나침반 센서 이벤트 수신 — 걷는 중(최근 3초 안에 GPS 이동 방향이
-  // 갱신됨)에는 나침반을 아예 무시한다. GPS 이동 방향이 그 자리를
-  // 대신하므로 두 값이 서로 경쟁하며 튀는 일이 없다.
+  // 나침반(지자기 센서) 기반 방향 계산은 비활성화한다.
+  // 실측 결과 나침반은 자기장 교란에 취약해 정지 중 방향을 오히려
+  // 불안정하게 흔드는 원인이었다. 대신 GPS 이동 방향만 신뢰하고,
+  // 정지 중(GPS로 방향을 계산할 수 없는 상태)에는 이 함수가 아무 동작도
+  //하지 않아 화살표가 마지막으로 확정된 방향에 그대로 고정된다.
+  // deviceorientation 이벤트 자체는 계속 등록돼 있어도 무해하다 —
+  // 여기서 바로 반환하므로 화면에 아무 영향을 주지 않는다.
   function handleOrientation(e) {
-    if (gpsMovementHeading !== null && Date.now() - lastGpsMoveTime < 3000) {
-      return;
-    }
-
-    let rawHeading = null;
-    if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-      // iOS Safari: 이미 보정된 나침반 방향을 그대로 준다.
-      rawHeading = e.webkitCompassHeading;
-    } else if (e.alpha !== undefined && e.alpha !== null) {
-      // Android: alpha가 표준 스펙상 이미 "북쪽에서 시계 방향으로 얼마나
-      // 돌았는지"다. 복잡한 3D 회전행렬 보정을 얹었더니 beta/gamma의
-      // 미세한 흔들림이 삼각함수를 거치며 오히려 방향을 크게 틀어지게
-      // 만드는 문제가 있어(정면 건물이 화면 위쪽과 안 맞음), 걷는 중이
-      // 아닌 이 정지 상태 보조용으로는 alpha를 그대로 쓴다.
-      rawHeading = (360 - e.alpha) % 360;
-    }
-
-    if (rawHeading !== null && !isNaN(rawHeading)) {
-      applySmoothedHeading(rawHeading);
-    }
+    return; // 나침반 기반 방향 갱신 완전 비활성화
   }
 
   function initCompass() {
@@ -1843,13 +1833,12 @@
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
           applySmoothedHeading(result.bearing);
-        } else if (result.isStopped) {
-          // 정지 확인됨 — GPS 이동 방향 정보를 즉시 무효화해 나침반이
-          // 곧바로 방향 계산을 넘겨받을 수 있게 한다. 이걸 안 하면
-          // handleOrientation()의 "최근 3초 이내 이동" 조건에 걸려
-          // 정지 중에도 최대 3초간 나침반이 계속 무시된다.
-          gpsMovementHeading = null;
         }
+        // 정지 상태(result.isStopped)일 때는 아무 것도 하지 않는다.
+        // 나침반을 쓰지 않기로 했으므로 방향을 새로 계산할 방법이 없고,
+        // applySmoothedHeading을 호출하지 않으면 화면 회전값(continuousHeading)이
+        // 그대로 유지되어 화살표·지도가 자연스럽게 "마지막 확정 방향"에
+        // 고정된 채로 남는다.
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
