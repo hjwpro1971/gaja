@@ -502,8 +502,11 @@
         // 방향에 완전히 수렴하기까지 여러 번의 갱신(체감 2~3초 이상)이
         // 걸리는 구조적 지연이 있었다. 이동평균을 제거하고 원시 좌표를
         // 그대로 쓰는 대신, 문턱값(BEARING_THRESHOLD)만으로 미세한
-        // 흔들림을 걸러낸다.
-        BEARING_THRESHOLD: 6.0,  // 미세 흔들림만 걸러내는 최소 문턱
+        // 흔들림을 걸러낸다. 이동평균이 없는 구조에서는 이 문턱이
+        // GPS 순간 노이즈(수 미터 오차가 방위각으로는 수십 도 차이를
+        // 낼 수 있음)를 거르는 유일한 방어선이므로, 표준안의 15도로
+        // 되돌린다 — 6~8도는 노이즈를 거르기엔 너무 낮았다.
+        BEARING_THRESHOLD: 15.0,
         ...config
       };
       this.lastConfirmed = null;
@@ -698,28 +701,15 @@
     }
   }
 
-  // 나침반(지자기 센서)은 완전히 정지한 상태(GpsFilterEngine이 isStopped로
-  // 판정한 상태)에서만 보조로 사용한다. 걷는 중에는 여전히 GPS 이동
-  // 방향만 신뢰한다 — 나침반은 자기장 교란에 취약해 걷는 중에 섞어 쓰면
-  // 방향이 불안정해지는 문제가 있었다. 반면 완전 정지 후 몸만 돌리는
-  // 경우(GPS 좌표 자체가 안 바뀌어 이동 방향을 계산할 수 없는 상황)에는
-  // 나침반이 유일한 방향 정보원이므로 이때만 반영한다.
+  // 나침반(지자기 센서)은 사용하지 않는다.
+  // 정지 중에도 나침반 값을 계속 받아 반영하면, 나침반 자체의 미세한
+  // 자기장 흔들림(보통 ±3~5도)이 문턱을 계속 넘나들며 화면을 흔든다.
+  // 대신 정지 순간의 방향(직전까지 GPS로 계산된 진행 방향)을 그대로
+  // "동결"하고, 정지 중에는 방향 재계산 자체를 하지 않는다 — 계산을
+  // 아예 안 하면 흔들릴 재료 자체가 없다. 다시 이동이 감지되면 그때부터
+  // GPS 이동 방향 계산이 재개된다.
   function handleOrientation(e) {
-    if (!isCurrentlyStopped) return; // 걷는 중이면 나침반 완전 무시
-
-    let rawHeading = null;
-    if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-      // iOS Safari: 이미 보정된 나침반 방향을 그대로 준다.
-      rawHeading = e.webkitCompassHeading;
-    } else if (e.alpha !== undefined && e.alpha !== null) {
-      // Android: alpha가 표준 스펙상 이미 "북쪽에서 시계 방향으로 얼마나
-      // 돌았는지"다.
-      rawHeading = (360 - e.alpha) % 360;
-    }
-
-    if (rawHeading !== null && !isNaN(rawHeading)) {
-      applySmoothedHeading(rawHeading);
-    }
+    return; // 나침반 기반 방향 갱신 비활성화
   }
 
   function initCompass() {
@@ -1803,6 +1793,14 @@
     // "예전 위치 → 새 위치"로 수렴하는 과도기 동안 오히려 부자연스럽게
     // 흔들리거나 지연될 수 있다.
     gpsFilterEngine.reset();
+    // 방향값도 함께 초기화한다. 이걸 빠뜨리면 이전 세션에서 마지막으로
+    // 확정됐던 방향(smoothedHeading/continuousHeading)이 그대로 남아있어,
+    // GPS를 껐다 다시 켰을 때 회전이 엉뚱한 각도에서 시작되거나 전혀
+    // 회전하지 않는 것처럼 보이는 재현성 버그의 원인이 되었다.
+    smoothedHeading = null;
+    continuousHeading = 0;
+    gpsMovementHeading = null;
+    isCurrentlyStopped = false;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -1846,7 +1844,7 @@
           return;
         }
 
-        isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태 갱신
+        isCurrentlyStopped = result.isStopped; // 참고용 상태 플래그 (현재는 나침반에 쓰지 않지만 추후 UI 표시 등에 활용 가능)
 
         // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
         // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
@@ -1856,9 +1854,13 @@
           lastGpsMoveTime = Date.now();
           applySmoothedHeading(result.bearing);
         }
-        // 정지 상태(result.isStopped)일 때는 GPS 쪽에서는 아무 것도 하지
-        // 않는다. 이 상태에서는 handleOrientation()이 나침반 값으로
-        // 방향을 갱신하므로, 제자리에서 몸을 돌리면 그쪽에서 반영된다.
+        // 정지 상태(result.isStopped)일 때는 방향 계산 자체를 완전히
+        // 건너뛴다. applySmoothedHeading을 호출하지 않으므로 화면
+        // 회전값(continuousHeading)이 정지 진입 직전의 마지막 값 그대로
+        // "동결"된다. 나침반도 쓰지 않으므로(handleOrientation이 항상
+        // 즉시 반환) 정지 중에는 어떤 값도 재계산되지 않아 흔들릴 재료
+        // 자체가 없다. 다시 이동이 감지되면(isStopped가 false로 바뀌면)
+        // 이 블록이 다시 실행되며 GPS 이동 방향 계산이 자연스럽게 재개된다.
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
