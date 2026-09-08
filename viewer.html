@@ -839,12 +839,12 @@
 
   function playOffTrailBeep() {
     const now = Date.now();
-    // 1~3회차: 3초 간격(빠르게 알아차리도록) / 4회차부터: 10초 /
-    // 8회차부터: 20초로 점진 완화 — 계속 같은 이탈 상태가 오래 지속되면
-    // 알림 피로를 줄인다.
-    let cooldown = 3000;
-    if (beepStreak >= 8) cooldown = 20000;
-    else if (beepStreak >= 4) cooldown = 10000;
+    // 1~3회차: 30초 간격 / 4회차부터: 60초 / 8회차부터: 120초로 점진
+    // 완화 — 계속 같은 이탈 상태가 오래 지속되면 알림 피로를 줄인다.
+    // (3초는 너무 잦아 피로하다는 피드백으로 30초로 조정)
+    let cooldown = 30000;
+    if (beepStreak >= 8) cooldown = 120000;
+    else if (beepStreak >= 4) cooldown = 60000;
 
     if (now - lastBeepTime < cooldown) return;
     lastBeepTime = now;
