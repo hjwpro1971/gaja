@@ -176,38 +176,10 @@
       font-size: 20px; cursor: pointer; color: #2e7d32; transition: all 0.2s;
     }
     .fab-btn:active { transform: scale(0.92); }
-    .fab-btn.active { background: #2e7d32; color: #ffffff; }
-    .compass-btn {
-      flex-direction: column !important;
-      gap: 0 !important;
-      padding: 3px 0 !important;
-      overflow: hidden !important;
-    }
-    .compass-btn.heading-up-mode {
-      background: #1b5e20 !important;
-      border: 2px solid #81c784 !important;
-      box-shadow: 0 0 14px rgba(46, 125, 50, 0.5) !important;
-    }
-    .compass-btn.heading-up-mode .compass-deg {
-      color: #ffffff !important;
-    }
-    .compass-dial {
-      width: 26px;
-      height: 26px;
-      transform-origin: center center;
-      /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
-    }
-    .compass-needle-svg {
-      width: 26px;
-      height: 26px;
-      display: block;
-    }
-    .compass-deg {
-      font-size: 9.5px;
-      font-weight: 900;
-      color: #1b5e20;
-      line-height: 1;
-      margin-top: 1px;
+    .fab-btn.active {
+      background: #1b5e20; color: #ffffff;
+      border: 2px solid #81c784;
+      box-shadow: 0 0 14px rgba(46, 125, 50, 0.5);
     }
 
     /* 레이어 선택 팝업 */
@@ -227,12 +199,12 @@
     /* GPS 상태 안내 토스트 — 화면 상단 코스 정보 바(.top-header) 바로 밑에 표시 */
     .gps-toast {
       position: absolute; top: 68px; left: 12px; right: 12px; z-index: 999;
-      background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px);
-      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 1.5px solid #81c784;
+      background: #e8f5e9; backdrop-filter: blur(8px);
+      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 2px solid #2e7d32;
       padding: 8px 18px; font-size: 13px; font-weight: 700; color: #1b5e20;
       text-align: center; white-space: normal; display: none; pointer-events: none;
     }
-    .gps-toast.warning { background: #ffebee; border-color: #ef5350; color: #c62828; }
+    .gps-toast.warning { background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c; }
 
     /* 현재 내 위치 GPS 펄스 및 나아갈 방향 빔 스타일 */
     .custom-gps-icon {
@@ -424,22 +396,6 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
-  <!-- 🧭 실시간 회전 나침반 (빨간 바늘이 항상 북쪽을 가리킴) -->
-  <button class="fab-btn compass-btn" id="compassBtn" onclick="toggleCompassMode()" title="나침반 (북쪽 방향)">
-    <div class="compass-dial" id="compassDial">
-      <svg viewBox="0 0 36 36" class="compass-needle-svg">
-        <!-- 북쪽(N) 빨간 바늘 -->
-        <polygon points="18,3 23,18 18,15 13,18" fill="#e53935"/>
-        <!-- 남쪽(S) 은회색 바늘 -->
-        <polygon points="18,33 23,18 18,21 13,18" fill="#b0bec5"/>
-        <!-- N 영문 표기 -->
-        <text x="18" y="8" font-size="5.5" font-weight="900" fill="#ffffff" text-anchor="middle">N</text>
-        <!-- 중심 핀 -->
-        <circle cx="18" cy="18" r="2.5" fill="#37474f"/>
-      </svg>
-    </div>
-    <div class="compass-deg" id="compassDeg">북</div>
-  </button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🔍</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
@@ -725,10 +681,6 @@
   function updateHeadingDisplay(heading, rotAngle) {
     if (heading === null || isNaN(heading)) return;
     currentHeading = ((heading % 360) + 360) % 360;
-    const degEl = document.getElementById('compassDeg');
-    if (degEl) {
-      degEl.innerText = isHeadingUp ? '회전' : getKoreanDirectionShort(currentHeading);
-    }
     startHeadingAnimationLoop();
   }
 
@@ -794,12 +746,6 @@
       // 화면에서는 항상 전방(12시, 위쪽)으로 듬직하게 고정됨!
       wrapper.style.transform = `rotate(${continuousRot}deg)`;
     }
-
-    // 3. 🧭 화면 우측 플로팅 나침반 바늘 회전 (빨간 N극이 항상 실제 북쪽을 가리킴)
-    const dial = document.getElementById('compassDial');
-    if (dial) {
-      dial.style.transform = `rotate(${-continuousRot}deg)`;
-    }
   }
 
   // 나침반(지자기 센서)은 더 이상 화면 회전에 쓰지 않는다. 산에서 길을
@@ -832,48 +778,32 @@
   }
 
   // ⭐ 네이버지도/카카오맵 스타일 길찾기 회전 모드 전환
+  // enable=false(정북 고정) 경로는 이제 GPS를 끌 때 지도 transform을
+  // 원상복구하는 용도로만 호출된다(항상 isQuiet=true) — 사용자가 직접
+  // 정북 고정 모드로 전환하는 UI는 더 이상 없다.
   function setHeadingUpMode(enable, isQuiet = false) {
     isHeadingUp = enable;
     const mapEl = document.getElementById('map');
-    const compassBtn = document.getElementById('compassBtn');
-    const degEl = document.getElementById('compassDeg');
 
     if (enable) {
       initCompass();
       mapEl.classList.add('heading-up');
-      if (compassBtn) compassBtn.classList.add('heading-up-mode');
-      if (degEl) degEl.innerText = '회전';
       map.invalidateSize();
       if (lastKnownPos) {
         map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       }
       if (!isQuiet) {
-        showToastBadge('🧭 [길찾기 회전 모드 ON]\n핸드폰 위쪽이 내가 갈 방향입니다.\n(화면을 드래그하면 북쪽 고정으로 돌아갑니다)');
+        showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
       }
     } else {
       mapEl.classList.remove('heading-up');
       mapEl.style.transform = '';
-      if (compassBtn) compassBtn.classList.remove('heading-up-mode');
-      if (degEl) degEl.innerText = getKoreanDirectionShort(currentHeading);
       map.invalidateSize();
       if (lastKnownPos) {
         map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       }
-      if (!isQuiet) {
-        showToastBadge('🧭 [정북 고정 모드 ON]\n지도가 북쪽 기준으로 고정됩니다.');
-      }
     }
     updateHeadingDisplay(currentHeading, continuousHeading);
-  }
-
-  // 나침반 버튼 클릭 시: [길찾기 회전 모드] ↔ [정북 고정 모드] 1초 즉시 전환
-  function toggleCompassMode() {
-    initCompass();
-    if (!isHeadingUp) {
-      setHeadingUpMode(true);
-    } else {
-      setHeadingUpMode(false);
-    }
   }
 
   // 🔊 이탈 경고음 — 별도 음원 파일 없이 브라우저 내장 오디오로 생성.
@@ -1240,25 +1170,19 @@
     return points[points.length - 1];
   }
 
-  // 방위각 차이를 12시간 시계 방향으로 변환 — "좌측/우측"보다 야외에서
-  // 훨씬 직관적이다 (네비게이션 앱들이 흔히 쓰는 방식).
-  // angleDiff: 내 진행방향(currentHeading) 대비 목표 방위각의 차이(-180~180)
-  function angleDiffToClockDirection(angleDiff) {
-    // -180~180 범위를 0~360으로 바꾼 뒤 30도(1시간)당 1시간 단위로 변환
-    const normalized = ((angleDiff % 360) + 360) % 360;
-    let hour = Math.round(normalized / 30);
-    if (hour === 0) hour = 12;
-    if (hour > 12) hour -= 12;
-    return hour;
-  }
-
-  // 시계 방향 숫자에 대응하는 화살표 아이콘 (8방위로 단순화해 표시)
-  function clockHourToArrow(hour) {
-    const arrows = {
-      12: '↑', 1: '↗', 2: '↗', 3: '→', 4: '↘', 5: '↘',
-      6: '↓', 7: '↙', 8: '↙', 9: '←', 10: '↖', 11: '↖'
-    };
-    return arrows[hour] || '↑';
+  // 방위각 차이를 "오른쪽/왼쪽" 쉬운 말로 변환 — 길찾기 회전 모드에서는
+  // 화면 위쪽이 항상 내가 갈 방향이므로, 시계 숫자나 절대 방위 대신
+  // 화면 기준 좌/우로 안내하는 것이 시니어에게 훨씬 직관적이다.
+  // angleDiff: 내 진행방향(currentHeading) 대비 목표 방위각의 차이(-180~180),
+  // 양수는 시계방향(오른쪽), 음수는 반시계방향(왼쪽) — angleDiffToClockDirection의
+  // 기존 부호 규약(1~5시=오른쪽, 7~11시=왼쪽)을 그대로 승계한다.
+  function angleDiffToPlainKorean(angleDiff) {
+    const abs = Math.abs(angleDiff);
+    const side = angleDiff >= 0 ? '오른쪽' : '왼쪽';
+    if (abs <= 15) return '그대로 직진하세요';
+    if (abs <= 45) return `${side}으로 조금`;
+    if (abs <= 100) return `${side}으로`;
+    return `${side}으로 많이`;
   }
 
   // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
@@ -1771,7 +1695,7 @@
         const fakeEvt = { target: { files: [file] } };
         onFileSelected(fakeEvt);
       } else {
-        alert('.gpx 등산로 파일만 열 수 있습니다.');
+        alert('이 파일은 열 수 없어요.\n\n등산로 지도(.gpx) 파일만 불러올 수 있습니다.\n다른 파일을 다시 선택해 주세요.');
       }
     }
   });
@@ -1789,7 +1713,8 @@
         closeModal();
         drawRoute(points, courseName, sourceUrl);
       } catch(err) {
-        alert('GPX 파일 오류: ' + err.message);
+        console.error('GPX 파싱 실패:', err);
+        alert('이 등산로 파일을 읽을 수 없어요.\n\n파일이 손상되었거나 등산로 지도 파일이 아닌 것 같습니다.\n다른 파일로 다시 시도해보세요.');
       }
     };
     reader.readAsText(file);
@@ -1806,8 +1731,6 @@
     if (!toast || toast.style.display === 'none') return;
     if (!lastKnownPos) return;
 
-    const headStr = currentHeading !== null ? `${getKoreanDirection(currentHeading)} (${Math.round(currentHeading)}°)` : '방향 측정 중';
-
     // 히스테리시스 상태 갱신
     if (!isOffTrailState && minDistanceM > 35) {
       isOffTrailState = true;
@@ -1819,10 +1742,13 @@
 
     if (nearestPoint && isOffTrailState) {
       offTrailStreakCount++;
+      // 화면은 항상 내가 가는 방향이 위쪽인 길찾기 회전 모드이므로,
+      // 등산로 복귀 방향도 "북동쪽" 같은 절대 방위가 아니라 화면 기준
+      // 오른쪽/왼쪽 상대 방향으로 안내해야 나침반 없이도 바로 알 수 있다.
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
-      const toTrailDir = getKoreanDirection(toTrailBearing);
+      const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, currentHeading);
       toast.className = 'gps-toast warning';
-      toast.innerText = `⚠️ 이탈 ${Math.round(minDistanceM)}m · ${toTrailDir}쪽으로`;
+      toast.innerText = `⚠️ [이탈] ${Math.round(minDistanceM)}m 벗어났어요 · ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
       // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
       // 유지될 때만 실제 경고음을 울린다.
@@ -1842,11 +1768,10 @@
           );
       const angleDiff = shortestAngleDiff(trailBearing, currentHeading);
 
-      // 남은 거리 및 진행률 (전체 누적거리 대비 현재 위치까지의 거리)
+      // 남은 거리 (전체 누적거리 대비 현재 위치까지의 거리)
       const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
       const traveledDist = cumulativeDistances[nearestIdx] || 0;
       const remainingDist = Math.max(0, totalDist - traveledDist);
-      const progressPct = totalDist > 0 ? Math.round((traveledDist / totalDist) * 100) : 0;
       const remainingStr = remainingDist >= 1000
         ? `${(remainingDist / 1000).toFixed(1)}km`
         : `${Math.round(remainingDist)}m`;
@@ -1854,25 +1779,16 @@
       if (Math.abs(angleDiff) > 125) {
         // 역주행 감지 (산길을 반대로 걷고 있을 때 경고)
         toast.className = 'gps-toast warning';
-        toast.innerText = `⚠️ 반대 방향입니다 · 남은 ${remainingStr} (${progressPct}%)`;
+        toast.innerText = `⚠️ [반대방향] 반대로 걷고 있어요 · 남은 ${remainingStr}`;
       } else {
+        // 길찾기 회전 모드에서는 화면 위쪽이 항상 진행방향이므로
+        // 자연어 방향 안내 + 남은 거리만 보여준다.
         toast.className = 'gps-toast';
-        if (showHeadingArrow || isHeadingUp) {
-          // 길찾기 회전 모드에서는 화면 위쪽이 항상 진행방향이므로
-          // 시계 표기 대신 간단한 진행 안내 + 거리/진행률만 보여준다.
-          toast.innerText = `🧭 이 방향으로 · 남은 ${remainingStr} (${progressPct}%)`;
-        } else {
-          // 정북 고정 모드에서는 내가 봐야 할 방향을 시계 방향으로 안내
-          const hour = angleDiffToClockDirection(angleDiff);
-          const arrow = clockHourToArrow(hour);
-          toast.innerText = `${arrow} ${hour}시 방향 · 남은 ${remainingStr} (${progressPct}%)`;
-        }
+        toast.innerText = `[정상] ${angleDiffToPlainKorean(angleDiff)} · 남은 ${remainingStr}`;
       }
     } else {
       toast.className = 'gps-toast';
-      toast.innerText = isHeadingUp
-        ? `🧭 위쪽으로 따라가세요`
-        : `🧭 ${headStr}`;
+      toast.innerText = `🧭 위쪽으로 따라가세요`;
     }
   }
 
@@ -1904,10 +1820,8 @@
   // 처리하면 이 문제가 없다.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      if (showHeadingArrow) {
-        requestWakeLock();
-      }
       if (watchId !== null) {
+        requestWakeLock();
         gpsFilterEngine.reset();
         smoothedHeading = null;
         gpsMovementHeading = null;
@@ -1918,49 +1832,42 @@
 
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
+    if (watchId !== null) {
+      stopGpsTracking();
+    } else {
+      startGpsTracking();
+    }
+  }
+
+  function stopGpsTracking() {
+    const btn = document.getElementById('gpsBtn');
+    const toast = document.getElementById('gpsToast');
+    setHeadingUpMode(false, true);
+    showHeadingArrow = false;
+    releaseWakeLock();
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    stopCompass();
+    if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
+    if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+    btn.innerText = '📍';
+    btn.classList.remove('active');
+    toast.style.display = 'none';
+    showToastBadge('📍 내 위치 추적을 종료했습니다.');
+  }
+
+  function startGpsTracking() {
     const btn = document.getElementById('gpsBtn');
     const toast = document.getElementById('gpsToast');
 
-    if (watchId !== null) {
-      // 2단계: GPS는 켜져 있고 아직 방향 화살표가 없을 때 또 누르면 -> 화살표 표시!
-      // (지도 회전 자체는 이미 1클릭째부터 켜져 있다.)
-      if (!showHeadingArrow) {
-        showHeadingArrow = true;
-        if (userGpsMarker) {
-          userGpsMarker.setIcon(L.divIcon({
-            className: 'custom-gps-icon',
-            html: createGpsIconHtml(currentHeading),
-            iconSize: [80, 80],
-            iconAnchor: [40, 40]
-          }));
-        }
-        requestWakeLock();
-        showToastBadge('🧭 [방향 화살표 ON]\n핸드폰 위쪽이 내가 갈 방향입니다.\n(화면이 자동으로 꺼지지 않습니다)');
-        return;
-      }
-      // 3단계: 화살표까지 나와 있을 때 누르면 -> GPS 종료 (배터리 절약)
-      setHeadingUpMode(false, true);
-      showHeadingArrow = false;
-      releaseWakeLock();
-      navigator.geolocation.clearWatch(watchId);
-      watchId = null;
-      stopCompass();
-      if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
-      if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
-      btn.classList.remove('active');
-      toast.style.display = 'none';
-      showToastBadge('📍 GPS 추적을 종료했습니다.');
-      return;
-    }
-
     if (!navigator.geolocation) {
-      alert('스마트폰 GPS 기능을 지원하지 않는 브라우저입니다.');
+      alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
       return;
     }
 
     // 나침반 센서 즉시 활성화
     initCompass();
-    showHeadingArrow = false;
+    showHeadingArrow = true;
 
     // GPS를 새로 켤 때마다 필터를 초기화한다. 이전에 종료했던 위치의
     // 필터 상태가 남아있으면, 완전히 새로운 위치에서 다시 시작할 때
@@ -1986,10 +1893,13 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
     } catch (e) {}
 
+    btn.innerText = '🧭';
     btn.classList.add('active');
+    requestWakeLock();
     toast.style.display = 'block';
     toast.className = 'gps-toast';
     toast.innerText = '📡 GPS 수신 중...';
+    showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
 
     let isFirstFix = true;
 
@@ -2070,8 +1980,7 @@
           });
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
           map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
-          // GPS를 처음 켜는 순간(1클릭)부터 지도 회전(길찾기 모드)은 바로 시작한다.
-          // 방향 화살표만 2클릭째까지 숨겨둔다(showHeadingArrow).
+          // 내 위치를 켜는 순간부터 지도 회전(길찾기 모드)과 방향 화살표를 함께 시작한다.
           if (!isHeadingUp) {
             setHeadingUpMode(true, true);
           }
@@ -2109,8 +2018,11 @@
       err => {
         toast.className = 'gps-toast warning';
         toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
+        btn.innerText = '📍';
         btn.classList.remove('active');
         watchId = null;
+        showHeadingArrow = false;
+        releaseWakeLock();
         stopCompass();
         if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
       },
@@ -2308,7 +2220,7 @@
         if (document.getElementById('gpxLoadingBadge')) {
           document.getElementById('gpxLoadingBadge').remove();
         }
-        alert('⚠️ 등산로 GPX 파일을 불러오지 못했습니다.\n\n원인: ' + err.message + '\n\n💡 네이버 블로그 다운로드 링크는 생성 후 시간이 지나면 네이버 보안 정책상 주소가 만료됩니다.\n[등산로 지도 링크 생성기]에서 영구 보관된 코스를 선택하시거나 새 링크를 확인해 주세요.');
+        alert('등산로 지도를 불러오지 못했어요.\n\n💡 인터넷 연결을 확인한 뒤 다시 시도해보세요.\n그래도 안 되면, 아래 저장된 코스 목록에서 골라보세요.');
         showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.');
       }
     } else if (!hadGpxUrl) {
