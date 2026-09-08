@@ -15,6 +15,38 @@
   <meta name="apple-mobile-web-app-title" id="appleAppTitle" content="가자go 등산지도">
   <title>가자go 등산지도</title>
   <script>
+    // 카카오톡/네이버/인스타그램 등 인앱 브라우저는 GPS 정확도가 떨어지거나
+    // Wake Lock·백그라운드 동작이 제한되는 경우가 많아, 이 페이지처럼 GPS를
+    // 계속 쓰는 앱에는 맞지 않는다. 감지되면 즉시 시스템 기본 브라우저로
+    // 리다이렉트를 시도한다.
+    //
+    // Android: intent:// 스킴으로 넘기면 OS가 "Chrome으로 열기" 선택 없이
+    // 곧장 Chrome(또는 사용자가 지정한 기본 브라우저)으로 이 URL을 새로
+    // 열어준다. 인앱 브라우저 자체는 그대로 뒤에 남아있지만 사용자는 이미
+    // 정상 브라우저 탭으로 넘어가 있으므로 문제 없다.
+    // iOS: 카카오톡 인앱 브라우저는 이런 자동 리다이렉트 자체를 막는
+    // 경우가 많아 완전히 강제할 수 없다. 대신 화면 상단에 "Safari로
+    // 열기" 안내 배너를 띄워 수동 전환을 유도한다(DOMContentLoaded 이후).
+    (function() {
+      try {
+        const ua = navigator.userAgent || '';
+        const isInApp = /KAKAOTALK|NAVER|Line\/|FBAN|FBAV|Instagram|Snapchat|Twitter/i.test(ua);
+        if (!isInApp) return;
+
+        const isAndroid = /Android/i.test(ua);
+        if (isAndroid) {
+          const target = window.location.href;
+          const noScheme = target.replace(/^https?:\/\//, '');
+          window.location.href = 'intent://' + noScheme +
+            '#Intent;scheme=https;package=com.android.chrome;end';
+        } else {
+          // iOS 등 intent 스킴이 없는 환경: 자동 전환은 불가능하므로
+          // 페이지 로드 후 안내 배너만 띄운다(아래 DOMContentLoaded 참고).
+          window.__gajaShowOpenInBrowserBanner = true;
+        }
+      } catch(e) {}
+    })();
+
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
       const APP_BUILD = 'v20260908_gpsengine1';
@@ -358,6 +390,20 @@
   </style>
 </head>
 <body>
+
+<!-- 인앱 브라우저(iOS 등, 자동 전환 불가) 안내 배너 — head의 감지 스크립트가
+     window.__gajaShowOpenInBrowserBanner를 세팅했을 때만 노출한다.
+     GPS/지도 로직과 완전히 독립적으로 즉시 보여야 하므로 별도 인라인 스크립트로 처리. -->
+<div id="inAppBrowserBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:100000; background:#1b5e20; color:#fff; padding:12px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+  ⚠️ 카카오톡 등 인앱 브라우저에서는 GPS가 부정확할 수 있습니다.<br>
+  우측 상단 <b>[···]</b> 또는 공유 버튼에서 <b>"Safari로 열기"</b>를 선택해주세요.
+  <button type="button" onclick="document.getElementById('inAppBrowserBanner').style.display='none'" style="position:absolute; top:8px; right:10px; background:none; border:none; color:#fff; font-size:16px; cursor:pointer;">✕</button>
+</div>
+<script>
+  if (window.__gajaShowOpenInBrowserBanner) {
+    document.getElementById('inAppBrowserBanner').style.display = 'block';
+  }
+</script>
 
 <div id="mapContainer">
   <div id="map"></div>
