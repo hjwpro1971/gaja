@@ -101,10 +101,11 @@
       top: 50% !important;
       left: 50% !important;
       transform: translate(-50%, -50%) rotate(0deg);
-      /* 화살표(.gps-heading-wrapper)와 같은 계열의 시간으로 맞춰야 회전이
-         엇박자 없이 함께 움직인다. linear 대신 ease-out을 써서, 무거운
-         레이어가 프레임을 못 따라갈 때 튀는 느낌(흔들림)을 줄인다. */
-      transition: transform 0.1s ease-out;
+      /* CSS transition을 쓰지 않는다 — GPS 갱신 간격이 불규칙(400ms~수초)
+         해서, 매번 새 목표로 transition이 재시작되며 "어떤 때는 빠르고
+         어떤 때는 느리게, 딱딱 끊어지며" 도는 원인이 됐다. 대신
+         requestAnimationFrame 루프(startHeadingAnimationLoop)가 지도/
+         화살표/나침반 바늘 셋을 매 프레임 같은 속도로 동시에 보간한다. */
       will-change: transform;
       backface-visibility: hidden;
     }
@@ -162,7 +163,7 @@
       width: 26px;
       height: 26px;
       transform-origin: center center;
-      transition: transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1);
+      /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
     }
     .compass-needle-svg {
       width: 26px;
@@ -221,7 +222,7 @@
       top: 0;
       left: 0;
       transform-origin: 40px 40px;
-      transition: transform 0.08s linear;
+      /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
       pointer-events: none;
     }
     .gps-heading-svg {
@@ -657,6 +658,7 @@
     if (smoothedHeading === null) {
       smoothedHeading = rawHeading;
       continuousHeading = rawHeading;
+      displayedRot = rawHeading; // 첫 값은 애니메이션 없이 그 자리에서 바로 시작
       updateHeadingDisplay(smoothedHeading, continuousHeading);
       return;
     }
@@ -668,11 +670,68 @@
     updateHeadingDisplay(smoothedHeading, continuousHeading);
   }
 
+  // 지도/화살표/나침반 바늘이 실제로 화면에 그려지고 있는 각도(연속각,
+  // 360도 경계 넘어갈 수 있음). 목표(continuousHeading)와 분리해두고
+  // 아래 애니메이션 루프가 매 프레임 이 값을 목표 쪽으로 조금씩 옮긴다.
+  let displayedRot = 0;
+  let headingAnimRunning = false;
+
   function updateHeadingDisplay(heading, rotAngle) {
     if (heading === null || isNaN(heading)) return;
     currentHeading = ((heading % 360) + 360) % 360;
-    const continuousRot = rotAngle !== undefined ? rotAngle : currentHeading;
+    const degEl = document.getElementById('compassDeg');
+    if (degEl) {
+      degEl.innerText = isHeadingUp ? '회전' : getKoreanDirectionShort(currentHeading);
+    }
+    startHeadingAnimationLoop();
+  }
 
+  // GPS/나침반 갱신은 간격이 불규칙(400ms~수초)해서, CSS transition으로
+  // 회전을 걸면 매번 새 목표로 애니메이션이 재시작되며 "어떤 때는 빠르고
+  // 어떤 때는 느리게, 딱딱 끊어지며" 도는 문제가 있었다. 대신 목표각
+  // (continuousHeading)은 즉시 갱신하되, 실제로 화면에 그리는 각도
+  // (displayedRot)는 이 루프가 매 프레임 일정한 각속도로 목표를 따라잡게
+  // 해서 지도·화살표·나침반 바늘이 항상 같은 속도로 함께 부드럽게 돈다.
+  function startHeadingAnimationLoop() {
+    if (headingAnimRunning) return;
+    headingAnimRunning = true;
+
+    // 초당 최대 회전 속도(도). 사람이 걷다가 방향을 90도 트는 정도의
+    // 변화를 약 0.3~0.4초 안에 따라잡을 만큼 빠르면서도, 순간 튐이
+    // 화면에서 뚝 끊기지 않고 눈에 보이는 회전으로 느껴지는 값이다.
+    const MAX_DEG_PER_SEC = 270;
+    // 목표와의 차이가 이 값 이하로 좁혀지면 그 프레임에서 바로 스냅하고
+    // 루프를 멈춘다 — 계속 미세하게 수렴만 하다 안 멈추는 것을 방지.
+    const SNAP_THRESHOLD = 0.05;
+
+    let lastTs = null;
+
+    function step(ts) {
+      if (lastTs === null) lastTs = ts;
+      const dtSec = Math.min((ts - lastTs) / 1000, 0.1); // 탭 전환 등으로 큰 델타가 생기는 것 방지
+      lastTs = ts;
+
+      const diff = continuousHeading - displayedRot;
+      const maxStep = MAX_DEG_PER_SEC * dtSec;
+
+      if (Math.abs(diff) <= Math.max(SNAP_THRESHOLD, maxStep)) {
+        displayedRot = continuousHeading;
+      } else {
+        displayedRot += Math.sign(diff) * maxStep;
+      }
+
+      renderHeadingRotation(displayedRot);
+
+      if (Math.abs(continuousHeading - displayedRot) > SNAP_THRESHOLD) {
+        requestAnimationFrame(step);
+      } else {
+        headingAnimRunning = false;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function renderHeadingRotation(continuousRot) {
     // 1. 🧭 길찾기 회전 모드: 지도를 회전시켜 내가 갈 방향을 항상 화면 위쪽으로 정렬!
     // CSS의 translate(-50%, -50%)를 항상 함께 유지해야 한다 — rotate만
     // 단독으로 넣으면 transform이 통째로 교체되면서 중앙 고정이 풀려
@@ -695,50 +754,17 @@
     if (dial) {
       dial.style.transform = `rotate(${-continuousRot}deg)`;
     }
-    const degEl = document.getElementById('compassDeg');
-    if (degEl) {
-      degEl.innerText = isHeadingUp ? '회전' : getKoreanDirectionShort(currentHeading);
-    }
   }
 
-  // 나침반(지자기 센서)은 정지 상태(GpsFilterEngine이 isStopped로 판정한
-  // 상태)에서만 작동한다. 이동 중에는 GPS 이동 방향만 신뢰하고 나침반은
-  // 완전히 무시한다 — 이게 걷는 중 방향이 안정적으로 나오는 이유다.
-  // 반면 정지 중에는 GPS로 방향을 계산할 방법이 없으므로(제자리에서는
-  // 좌표가 안 바뀜), 나침반이 유일한 방향 정보원이 되어 핸드폰이 향하는
-  // 대로 지도가 실시간으로 돈다.
-  // 나침반 자체는 자기장 교란에 취약해 미세하게(보통 ±3~5도) 흔들리므로,
-  // 그 흔들림이 그대로 화면에 반영되지 않도록 일정 각도 미만 변화는
-  // 무시하는 문턱을 둔다.
-  let lastCompassHeading = null;
-  const COMPASS_NOISE_THRESHOLD = 10.0; // 이 각도(deg) 미만 변화는 나침반 자체 노이즈로 보고 무시
-
+  // 나침반(지자기 센서)은 더 이상 화면 회전에 쓰지 않는다. 산에서 길을
+  // 잃지 않으려면 "핸드폰이 향한 방향"이 아니라 "GPX 궤적상 내가 가야 할
+  // 방향(정방향)"이 항상 화면 위쪽이어야 한다는 요청에 따라, 정지 시
+  // 방향은 GPS watchPosition 콜백(정지 분기)에서 궤적 기반으로 직접
+  // 계산해 고정한다 — handleOrientation은 그래서 아무 것도 하지 않는다.
+  // (deviceorientation 리스너 등록 자체는 initCompass()에 남겨두되,
+  // 실질적인 화면 반영은 없다.)
   function handleOrientation(e) {
-    if (!isCurrentlyStopped) return; // 이동 중이면 나침반 완전 무시 — GPS만 신뢰
-
-    let rawHeading = null;
-    if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-      // iOS Safari: 이미 보정된 나침반 방향을 그대로 준다.
-      rawHeading = e.webkitCompassHeading;
-    } else if (e.alpha !== undefined && e.alpha !== null) {
-      // Android: alpha가 표준 스펙상 이미 "북쪽에서 시계 방향으로 얼마나
-      // 돌았는지"다.
-      rawHeading = (360 - e.alpha) % 360;
-    }
-
-    if (rawHeading === null || isNaN(rawHeading)) return;
-
-    if (lastCompassHeading === null) {
-      lastCompassHeading = rawHeading;
-      applySmoothedHeading(rawHeading);
-      return;
-    }
-
-    const delta = Math.abs(shortestAngleDiff(rawHeading, lastCompassHeading));
-    if (delta < COMPASS_NOISE_THRESHOLD) return; // 미세한 자기장 흔들림 무시
-
-    lastCompassHeading = rawHeading;
-    applySmoothedHeading(rawHeading);
+    // 의도적으로 비활성화됨 — 위 주석 참고.
   }
 
   function initCompass() {
@@ -813,11 +839,12 @@
 
   function playOffTrailBeep() {
     const now = Date.now();
-    // 1~3회차: 15초 간격 / 4회차부터: 30초 / 8회차부터: 60초로 점진 완화.
-    // 완전히 손 놓지는 않되, 계속 같은 상태면 알림 피로를 줄인다.
-    let cooldown = 15000;
-    if (beepStreak >= 8) cooldown = 60000;
-    else if (beepStreak >= 4) cooldown = 30000;
+    // 1~3회차: 3초 간격(빠르게 알아차리도록) / 4회차부터: 10초 /
+    // 8회차부터: 20초로 점진 완화 — 계속 같은 이탈 상태가 오래 지속되면
+    // 알림 피로를 줄인다.
+    let cooldown = 3000;
+    if (beepStreak >= 8) cooldown = 20000;
+    else if (beepStreak >= 4) cooldown = 10000;
 
     if (now - lastBeepTime < cooldown) return;
     lastBeepTime = now;
@@ -1035,19 +1062,44 @@
   let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
   const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
   const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
+  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 방향 일치도를 볼 때 쓰는 최신 이동방향
+
+  // 왕복 코스에서 나가는 길과 돌아오는 길이 물리적으로 거의 같은 좌표에
+  // 겹치는 구간(특히 왕복 전환점 근처)에서는, 순수 최단거리만으로는 두
+  // 세그먼트 중 어느 쪽이 "진짜 지금 걷고 있는 방향"인지 구분할 수 없다
+  // — 그날의 GPS 오차에 따라 순방향/역방향이 뒤집혀 잡히면서 "순방향으로
+  // 걷고 있는데 역주행 경고가 계속 온다"는 문제가 생겼다.
+  // 거리가 이 값(m) 이내로 비슷한 후보가 여럿이면, 최근 실제 이동 방향
+  // (gpsMovementHeading)과 세그먼트 방향이 더 일치하는 쪽을 우선한다.
+  const AMBIGUOUS_DISTANCE_MARGIN_M = 8.0;
 
   // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
   function findNearestInRange(lat, lon, points, startIdx, endIdx) {
     let minDist = Infinity;
     let nearestPoint = points[startIdx] || points[0];
     let nearestIdx = startIdx;
+    let bestScore = Infinity; // 거리에 방향 불일치 페널티를 더한 종합 점수
 
     for (let i = startIdx; i < endIdx; i++) {
       const a = points[i];
       const b = points[i + 1];
       const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
-      if (d < minDist) {
-        minDist = d;
+
+      // 거리 하나만으로 최선을 결정하지 않고, 최단거리보다
+      // AMBIGUOUS_DISTANCE_MARGIN_M 이내로 붙어있는 후보들 사이에서는
+      // 진행 방향과의 일치도로 승부를 가른다.
+      let score = d;
+      if (latestMovementBearingForTrailMatch !== null && d < minDist + AMBIGUOUS_DISTANCE_MARGIN_M) {
+        const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+        const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
+        // 방향이 어긋날수록(최대 180도) 거리에 페널티를 더한다. 계수는
+        // "방향이 정반대(180도)면 거리 차이 8m 정도는 뒤집을 만큼" 크게.
+        score = d + (mismatch / 180) * AMBIGUOUS_DISTANCE_MARGIN_M;
+      }
+
+      if (d < minDist) minDist = d;
+      if (score < bestScore) {
+        bestScore = score;
         nearestIdx = i;
         const dA = haversineMeters(lat, lon, a.lat, a.lon);
         const dB = haversineMeters(lat, lon, b.lat, b.lon);
@@ -1875,18 +1927,14 @@
 
         isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태
 
-        // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
-        // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
-        // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
-        if (!result.isStopped && result.bearing !== null) {
-          gpsMovementHeading = result.bearing;
-          lastGpsMoveTime = Date.now();
-          applySmoothedHeading(result.bearing);
-          lastCompassHeading = null; // 다음 정지 진입 시 나침반이 처음부터 새로 시작하도록 리셋
-        }
-        // 정지 상태(result.isStopped)일 때는 GPS 쪽 방향 계산을 하지
-        // 않는다. 대신 handleOrientation()이 나침반 값으로 방향을 갱신해,
-        // 제자리에서 몸(핸드폰)을 돌리면 지도가 그 방향을 따라간다.
+        // 왕복 겹침 구간에서 순방향/역방향 세그먼트를 구분할 때 쓸 최신
+        // 이동 방향. gpsMovementHeading(전역, 아직 이번 픽스로 안 갱신됨)
+        // 대신 이번 픽스에서 막 나온 result.bearing을 우선 쓴다 — 정지
+        // 상태라 이번엔 방위각이 없으면 직전 값(gpsMovementHeading)으로
+        // 대체한다.
+        latestMovementBearingForTrailMatch = (!result.isStopped && result.bearing !== null)
+          ? result.bearing
+          : gpsMovementHeading;
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
@@ -1895,6 +1943,29 @@
         const minDistanceM = nearest.distance;
         const nearestPoint = nearest.point;
         const nearestIdx = nearest.index;
+
+        // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
+        // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
+        // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
+        if (!result.isStopped && result.bearing !== null) {
+          gpsMovementHeading = result.bearing;
+          lastGpsMoveTime = Date.now();
+          applySmoothedHeading(result.bearing);
+        } else if (result.isStopped) {
+          // 멈추면 나침반(핸드폰이 향한 방향)이 아니라 GPX 궤적의 "정방향"
+          // 진행 방향으로 지도를 고정한다. 산에서 길을 잃지 않으려면 핸드폰을
+          // 어느 쪽으로 들고 있든 "내가 가야 할 방향"이 항상 화면 위쪽이어야
+          // 한다는 요청 — 역방향으로 걷다가 멈추면 이 순간 바로 지도가 홱
+          // 돌아서(그리고 화살표도 그쪽을 가리켜서) "반대로 가고 있었다"는
+          // 걸 즉시 알 수 있게 한다.
+          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
+            const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 15);
+            if (aheadPoint) {
+              const trailBearing = calculateBearing(lat, lon, aheadPoint.lat, aheadPoint.lon);
+              applySmoothedHeading(trailBearing);
+            }
+          }
+        }
 
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
