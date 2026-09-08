@@ -476,6 +476,50 @@
     }
   });
 
+  // ────────────────────────────────────────────────────────────────
+  // 📡 KalmanJS — 순수 JS 1D 칼만 필터 (검증된 오픈소스, MIT 라이선스)
+  // 출처: https://github.com/wouterbulten/kalmanjs
+  // 직접 짠 방향 계산 로직이 GPS 원시 좌표의 노이즈(정확도 5~15m 오차,
+  // 트인 곳에서도 발생) 자체를 잡지 못해 방향이 실측 기준 수십 도씩
+  // 어긋나는 문제가 있었다. 원인이 "우리 로직의 버그"가 아니라
+  // "입력값(좌표) 자체의 노이즈"로 확인되어, 방향 계산 로직은 그대로 두고
+  // 그 앞단에서 좌표(위도/경도)를 먼저 다듬는 필터를 추가한다.
+  // 위도·경도는 서로 독립된 값이므로 각각 별도의 1D 필터 인스턴스를 쓴다.
+  class KalmanFilter {
+    constructor({R = 1, Q = 1, A = 1, B = 0, C = 1} = {}) {
+      this.R = R; // 과정 노이즈 (작을수록 부드럽지만 반응이 느려짐)
+      this.Q = Q; // 측정 노이즈 (GPS 자체의 오차 추정치, 클수록 원시값을 더 신뢰)
+      this.A = A;
+      this.C = C;
+      this.B = B;
+      this.cov = NaN;
+      this.x = NaN;
+    }
+    filter(z, u = 0) {
+      if (isNaN(this.x)) {
+        this.x = (1 / this.C) * z;
+        this.cov = (1 / this.C) * this.Q * (1 / this.C);
+      } else {
+        const predX = (this.A * this.x) + (this.B * u);
+        const predCov = ((this.A * this.cov) * this.A) + this.R;
+        const K = predCov * this.C * (1 / ((this.C * predCov * this.C) + this.Q));
+        this.x = predX + K * (z - (this.C * predX));
+        this.cov = predCov - (K * this.C * predCov);
+      }
+      return this.x;
+    }
+    lastMeasurement() { return this.x; }
+    reset() { this.cov = NaN; this.x = NaN; } // 새 코스 시작 시 이전 궤적의 필터 상태 초기화용
+  }
+
+  // 등산 보행 속도(시속 3~4km)에 맞춘 파라미터.
+  // R을 너무 낮추면 부드러워지는 대신 실제 방향 전환도 늦게 반영되어
+  // (검증된 라이브러리 사용 후기에서도 보고된 "지연" 문제) 위험할 수 있어,
+  // 반응성과 안정성의 균형점으로 설정했다. 실측 후 필요시 조정한다.
+  const gpsLatFilter = new KalmanFilter({ R: 0.01, Q: 3 });
+  const gpsLonFilter = new KalmanFilter({ R: 0.01, Q: 3 });
+  // ────────────────────────────────────────────────────────────────
+
   let map = null;
   let currentLayer = null;
   let polyline = null;
@@ -1200,6 +1244,8 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
+    gpsLatFilter.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시
+    gpsLonFilter.reset(); // 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
 
     if (polyline) map.removeLayer(polyline);
@@ -1691,6 +1737,13 @@
     initCompass();
     showHeadingArrow = false;
 
+    // GPS를 새로 켤 때마다 필터를 초기화한다. 이전에 종료했던 위치의
+    // 필터 상태(x, cov)가 남아있으면, 완전히 새로운 위치에서 다시 시작할 때
+    // 필터가 "예전 위치 → 새 위치"로 수렴하는 과도기 동안 오히려
+    // 부자연스럽게 흔들리거나 지연될 수 있다.
+    gpsLatFilter.reset();
+    gpsLonFilter.reset();
+
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
     // [내 위치] 버튼을 누른 지금 오디오를 미리 열어둔다.
@@ -1715,15 +1768,23 @@
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
         const speed = pos.coords.speed; // m/s
-        lastKnownPos = { lat, lon };
+        lastKnownPos = { lat, lon }; // 화면 표시·이탈판정용 — 지연 없는 원시 좌표를 그대로 사용
+
+        // 📡 칼만 필터로 다듬은 좌표 — 방향 계산 전용.
+        // 화면에 찍는 내 위치(lastKnownPos)는 원시 좌표를 그대로 써서 실제
+        // 위치와 어긋나지 않게 하고, 방향 계산에만 필터링된 값을 사용해
+        // 노이즈로 인한 방향 튐만 줄인다.
+        const filteredLat = gpsLatFilter.filter(lat);
+        const filteredLon = gpsLonFilter.filter(lon);
 
         // ⚠️ pos.coords.speed와 pos.coords.heading은 기기/상황에 따라
         // 정지 중에도 순간적으로 오차가 커서(특히 accuracy가 낮을 때)
         // "이동 중"으로 잘못 찍히는 경우가 실제로 있다. speed 필드 하나만
         // 믿지 않고, 직접 계산한 이동거리(moveDist)로 한 번 더 검증한다.
+        // 이 판정에도 필터링된 좌표를 사용해 순간 튐으로 인한 오탐을 줄인다.
         let confirmedMoving = false;
         if (prevGpsPos) {
-          const instMoveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+          const instMoveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
           const instTimeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
           const instSpeed = instTimeDiff > 0 ? (instMoveDist / instTimeDiff) : 0;
           // GPS 정확도(accuracy)보다 실제 이동거리가 확실히 커야
@@ -1737,12 +1798,14 @@
         // 확인됐다. 반면 연속된 두 좌표 간 방위각(calculateBearing)은 실제로
         // 어디서 어디로 움직였는지를 순수 기하학으로 계산하므로 훨씬 신뢰도가
         // 높고, 등산 내비게이션 앱들도 이 방식을 기본으로 사용한다.
+        // 여기서는 원시 좌표 대신 칼만 필터로 다듬은 좌표(filteredLat/Lon)를
+        // 써서, 방위각 계산 자체가 GPS 순간 노이즈에 덜 흔들리게 한다.
         if (confirmedMoving && prevGpsPos) {
-          const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+          const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
           const timeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
           const calcSpeed = timeDiff > 0 ? (moveDist / timeDiff) : 0;
           if (moveDist > 6.0 && calcSpeed > 0.7 && calcSpeed < 5.0 && accuracy < 20) {
-            const moveHeading = calculateBearing(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+            const moveHeading = calculateBearing(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
             gpsMovementHeading = moveHeading;
             lastGpsMoveTime = Date.now();
             applySmoothedHeading(moveHeading);
@@ -1754,7 +1817,10 @@
           // 정지 중에도 최대 3초간 나침반이 계속 무시된다.
           gpsMovementHeading = null;
         }
-        prevGpsPos = { lat, lon };
+        // prevGpsPos는 방향 계산 전용 기준점이므로, 위에서 방향 계산에 쓴
+        // 것과 같은 종류(필터링된 좌표)로 통일해 다음 갱신 때 원시값과
+        // 필터값이 섞여 거리·속도 계산이 일관성을 잃지 않게 한다.
+        prevGpsPos = { lat: filteredLat, lon: filteredLon };
         prevGpsTime = Date.now();
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
