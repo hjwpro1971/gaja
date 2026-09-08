@@ -494,14 +494,17 @@
     constructor(config = {}) {
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
-        MIN_INTERVAL_MS: 400,    // 최소 수신 간격 — 원래 1000ms였으나 갱신 주기 자체가
-                                 // 체감 반응속도의 병목이 되어 400ms로 단축. 진짜 중복
-                                 // 픽스(수십 ms 내 재수신)만 걸러내고, GPS가 실제로 주는
-                                 // 갱신은 대부분 통과시킨다.
+        MIN_INTERVAL_MS: 400,    // 최소 수신 간격
         MIN_DISTANCE: 4.0,       // 이전 확정점 대비 최소 이동 인정 거리(m)
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
-        BEARING_THRESHOLD: 15.0, // 이 각도(deg) 미만 변화는 무시(freeze)
-        WINDOW_SIZE: 5,          // 좌표 이동평균 윈도우 크기
+        // 회전 반응이 느렸던 진짜 원인은 MIN_INTERVAL_MS가 아니라 이
+        // 두 값의 조합이었다. WINDOW_SIZE=5(이동평균 5개)는 방향을 실제로
+        // 튼 순간부터 그 변화가 평균에 충분히 반영되기까지 5번의 GPS
+        // 갱신(약 2~5초)이 걸리게 만들고, 그 위에 BEARING_THRESHOLD=15도
+        // 문턱까지 겹쳐 이중으로 보수적이었다. 정지 시 안정성은 이미
+        // 확인됐으므로 두 값을 낮춰 반응 속도를 우선한다.
+        BEARING_THRESHOLD: 8.0,  // 15도 → 8도로 완화
+        WINDOW_SIZE: 3,          // 5개 → 3개로 축소 (평균 반영 지연 단축)
         ...config
       };
       this.window = [];
