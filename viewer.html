@@ -82,19 +82,24 @@
       position: absolute; top: 0; left: 0;
       transform-origin: center center;
     }
-    /* 🧭 네이버지도/카카오맵 스타일 길찾기 회전 모드 (스마트폰 위쪽이 내가 갈 방향) */
+    /* 🧭 네이버지도/카카오맵 스타일 길찾기 회전 모드 (스마트폰 위쪽이 내가 갈 방향)
+       스마트폰은 세로가 가로보다 훨씬 긴 화면(예: 390×844)이라, 기존처럼
+       vmax(가로/세로 중 큰 값=세로 기준)로 "정사각형"을 만들면 그 정사각형의
+       중심을 top/left/margin(%)으로 잡을 때 가로세로 여백 비율이 달라져
+       회전 중 좌우로 쏠려 보이는 문제가 있었다. 대신 세로 기준(vh)으로
+       충분히 큰 정사각형을 만들고, transform: translate(-50%, -50%)로
+       "요소 자기 자신 크기의 절반"만큼 당겨 화면 비율과 무관하게 항상
+       뷰포트 정중앙에 고정한다. */
     #map.heading-up {
-      width: 150vmax !important;
-      height: 150vmax !important;
+      width: 160vh !important;
+      height: 160vh !important;
       top: 50% !important;
       left: 50% !important;
-      margin-left: -75vmax !important;
-      margin-top: -75vmax !important;
-      /* 화살표(.gps-heading-wrapper)와 같은 시간으로 맞춰야 회전이 엇박자
-         없이 함께 움직인다. 0.22s→0.12s로 단축해 방향 전환 체감 지연을
-         줄였다. will-change로 합성 레이어를 미리 만들어 렌더링 부담을
-         줄인다. */
-      transition: transform 0.12s linear;
+      transform: translate(-50%, -50%) rotate(0deg);
+      /* 화살표(.gps-heading-wrapper)와 같은 계열의 시간으로 맞춰야 회전이
+         엇박자 없이 함께 움직인다. linear 대신 ease-out을 써서, 무거운
+         레이어가 프레임을 못 따라갈 때 튀는 느낌(흔들림)을 줄인다. */
+      transition: transform 0.15s ease-out;
       will-change: transform;
       backface-visibility: hidden;
     }
@@ -572,9 +577,12 @@
     const continuousRot = rotAngle !== undefined ? rotAngle : currentHeading;
 
     // 1. 🧭 길찾기 회전 모드: 지도를 회전시켜 내가 갈 방향을 항상 화면 위쪽으로 정렬!
+    // CSS의 translate(-50%, -50%)를 항상 함께 유지해야 한다 — rotate만
+    // 단독으로 넣으면 transform이 통째로 교체되면서 중앙 고정이 풀려
+    // 지도가 화면 밖으로 밀려나거나 한쪽으로 쏠려 보이게 된다.
     const mapEl = document.getElementById('map');
     if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up')) {
-      mapEl.style.transform = `rotate(${-continuousRot}deg)`;
+      mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
     }
 
     // 2. 내 위치 마커 화살표
