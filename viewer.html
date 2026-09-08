@@ -90,12 +90,13 @@
       left: 50% !important;
       margin-left: -75vmax !important;
       margin-top: -75vmax !important;
-      /* 화살표(.gps-heading-wrapper, 0.22s)와 같은 시간으로 맞춰야 회전이
-         엇박자 없이 함께 움직인다. 지도는 150vmax짜리 큰 레이어라 브라우저가
-         회전을 그리는 데 더 오래 걸려 체감상 뒤처지므로, will-change로
-         합성 레이어를 미리 만들어 렌더링 부담을 줄인다. */
-      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.4, 1);
+      /* 화살표(.gps-heading-wrapper)와 같은 시간으로 맞춰야 회전이 엇박자
+         없이 함께 움직인다. 0.22s→0.12s로 단축해 방향 전환 체감 지연을
+         줄였다. will-change로 합성 레이어를 미리 만들어 렌더링 부담을
+         줄인다. */
+      transition: transform 0.12s linear;
       will-change: transform;
+      backface-visibility: hidden;
     }
 
     /* 상단 헤더 바 */
@@ -210,7 +211,7 @@
       top: 0;
       left: 0;
       transform-origin: 40px 40px;
-      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.4, 1);
+      transition: transform 0.12s linear;
       pointer-events: none;
     }
     .gps-heading-svg {
@@ -541,18 +542,25 @@
     }
 
     const diff = shortestAngleDiff(rawHeading, smoothedHeading);
-    // 실내(철제 구조물·가전제품 근처)에서는 자력계가 6~8도까지도 흔들리는
-    // 것으로 확인되어, 기존 2도 임계값으로는 걸러지지 않고 지도가 가만히
-    // 있어도 계속 도는 것처럼 보였다. 임계값을 6도로 올려 실내 노이즈를
-    // 더 넉넉히 차단한다.
-    if (Math.abs(diff) < 6.0) {
+    const absDiff = Math.abs(diff);
+    // 실내(철제 구조물·가전제품 근처)에서는 자력계가 흔들리는 경우가 있어
+    // 아주 작은 변화(4도 미만)는 노이즈로 보고 무시한다.
+    if (absDiff < 4.0) {
       return;
     }
 
-    // 고급 오일 나침반처럼 부드러운 평활화 (기존 0.12 → 0.08로 낮춰 실제
-    // 방향 전환 때도 더 묵직하고 느긋하게 반응하도록 해, 노이즈성 순간
-    // 변화가 화면에 크게 티나지 않게 한다)
-    continuousHeading += diff * 0.08;
+    // 적응형 게인: 실제로 몸을 돌린 큰 변화(방향 전환)는 즉시 따라가고,
+    // 작은 흔들림은 기존처럼 느긋하게 반응해 화면이 떨리지 않게 한다.
+    // 기존 고정 게인(0.08)은 GPS가 초당 1회만 갱신되는 상황에서 90도
+    // 회전에도 20초 넘게 걸려, 화살표는 이미 바뀌었는데 지도만 한참 뒤늦게
+    // 따라오는 것처럼 보이는 원인이었다.
+    let gain;
+    if (absDiff > 60)      gain = 0.90;  // 급격한 방향 전환 → 거의 즉시
+    else if (absDiff > 30) gain = 0.55;
+    else if (absDiff > 15) gain = 0.30;
+    else                   gain = 0.15;
+
+    continuousHeading += diff * gain;
     smoothedHeading = ((continuousHeading % 360) + 360) % 360;
 
     updateHeadingDisplay(smoothedHeading, continuousHeading);
@@ -675,6 +683,57 @@
     } else {
       setHeadingUpMode(false);
     }
+  }
+
+  // 🔊 이탈 경고음 — 별도 음원 파일 없이 브라우저 내장 오디오로 생성.
+  // 산속 오프라인 상태에서도 파일 다운로드 없이 항상 울려야 하므로
+  // Web Audio API로 직접 비프음을 합성한다.
+  let audioCtx = null;
+  let lastBeepTime = 0;
+  let beepStreak = 0; // 연속 경고 횟수 — 길어질수록 간격을 늘림(배터리/피로도 절감)
+
+  function playOffTrailBeep() {
+    const now = Date.now();
+    // 1~3회차: 15초 간격 / 4회차부터: 30초 / 8회차부터: 60초로 점진 완화.
+    // 완전히 손 놓지는 않되, 계속 같은 상태면 알림 피로를 줄인다.
+    let cooldown = 15000;
+    if (beepStreak >= 8) cooldown = 60000;
+    else if (beepStreak >= 4) cooldown = 30000;
+
+    if (now - lastBeepTime < cooldown) return;
+    lastBeepTime = now;
+    beepStreak++;
+
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      // "삐-삐" 두 번 울리는 경고음
+      [0, 0.35].forEach(delay => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.value = 880;
+        const t = audioCtx.currentTime + delay;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        osc.start(t);
+        osc.stop(t + 0.25);
+      });
+
+      // 소리를 못 듣는 상황(바람, 주머니 속) 대비 진동 동시 발생
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    } catch (e) {}
+  }
+
+  // 궤적 복귀 시 연속 카운터 초기화 — 재이탈하면 다시 15초부터 시작
+  function resetOffTrailStreak() {
+    beepStreak = 0;
   }
 
   function showToastBadge(msg, durationMs) {
@@ -850,30 +909,27 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
-  // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
-  // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
-  function nearestPointOnTrail(lat, lon, points) {
-    if (!points || points.length === 0) {
-      return { distance: 999999, point: null, index: -1 };
-    }
-    if (points.length === 1) {
-      return { distance: haversineMeters(lat, lon, points[0].lat, points[0].lon), point: points[0], index: 0 };
-    }
+  // 왕복(원점회귀) 코스에서는 같은 좌표 부근에 "갈 때"와 "올 때" 두 개의
+  // 선분이 겹쳐 있어, 매번 전역 탐색을 하면 엉뚱하게 반대쪽(이미 지나온
+  // 반대 방향 구간)이 최근접점으로 잡힐 수 있다. 직전에 찾은 인덱스
+  // 근처만 우선 탐색하면 이 문제가 없고, 계산량도 크게 줄어든다.
+  let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
+  const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
+  const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
 
+  // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
+  function findNearestInRange(lat, lon, points, startIdx, endIdx) {
     let minDist = Infinity;
-    let nearestPoint = points[0];
-    let nearestIdx = 0;
+    let nearestPoint = points[startIdx] || points[0];
+    let nearestIdx = startIdx;
 
-    for (let i = 0; i < points.length - 1; i++) {
+    for (let i = startIdx; i < endIdx; i++) {
       const a = points[i];
       const b = points[i + 1];
       const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
       if (d < minDist) {
         minDist = d;
         nearestIdx = i;
-        // 안내선(guideLine)이 이어질 대상 지점은 두 점 중 사용자와 더
-        // 가까운 쪽으로 잡아 시각적으로 자연스럽게 한다.
         const dA = haversineMeters(lat, lon, a.lat, a.lon);
         const dB = haversineMeters(lat, lon, b.lat, b.lon);
         nearestPoint = dA <= dB ? a : b;
@@ -881,6 +937,118 @@
     }
 
     return { distance: minDist, point: nearestPoint, index: nearestIdx };
+  }
+
+  // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
+  // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
+  // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
+  //
+  // 탐색 전략: 직전 위치(lastNearestIdx) 주변 윈도우를 먼저 확인하고,
+  // 그 안에서 거리가 너무 멀면(50m 초과 — 갑자기 멀리 벗어났거나 이제
+  // 막 시작한 경우) 전체 트랙을 다시 훑는 전역 탐색으로 안전하게 전환한다.
+  // 이렇게 하면 왕복 코스에서 반대편 구간으로 잘못 붙는 문제를 막으면서도,
+  // 사용자가 크게 우회하거나 중간에 새로 진입해도 위치를 영영 놓치지 않는다.
+  function nearestPointOnTrail(lat, lon, points) {
+    if (!points || points.length === 0) {
+      lastNearestIdx = -1;
+      return { distance: 999999, point: null, index: -1 };
+    }
+    if (points.length === 1) {
+      lastNearestIdx = 0;
+      return { distance: haversineMeters(lat, lon, points[0].lat, points[0].lon), point: points[0], index: 0 };
+    }
+
+    const maxIdx = points.length - 2; // 선분 시작 인덱스의 최댓값 (i, i+1 쌍이므로)
+    let result;
+
+    if (lastNearestIdx >= 0) {
+      // 1차: 직전 위치 주변 윈도우만 탐색 (빠르고, 왕복 구간 혼선 방지)
+      const startIdx = Math.max(0, lastNearestIdx - TRAIL_WINDOW_RADIUS);
+      const endIdx = Math.min(maxIdx, lastNearestIdx + TRAIL_WINDOW_RADIUS);
+      result = findNearestInRange(lat, lon, points, startIdx, endIdx);
+
+      // 2차: 윈도우 안에서 찾은 결과가 너무 멀면(50m 초과) 안전장치로
+      // 전역 탐색으로 재전환 — 사용자가 크게 이탈했다가 다른 지점으로
+      // 복귀했거나, 처음 GPS를 켠 시점일 수 있다.
+      if (result.distance > TRAIL_FALLBACK_THRESHOLD_M) {
+        result = findNearestInRange(lat, lon, points, 0, maxIdx);
+      }
+    } else {
+      // 최초 1회는 윈도우 기준점이 없으므로 전역 탐색
+      result = findNearestInRange(lat, lon, points, 0, maxIdx);
+    }
+
+    lastNearestIdx = result.index;
+    return result;
+  }
+
+  // 코스별 전체 누적거리 배열 — currentPoints가 바뀔 때마다 다시 계산해둔다.
+  // 매번 새로 계산하면 GPS 갱신마다(초당 1회) 전체 배열을 순회해야 해서
+  // 비효율적이므로, drawRoute에서 한 번만 만들어 캐시해둔다.
+  let cumulativeDistances = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
+
+  function buildCumulativeDistances(points) {
+    const dists = [0];
+    for (let i = 1; i < points.length; i++) {
+      const d = haversineMeters(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+      dists.push(dists[i-1] + d);
+    }
+    return dists;
+  }
+
+  // 지그재그(헤어핀) 구간 오안내 방지용 전방 지점 탐색.
+  // "다음 N번째 인덱스"가 아니라 "궤적을 따라 실제로 targetMeters만큼
+  // 앞선 좌표"를 찾는다. 인덱스 기준으로는 GPX 점 간격에 따라 5m 앞일
+  // 수도 200m 앞일 수도 있고, 급하게 꺾이는 구간에서는 산 반대편 궤적을
+  // 가리킬 수 있다 — 누적거리 기준이면 이 문제가 없다.
+  function findPointAheadByDistance(points, distances, fromIdx, targetMeters) {
+    if (!points || points.length === 0 || fromIdx < 0) return null;
+    const fromDist = distances[fromIdx];
+    const targetDist = fromDist + targetMeters;
+
+    for (let i = fromIdx; i < points.length - 1; i++) {
+      if (distances[i + 1] >= targetDist) {
+        // i와 i+1 사이 어딘가 — 선형 보간으로 정확한 지점을 만든다.
+        const segStart = distances[i];
+        const segEnd = distances[i + 1];
+        const segLen = segEnd - segStart;
+        const t = segLen > 0 ? (targetDist - segStart) / segLen : 0;
+        return {
+          lat: points[i].lat + (points[i+1].lat - points[i].lat) * t,
+          lon: points[i].lon + (points[i+1].lon - points[i].lon) * t
+        };
+      }
+    }
+    // 코스 끝까지 targetMeters가 안 나오면 마지막 점을 반환 (거의 다 왔다는 뜻)
+    return points[points.length - 1];
+  }
+
+  // 방위각 차이를 12시간 시계 방향으로 변환 — "좌측/우측"보다 야외에서
+  // 훨씬 직관적이다 (네비게이션 앱들이 흔히 쓰는 방식).
+  // angleDiff: 내 진행방향(currentHeading) 대비 목표 방위각의 차이(-180~180)
+  function angleDiffToClockDirection(angleDiff) {
+    // -180~180 범위를 0~360으로 바꾼 뒤 30도(1시간)당 1시간 단위로 변환
+    const normalized = ((angleDiff % 360) + 360) % 360;
+    let hour = Math.round(normalized / 30);
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour -= 12;
+    return hour;
+  }
+
+  // 시계 방향 숫자에 대응하는 화살표 아이콘 (8방위로 단순화해 표시)
+  function clockHourToArrow(hour) {
+    const arrows = {
+      12: '↑', 1: '↗', 2: '↗', 3: '→', 4: '↘', 5: '↘',
+      6: '↓', 7: '↙', 8: '↙', 9: '←', 10: '↖', 11: '↖'
+    };
+    return arrows[hour] || '↑';
+  }
+
+  // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
+  // 이걸 안 하면 이전 코스에서 남은 인덱스를 기준으로 새 코스를 윈도우
+  // 탐색하게 되어 엉뚱한 결과가 나올 수 있다.
+  function resetTrailSearchWindow() {
+    lastNearestIdx = -1;
   }
 
   // 타일 좌표 계산 함수
@@ -1023,6 +1191,8 @@
   function drawRoute(points, courseName, sourceUrl, isFromCache) {
     if (!map || !points.length) return;
     currentPoints = points;
+    resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
+    cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -1080,9 +1250,10 @@
     document.getElementById('emptyModal').style.display = 'none';
 
     // 지도가 열리는 즉시 백그라운드에서 오프라인 등산지도 자동 캐시 저장!
-    if (!isFromCache) {
-      autoSaveOfflineMap(points);
-    }
+    // 단, 이 코스가 이전에 이미 완전히 저장되어 있다면 autoSaveOfflineMap
+    // 내부에서 완료 플래그를 확인해 네트워크 접근 없이 즉시 반환한다.
+    const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
+    autoSaveOfflineMap(points, tileCourseKey);
   }
 
   // 코스를 화면 시각적 정중앙에 정확히 배치 (상단 헤더 여백 보정)
@@ -1094,10 +1265,56 @@
     });
   }
 
+  // 코스별 타일 다운로드 완료 여부를 기록하는 플래그.
+  // 기존에는 좌표(saveRouteToStorage)만 저장됐고 타일 캐싱 성공 여부는
+  // 어디에도 남지 않아, 코스를 다시 열 때마다 이미 받은 타일까지
+  // cache.match()로 수백 번씩 재확인했다. 완료 플래그가 있으면 이 확인을
+  // localStorage 조회 1번으로 끝내고, 온전히 끝난 코스는 네트워크를
+  // 아예 건드리지 않는다.
+  const TILES_SAVED_KEY = 'gajago_tiles_saved_v1';
+
+  function getTileSaveStatus(courseKey) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      return map[courseKey] || null; // { status: 'complete'|'partial', savedAt, tileCount, failedCount }
+    } catch(e) { return null; }
+  }
+
+  function setTileSaveStatus(courseKey, statusObj) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      map[courseKey] = statusObj;
+      localStorage.setItem(TILES_SAVED_KEY, JSON.stringify(map));
+    } catch(e) {}
+  }
+
+  // 코스명+원본URL로 고유 키 생성 (기존 normalizeCourseKey 재사용)
+  function getTileCourseKey(courseName, sourceUrl) {
+    return normalizeCourseKey(courseName, sourceUrl) || (sourceUrl || courseName || 'unknown');
+  }
+
   // 지도가 열리면 자동으로 주변 지형도 타일을 백그라운드 캐싱 (산속 통신두절 대비)
   let isSavingCache = false;
-  async function autoSaveOfflineMap(points) {
+  async function autoSaveOfflineMap(points, courseKey) {
     if (isSavingCache || !points || !points.length) return;
+
+    // ⭐ 이미 완전히 저장된 코스면 네트워크 접근 자체를 하지 않는다.
+    if (courseKey) {
+      const existing = getTileSaveStatus(courseKey);
+      if (existing && existing.status === 'complete') {
+        console.log('⚡ 이미 오프라인 지도가 완전히 저장된 코스 — 재다운로드 생략:', courseKey);
+        return;
+      }
+    }
+
+    // 산속에서 데이터가 아예 안 터지는 상태라면 시도 자체가 배터리 낭비다.
+    if (navigator.onLine === false) {
+      console.log('📡 오프라인 상태 — 타일 다운로드 시도 안 함');
+      return;
+    }
+
     isSavingCache = true;
 
     // 상단 자동 저장 미니 알림 뱃지
@@ -1183,9 +1400,18 @@
       if (failedCount === 0) {
         badge.innerText = '✅ 오프라인 등산지도 저장 완료! (산속 통신두절 대비)';
         badge.style.background = 'rgba(46,125,50,0.95)';
+        // 완전 성공 — 다음부터는 이 코스를 열어도 재다운로드하지 않는다.
+        if (courseKey) {
+          setTileSaveStatus(courseKey, { status: 'complete', savedAt: Date.now(), tileCount: total, failedCount: 0 });
+        }
       } else {
         badge.innerText = `⚠️ 오프라인 저장 완료 (일부 타일 ${failedCount}개 실패 — 오프라인 시 해당 구간 미표시될 수 있음)`;
         badge.style.background = 'rgba(230,81,0,0.95)';
+        // 일부만 성공 — 다음에 다시 열면 실패한 부분을 포함해 재시도할 수 있도록
+        // 'partial'로 기록한다 (완전 재다운로드는 아니지만 재시도 여지를 남김).
+        if (courseKey) {
+          setTileSaveStatus(courseKey, { status: 'partial', savedAt: Date.now(), tileCount: total, failedCount });
+        }
       }
       setTimeout(() => {
         badge.style.opacity = '0';
@@ -1194,6 +1420,8 @@
     } catch(err) {
       console.warn('오프라인 캐시 자동 저장 실패:', err);
       badge.remove();
+    } finally {
+      isSavingCache = false;
     }
   }
 
@@ -1303,6 +1531,11 @@
   }
 
   // 등산로 진행 및 코스 일탈/역주행 실시간 상태 안내 토스트
+  // 히스테리시스: 35m 넘으면 "이탈 상태" 진입, 25m 밑으로 돌아와야 "정상"으로 해제.
+  // 경계선(30m 부근)에서 왔다갔다 하며 토스트가 깜빡이는 것을 막는다.
+  let isOffTrailState = false;
+  let offTrailStreakCount = 0; // GPS 갱신마다 1씩 증가 — 연속 3회(약 3초) 이상일 때만 경고음
+
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
@@ -1310,31 +1543,65 @@
 
     const headStr = currentHeading !== null ? `${getKoreanDirection(currentHeading)} (${Math.round(currentHeading)}°)` : '방향 측정 중';
 
-    if (nearestPoint && minDistanceM > 35) {
+    // 히스테리시스 상태 갱신
+    if (!isOffTrailState && minDistanceM > 35) {
+      isOffTrailState = true;
+    } else if (isOffTrailState && minDistanceM < 25) {
+      isOffTrailState = false;
+      offTrailStreakCount = 0;
+      resetOffTrailStreak(); // 궤적 복귀 → 다음 이탈은 15초부터 다시 경고
+    }
+
+    if (nearestPoint && isOffTrailState) {
+      offTrailStreakCount++;
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
       const toTrailDir = getKoreanDirection(toTrailBearing);
       toast.className = 'gps-toast warning';
       toast.innerText = `⚠️ 이탈 ${Math.round(minDistanceM)}m · ${toTrailDir}쪽으로`;
-    } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
-      // 등산로 진행 방향 대조 (다음 5개 포인트 앞의 각도)
-      const nextIdx = Math.min(nearestIdx + 5, currentPoints.length - 1);
-      const trailBearing = calculateBearing(
-        currentPoints[nearestIdx].lat, currentPoints[nearestIdx].lon,
-        currentPoints[nextIdx].lat, currentPoints[nextIdx].lon
-      );
-      const angleDiff = Math.abs(shortestAngleDiff(currentHeading, trailBearing));
 
-      if (angleDiff > 125) {
+      // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
+      // 유지될 때만 실제 경고음을 울린다.
+      if (offTrailStreakCount >= 3) {
+        playOffTrailBeep();
+      }
+    } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
+      // 지그재그 구간 오안내 방지 — 인덱스 기준(다음 5개 포인트)이 아니라
+      // 궤적을 따라 실제 30m 앞선 좌표를 찾아 그 방향을 안내한다.
+      const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 30);
+      const trailBearing = aheadPoint
+        ? calculateBearing(lastKnownPos.lat, lastKnownPos.lon, aheadPoint.lat, aheadPoint.lon)
+        : calculateBearing(
+            currentPoints[nearestIdx].lat, currentPoints[nearestIdx].lon,
+            currentPoints[Math.min(nearestIdx + 5, currentPoints.length - 1)].lat,
+            currentPoints[Math.min(nearestIdx + 5, currentPoints.length - 1)].lon
+          );
+      const angleDiff = shortestAngleDiff(trailBearing, currentHeading);
+
+      // 남은 거리 및 진행률 (전체 누적거리 대비 현재 위치까지의 거리)
+      const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+      const traveledDist = cumulativeDistances[nearestIdx] || 0;
+      const remainingDist = Math.max(0, totalDist - traveledDist);
+      const progressPct = totalDist > 0 ? Math.round((traveledDist / totalDist) * 100) : 0;
+      const remainingStr = remainingDist >= 1000
+        ? `${(remainingDist / 1000).toFixed(1)}km`
+        : `${Math.round(remainingDist)}m`;
+
+      if (Math.abs(angleDiff) > 125) {
         // 역주행 감지 (산길을 반대로 걷고 있을 때 경고)
         toast.className = 'gps-toast warning';
-        toast.innerText = `⚠️ 반대 방향입니다`;
+        toast.innerText = `⚠️ 반대 방향입니다 · 남은 ${remainingStr} (${progressPct}%)`;
       } else {
         toast.className = 'gps-toast';
-        toast.innerText = showHeadingArrow
-          ? `🧭 위쪽으로 따라가세요`
-          : isHeadingUp
-            ? `🧭 정상 진행 중`
-            : `🧭 ${headStr}`;
+        if (showHeadingArrow || isHeadingUp) {
+          // 길찾기 회전 모드에서는 화면 위쪽이 항상 진행방향이므로
+          // 시계 표기 대신 간단한 진행 안내 + 거리/진행률만 보여준다.
+          toast.innerText = `🧭 이 방향으로 · 남은 ${remainingStr} (${progressPct}%)`;
+        } else {
+          // 정북 고정 모드에서는 내가 봐야 할 방향을 시계 방향으로 안내
+          const hour = angleDiffToClockDirection(angleDiff);
+          const arrow = clockHourToArrow(hour);
+          toast.innerText = `${arrow} ${hour}시 방향 · 남은 ${remainingStr} (${progressPct}%)`;
+        }
       }
     } else {
       toast.className = 'gps-toast';
@@ -1415,6 +1682,16 @@
     // 나침반 센서 즉시 활성화
     initCompass();
     showHeadingArrow = false;
+
+    // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
+    // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
+    // [내 위치] 버튼을 누른 지금 오디오를 미리 열어둔다.
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
 
     btn.classList.add('active');
     toast.style.display = 'block';
