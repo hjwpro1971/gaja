@@ -477,50 +477,99 @@
   });
 
   // ────────────────────────────────────────────────────────────────
-  // 📡 KalmanJS — 순수 JS 1D 칼만 필터 (검증된 오픈소스, MIT 라이선스)
-  // 출처: https://github.com/wouterbulten/kalmanjs
-  // 직접 짠 방향 계산 로직이 GPS 원시 좌표의 노이즈(정확도 5~15m 오차,
-  // 트인 곳에서도 발생) 자체를 잡지 못해 방향이 실측 기준 수십 도씩
-  // 어긋나는 문제가 있었다. 원인이 "우리 로직의 버그"가 아니라
-  // "입력값(좌표) 자체의 노이즈"로 확인되어, 방향 계산 로직은 그대로 두고
-  // 그 앞단에서 좌표(위도/경도)를 먼저 다듬는 필터를 추가한다.
-  // 위도·경도는 서로 독립된 값이므로 각각 별도의 1D 필터 인스턴스를 쓴다.
-  class KalmanFilter {
-    constructor({R = 1, Q = 1, A = 1, B = 0, C = 1} = {}) {
-      this.R = R; // 과정 노이즈 (작을수록 부드럽지만 반응이 느려짐)
-      this.Q = Q; // 측정 노이즈 (GPS 자체의 오차 추정치, 클수록 원시값을 더 신뢰)
-      this.A = A;
-      this.C = C;
-      this.B = B;
-      this.cov = NaN;
-      this.x = NaN;
+  // 📡 GpsFilterEngine — 검증된 아웃도어 GPS 트래킹 앱(산길샘 계열)의
+  // 표준 4단계 필터링 파이프라인을 적용한 엔진.
+  // (1) 수집 검증(정확도/시간간격) → (2) 정지/이동 상태 판정 →
+  // (3) 좌표 이동평균 스무딩 + 방위각 히스테리시스 → (4) 거리 누적
+  // 기존에 직접 짠 칼만 필터 + 적응형 게인 조합은 파라미터를 추정으로
+  // 넣어야 해서 고칠 때마다 다른 부작용(고정/지연/흔들림)이 반복됐다.
+  // 이 엔진은 단순 이동평균과 명확한 문턱값만 쓰므로 동작을 예측하기
+  // 쉽고, 등산 앱들이 실제로 쓰는 것으로 알려진 표준 수치를 그대로 따른다.
+  class GpsFilterEngine {
+    constructor(config = {}) {
+      this.config = {
+        MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
+        MIN_INTERVAL_MS: 1000,   // 최소 수신 간격 — 중복 픽스 방지
+        MIN_DISTANCE: 4.0,       // 이전 확정점 대비 최소 이동 인정 거리(m)
+        STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
+        BEARING_THRESHOLD: 15.0, // 이 각도(deg) 미만 변화는 무시(freeze)
+        WINDOW_SIZE: 5,          // 좌표 이동평균 윈도우 크기
+        ...config
+      };
+      this.window = [];
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
     }
-    filter(z, u = 0) {
-      if (isNaN(this.x)) {
-        this.x = (1 / this.C) * z;
-        this.cov = (1 / this.C) * this.Q * (1 / this.C);
-      } else {
-        const predX = (this.A * this.x) + (this.B * u);
-        const predCov = ((this.A * this.cov) * this.A) + this.R;
-        const K = predCov * this.C * (1 / ((this.C * predCov * this.C) + this.Q));
-        this.x = predX + K * (z - (this.C * predX));
-        this.cov = predCov - (K * this.C * predCov);
+
+    // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
+    reset() {
+      this.window = [];
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
+    }
+
+    // raw: { latitude, longitude, accuracy, speed, timestamp }
+    // 반환값이 null이면 "이번 픽스는 버림" — 화면 갱신 자체를 하지 않는다.
+    process(raw) {
+      // 1단계: 수집 검증
+      if (raw.accuracy > this.config.MAX_ACCURACY) return null;
+      if (this.lastConfirmed && (raw.timestamp - this.lastConfirmed.timestamp < this.config.MIN_INTERVAL_MS)) {
+        return null;
       }
-      return this.x;
+
+      // 첫 포인트는 그대로 확정 (비교 대상이 없으므로)
+      if (!this.lastConfirmed) {
+        this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, timestamp: raw.timestamp };
+        this.window = [raw];
+        return {
+          latitude: raw.latitude, longitude: raw.longitude,
+          bearing: null, totalDistance: 0, isStopped: false, timestamp: raw.timestamp
+        };
+      }
+
+      // 2단계: 정지/이동 상태 판정
+      const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
+      const isStopped = rawDist < this.config.MIN_DISTANCE && (raw.speed === null || raw.speed < this.config.STOP_SPEED_CUTOFF);
+
+      if (isStopped) {
+        // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
+        return {
+          latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
+          bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
+          isStopped: true, timestamp: raw.timestamp
+        };
+      }
+
+      // 3단계: 좌표 스무딩 (이동평균)
+      this.window.push(raw);
+      if (this.window.length > this.config.WINDOW_SIZE) this.window.shift();
+      const smoothLat = this.window.reduce((acc, p) => acc + p.latitude, 0) / this.window.length;
+      const smoothLon = this.window.reduce((acc, p) => acc + p.longitude, 0) / this.window.length;
+
+      // 방위각 계산 및 히스테리시스 — 15도 미만 변화는 이전 방향 유지
+      let newBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      if (this.lastConfirmed.bearing !== null) {
+        const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
+        if (bearingDelta < this.config.BEARING_THRESHOLD) {
+          newBearing = this.lastConfirmed.bearing;
+        }
+      }
+
+      // 4단계: 거리 누적
+      const stepDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      this.totalDistance += stepDist;
+
+      this.lastConfirmed = { latitude: smoothLat, longitude: smoothLon, bearing: newBearing, timestamp: raw.timestamp };
+
+      return {
+        latitude: smoothLat, longitude: smoothLon,
+        bearing: newBearing, totalDistance: this.totalDistance,
+        isStopped: false, timestamp: raw.timestamp
+      };
     }
-    lastMeasurement() { return this.x; }
-    reset() { this.cov = NaN; this.x = NaN; } // 새 코스 시작 시 이전 궤적의 필터 상태 초기화용
   }
 
-  // 등산 보행 속도(시속 3~4km, 초당 약 1m 이동)에 맞춘 파라미터.
-  // 이전 값(R: 0.01)은 "과정 노이즈"를 지나치게 작게 잡아, 필터가
-  // "실제 위치는 거의 안 변한다"고 강하게 믿어버리는 바람에 걸어도
-  // 필터링된 좌표가 실제 이동을 거의 반영하지 못해 지도가 고정된 것처럼
-  // 보이는 원인이었다. R을 100배 키워 걷는 속도의 실제 위치 변화량을
-  // 제때 따라가게 하고, Q(측정 노이즈=GPS 오차 추정)는 스마트폰 GPS의
-  // 통상 오차 범위(5~15m)를 반영해 유지한다.
-  const gpsLatFilter = new KalmanFilter({ R: 1, Q: 3 });
-  const gpsLonFilter = new KalmanFilter({ R: 1, Q: 3 });
+  const gpsFilterEngine = new GpsFilterEngine();
   // ────────────────────────────────────────────────────────────────
 
   let map = null;
@@ -532,7 +581,6 @@
   let watchId = null;
   let currentHeading = null;
   let lastKnownPos = null;
-  let prevGpsPos = null;
   let isCompassActive = false;
   let guideLine = null; // 등산로 연결 점선 가이드
 
@@ -582,7 +630,13 @@
   // 보조로 쓰고, 그때도 복잡한 회전행렬 보정 없이 alpha 값을 그대로 쓴다
   // (표준 스펙상 alpha 자체가 이미 "북쪽에서 얼마나 돌았는지"다).
 
-  // ⭐ 저주파 오일 감쇠 필터 적용 (2도 이하 미세 떨림 무시 + 0.12 가중치로 묵직하고 부드러운 회전)
+  // GpsFilterEngine이 이미 방위각 히스테리시스(15도 미만 변화 무시)를
+  // 적용한 값을 넘겨주므로, 여기서는 복잡한 적응형 게인 없이 화면 회전값
+  // (continuousHeading)에 그대로 반영하기만 하면 된다. 360도 경계에서
+  // 회전이 반대로 크게 도는 것만 shortestAngleDiff로 방지한다.
+  // 기존의 게인 단계별 분기(0.15~1.0)는 파라미터를 추정으로 넣어야 해서
+  // 고칠 때마다 다른 부작용이 반복됐다 — 표준 파이프라인 도입 후에는
+  // 입력값 자체가 이미 안정적이므로 복잡한 게인 로직이 불필요하다.
   function applySmoothedHeading(rawHeading) {
     if (rawHeading === null || isNaN(rawHeading)) return;
 
@@ -594,25 +648,7 @@
     }
 
     const diff = shortestAngleDiff(rawHeading, smoothedHeading);
-    const absDiff = Math.abs(diff);
-    // 실내(철제 구조물·가전제품 근처)에서는 자력계가 흔들리는 경우가 있어
-    // 아주 작은 변화(4도 미만)는 노이즈로 보고 무시한다.
-    if (absDiff < 4.0) {
-      return;
-    }
-
-    // 적응형 게인: 실제로 몸을 돌린 큰 변화(방향 전환)는 즉시 따라가고,
-    // 작은 흔들림은 느긋하게 반응해 화면이 떨리지 않게 한다.
-    // 정지 시 오탐 이동(위 confirmedMoving 검증)을 이미 차단했으므로,
-    // 여기서는 노이즈 걱정 없이 전반적으로 게인을 더 올려 체감 반응을
-    // 빠르게 한다.
-    let gain;
-    if (absDiff > 45)      gain = 1.0;   // 큰 방향 전환 → 즉시 (지연 없음)
-    else if (absDiff > 20) gain = 0.70;
-    else if (absDiff > 8)  gain = 0.45;
-    else                   gain = 0.25;
-
-    continuousHeading += diff * gain;
+    continuousHeading += diff; // 이미 필터링된 값이므로 그대로(게인 1.0) 반영
     smoothedHeading = ((continuousHeading % 360) + 360) % 360;
 
     updateHeadingDisplay(smoothedHeading, continuousHeading);
@@ -1247,8 +1283,7 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
-    gpsLatFilter.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시
-    gpsLonFilter.reset(); // 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
+    gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
 
     if (polyline) map.removeLayer(polyline);
@@ -1700,11 +1735,9 @@
         requestWakeLock();
       }
       if (watchId !== null) {
-        gpsLatFilter.reset();
-        gpsLonFilter.reset();
+        gpsFilterEngine.reset();
         smoothedHeading = null;
         gpsMovementHeading = null;
-        prevGpsPos = null; // 다음 GPS 갱신에서 이동거리 계산을 처음부터 다시 시작
       }
     }
   });
@@ -1756,11 +1789,10 @@
     showHeadingArrow = false;
 
     // GPS를 새로 켤 때마다 필터를 초기화한다. 이전에 종료했던 위치의
-    // 필터 상태(x, cov)가 남아있으면, 완전히 새로운 위치에서 다시 시작할 때
-    // 필터가 "예전 위치 → 새 위치"로 수렴하는 과도기 동안 오히려
-    // 부자연스럽게 흔들리거나 지연될 수 있다.
-    gpsLatFilter.reset();
-    gpsLonFilter.reset();
+    // 필터 상태가 남아있으면, 완전히 새로운 위치에서 다시 시작할 때
+    // "예전 위치 → 새 위치"로 수렴하는 과도기 동안 오히려 부자연스럽게
+    // 흔들리거나 지연될 수 있다.
+    gpsFilterEngine.reset();
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -1778,75 +1810,46 @@
     toast.innerText = '📡 GPS 수신 중...';
 
     let isFirstFix = true;
-    let prevGpsTime = 0;
 
     watchId = navigator.geolocation.watchPosition(
       pos => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
-        const speed = pos.coords.speed; // m/s
         lastKnownPos = { lat, lon }; // 화면 표시·이탈판정용 — 지연 없는 원시 좌표를 그대로 사용
 
-        // 📡 칼만 필터로 다듬은 좌표 — 방향 계산 전용.
-        // 화면에 찍는 내 위치(lastKnownPos)는 원시 좌표를 그대로 써서 실제
-        // 위치와 어긋나지 않게 하고, 방향 계산에만 필터링된 값을 사용해
-        // 노이즈로 인한 방향 튐만 줄인다.
-        const filteredLat = gpsLatFilter.filter(lat);
-        const filteredLon = gpsLonFilter.filter(lon);
+        // 📡 GpsFilterEngine에 원시 픽스를 넣으면, 표준 파이프라인이
+        // (1)오차 필터 → (2)정지/이동 판정 → (3)좌표 스무딩+방위각
+        // 히스테리시스를 전부 내부에서 처리한 결과를 반환한다.
+        // 반환값이 null이면 이번 픽스는 신뢰할 수 없어(오차 초과 또는
+        // 너무 빠른 중복 수신) 버려진 것이므로 이번 갱신은 건너뛴다.
+        const result = gpsFilterEngine.process({
+          latitude: lat,
+          longitude: lon,
+          accuracy: accuracy,
+          speed: pos.coords.speed,
+          timestamp: Date.now()
+        });
 
-        // ⚠️ pos.coords.speed와 pos.coords.heading은 기기/상황에 따라
-        // 정지 중에도 순간적으로 오차가 커서(특히 accuracy가 낮을 때)
-        // "이동 중"으로 잘못 찍히는 경우가 실제로 있다. speed 필드 하나만
-        // 믿지 않고, 직접 계산한 이동거리(moveDist)로 한 번 더 검증한다.
-        // 이 판정에도 필터링된 좌표를 사용해 순간 튐으로 인한 오탐을 줄인다.
-        let confirmedMoving = false;
-        if (prevGpsPos) {
-          const instMoveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
-          const instTimeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
-          const instSpeed = instTimeDiff > 0 ? (instMoveDist / instTimeDiff) : 0;
-          // GPS 정확도(accuracy)보다 실제 이동거리가 확실히 커야
-          // "진짜 이동"으로 인정 — 그렇지 않으면 오차 범위 내의 제자리 흔들림이다.
-          confirmedMoving = instMoveDist > Math.max(4.0, accuracy * 0.5) && instSpeed > 0.7 && instSpeed < 5.0;
+        if (!result) {
+          // 신뢰할 수 없는 픽스 — 방향/거리 갱신 없이 다음 수신을 기다린다.
+          return;
         }
 
-        // 방향 계산은 좌표 기반(calculateBearing)을 우선으로 쓴다.
-        // pos.coords.heading은 GPS 칩/OS 단의 블랙박스 추정치(도플러 효과 기반)라
-        // 기기·상황에 따라 실제 이동 방향과 수십 도씩 어긋나는 경우가 실측에서
-        // 확인됐다. 반면 연속된 두 좌표 간 방위각(calculateBearing)은 실제로
-        // 어디서 어디로 움직였는지를 순수 기하학으로 계산하므로 훨씬 신뢰도가
-        // 높고, 등산 내비게이션 앱들도 이 방식을 기본으로 사용한다.
-        // 여기서는 원시 좌표 대신 칼만 필터로 다듬은 좌표(filteredLat/Lon)를
-        // 써서, 방위각 계산 자체가 GPS 순간 노이즈에 덜 흔들리게 한다.
-        if (confirmedMoving && prevGpsPos) {
-          const moveDist = haversineMeters(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
-          const timeDiff = (Date.now() - (prevGpsTime || Date.now())) / 1000;
-          const calcSpeed = timeDiff > 0 ? (moveDist / timeDiff) : 0;
-          // 고정 6.0m 임계값은 코너를 돌 때 6m(약 6초)를 더 걸어야 방향이
-          // 갱신되는 지연의 원인이었다. 무작정 낮추면(예: 3.0m) 스마트폰 GPS
-          // 통상 오차(5~15m) 범위 안에 들어와 제자리 흔들림을 다시 이동으로
-          // 오판할 위험이 있다 — 애초에 6.0을 쓴 이유와 정면 충돌한다.
-          // 대신 GPS 신호 품질(accuracy)에 연동해 신호가 좋을 때만
-          // 임계값을 낮추고, 신호가 나쁠 때는 기존처럼 보수적으로 유지한다.
-          const dynamicMoveThreshold = Math.max(3.0, accuracy * 0.6);
-          if (moveDist > dynamicMoveThreshold && calcSpeed > 0.7 && calcSpeed < 5.0 && accuracy < 20) {
-            const moveHeading = calculateBearing(prevGpsPos.lat, prevGpsPos.lon, filteredLat, filteredLon);
-            gpsMovementHeading = moveHeading;
-            lastGpsMoveTime = Date.now();
-            applySmoothedHeading(moveHeading);
-          }
-        } else {
+        // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
+        // 화면 회전에 반영한다. (엔진 내부에서 이미 15도 미만 변화는
+        // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
+        if (!result.isStopped && result.bearing !== null) {
+          gpsMovementHeading = result.bearing;
+          lastGpsMoveTime = Date.now();
+          applySmoothedHeading(result.bearing);
+        } else if (result.isStopped) {
           // 정지 확인됨 — GPS 이동 방향 정보를 즉시 무효화해 나침반이
           // 곧바로 방향 계산을 넘겨받을 수 있게 한다. 이걸 안 하면
           // handleOrientation()의 "최근 3초 이내 이동" 조건에 걸려
           // 정지 중에도 최대 3초간 나침반이 계속 무시된다.
           gpsMovementHeading = null;
         }
-        // prevGpsPos는 방향 계산 전용 기준점이므로, 위에서 방향 계산에 쓴
-        // 것과 같은 종류(필터링된 좌표)로 통일해 다음 갱신 때 원시값과
-        // 필터값이 섞여 거리·속도 계산이 일관성을 잃지 않게 한다.
-        prevGpsPos = { lat: filteredLat, lon: filteredLon };
-        prevGpsTime = Date.now();
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
