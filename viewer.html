@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_drag_to_pan1';
+      const APP_BUILD = 'v20260909_auto_gps_home_icon1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -403,7 +403,7 @@
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
-  <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🔍</button>
+  <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
 </div>
 
@@ -1514,6 +1514,14 @@
     // 내부에서 완료 플래그를 확인해 네트워크 접근 없이 즉시 반환한다.
     const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
     autoSaveOfflineMap(points, tileCourseKey);
+
+    // 등산로 코스가 열리면 길찾기(내 위치 추적)를 기본으로 바로 시작한다.
+    // 매번 GPS 버튼을 눌러야 시작되던 이전 방식 대신, 산에서 지도만 켜면
+    // 곧바로 방향 안내가 되도록 opt-out 대신 opt-in을 뒤집었다. 이미 GPS가
+    // 켜져 있으면(코스를 다시 불러온 경우 등) 중복 시작하지 않는다.
+    if (watchId === null) {
+      startGpsTracking();
+    }
   }
 
   // 코스를 화면 시각적 정중앙에 정확히 배치 (상단 헤더 여백 보정)
