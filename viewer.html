@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_shortest_angle_fix1';
+      const APP_BUILD = 'v20260909_drag_to_pan1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -663,6 +663,7 @@
   let stopEnteredAt = null;          // 정지 진입 시각(ms) — 장시간 드리프트 재정렬 판단용
   let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
   let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
+  let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
@@ -1044,6 +1045,22 @@
     map.on('zoomend', () => {
       if (isHeadingUp && lastKnownPos) {
         map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: false });
+      }
+    });
+
+    // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
+    // 있게 한다. 길찾기 회전 모드에서는 GPS 픽스가 들어올 때마다(약 1초
+    // 간격) 화면 중심을 내 위치로 강제로 되돌리는 로직이 있어(watchPosition
+    // 콜백) 그동안은 드래그해도 곧바로 원위치로 튕겨 마치 드래그가 안
+    // 되는 것처럼 보였다. 드래그 중에는 그 강제 복귀를 잠시 멈추고,
+    // 손가락을 떼는 순간(dragend) 바로 다시 내 위치로 되돌린다.
+    map.on('dragstart', () => {
+      isMapBeingDragged = true;
+    });
+    map.on('dragend', () => {
+      isMapBeingDragged = false;
+      if (isHeadingUp && lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
       }
     });
 
@@ -2195,8 +2212,12 @@
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {
             map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
-          } else if (isHeadingUp) {
-            // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정
+          } else if (isHeadingUp && !isMapBeingDragged) {
+            // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정.
+            // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중에는
+            // GPS 픽스(약 1초 간격)가 화면을 곧바로 원위치로 튕겨버려
+            // 드래그 자체가 안 되는 것처럼 보이므로, 드래그 중엔 이 강제
+            // 복귀를 건너뛴다 — 손을 떼면 dragend 핸들러가 즉시 복귀시킨다.
             map.setView([lat, lon], map.getZoom(), { animate: false });
           }
         }
