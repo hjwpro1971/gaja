@@ -229,6 +229,12 @@
       /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
       pointer-events: none;
     }
+    /* 정지 시 자이로(핸드폰 회전)가 실제로 화면을 움직이고 있음을 짧게
+       알려주는 하이라이트 — handleOrientation이 0.6초짜리 타이머로 토글 */
+    .gps-heading-wrapper.gyro-active {
+      filter: drop-shadow(0 0 6px rgba(255, 193, 7, 0.9));
+      transition: filter 0.2s ease-out;
+    }
     .gps-heading-svg {
       width: 80px;
       height: 80px;
@@ -510,16 +516,24 @@
         // 낼 수 있음)를 거르는 유일한 방어선이므로, 표준안의 15도로
         // 되돌린다 — 6~8도는 노이즈를 거르기엔 너무 낮았다.
         BEARING_THRESHOLD: 15.0,
+        // 고층 빌딩·울창한 숲 등에서 GPS 오차로 잠깐 "이동"으로 오판되면
+        // 정지 시 자이로 회전 추적(handleOrientation)이 매번 리셋되어
+        // 사용자가 돌려놓은 화면이 사라져 버린다. 정지 판정(이동→정지)
+        // 자체는 안전(궤적 이탈 경고)이 걸려 있어 그대로 즉시 반응해야
+        // 하므로, 반대 방향(정지→이동) 판정에만 짧은 연속성을 요구한다.
+        MOVE_RESUME_STREAK: 3, // 정지 상태에서 "이동"으로 확정되려면 연속 몇 회 픽스가 필요한지
         ...config
       };
       this.lastConfirmed = null;
       this.totalDistance = 0;
+      this.moveStreak = 0; // 정지 → 이동 전환 후보로 연속 잡힌 픽스 수
     }
 
     // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
     reset() {
       this.lastConfirmed = null;
       this.totalDistance = 0;
+      this.moveStreak = 0;
     }
 
     // raw: { latitude, longitude, accuracy, speed, timestamp }
@@ -533,19 +547,35 @@
 
       // 첫 포인트는 그대로 확정 (비교 대상이 없으므로)
       if (!this.lastConfirmed) {
-        this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, timestamp: raw.timestamp };
+        this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, isStopped: false, timestamp: raw.timestamp };
         return {
           latitude: raw.latitude, longitude: raw.longitude,
           bearing: null, totalDistance: 0, isStopped: false, timestamp: raw.timestamp
         };
       }
 
-      // 2단계: 정지/이동 상태 판정
+      // 2단계: 정지/이동 상태 판정. 순수 판정(rawIsStopped) 자체는 그대로
+      // 두되, "직전까지 정지 → 이번엔 이동"으로 나온 경우에는 GPS 튐일 수
+      // 있으므로 연속 MOVE_RESUME_STREAK회를 채울 때까지 정지로 간주한다.
+      // 반대(이동→정지)는 안전이 걸린 문제라 항상 즉시 반영한다.
       const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
-      const isStopped = rawDist < this.config.MIN_DISTANCE && (raw.speed === null || raw.speed < this.config.STOP_SPEED_CUTOFF);
+      const rawIsStopped = rawDist < this.config.MIN_DISTANCE && (raw.speed === null || raw.speed < this.config.STOP_SPEED_CUTOFF);
+
+      let isStopped = rawIsStopped;
+      if (!rawIsStopped && this.lastConfirmed.isStopped) {
+        this.moveStreak++;
+        if (this.moveStreak < this.config.MOVE_RESUME_STREAK) {
+          isStopped = true;
+        } else {
+          this.moveStreak = 0;
+        }
+      } else {
+        this.moveStreak = 0;
+      }
 
       if (isStopped) {
         // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
+        this.lastConfirmed = { ...this.lastConfirmed, isStopped: true, timestamp: raw.timestamp };
         return {
           latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
           bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
@@ -575,7 +605,7 @@
       const stepDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
       this.totalDistance += stepDist;
 
-      this.lastConfirmed = { latitude: smoothLat, longitude: smoothLon, bearing: newBearing, timestamp: raw.timestamp };
+      this.lastConfirmed = { latitude: smoothLat, longitude: smoothLon, bearing: newBearing, isStopped: false, timestamp: raw.timestamp };
 
       return {
         latitude: smoothLat, longitude: smoothLon,
@@ -627,9 +657,12 @@
   let smoothedHeading = null;
   let continuousHeading = 0;   // 360도 경계 스핀 방지용 연속 각도
   // --- 정지 시 자이로(상대 회전) 추적용 상태 ---
-  let stopBaseHeading = null;      // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
-  let lastOrientationAlpha = null; // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
-  let gyroRelativeRotation = 0;    // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
+  let stopBaseHeading = null;        // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
+  let lastOrientationAlpha = null;   // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
+  let gyroRelativeRotation = 0;      // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
+  let stopEnteredAt = null;          // 정지 진입 시각(ms) — 장시간 드리프트 재정렬 판단용
+  let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
+  let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
@@ -776,7 +809,18 @@
   // 정지 시에는 alpha의 절대값(지자기 나침반)을 쓰지 않는다 — 그건 두 차례
   // 시도 후 폐기됐다. 대신 정지 진입 순간의 trailBearing을 기준점으로 잡고,
   // 이후 alpha의 변화량(delta)만 자이로처럼 누적해 상대 회전만 반영한다.
-  // 이렇게 하면 자기장 절대 오차와 무관하게, 폰을 돌린 만큼만 화면이 따라 돈다.
+  // 이렇게 하면 자기장 절대 오차와 무관하게, 폰을 돌린 만큼만 화면이 따라
+  // 돈다. 손떨림 무시(deadband), 장시간 정지 시 드리프트 자동 재정렬도
+  // 함께 처리한다.
+
+  // 손떨림/호흡 등으로 인한 미세한 각도 흔들림을 무시하는 불감 영역(deadband).
+  // 이 값 미만의 delta는 누적하지 않는다 — 가만히 서 있어도 alpha가 ±0.5도
+  // 내외로 계속 흔들려 불필요하게 화면을 다시 그리는 것을 막는다.
+  const ORIENTATION_DEADBAND_DEG = 1.0;
+  // 정지가 이 시간(ms) 이상 지속되면 다음 자이로 이벤트에서 기준점을 최신
+  // 궤적 방향으로 슬며시 재정렬한다(드리프트 완화).
+  const STOP_REALIGN_MS = 5 * 60 * 1000;
+
   function handleOrientation(e) {
     if (e.alpha === null || isNaN(e.alpha)) return;
 
@@ -786,13 +830,32 @@
     }
 
     const delta = shortestAngleDiff(e.alpha, lastOrientationAlpha);
+    if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return; // 손떨림 수준의 미세 흔들림 무시
     lastOrientationAlpha = e.alpha;
 
     // 이동 중이거나 아직 정지 기준점이 없으면(스냅샷 전) 화면에 반영하지 않는다.
     if (!isCurrentlyStopped || stopBaseHeading === null) return;
 
+    // 장시간 정지 드리프트 재정렬: 기준점을 최신 궤적 방향으로 되돌리고
+    // 상대 회전 누적을 0으로 리셋한다. 재정렬 순간 목표각이 바뀌므로,
+    // 기존 회전 애니메이션 루프(startHeadingAnimationLoop)가 그 차이를
+    // 자동으로 부드럽게 보간해 "스르륵" 되돌아가는 효과가 자연히 생긴다.
+    if (stopEnteredAt !== null && (Date.now() - stopEnteredAt) > STOP_REALIGN_MS && latestStopTrailBearing !== null) {
+      stopBaseHeading = latestStopTrailBearing;
+      gyroRelativeRotation = 0;
+      stopEnteredAt = Date.now(); // 재정렬 시각 갱신 — 반복 재정렬 방지
+    }
+
     gyroRelativeRotation += delta;
     applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
+
+    // 자이로가 실제로 화면을 움직이고 있음을 짧게 표시(0.6초 페이드)
+    const headingWrapper = document.getElementById('gpsHeadingWrapper');
+    if (headingWrapper) {
+      headingWrapper.classList.add('gyro-active');
+      clearTimeout(gyroActiveTimeout);
+      gyroActiveTimeout = setTimeout(() => headingWrapper.classList.remove('gyro-active'), 600);
+    }
   }
 
   function initCompass() {
@@ -2047,6 +2110,8 @@
           stopBaseHeading = null;
           gyroRelativeRotation = 0;
           lastOrientationAlpha = null;
+          stopEnteredAt = null;
+          latestStopTrailBearing = null;
 
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
@@ -2094,6 +2159,7 @@
               // 정지 시 방향 고정은 궤적 자체를 그대로 따르는 것이므로
               // "이탈"이 없다 — 빠르게 스냅되도록 이탈각을 최대로 설정한다.
               trailDeviationDeg = 90;
+              latestStopTrailBearing = trailBearing; // 장시간 드리프트 재정렬이 참조할 최신 궤적 방향 — 매 픽스마다 갱신
 
               // 정지 상태로 막 전환된 순간에만 이 trailBearing을 자이로 회전의
               // 기준점(0도 오프셋)으로 스냅샷한다. 정지가 유지되는 동안 매 GPS
@@ -2104,6 +2170,7 @@
                 stopBaseHeading = trailBearing;
                 gyroRelativeRotation = 0;
                 lastOrientationAlpha = null; // 다음 deviceorientation 이벤트에서 새 기준 alpha를 잡게 함
+                stopEnteredAt = Date.now();
                 applySmoothedHeading(trailBearing);
               }
             }
