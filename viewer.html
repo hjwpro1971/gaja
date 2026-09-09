@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260908_dist20m_unify1';
+      const APP_BUILD = 'v20260908_stopofftrail_fix1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1748,12 +1748,12 @@
   let isOffTrailState = false;
   let offTrailStreakCount = 0; // GPS 갱신마다 1씩 증가 — 연속 3회(약 3초) 이상일 때만 경고음
 
-  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
-    const toast = document.getElementById('gpsToast');
-    if (!toast || toast.style.display === 'none') return;
-    if (!lastKnownPos) return;
-
-    // 히스테리시스 상태 갱신
+  // 이탈 히스테리시스 상태만 갱신하는 함수 — updateNavigationToast와
+  // 정지 시 방향 고정 로직(watchPosition 콜백) 양쪽에서 공유해서 쓴다.
+  // 갱신 시점이 늦으면(예: 이 함수를 안 쓰고 updateNavigationToast 안에서만
+  // 갱신하면) 정지 시 방향 고정 로직이 "한 픽스 전"의 낡은 이탈 상태를
+  // 참조하게 되는 문제가 있었다.
+  function updateOffTrailHysteresis(minDistanceM) {
     if (!isOffTrailState && minDistanceM > 35) {
       isOffTrailState = true;
     } else if (isOffTrailState && minDistanceM < 25) {
@@ -1761,6 +1761,12 @@
       offTrailStreakCount = 0;
       resetOffTrailStreak(); // 궤적 복귀 → 다음 이탈은 15초부터 다시 경고
     }
+  }
+
+  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+    const toast = document.getElementById('gpsToast');
+    if (!toast || toast.style.display === 'none') return;
+    if (!lastKnownPos) return;
 
     if (nearestPoint && isOffTrailState) {
       offTrailStreakCount++;
@@ -2002,6 +2008,12 @@
         const nearestPoint = nearest.point;
         const nearestIdx = nearest.index;
 
+        // 정지 시 방향 고정 로직(아래)이 최신 이탈 상태를 참조할 수 있도록
+        // 여기서 먼저 히스테리시스를 갱신한다. updateNavigationToast 안에서만
+        // 갱신하면 이 시점엔 아직 "한 픽스 전"의 낡은 값이라 정지 시 방향이
+        // 엉뚱하게 계산되는 문제가 있었다.
+        updateOffTrailHysteresis(minDistanceM);
+
         // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
         // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
         // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
@@ -2031,7 +2043,18 @@
           // 위쪽이어야 한다는 목적에는 오히려 이 방식이 더 부합한다.
           // 역방향으로 걷다가 멈추면 이 순간 바로 지도가 홱 돌아서(화살표도
           // 그쪽을 가리켜서) "반대로 가고 있었다"는 걸 즉시 알 수 있다.
-          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
+          //
+          // ⚠️ 이탈 상태(궤적에서 35m 이상 벗어난 상태)에서는 "궤적을 따라
+          // 20m 앞" 방향이 아니라 "궤적으로 되돌아가는 방향"을 보여줘야
+          // 한다. 이 구분이 없으면 많이 벗어난 상태에서 엉뚱한 방향(복귀
+          // 방향과 진행 방향이 뒤섞인 값)이 나오는 문제가 있었다.
+          if (isOffTrailState && nearestPoint) {
+            // 이탈 상태 — 궤적(가장 가까운 지점)으로 되돌아가는 방향
+            const backToTrailBearing = calculateBearing(lat, lon, nearestPoint.lat, nearestPoint.lon);
+            trailDeviationDeg = 90;
+            applySmoothedHeading(backToTrailBearing);
+          } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
+            // 정상 궤적 위 — 궤적을 따라 20m 앞 진행 방향
             const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
             if (aheadPoint) {
               const trailBearing = calculateBearing(lat, lon, aheadPoint.lat, aheadPoint.lon);
