@@ -677,6 +677,13 @@
   // 아래 애니메이션 루프가 매 프레임 이 값을 목표 쪽으로 조금씩 옮긴다.
   let displayedRot = 0;
   let headingAnimRunning = false;
+  // 궤적(GPX) 예정 방향과 실제 GPS 이동 방향의 차이(도). watchPosition
+  // 콜백에서 매 픽스마다 갱신되고, 아래 회전 애니메이션 루프가 이 값을
+  // 참조해 회전 속도를 조절한다. 차이가 작으면(궤적과 거의 같은 방향으로
+  // 가고 있으면) 천천히, 차이가 크면(방향을 크게 틀었거나 갈림길) 빠르게
+  // 돈다 — GPS 노이즈로 인한 미세한 방향 흔들림은 궤적과 비교하면 대부분
+  // "거의 안 벗어난" 것으로 나오므로 자연히 느리게 처리되어 걸러진다.
+  let trailDeviationDeg = 0;
 
   function updateHeadingDisplay(heading, rotAngle) {
     if (heading === null || isNaN(heading)) return;
@@ -688,16 +695,26 @@
   // 회전을 걸면 매번 새 목표로 애니메이션이 재시작되며 "어떤 때는 빠르고
   // 어떤 때는 느리게, 딱딱 끊어지며" 도는 문제가 있었다. 대신 목표각
   // (continuousHeading)은 즉시 갱신하되, 실제로 화면에 그리는 각도
-  // (displayedRot)는 이 루프가 매 프레임 일정한 각속도로 목표를 따라잡게
-  // 해서 지도·화살표·나침반 바늘이 항상 같은 속도로 함께 부드럽게 돈다.
+  // (displayedRot)는 이 루프가 매 프레임 목표를 따라잡게 해서 지도·화살표가
+  // 부드럽게 돈다.
+  //
+  // 회전 속도는 고정값이 아니라 "궤적 예정 방향과 실제 이동 방향의 차이
+  // (trailDeviationDeg)"에 따라 달라진다. GPX 궤적 자체가 "이 구간은
+  // 대략 어느 방향이어야 하는지"를 이미 알려주므로, 이걸 기준 삼으면
+  // GPS 노이즈로 인한 미세한 흔들림과 실제 방향 전환을 자연히 구분할 수
+  // 있다: 궤적과 거의 같은 방향이면(=노이즈일 가능성이 높으면) 천천히,
+  // 궤적에서 크게 벗어나면(=갈림길이나 실제 방향 전환일 가능성이 높으면)
+  // 빠르게 돈다.
   function startHeadingAnimationLoop() {
     if (headingAnimRunning) return;
     headingAnimRunning = true;
 
-    // 초당 최대 회전 속도(도). 사람이 걷다가 방향을 90도 트는 정도의
-    // 변화를 약 0.3~0.4초 안에 따라잡을 만큼 빠르면서도, 순간 튐이
-    // 화면에서 뚝 끊기지 않고 눈에 보이는 회전으로 느껴지는 값이다.
-    const MAX_DEG_PER_SEC = 270;
+    // 궤적 이탈 각도에 따른 최대 회전 속도(초당 도).
+    // 15도 미만 이탈: 궤적과 거의 일치 → 노이즈일 가능성이 높으므로 천천히.
+    // 15~45도: 완만한 커브 정도 → 중간 속도.
+    // 45도 이상: 갈림길/방향 전환/역주행 가능성 → 빠르게 반응.
+    const MIN_DEG_PER_SEC = 60;
+    const MAX_DEG_PER_SEC = 320;
     // 목표와의 차이가 이 값 이하로 좁혀지면 그 프레임에서 바로 스냅하고
     // 루프를 멈춘다 — 계속 미세하게 수렴만 하다 안 멈추는 것을 방지.
     const SNAP_THRESHOLD = 0.05;
@@ -709,8 +726,12 @@
       const dtSec = Math.min((ts - lastTs) / 1000, 0.1); // 탭 전환 등으로 큰 델타가 생기는 것 방지
       lastTs = ts;
 
+      // 궤적 이탈 각도(0~180)를 0~1로 정규화해 회전 속도를 선형 보간한다.
+      const deviationRatio = Math.min(Math.abs(trailDeviationDeg), 90) / 90;
+      const degPerSec = MIN_DEG_PER_SEC + (MAX_DEG_PER_SEC - MIN_DEG_PER_SEC) * deviationRatio;
+
       const diff = continuousHeading - displayedRot;
-      const maxStep = MAX_DEG_PER_SEC * dtSec;
+      const maxStep = degPerSec * dtSec;
 
       if (Math.abs(diff) <= Math.max(SNAP_THRESHOLD, maxStep)) {
         displayedRot = continuousHeading;
@@ -1953,6 +1974,20 @@
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
+
+          // 궤적(GPX) 예정 방향 — 내 위치에서 궤적을 따라 20m 앞선 지점을
+          // 향하는 방향. 실제 GPS 이동 방향(result.bearing)과 이 값의
+          // 차이가 회전 애니메이션 속도를 결정한다(startHeadingAnimationLoop
+          // 참고): 궤적과 거의 같은 방향이면 노이즈일 가능성이 높아
+          // 천천히, 크게 벗어나면 실제 방향 전환일 가능성이 높아 빠르게.
+          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
+            const aheadForDeviation = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
+            if (aheadForDeviation) {
+              const trailExpectedBearing = calculateBearing(lat, lon, aheadForDeviation.lat, aheadForDeviation.lon);
+              trailDeviationDeg = shortestAngleDiff(result.bearing, trailExpectedBearing);
+            }
+          }
+
           applySmoothedHeading(result.bearing);
         } else if (result.isStopped) {
           // 멈추면 나침반(핸드폰이 향한 방향)이 아니라 GPX 궤적의 "정방향"
@@ -1965,6 +2000,9 @@
             const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 15);
             if (aheadPoint) {
               const trailBearing = calculateBearing(lat, lon, aheadPoint.lat, aheadPoint.lon);
+              // 정지 시 방향 고정은 궤적 자체를 그대로 따르는 것이므로
+              // "이탈"이 없다 — 빠르게 스냅되도록 이탈각을 최대로 설정한다.
+              trailDeviationDeg = 90;
               applySmoothedHeading(trailBearing);
             }
           }
