@@ -626,6 +626,10 @@
   let showHeadingArrow = false; // 🧭 방향 화살표(시야각 빔) 표시 여부 — GPS 1클릭째는 숨기고, 2클릭째부터 표시
   let smoothedHeading = null;
   let continuousHeading = 0;   // 360도 경계 스핀 방지용 연속 각도
+  // --- 정지 시 자이로(상대 회전) 추적용 상태 ---
+  let stopBaseHeading = null;      // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
+  let lastOrientationAlpha = null; // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
+  let gyroRelativeRotation = 0;    // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
@@ -634,7 +638,7 @@
   function shortestAngleDiff(target, current) {
     let diff = (target - current) % 360;
     if (diff < -180) diff += 360;
-    if (diff > 180) diff -= 360;
+    if (diff > 180) diff += 360;
     return diff;
   }
 
@@ -643,9 +647,9 @@
   // 건물·자동차·손 안의 금속 등 자기장 교란에 취약해서, 3D 틸트 보정
   // 같은 복잡한 계산을 얹어도 "정면으로 향한 건물이 화면 위쪽과 안 맞는"
   // 문제가 계속 생겼다 — 반면 GPS 이동 방향은 자기장과 무관해 훨씬
-  // 안정적이다. 나침반은 멈춰 서 있어서 GPS로 방향을 알 수 없을 때만
-  // 보조로 쓰고, 그때도 복잡한 회전행렬 보정 없이 alpha 값을 그대로 쓴다
-  // (표준 스펙상 alpha 자체가 이미 "북쪽에서 얼마나 돌았는지"다).
+  // 안정적이다. 정지 시에도 지자기 절대값(alpha)은 쓰지 않고, 정지 진입
+  // 순간의 궤적 방향을 기준점으로 잡은 뒤 alpha의 변화량(delta)만
+  // 자이로처럼 상대적으로 누적해 폰을 돌린 만큼만 화면을 회전시킨다.
 
   // GpsFilterEngine이 이미 방위각 히스테리시스(15도 미만 변화 무시)를
   // 적용한 값을 넘겨주므로, 여기서는 복잡한 적응형 게인 없이 화면 회전값
@@ -769,16 +773,26 @@
     }
   }
 
-  // 나침반(지자기 센서)은 사용하지 않는다.
-  // 실제 확인 결과, 스마트폰 지자기 센서는 사용자가 "8자 모양으로 흔들어
-  // 보정"하는 절차 없이는 신뢰할 수 없고, 실제 등산 내비게이션 앱들도
-  // 정지 시 나침반이 아니라 GPS 트랙(GPX 궤적) 기반으로 방향을 잡는
-  // 방식을 쓴다. 나침반을 정지 시 우선 사용하도록 두 차례 시도했으나
-  // 둘 다 실측에서 "엉뚱한 방향"으로 확인되어 폐기한다. 정지 시 방향은
-  // GPS watchPosition 콜백(정지 분기)에서 궤적 기반으로 직접 계산해
-  // 고정한다 — handleOrientation은 그래서 아무 것도 하지 않는다.
+  // 정지 시에는 alpha의 절대값(지자기 나침반)을 쓰지 않는다 — 그건 두 차례
+  // 시도 후 폐기됐다. 대신 정지 진입 순간의 trailBearing을 기준점으로 잡고,
+  // 이후 alpha의 변화량(delta)만 자이로처럼 누적해 상대 회전만 반영한다.
+  // 이렇게 하면 자기장 절대 오차와 무관하게, 폰을 돌린 만큼만 화면이 따라 돈다.
   function handleOrientation(e) {
-    // 의도적으로 비활성화됨 — 위 주석 참고.
+    if (e.alpha === null || isNaN(e.alpha)) return;
+
+    if (lastOrientationAlpha === null) {
+      lastOrientationAlpha = e.alpha;
+      return; // 첫 이벤트는 기준점만 잡고, 회전량 계산은 다음 이벤트부터
+    }
+
+    const delta = shortestAngleDiff(e.alpha, lastOrientationAlpha);
+    lastOrientationAlpha = e.alpha;
+
+    // 이동 중이거나 아직 정지 기준점이 없으면(스냅샷 전) 화면에 반영하지 않는다.
+    if (!isCurrentlyStopped || stopBaseHeading === null) return;
+
+    gyroRelativeRotation += delta;
+    applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
   }
 
   function initCompass() {
@@ -1996,6 +2010,7 @@
           return;
         }
 
+        const wasStoppedBeforeThisFix = isCurrentlyStopped; // 전환 감지용 — 이번 픽스로 덮어쓰기 전 스냅샷
         isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태
 
         // 왕복 겹침 구간에서 순방향/역방향 세그먼트를 구분할 때 쓸 최신
@@ -2025,6 +2040,14 @@
         // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
         // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
         if (!result.isStopped && result.bearing !== null) {
+          // 이동 재개 — 자이로 상대 회전 추적 상태를 정리해 다음 정지 시 새로
+          // 스냅샷하게 한다. 리스너 자체는 끄지 않는다(다음 정지 시 어차피 새로
+          // 스냅샷하므로 득이 없고, on/off를 반복하면 iOS 권한 재확인 관련
+          // 복잡성만 늘어난다).
+          stopBaseHeading = null;
+          gyroRelativeRotation = 0;
+          lastOrientationAlpha = null;
+
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
 
@@ -2071,7 +2094,18 @@
               // 정지 시 방향 고정은 궤적 자체를 그대로 따르는 것이므로
               // "이탈"이 없다 — 빠르게 스냅되도록 이탈각을 최대로 설정한다.
               trailDeviationDeg = 90;
-              applySmoothedHeading(trailBearing);
+
+              // 정지 상태로 막 전환된 순간에만 이 trailBearing을 자이로 회전의
+              // 기준점(0도 오프셋)으로 스냅샷한다. 정지가 유지되는 동안 매 GPS
+              // 픽스마다 다시 스냅샷하면 안 된다 — 사용자가 돌려놓은 화면이 계속
+              // 지워지고 궤적 방향으로 되돌아가 버린다. 정지 유지 중의 화면 갱신은
+              // handleOrientation(자이로 상대 회전)에만 맡긴다.
+              if (!wasStoppedBeforeThisFix) {
+                stopBaseHeading = trailBearing;
+                gyroRelativeRotation = 0;
+                lastOrientationAlpha = null; // 다음 deviceorientation 이벤트에서 새 기준 alpha를 잡게 함
+                applySmoothedHeading(trailBearing);
+              }
             }
           }
         }
