@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260908_stopofftrail_fix1';
+      const APP_BUILD = 'v20260908_bearing_origin_fix1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1787,9 +1787,16 @@
       // 지그재그 구간 오안내 방지 — 인덱스 기준(다음 5개 포인트)이 아니라
       // 궤적을 따라 실제 20m 앞선 좌표를 찾아 그 방향을 안내한다.
       // (정지 시 화면 고정, 이탈각 계산과 기준 거리를 20m로 통일했다.)
+      //
+      // 방향 계산 시작점은 내 실제 위치(lastKnownPos)가 아니라 궤적 위
+      // 가장 가까운 지점(nearestPoint)이어야 한다 — 이탈 거리가 클수록
+      // 내 실제 위치를 시작점으로 쓰면 방향에 "복귀 성분"이 섞여
+      // 엉뚱한 대각선 방향이 나오는 문제가 있었다(정지 시 로직과 동일한
+      // 원인). nearestPoint 기준으로 계산해야 순수하게 "궤적을 따라가는
+      // 방향"만 나온다.
       const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
-      const trailBearing = aheadPoint
-        ? calculateBearing(lastKnownPos.lat, lastKnownPos.lon, aheadPoint.lat, aheadPoint.lon)
+      const trailBearing = (aheadPoint && nearestPoint)
+        ? calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon)
         : calculateBearing(
             currentPoints[nearestIdx].lat, currentPoints[nearestIdx].lon,
             currentPoints[Math.min(nearestIdx + 5, currentPoints.length - 1)].lat,
@@ -2044,20 +2051,23 @@
           // 역방향으로 걷다가 멈추면 이 순간 바로 지도가 홱 돌아서(화살표도
           // 그쪽을 가리켜서) "반대로 가고 있었다"는 걸 즉시 알 수 있다.
           //
-          // ⚠️ 이탈 상태(궤적에서 35m 이상 벗어난 상태)에서는 "궤적을 따라
-          // 20m 앞" 방향이 아니라 "궤적으로 되돌아가는 방향"을 보여줘야
-          // 한다. 이 구분이 없으면 많이 벗어난 상태에서 엉뚱한 방향(복귀
-          // 방향과 진행 방향이 뒤섞인 값)이 나오는 문제가 있었다.
-          if (isOffTrailState && nearestPoint) {
-            // 이탈 상태 — 궤적(가장 가까운 지점)으로 되돌아가는 방향
-            const backToTrailBearing = calculateBearing(lat, lon, nearestPoint.lat, nearestPoint.lon);
-            trailDeviationDeg = 90;
-            applySmoothedHeading(backToTrailBearing);
-          } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
-            // 정상 궤적 위 — 궤적을 따라 20m 앞 진행 방향
+          // ⚠️ 이탈 상태에서도 "가장 가까운 지점으로 직선 복귀" 방향을
+          // 쓰면 안 된다 — 그 직선상에 절벽·계곡 등 위험 지형이 있을 수
+          // 있다. 실제로 안전한 길은 GPX가 그려놓은 경로 자체이므로,
+          // 이탈 여부와 무관하게 항상 "궤적을 따라 20m 앞" 진행 방향만
+          // 가리킨다. 이탈했다는 사실 자체는 별도 텍스트/경고음으로
+          // 안내한다(updateNavigationToast).
+          //
+          // 방향 계산의 시작점은 "내 실제 위치(lat, lon)"가 아니라
+          // "궤적 위 가장 가까운 지점(nearestPoint)"이어야 한다. 이탈
+          // 거리가 클수록(예: 89m) 내 실제 위치를 시작점으로 쓰면 방향에
+          // "궤적으로 복귀하는 성분"이 섞여 들어가 엉뚱한 대각선 방향이
+          // 나온다 — nearestPoint를 시작점으로 하면 순수하게 "궤적을
+          // 따라가는 방향"만 계산된다.
+          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1 && nearestPoint) {
             const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
             if (aheadPoint) {
-              const trailBearing = calculateBearing(lat, lon, aheadPoint.lat, aheadPoint.lon);
+              const trailBearing = calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon);
               // 정지 시 방향 고정은 궤적 자체를 그대로 따르는 것이므로
               // "이탈"이 없다 — 빠르게 스냅되도록 이탈각을 최대로 설정한다.
               trailDeviationDeg = 90;
