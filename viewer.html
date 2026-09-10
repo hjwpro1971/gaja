@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_hybrid_5m1';
+      const APP_BUILD = 'v20260909_improvements_1to5';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -204,7 +204,18 @@
       padding: 8px 18px; font-size: 13px; font-weight: 700; color: #1b5e20;
       text-align: center; white-space: normal; display: none; pointer-events: none;
     }
-    .gps-toast.warning { background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c; }
+    .gps-toast.warning {
+      background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c;
+      /* 개선 4: 소리(playOffTrailBeep)나 진동이 기기 설정·브라우저 정책
+         등으로 조용히 실패해도, 화면을 봤을 때만큼은 이탈 상태를 확실히
+         알아챌 수 있도록 배경색이 깜빡이는 애니메이션을 추가한다. 소리에만
+         의존하지 않는 이중 안전장치다. */
+      animation: offTrailPulse 1s ease-in-out infinite;
+    }
+    @keyframes offTrailPulse {
+      0%, 100% { background: #ffcdd2; }
+      50% { background: #ef9a9a; }
+    }
 
     /* 현재 내 위치 GPS 펄스 및 나아갈 방향 빔 스타일 */
     .custom-gps-icon {
@@ -667,6 +678,7 @@
   let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
   let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
+  let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
@@ -957,8 +969,19 @@
       });
 
       // 소리를 못 듣는 상황(바람, 주머니 속) 대비 진동 동시 발생
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-    } catch (e) {}
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      } else {
+        console.warn('⚠️ 이 기기/브라우저는 진동(vibrate)을 지원하지 않습니다 — 소리와 화면 깜빡임에만 의존합니다.');
+      }
+    } catch (e) {
+      // 개선 4: 오디오 재생이 실패해도(브라우저 정책, AudioContext 문제 등)
+      // 완전히 조용히 넘어가지 않는다. 소리/진동 둘 다 실패하면 사용자가
+      // 이탈 사실 자체를 놓칠 위험이 있으므로, 최소한 콘솔에 원인을 남겨
+      // 문제 파악이 가능하게 하고 진동으로라도 한 번 더 시도한다.
+      console.warn('⚠️ 이탈 경고음 재생 실패:', e);
+      try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e2) {}
+    }
   }
 
   // 궤적 복귀 시 연속 카운터 초기화 — 재이탈하면 다시 15초부터 시작
@@ -1057,19 +1080,35 @@
     });
 
     // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
-    // 있게 한다. 길찾기 회전 모드에서는 GPS 픽스가 들어올 때마다(약 1초
-    // 간격) 화면 중심을 내 위치로 강제로 되돌리는 로직이 있어(watchPosition
-    // 콜백) 그동안은 드래그해도 곧바로 원위치로 튕겨 마치 드래그가 안
-    // 되는 것처럼 보였다. 드래그 중에는 그 강제 복귀를 잠시 멈추고,
-    // 손가락을 떼는 순간(dragend) 바로 다시 내 위치로 되돌린다.
+    // 있게 한다.
+    // 개선 2: 이전에는 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시켰는데,
+    // 이러면 다른 지역을 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와
+    // "드래그가 안 되는 것"처럼 느껴지는 문제가 있었다. 손을 뗀 뒤에도
+    // 일정 시간(7초)은 그 자리에 머물게 두고, 그 시간이 지나야 자동으로
+    // 내 위치로 복귀한다. 유예 시간 중 다시 드래그하면 타이머를 리셋해
+    // 계속 둘러보고 싶어하는 경우를 배려한다.
+    const DRAG_RETURN_DELAY_MS = 7000;
+    let dragReturnTimer = null;
+
     map.on('dragstart', () => {
       isMapBeingDragged = true;
+      isMapDragReturnPending = false;
+      if (dragReturnTimer) {
+        clearTimeout(dragReturnTimer);
+        dragReturnTimer = null;
+      }
     });
     map.on('dragend', () => {
       isMapBeingDragged = false;
-      if (isHeadingUp && lastKnownPos) {
-        map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
-      }
+      isMapDragReturnPending = true;
+      if (dragReturnTimer) clearTimeout(dragReturnTimer);
+      dragReturnTimer = setTimeout(() => {
+        dragReturnTimer = null;
+        isMapDragReturnPending = false;
+        if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
+          map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+        }
+      }, DRAG_RETURN_DELAY_MS);
     });
 
     // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
@@ -1077,7 +1116,20 @@
   }
 
   function switchLayer(type) {
-    if (currentLayer) map.removeLayer(currentLayer);
+    // 개선 3: 레이어를 지도에서 제거(removeLayer)하는 것만으로는 그
+    // 타일레이어 객체와 내부에 쌓인 타일 참조가 완전히 정리되지 않아
+    // 지도 종류를 자주 바꿔가며 오래 쓰면 메모리 사용량이 점점 늘어날
+    // 수 있다. clearLayers()로 내부 타일 캐시를 명시적으로 비우고
+    // null로 참조를 끊어 가비지 컬렉션이 확실히 회수하게 한다.
+    // (브라우저 자체의 HTTP 캐시는 웹앱이 직접 지울 수 없는 영역이라
+    // 이 범위 밖이며, 반복 방문 시 타일 로딩 속도를 오히려 높여준다.)
+    if (currentLayer) {
+      map.removeLayer(currentLayer);
+      if (typeof currentLayer.clearLayers === 'function') {
+        currentLayer.clearLayers();
+      }
+      currentLayer = null;
+    }
 
     const layerItems = document.querySelectorAll('.layer-item');
     layerItems.forEach(el => el.classList.remove('selected'));
@@ -1349,7 +1401,7 @@
     const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
     if (!trkpts.length) throw new Error('트랙 좌표를 찾을 수 없습니다.');
 
-    return trkpts.map(pt => {
+    const points = trkpts.map(pt => {
       const lat = parseFloat(pt.getAttribute('lat'));
       const lon = parseFloat(pt.getAttribute('lon'));
       const eleEl = pt.getElementsByTagName('ele')[0];
@@ -1358,6 +1410,46 @@
       const time = timeEl ? new Date(timeEl.textContent) : null;
       return { lat, lon, ele, time };
     }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+    return removeGpxSpikes(points);
+  }
+
+  // 개선 5: GPX 파일 자체에 기록 당시 GPS 오차로 생긴 "스파이크"(실제
+  // 등산로는 완만한데 좌표 하나가 뾰족하게 튀어나온 지점)를 걸러낸다.
+  // 이런 스파이크는 실시간 GPS 노이즈와 달리 파일에 이미 박제되어 있어
+  // 매번 그 지점을 지날 때마다 방향 계산이 똑같이 틀어지는 원인이었다.
+  //
+  // 판정 기준: 연속된 세 점(A-B-C)에서 A→B 방향과 B→C 방향이 급격히
+  // 꺾이면서(150도 이상, 거의 되돌아오는 수준) 동시에 B가 A-C 직선에서
+  // 비정상적으로 멀리 떨어져 있으면(스파이크 폭 대비 A-C 거리가 매우
+  // 짧음) 스파이크로 간주해 B를 제거한다. 실제 등산로의 급한 코너(정상,
+  // 갈림길 등)는 A-C 거리 자체가 어느 정도 되므로 이 조건에 잘 안 걸린다.
+  function removeGpxSpikes(points) {
+    if (!points || points.length < 3) return points;
+
+    const SPIKE_ANGLE_THRESHOLD = 150; // 이 각도(deg) 이상 급격히 꺾이면 의심
+    const SPIKE_MAX_AC_DIST_M = 15;    // A-C 거리가 이보다 짧으면 "제자리에서 튄" 스파이크로 판정
+
+    const result = [points[0]];
+    for (let i = 1; i < points.length - 1; i++) {
+      const a = result[result.length - 1];
+      const b = points[i];
+      const c = points[i + 1];
+
+      const bearingAB = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+      const bearingBC = calculateBearing(b.lat, b.lon, c.lat, c.lon);
+      const turnAngle = Math.abs(shortestAngleDiff(bearingBC, bearingAB));
+      const distAC = haversineMeters(a.lat, a.lon, c.lat, c.lon);
+
+      const isSpike = turnAngle >= SPIKE_ANGLE_THRESHOLD && distAC <= SPIKE_MAX_AC_DIST_M;
+      if (isSpike) {
+        console.warn(`⚠️ GPX 스파이크 감지 및 제거: 인덱스 ${i}, 꺾인각 ${turnAngle.toFixed(1)}°, A-C거리 ${distAC.toFixed(1)}m`);
+        continue; // b를 건너뛰고 result에 넣지 않음
+      }
+      result.push(b);
+    }
+    result.push(points[points.length - 1]);
+    return result;
   }
 
   // 산에서 여러 코스를 오프라인으로 골라볼 수 있도록 배열로 보관하되,
@@ -1894,27 +1986,10 @@
         playOffTrailBeep();
       }
     } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
-      // 지그재그 구간 오안내 방지 — 인덱스 기준(다음 5개 포인트)이 아니라
-      // 궤적을 따라 실제 20m 앞선 좌표를 찾아 그 방향을 안내한다.
-      // (정지 시 화면 고정, 이탈각 계산과 기준 거리를 20m로 통일했다.)
-      //
-      // 방향 계산 시작점은 내 실제 위치(lastKnownPos)가 아니라 궤적 위
-      // 가장 가까운 지점(nearestPoint)이어야 한다 — 이탈 거리가 클수록
-      // 내 실제 위치를 시작점으로 쓰면 방향에 "복귀 성분"이 섞여
-      // 엉뚱한 대각선 방향이 나오는 문제가 있었다(정지 시 로직과 동일한
-      // 원인). nearestPoint 기준으로 계산해야 순수하게 "궤적을 따라가는
-      // 방향"만 나온다.
-      const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
-      const trailBearing = (aheadPoint && nearestPoint)
-        ? calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon)
-        : calculateBearing(
-            currentPoints[nearestIdx].lat, currentPoints[nearestIdx].lon,
-            currentPoints[Math.min(nearestIdx + 5, currentPoints.length - 1)].lat,
-            currentPoints[Math.min(nearestIdx + 5, currentPoints.length - 1)].lon
-          );
-      // 정지 중에는 gpsMovementHeading이 마지막 이동 시점의 오래된 값이라
-      // 역주행/정상 판정을 하면 오탐할 수 있다. 정지 상태에서는 방향
-      // 판정 대신 "정지 중" 안내만 표시한다.
+      // 정지 중에는 "정지 중" 안내만, 이동 중에는 남은 거리만 표시한다.
+      // (이전에는 여기서 궤적 방향과 실제 이동 방향을 비교해 역주행 여부를
+      // 판정했으나, 개선 1로 그 판정 자체를 제거했다 — 녹색 점선과 이탈
+      // 경고가 이미 필요한 안내를 제공하므로 더 이상 계산할 필요가 없다.)
       if (isCurrentlyStopped) {
         toast.className = 'gps-toast';
         toast.innerText = `🧭 정지 중 · 남은 ${(() => {
@@ -1926,15 +2001,6 @@
         return;
       }
 
-      // 역주행/정상 판정은 화면에 표시되는 회전각(currentHeading, 스무딩을
-      // 거친 값)이 아니라, GPS가 실제로 계산한 최신 이동 방향
-      // (gpsMovementHeading, 원본값)을 궤적 방향과 직접 비교해야 정확하다.
-      // currentHeading은 애니메이션 보간과 정지 시 나침반 값까지 섞여
-      // 들어가므로, 순수하게 "지금 실제로 걷고 있는 방향"과는 어긋날 수
-      // 있어 역주행 오탐/미탐의 원인이 되었다.
-      const headingForDirectionCheck = gpsMovementHeading !== null ? gpsMovementHeading : currentHeading;
-      const angleDiff = shortestAngleDiff(trailBearing, headingForDirectionCheck);
-
       // 남은 거리 (전체 누적거리 대비 현재 위치까지의 거리)
       const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
       const traveledDist = cumulativeDistances[nearestIdx] || 0;
@@ -1943,16 +2009,14 @@
         ? `${(remainingDist / 1000).toFixed(1)}km`
         : `${Math.round(remainingDist)}m`;
 
-      if (Math.abs(angleDiff) > 125) {
-        // 역주행 감지 (산길을 반대로 걷고 있을 때 경고)
-        toast.className = 'gps-toast warning';
-        toast.innerText = `⚠️ [반대방향] 반대로 걷고 있어요 · 남은 ${remainingStr}`;
-      } else {
-        // 길찾기 회전 모드에서는 화면 위쪽이 항상 진행방향이므로
-        // 자연어 방향 안내 + 남은 거리만 보여준다.
-        toast.className = 'gps-toast';
-        toast.innerText = `[정상] ${angleDiffToPlainKorean(angleDiff)} · 남은 ${remainingStr}`;
-      }
+      // 개선 1: 역방향/정방향 텍스트 판정을 제거했다. 왕복 코스에서
+      // "올 때" 걷는 정상적인 상황과 실제 이탈 상황을 구분하지 못해
+      // 혼란을 유발했고, 이미 녹색 점선(궤적 복귀 가이드)과 이탈 경고
+      // (거리+소리+진동)가 실질적으로 필요한 안내를 다 제공하고 있어
+      // 부가가치가 낮았다. 길찾기 회전 모드에서는 화면 위쪽이 항상
+      // 진행방향이므로 남은 거리만 안내한다.
+      toast.className = 'gps-toast';
+      toast.innerText = `🧭 위쪽으로 따라가세요 · 남은 ${remainingStr}`;
     } else {
       toast.className = 'gps-toast';
       toast.innerText = `🧭 위쪽으로 따라가세요`;
@@ -2235,12 +2299,13 @@
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {
             map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
-          } else if (isHeadingUp && !isMapBeingDragged) {
+          } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
             // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정.
-            // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중에는
-            // GPS 픽스(약 1초 간격)가 화면을 곧바로 원위치로 튕겨버려
-            // 드래그 자체가 안 되는 것처럼 보이므로, 드래그 중엔 이 강제
-            // 복귀를 건너뛴다 — 손을 떼면 dragend 핸들러가 즉시 복귀시킨다.
+            // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중이거나
+            // (isMapBeingDragged) 손을 뗀 뒤 자동 복귀 유예 시간 중에는
+            // (isMapDragReturnPending) GPS 픽스(약 1초 간격)가 화면을 곧바로
+            // 원위치로 튕겨버리는 것을 막는다 — 유예 시간이 지나면
+            // dragend 핸들러의 타이머가 알아서 복귀시킨다.
             map.setView([lat, lon], map.getZoom(), { animate: false });
           }
         }
