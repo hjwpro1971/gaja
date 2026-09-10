@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_improvements_1to5';
+      const APP_BUILD = 'v20260909_drag_freeze_rotation1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -808,12 +808,24 @@
     // CSS의 translate(-50%, -50%)를 항상 함께 유지해야 한다 — rotate만
     // 단독으로 넣으면 transform이 통째로 교체되면서 중앙 고정이 풀려
     // 지도가 화면 밖으로 밀려나거나 한쪽으로 쏠려 보이게 된다.
+    //
+    // ⚠️ 드래그 중(isMapBeingDragged) 또는 손을 뗀 뒤 자동 복귀 유예 시간
+    // 중(isMapDragReturnPending)에는 지도 회전을 반영하지 않는다.
+    // Leaflet의 드래그 기능은 화면 좌표와 지도 내부 좌표계가 일치한다는
+    // 전제로 동작하는데, 지도가 CSS로 회전된 상태에서 드래그하면 사용자가
+    // 끈 방향과 실제 이동하는 지도 영역이 어긋나 엉뚱하게 느껴지는 문제가
+    // 있었다. 드래그 시작 시점의 회전각에서 그대로 "동결"시켜두면 그 동안은
+    // 화면과 Leaflet 좌표계가 일치해 드래그가 직관적으로 맞게 작동하고,
+    // 유예 시간 중에도 사용자가 살펴보던 화면이 갑자기 돌아가지 않는다.
+    // continuousHeading 자체는 내부적으로 계속 갱신되므로(updateHeadingDisplay가
+    // 계속 호출됨), 유예 시간이 끝나 복귀할 때는 최신 방향으로 바로 돈다.
     const mapEl = document.getElementById('map');
-    if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up')) {
+    if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up') && !isMapBeingDragged && !isMapDragReturnPending) {
       mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
     }
 
-    // 2. 내 위치 마커 화살표
+    // 2. 내 위치 마커 화살표 — 지도 좌표계와 무관한 화면 요소이므로
+    // 드래그 중에도 계속 실제 방향을 정확히 반영해도 무방하다.
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
       // 길찾기 회전 모드: 지도가 -continuousRot 만큼 돌고 있으므로, 화살표가 continuousRot 회전하여
@@ -1107,6 +1119,7 @@
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          renderHeadingRotation(displayedRot); // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀
         }
       }, DRAG_RETURN_DELAY_MS);
     });
