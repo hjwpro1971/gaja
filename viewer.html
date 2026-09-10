@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_auto_gps_home_icon1';
+      const APP_BUILD = 'v20260909_stopbase_movingdir1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2181,22 +2181,29 @@
             const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
             if (aheadPoint) {
               const trailBearing = calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon);
-              // 정지 시 방향 고정은 궤적 자체를 그대로 따르는 것이므로
-              // "이탈"이 없다 — 빠르게 스냅되도록 이탈각을 최대로 설정한다.
               trailDeviationDeg = 90;
               latestStopTrailBearing = trailBearing; // 장시간 드리프트 재정렬이 참조할 최신 궤적 방향 — 매 픽스마다 갱신
 
-              // 정지 상태로 막 전환된 순간에만 이 trailBearing을 자이로 회전의
-              // 기준점(0도 오프셋)으로 스냅샷한다. 정지가 유지되는 동안 매 GPS
-              // 픽스마다 다시 스냅샷하면 안 된다 — 사용자가 돌려놓은 화면이 계속
-              // 지워지고 궤적 방향으로 되돌아가 버린다. 정지 유지 중의 화면 갱신은
-              // handleOrientation(자이로 상대 회전)에만 맡긴다.
+              // 정지 상태로 막 전환된 순간에만 기준점(0도 오프셋)을 스냅샷한다.
+              // ⚠️ 기준점은 GPX 궤적 방향(trailBearing)이 아니라 "정지 직전까지
+              // 실제로 걷던 방향(currentHeading)"으로 잡아야 한다. GPX 궤적
+              // 방향과 실제 이동 방향은 GPX 오차·지그재그 보행 등으로 미세하게
+              // 다를 수 있는데, 궤적 방향을 기준으로 스냅샷하면 정지하는
+              // 순간 그 차이만큼 화면이 갑자기 홱 틀어지는 문제가 있었다.
+              // 실제 걷던 방향을 그대로 이어받으면 "가만히 서 있는데 화면이
+              // 제멋대로 바뀌는" 현상 없이, 이후 자이로(핸드폰 회전)만
+              // 반영되어 자연스럽다.
               if (!wasStoppedBeforeThisFix) {
-                stopBaseHeading = trailBearing;
+                // currentHeading이 아직 없으면(GPS를 켜자마자 걷지도 않고
+                // 바로 정지 상태로 시작한 경우) 기준으로 삼을 실제 이동
+                // 방향이 없으므로, 이때만 예외적으로 GPX 궤적 방향을 쓴다.
+                stopBaseHeading = currentHeading !== null ? currentHeading : trailBearing;
                 gyroRelativeRotation = 0;
                 lastOrientationAlpha = null; // 다음 deviceorientation 이벤트에서 새 기준 alpha를 잡게 함
                 stopEnteredAt = Date.now();
-                applySmoothedHeading(trailBearing);
+                if (currentHeading === null) {
+                  applySmoothedHeading(trailBearing); // 화면에 표시할 초기값 자체가 없으므로 이번만 반영
+                }
               }
             }
           }
