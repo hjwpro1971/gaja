@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_gyro_sign_fix1';
+      const APP_BUILD = 'v20260909_hybrid_5m1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -504,7 +504,10 @@
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
         MIN_INTERVAL_MS: 400,    // 최소 수신 간격
-        MIN_DISTANCE: 4.0,       // 이전 확정점 대비 최소 이동 인정 거리(m)
+        MIN_DISTANCE: 5.0,       // 이전 확정점 대비 최소 이동 인정 거리(m).
+                                 // 이 값이 자이로/GPS 방향 판단의 경계선이다:
+                                 // 5m 미만 이동(또는 정지)은 자이로가, 5m 이상
+                                 // 확정 이동은 GPS 이동 방향이 화면 회전을 담당한다.
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
         // 회전 반응이 느렸던 진짜 원인은 이동평균(WINDOW_SIZE)이었다.
         // 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어 새
