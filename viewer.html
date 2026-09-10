@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_stopbase_movingdir1';
+      const APP_BUILD = 'v20260909_gyro_sign_fix1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -847,7 +847,12 @@
       stopEnteredAt = Date.now(); // 재정렬 시각 갱신 — 반복 재정렬 방지
     }
 
-    gyroRelativeRotation += delta;
+    // e.alpha는 표준상 반시계 방향이 증가(시계 방향으로 돌리면 alpha는
+    // 감소)인데, 화면 회전(stopBaseHeading/continuousHeading)은 시계
+    // 방향이 증가하는 나침반 방식이다. 이 방향 관례 차이 때문에 delta를
+    // 그대로 더하면 실제로 핸드폰을 돌린 방향과 반대로(좌우 반전) 화면이
+    // 도는 문제가 있었다 — 부호를 반전해 실제 회전 방향과 맞춘다.
+    gyroRelativeRotation -= delta;
     applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
 
     // 자이로가 실제로 화면을 움직이고 있음을 짧게 표시(0.6초 페이드)
