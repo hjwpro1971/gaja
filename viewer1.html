@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260910_manual_drag_rotation_fix1';
+      const APP_BUILD = 'v20260909_drag_freeze_rotation1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -934,15 +934,6 @@
       if (lastKnownPos) {
         map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       }
-      // 길찾기 모드를 끄면 화면의 CSS 회전(transform)은 위에서 이미
-      // 초기화했지만, 드래그 방향 보정에 쓰이는 displayedRot(및 계산의
-      // 근거가 되는 continuousHeading/smoothedHeading)은 그대로 남아있으면
-      // GPS가 꺼진 뒤 자유롭게 드래그할 때 moveManualMapDrag가 여전히
-      // "마지막 회전각" 기준으로 좌표를 보정해버려, 실제로는 회전 안 된
-      // 화면인데 드래그 방향이 엉뚱하게 틀어지는 버그가 있었다.
-      displayedRot = 0;
-      continuousHeading = 0;
-      smoothedHeading = null;
     }
     updateHeadingDisplay(currentHeading, continuousHeading);
   }
@@ -1077,8 +1068,7 @@
       center: [35.755, 127.674],
       zoom: 14,
       zoomControl: false,
-      maxZoom: 19,
-      dragging: false
+      maxZoom: 19
     });
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -1103,19 +1093,6 @@
 
     // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
     // 있게 한다.
-    // A안: 길찾기 회전 모드에서는 지도가 CSS로 회전되어 있어 Leaflet
-    // 기본 드래그(화면 좌표 = 지도 좌표 전제)를 그대로 쓰면 사용자가
-    // 끈 방향과 실제 이동 방향이 어긋난다. Leaflet 기본 드래그(위
-    // dragging: false)를 끄고, 화면에서의 이동량(dx, dy)을 현재 회전각
-    // 만큼 역회전시켜 map.panBy로 직접 넘기는 수동 드래그로 교체한다.
-    //
-    // 회전 부호는 한 곳에서만 결정한다: renderHeadingRotation()에서
-    // CSS는 rotate(-displayedRot)로 적용되므로, 화면이 실제로 돌아간
-    // 각도는 -displayedRot이다. 화면 이동량을 지도 좌표계로 되돌리려면
-    // 그 회전을 "역"으로 취소해야 하므로 +displayedRot만큼 회전시키면
-    // 된다 — 그래서 rotateDragDelta에는 displayedRot을 그대로 전달한다.
-    // (반전 후 다시 반전하는 이중 계산을 피해 이 한 곳에서만 부호를 결정한다.)
-    //
     // 개선 2: 이전에는 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시켰는데,
     // 이러면 다른 지역을 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와
     // "드래그가 안 되는 것"처럼 느껴지는 문제가 있었다. 손을 뗀 뒤에도
@@ -1125,52 +1102,15 @@
     const DRAG_RETURN_DELAY_MS = 7000;
     let dragReturnTimer = null;
 
-    let manualDragActive = false;
-    let manualDragLastX = 0;
-    let manualDragLastY = 0;
-
-    function rotateDragDelta(dx, dy, angleDeg) {
-      const rad = angleDeg * Math.PI / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      return {
-        x: dx * cos - dy * sin,
-        y: dx * sin + dy * cos
-      };
-    }
-
-    function startManualMapDrag(clientX, clientY) {
-      manualDragActive = true;
-      manualDragLastX = clientX;
-      manualDragLastY = clientY;
-
+    map.on('dragstart', () => {
       isMapBeingDragged = true;
       isMapDragReturnPending = false;
       if (dragReturnTimer) {
         clearTimeout(dragReturnTimer);
         dragReturnTimer = null;
       }
-    }
-
-    function moveManualMapDrag(clientX, clientY) {
-      if (!manualDragActive) return;
-
-      const dx = clientX - manualDragLastX;
-      const dy = clientY - manualDragLastY;
-      manualDragLastX = clientX;
-      manualDragLastY = clientY;
-      if (dx === 0 && dy === 0) return;
-
-      // 화면 회전각(displayedRot)만큼 역회전시켜 실제 지도 좌표계 기준
-      // 이동량으로 변환한다 — 부호 결정은 이 한 곳에서만 이뤄진다.
-      const corrected = rotateDragDelta(dx, dy, displayedRot);
-      map.panBy([-corrected.x, -corrected.y], { animate: false });
-    }
-
-    function endManualMapDrag() {
-      if (!manualDragActive) return;
-      manualDragActive = false;
-
+    });
+    map.on('dragend', () => {
       isMapBeingDragged = false;
       isMapDragReturnPending = true;
       if (dragReturnTimer) clearTimeout(dragReturnTimer);
@@ -1182,36 +1122,7 @@
           renderHeadingRotation(displayedRot); // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀
         }
       }, DRAG_RETURN_DELAY_MS);
-    }
-
-    const mapContainerEl = map.getContainer();
-
-    mapContainerEl.addEventListener('touchstart', (e) => {
-      if (e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      startManualMapDrag(touch.clientX, touch.clientY);
-    }, { passive: true });
-
-    mapContainerEl.addEventListener('touchmove', (e) => {
-      if (!manualDragActive || e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      moveManualMapDrag(touch.clientX, touch.clientY);
-      if (e.cancelable) e.preventDefault();
-    }, { passive: false });
-
-    mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
-    mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
-
-    // 데스크톱 테스트용 마우스 드래그 (스마트폰 앱이라 실사용 빈도는 낮지만 개발 확인용으로 유지)
-    mapContainerEl.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      startManualMapDrag(e.clientX, e.clientY);
     });
-    document.addEventListener('mousemove', (e) => {
-      if (!manualDragActive) return;
-      moveManualMapDrag(e.clientX, e.clientY);
-    });
-    document.addEventListener('mouseup', endManualMapDrag);
 
     // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
     switchLayer('terrain');
@@ -2224,7 +2135,6 @@
     // 회전하지 않는 것처럼 보이는 재현성 버그의 원인이 되었다.
     smoothedHeading = null;
     continuousHeading = 0;
-    displayedRot = 0;
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
 
