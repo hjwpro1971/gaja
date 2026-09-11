@@ -1535,6 +1535,24 @@
         list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f' });
       }
     }
+    
+    // 원점회귀 처리: 기존에 웨이포인트로 들어있든, 방금 자동으로 추가되었든
+    // 들머리와 날머리가 50m 이내로 매우 가깝다면 하나로 합쳐서 화면 겹침 방지
+    const startM = list.find(m => m.name.includes('들머리') || m.name.includes('출발'));
+    const endM = list.find(m => m.name.includes('날머리') || m.name.includes('도착'));
+    
+    if (startM && endM && startM !== endM) {
+      const dist = haversineMeters(startM.lat, startM.lon, endM.lat, endM.lon);
+      if (dist < 50) {
+        startM.name = '들·날머리 (원점회귀)';
+        startM.icon = '🔄';
+        startM.color = '#7b1fa2'; // 겹침 방지용 보라색 통합 마커
+        const endIdx = list.indexOf(endM);
+        if (endIdx > -1) {
+          list.splice(endIdx, 1);
+        }
+      }
+    }
 
     list.sort((a, b) => a.distanceM - b.distanceM);
     return list;

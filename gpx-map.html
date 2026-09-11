@@ -647,14 +647,24 @@ function drawRoute(points) {
     const endLL = new naver.maps.LatLng(end.lat, end.lon);
     
     const startItem = specialMarkersMap['start'];
-    startItem.name = startTrailName || '들머리';
     const endItem = specialMarkersMap['end'];
-    endItem.name = endTrailName || '날머리';
+    
+    // 원점회귀(50m 이내) 판정
+    const isRoundTrip = haversineKm(start, end) < 0.05;
 
-    // 들머리는 좌상단(1번 오프셋), 날머리는 우하단(2번 오프셋)으로 배치하여
-    // 원점회귀 코스에서도 들머리/날머리 라벨이 절대 겹치지 않게 분산
-    currentMarkers.push(makeCalloutMarker(startLL, '#2b6cb0', startItem.name, startItem, 1, 150));
-    currentMarkers.push(makeCalloutMarker(endLL, '#dd6b20', endItem.name, endItem, 2, 140));
+    if (isRoundTrip) {
+      startItem.name = '들·날머리 (원점회귀)';
+      // 날머리는 숨김 처리
+      endItem.deleted = true; 
+      currentMarkers.push(makeCalloutMarker(startLL, '#7b1fa2', startItem.name, startItem, 3, 150)); // 중앙 상단 보라색
+    } else {
+      startItem.name = startTrailName || '들머리';
+      endItem.name = endTrailName || '날머리';
+      currentMarkers.push(makeCalloutMarker(startLL, '#2b6cb0', startItem.name, startItem, 1, 150));
+      if (!endItem.deleted) {
+        currentMarkers.push(makeCalloutMarker(endLL, '#dd6b20', endItem.name, endItem, 2, 140));
+      }
+    }
 
     const withEle = points.filter(p => p.ele !== null);
     if (withEle.length && !specialMarkersMap['peak_top'].deleted) {
