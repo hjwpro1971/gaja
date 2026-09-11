@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260910_move_gyro_only1';
+      const APP_BUILD = 'v20260910_manual_drag_rotation_fix1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -677,14 +677,6 @@
   let stopEnteredAt = null;          // 정지 진입 시각(ms) — 장시간 드리프트 재정렬 판단용
   let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
   let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
-  // --- 이동 중 자이로(상대 회전) 보조 추적용 상태 ---
-  // 기준점(moveBaseHeading)은 정지 시 로직(stopBaseHeading 등)과 반드시
-  // 분리한다 — 이동 재개 시 정지용 변수는 null로 리셋되므로 같은 변수를
-  // 이동 중에도 쓰면 두 상태(정지/이동)의 생명주기가 뒤섞여 경계에서
-  // 오동작한다. 단 alpha 자체의 델타 계산(lastOrientationAlpha)은 정지든
-  // 이동이든 물리적으로 동일한 "직전 센서값 대비 변화량"이므로 공용으로 쓴다.
-  let moveBaseHeading = null;          // 최근 확정된 GPS bearing 기준점 — GPS가 새 방향을 낼 때마다 갱신
-  let moveGyroRelativeRotation = 0;    // moveBaseHeading 스냅샷 이후 누적된 상대 회전량(도)
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
   let lastToastUpdate = 0;
@@ -869,43 +861,26 @@
     if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return; // 손떨림 수준의 미세 흔들림 무시
     lastOrientationAlpha = e.alpha;
 
-    // e.alpha는 표준상 반시계 방향이 증가(시계 방향으로 돌리면 alpha는
-    // 감소)인데, 화면 회전(continuousHeading)은 시계 방향이 증가하는
-    // 나침반 방식이다. 이 방향 관례 차이 때문에 delta를 그대로 더하면
-    // 실제로 핸드폰을 돌린 방향과 반대로(좌우 반전) 화면이 도는 문제가
-    // 있었다 — 부호를 반전해 실제 회전 방향과 맞춘다. 정지/이동 두 분기
-    // 모두 반드시 이 동일한 부호로 뺀다(반대로 하면 "반대로 도는" 사고 재현).
-    if (isCurrentlyStopped) {
-      if (stopBaseHeading === null) return;
+    // 이동 중이거나 아직 정지 기준점이 없으면(스냅샷 전) 화면에 반영하지 않는다.
+    if (!isCurrentlyStopped || stopBaseHeading === null) return;
 
-      // 장시간 정지 드리프트 재정렬: 기준점을 최신 궤적 방향으로 되돌리고
-      // 상대 회전 누적을 0으로 리셋한다. 재정렬 순간 목표각이 바뀌므로,
-      // 기존 회전 애니메이션 루프(startHeadingAnimationLoop)가 그 차이를
-      // 자동으로 부드럽게 보간해 "스르륵" 되돌아가는 효과가 자연히 생긴다.
-      if (stopEnteredAt !== null && (Date.now() - stopEnteredAt) > STOP_REALIGN_MS && latestStopTrailBearing !== null) {
-        stopBaseHeading = latestStopTrailBearing;
-        gyroRelativeRotation = 0;
-        stopEnteredAt = Date.now(); // 재정렬 시각 갱신 — 반복 재정렬 방지
-      }
-
-      gyroRelativeRotation -= delta;
-      applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
-    } else {
-      // 이동 중 자이로 보조 — GPS 이동방향(bearing)이 아직 새로 안 들어온
-      // 순간에도 핸드폰을 돌리면 화면이 즉시 따라 돌게 한다. moveBaseHeading은
-      // watchPosition 콜백이 새 GPS bearing을 확정할 때마다 그 값으로
-      // 갱신되므로(픽스 간격 약 1초 이내), 자이로는 그 사이 구간만
-      // 메워주는 보조 역할이다. 확정을 지연시키는 카운트/대기 로직은
-      // 두지 않는다 — 즉시 반영하고, 다음 GPS 확정값이 오면 그쪽으로
-      // 부드럽게 재정렬되는 단순한 구조가 안전하다. 방위각 히스테리시스
-      // (BEARING_THRESHOLD)는 이번엔 15도 그대로 둔다 — 이전에 자이로
-      // 보조와 함께 5도로 낮췄다가 진행방향-지도방향 15도 오차가 생겨
-      // 되돌렸다.
-      if (moveBaseHeading === null) return; // 아직 GPS bearing이 한 번도 안 잡힘(첫 픽스 전)
-
-      moveGyroRelativeRotation -= delta;
-      applySmoothedHeading(((moveBaseHeading + moveGyroRelativeRotation) % 360 + 360) % 360);
+    // 장시간 정지 드리프트 재정렬: 기준점을 최신 궤적 방향으로 되돌리고
+    // 상대 회전 누적을 0으로 리셋한다. 재정렬 순간 목표각이 바뀌므로,
+    // 기존 회전 애니메이션 루프(startHeadingAnimationLoop)가 그 차이를
+    // 자동으로 부드럽게 보간해 "스르륵" 되돌아가는 효과가 자연히 생긴다.
+    if (stopEnteredAt !== null && (Date.now() - stopEnteredAt) > STOP_REALIGN_MS && latestStopTrailBearing !== null) {
+      stopBaseHeading = latestStopTrailBearing;
+      gyroRelativeRotation = 0;
+      stopEnteredAt = Date.now(); // 재정렬 시각 갱신 — 반복 재정렬 방지
     }
+
+    // e.alpha는 표준상 반시계 방향이 증가(시계 방향으로 돌리면 alpha는
+    // 감소)인데, 화면 회전(stopBaseHeading/continuousHeading)은 시계
+    // 방향이 증가하는 나침반 방식이다. 이 방향 관례 차이 때문에 delta를
+    // 그대로 더하면 실제로 핸드폰을 돌린 방향과 반대로(좌우 반전) 화면이
+    // 도는 문제가 있었다 — 부호를 반전해 실제 회전 방향과 맞춘다.
+    gyroRelativeRotation -= delta;
+    applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
 
     // 자이로가 실제로 화면을 움직이고 있음을 짧게 표시(0.6초 페이드)
     const headingWrapper = document.getElementById('gpsHeadingWrapper');
@@ -2252,9 +2227,6 @@
     displayedRot = 0;
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
-    moveBaseHeading = null;
-    moveGyroRelativeRotation = 0;
-    lastOrientationAlpha = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -2331,17 +2303,15 @@
         // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
         // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
         if (!result.isStopped && result.bearing !== null) {
-          // 정지 상태에서 막 이동으로 전환된 순간에만(매 이동 픽스마다가
-          // 아니라) 정지용 자이로 상태를 정리한다 — 이 블록을 이동 분기
-          // 전체에 걸어두면 이동 중에도 매 픽스마다 lastOrientationAlpha가
-          // 리셋되고, 그때마다 handleOrientation이 "이번은 기준점만 잡고
-          // return"을 반복해 자이로 반응이 끊기는 원인이 된다.
-          if (!wasStoppedBeforeThisFix) {
-            stopBaseHeading = null;
-            gyroRelativeRotation = 0;
-            stopEnteredAt = null;
-            latestStopTrailBearing = null;
-          }
+          // 이동 재개 — 자이로 상대 회전 추적 상태를 정리해 다음 정지 시 새로
+          // 스냅샷하게 한다. 리스너 자체는 끄지 않는다(다음 정지 시 어차피 새로
+          // 스냅샷하므로 득이 없고, on/off를 반복하면 iOS 권한 재확인 관련
+          // 복잡성만 늘어난다).
+          stopBaseHeading = null;
+          gyroRelativeRotation = 0;
+          lastOrientationAlpha = null;
+          stopEnteredAt = null;
+          latestStopTrailBearing = null;
 
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
@@ -2360,20 +2330,6 @@
           }
 
           applySmoothedHeading(result.bearing);
-
-          // 이동 중 자이로 보조 기준점 재정렬 — GPS가 새 방향을 확정한
-          // 이 순간을 기준으로 삼아야, 다음 GPS 픽스가 오기 전까지
-          // (약 1초 이내) 자이로 delta가 이 값에서부터 상대적으로 쌓여
-          // 화면을 즉시 따라 돌게 한다. 재정렬 자체는 화면을 "튀게" 하지
-          // 않는다 — 바로 위 applySmoothedHeading(result.bearing)이 이미
-          // 목표각을 GPS 값으로 옮겼고, startHeadingAnimationLoop가 그
-          // 차이를 부드럽게 보간하기 때문이다(정지 시 STOP_REALIGN_MS
-          // 재정렬과 동일한 안전장치). lastOrientationAlpha는 여기서
-          // 리셋하지 않는다 — 이동 중 재스냅샷은 초당 여러 번 반복될 수
-          // 있는데, 매번 alpha 기준을 리셋하면 handleOrientation이 계속
-          // "기준점만 잡고 return"을 반복해 오히려 반응이 끊긴다.
-          moveBaseHeading = result.bearing;
-          moveGyroRelativeRotation = 0;
         } else if (result.isStopped) {
           // 멈추면 나침반(핸드폰이 향한 방향)이 아니라 GPX 궤적의 "정방향"
           // 진행 방향으로 지도를 고정한다. 나침반은 8자 보정 없이는
