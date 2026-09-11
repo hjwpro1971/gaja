@@ -414,6 +414,7 @@
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
+  <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기">▶️</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
 </div>
@@ -2375,8 +2376,92 @@
     }
   });
 
+  // 산행 가기 전 미리보기 (따라가기) 시뮬레이션 모드
+  let simInterval = null;
+  let simIndex = 0;
+  let simMarker = null;
+
+  function toggleSimulation() {
+    if (!currentPoints || currentPoints.length < 2) {
+      alert('먼저 등산로 코스를 불러와주세요.');
+      return;
+    }
+    const btn = document.getElementById('simBtn');
+    
+    if (simInterval) {
+      clearInterval(simInterval);
+      simInterval = null;
+      btn.innerText = '▶️';
+      btn.classList.remove('active');
+      if (simMarker) {
+        map.removeLayer(simMarker);
+        simMarker = null;
+      }
+      const toast = document.getElementById('gpsToast');
+      toast.style.display = 'none';
+      showToastBadge('🛑 따라가기 미리보기 모드를 종료했습니다.');
+      return;
+    }
+
+    if (watchId !== null) stopGpsTracking(); // 켜져있던 진짜 GPS 중단
+
+    btn.innerText = '⏸️';
+    btn.classList.add('active');
+    simIndex = 0;
+    showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
+    
+    const toast = document.getElementById('gpsToast');
+    toast.style.display = 'block';
+    toast.className = 'gps-toast';
+
+    simInterval = setInterval(() => {
+      if (!currentPoints || simIndex >= currentPoints.length) {
+        toggleSimulation();
+        return;
+      }
+      const pt = currentPoints[simIndex];
+      const lat = pt.lat;
+      const lon = pt.lon;
+      
+      // 마커 이동 (단순 렌더링)
+      if (!simMarker) {
+        const icon = L.divIcon({
+          className: 'custom-gps-icon',
+          html: `<div style="width:20px; height:20px; background:#e65100; border:3px solid white; border-radius:50%; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+        simMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
+      } else {
+        simMarker.setLatLng([lat, lon]);
+      }
+      
+      // 줌 레벨이 15 이하면 살짝 당겨서 보여줌 (너무 멀리서 따라가면 안보이니까)
+      const currentZoom = map.getZoom();
+      map.setView([lat, lon], Math.max(currentZoom, 15), { animate: true });
+
+      // 거리에 따른 토스트 안내 (가짜 위치 정보 주입)
+      lastKnownPos = { lat, lon };
+      isCurrentlyStopped = false; // 항상 이동 중
+      isOffTrailState = false;
+
+      updateNavigationToast(5, 0, simIndex, pt);
+      
+      // 속도 조절: 초당 약 15m 전진하게 인덱스 점프
+      let nextIndex = simIndex + 1;
+      const startDist = cumulativeDistances[simIndex] || 0;
+      while (nextIndex < currentPoints.length) {
+        const currentDist = cumulativeDistances[nextIndex] || 0;
+        if (currentDist - startDist >= 15) break;
+        nextIndex++;
+      }
+      simIndex = nextIndex;
+    }, 1000);
+  }
+
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
+    if (simInterval !== null) toggleSimulation(); // 시뮬레이션 중이면 끄기
     if (watchId !== null) {
       stopGpsTracking();
     } else {
