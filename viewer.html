@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_heading_priority1';
+      const APP_BUILD = 'v20260909_stopmove_responsive1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -535,24 +535,16 @@
         // 낼 수 있음)를 거르는 유일한 방어선이므로, 표준안의 15도로
         // 되돌린다 — 6~8도는 노이즈를 거르기엔 너무 낮았다.
         BEARING_THRESHOLD: 15.0,
-        // 고층 빌딩·울창한 숲 등에서 GPS 오차로 잠깐 "이동"으로 오판되면
-        // 정지 시 자이로 회전 추적(handleOrientation)이 매번 리셋되어
-        // 사용자가 돌려놓은 화면이 사라져 버린다. 정지 판정(이동→정지)
-        // 자체는 안전(궤적 이탈 경고)이 걸려 있어 그대로 즉시 반응해야
-        // 하므로, 반대 방향(정지→이동) 판정에만 짧은 연속성을 요구한다.
-        MOVE_RESUME_STREAK: 3, // 정지 상태에서 "이동"으로 확정되려면 연속 몇 회 픽스가 필요한지
         ...config
       };
       this.lastConfirmed = null;
       this.totalDistance = 0;
-      this.moveStreak = 0; // 정지 → 이동 전환 후보로 연속 잡힌 픽스 수
     }
 
     // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
     reset() {
       this.lastConfirmed = null;
       this.totalDistance = 0;
-      this.moveStreak = 0;
     }
 
     // raw: { latitude, longitude, accuracy, speed, timestamp }
@@ -573,24 +565,26 @@
         };
       }
 
-      // 2단계: 정지/이동 상태 판정. 순수 판정(rawIsStopped) 자체는 그대로
-      // 두되, "직전까지 정지 → 이번엔 이동"으로 나온 경우에는 GPS 튐일 수
-      // 있으므로 연속 MOVE_RESUME_STREAK회를 채울 때까지 정지로 간주한다.
-      // 반대(이동→정지)는 안전이 걸린 문제라 항상 즉시 반영한다.
+      // 2단계: 정지/이동 상태 판정. 이전에는 "정지→이동" 전환 시 연속
+      // 3회 픽스를 요구했는데(MOVE_RESUME_STREAK), 이게 GPS가 초당 1회
+      // 갱신되는 상황에서 최소 3초, 게다가 MIN_DISTANCE(1.5m)씩 매번
+      // 움직여야 하니 실제로는 3m 이상 이동해야 겨우 "이동중"으로 인식
+      // 되는 심각한 반응 지연의 원인이었다. 반응 속도를 우선해 이 연속성
+      // 요구를 제거하고, 매 픽스의 판정을 그대로 즉시 반영한다. GPS 튐으로
+      // 인한 오탐은 MIN_DISTANCE·MAX_ACCURACY·BEARING_THRESHOLD 등 다른
+      // 필터로 대응한다.
+      //
+      // ⚠️ 실제로 멈췄는데도 정지 인식이 10초 가까이 늦어지는 문제가
+      // 있었다. 원인은 "거리 AND 속도" 조건 — 거리는 이미 짧아졌는데도
+      // GPS 칩이 주는 speed 필드가 관성/내부 평활 처리로 몇 초간 계속
+      // STOP_SPEED_CUTOFF 이상을 보고하면 정지 판정 자체가 막혔다.
+      // 거리 조건(rawDist)을 주된 기준으로 삼고, speed는 "거리는 짧은데
+      // 속도만 비정상적으로 빠르게(순간 GPS 튐 등) 나오는 경우"를 걸러내는
+      // 보조 조건으로만 쓴다 — 즉 거리가 짧으면 기본적으로 정지로 보되,
+      // speed가 명백히 높을 때만 예외적으로 이동으로 본다.
       const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
-      const rawIsStopped = rawDist < this.config.MIN_DISTANCE && (raw.speed === null || raw.speed < this.config.STOP_SPEED_CUTOFF);
-
-      let isStopped = rawIsStopped;
-      if (!rawIsStopped && this.lastConfirmed.isStopped) {
-        this.moveStreak++;
-        if (this.moveStreak < this.config.MOVE_RESUME_STREAK) {
-          isStopped = true;
-        } else {
-          this.moveStreak = 0;
-        }
-      } else {
-        this.moveStreak = 0;
-      }
+      const speedSaysMoving = raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF * 2; // 명확히 빠른 경우만 이동 취급
+      const isStopped = rawDist < this.config.MIN_DISTANCE && !speedSaysMoving;
 
       if (isStopped) {
         // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
