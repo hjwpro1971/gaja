@@ -1,0 +1,2841 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- 스마트폰 홈 화면 추가 및 PWA 앱 아이콘 설정 -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" id="appleAppTitle" content="가자go 등산지도">
+  <title>가자go 등산지도</title>
+  <script>
+    // 카카오톡/네이버/인스타그램 등 인앱 브라우저는 GPS 정확도가 떨어지거나
+    // Wake Lock·백그라운드 동작이 제한되는 경우가 많아, 이 페이지처럼 GPS를
+    // 계속 쓰는 앱에는 맞지 않는다. 감지되면 즉시 시스템 기본 브라우저로
+    // 리다이렉트를 시도한다.
+    //
+    // Android: intent:// 스킴으로 넘기면 OS가 "Chrome으로 열기" 선택 없이
+    // 곧장 Chrome(또는 사용자가 지정한 기본 브라우저)으로 이 URL을 새로
+    // 열어준다. 인앱 브라우저 자체는 그대로 뒤에 남아있지만 사용자는 이미
+    // 정상 브라우저 탭으로 넘어가 있으므로 문제 없다.
+    // iOS: 카카오톡 인앱 브라우저는 이런 자동 리다이렉트 자체를 막는
+    // 경우가 많아 완전히 강제할 수 없다. 대신 화면 상단에 "Safari로
+    // 열기" 안내 배너를 띄워 수동 전환을 유도한다(DOMContentLoaded 이후).
+    (function() {
+      try {
+        const ua = navigator.userAgent || '';
+        const isInApp = /KAKAOTALK|NAVER|Line\/|FBAN|FBAV|Instagram|Snapchat|Twitter/i.test(ua);
+        if (!isInApp) return;
+
+        const isAndroid = /Android/i.test(ua);
+        if (isAndroid) {
+          const target = window.location.href;
+          const noScheme = target.replace(/^https?:\/\//, '');
+          window.location.href = 'intent://' + noScheme +
+            '#Intent;scheme=https;package=com.android.chrome;end';
+        } else {
+          // iOS 등 intent 스킴이 없는 환경: 자동 전환은 불가능하므로
+          // 페이지 로드 후 안내 배너만 띄운다(아래 DOMContentLoaded 참고).
+          window.__gajaShowOpenInBrowserBanner = true;
+        }
+      } catch(e) {}
+    })();
+
+    // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
+    (function() {
+      const APP_BUILD = 'v20260909_radius_cluster1';
+      try {
+        if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
+          localStorage.setItem('gajago_app_build', APP_BUILD);
+          if ('caches' in window) {
+            caches.keys().then(keys => {
+              keys.filter(k => k !== 'gaja-trail-cache-v5').forEach(k => caches.delete(k));
+            });
+          }
+          if (!sessionStorage.getItem('gajago_reloaded_flag')) {
+            sessionStorage.setItem('gajago_reloaded_flag', '1');
+            window.location.reload();
+            return;
+          }
+        }
+      } catch(e) {}
+    })();
+
+    (function() {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        let n = p.get('name') || p.get('title');
+        let u = p.get('url') || p.get('file');
+        if (!n && u) {
+          const m = decodeURIComponent(u).match(/([^\/\?#&=:"']+\.gpx)/i);
+          if (m && m[1]) {
+            n = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+          }
+        }
+        if (n) {
+          let name = decodeURIComponent(n).trim();
+          if (!name.includes('등산지도') && !name.includes('등산로') && !name.includes('지도')) {
+            name = name + ' 등산지도';
+          }
+          document.title = name;
+          const meta = document.getElementById('appleAppTitle');
+          if (meta) meta.content = name;
+        }
+      } catch(e) {}
+    })();
+  </script>
+
+  <!-- 로컬 캐시 가능한 Leaflet 오픈소스 지도 엔진 -->
+  <link rel="stylesheet" href="./leaflet.css">
+  <script src="./leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
+      background: #f8faf8;
+    }
+
+    #mapContainer {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      overflow: hidden;
+      z-index: 1;
+    }
+    #map {
+      width: 100%; height: 100%;
+      position: absolute; top: 0; left: 0;
+      transform-origin: center center;
+    }
+    /* 🧭 네이버지도/카카오맵 스타일 길찾기 회전 모드 (스마트폰 위쪽이 내가 갈 방향)
+       스마트폰은 세로가 가로보다 훨씬 긴 화면(예: 390×844)이라, 기존처럼
+       vmax(가로/세로 중 큰 값=세로 기준)로 "정사각형"을 만들면 그 정사각형의
+       중심을 top/left/margin(%)으로 잡을 때 가로세로 여백 비율이 달라져
+       회전 중 좌우로 쏠려 보이는 문제가 있었다. 대신 세로 기준(vh)으로
+       충분히 큰 정사각형을 만들고, transform: translate(-50%, -50%)로
+       "요소 자기 자신 크기의 절반"만큼 당겨 화면 비율과 무관하게 항상
+       뷰포트 정중앙에 고정한다. */
+    #map.heading-up {
+      /* 160vh는 회전 중 모서리가 절대 안 잘리도록 넉넉히 잡은 값이었지만,
+         그만큼 브라우저가 매 프레임 다시 그려야 할 픽셀(타일 이미지 포함)
+         양이 많아 회전 애니메이션이 프레임을 못 따라가 "느리게" 보이는
+         원인이 되었다. 스마트폰 화면 대각선을 충분히 커버하면서도
+         레이어를 작게 유지하는 120vh로 축소해 렌더링 부담을 줄인다. */
+      width: 120vh !important;
+      height: 120vh !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) rotate(0deg);
+      /* CSS transition을 쓰지 않는다 — GPS 갱신 간격이 불규칙(400ms~수초)
+         해서, 매번 새 목표로 transition이 재시작되며 "어떤 때는 빠르고
+         어떤 때는 느리게, 딱딱 끊어지며" 도는 원인이 됐다. 대신
+         requestAnimationFrame 루프(startHeadingAnimationLoop)가 지도/
+         화살표/나침반 바늘 셋을 매 프레임 같은 속도로 동시에 보간한다. */
+      will-change: transform;
+      backface-visibility: hidden;
+    }
+
+    /* 상단 헤더 바 */
+    .top-header {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+      display: flex; gap: 8px; align-items: center; pointer-events: none;
+    }
+    .title-box {
+      pointer-events: auto; flex: 1;
+      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
+      padding: 10px 18px; border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
+      display: flex; justify-content: center; align-items: center; text-align: center;
+    }
+    .title-box h1 {
+      font-size: 16px; font-weight: 800; color: #1b5e20;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .btn-file-open {
+      background: #2e7d32; color: #ffffff; font-size: 12px; font-weight: 700;
+      padding: 6px 12px; border-radius: 10px; cursor: pointer; border: none;
+      white-space: nowrap; box-shadow: 0 2px 6px rgba(46,125,50,0.3);
+    }
+
+    /* 우측 플로팅 버튼 컬럼 */
+    .fab-col {
+      position: absolute; right: 14px; top: 75px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .fab-btn {
+      width: 46px; height: 46px; border-radius: 50%; background: #ffffff;
+      border: 1px solid #c8e6c9; box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+      display: flex; justify-content: center; align-items: center;
+      font-size: 20px; cursor: pointer; color: #2e7d32; transition: all 0.2s;
+    }
+    .fab-btn:active { transform: scale(0.92); }
+    .fab-btn.active {
+      background: #1b5e20; color: #ffffff;
+      border: 2px solid #81c784;
+      box-shadow: 0 0 14px rgba(46, 125, 50, 0.5);
+    }
+
+    /* 레이어 선택 팝업 */
+    .layer-menu {
+      position: absolute; right: 68px; top: 185px; z-index: 1000;
+      background: #ffffff; border-radius: 12px; padding: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
+      display: none; flex-direction: column; gap: 6px; min-width: 150px;
+    }
+    .layer-item {
+      padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
+      border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .layer-item.selected { background: #e8f5e9; color: #1b5e20; }
+    .layer-item:hover { background: #f1f8e9; }
+
+    /* GPS 상태 안내 토스트 — 화면 상단 코스 정보 바(.top-header) 바로 밑에 표시 */
+    .gps-toast {
+      position: absolute; top: 68px; left: 12px; right: 12px; z-index: 999;
+      background: #e8f5e9; backdrop-filter: blur(8px);
+      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 2px solid #2e7d32;
+      padding: 8px 18px; font-size: 13px; font-weight: 700; color: #1b5e20;
+      text-align: center; white-space: normal; display: none; pointer-events: none;
+    }
+    .gps-toast.warning {
+      background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c;
+      /* 개선 4: 소리(playOffTrailBeep)나 진동이 기기 설정·브라우저 정책
+         등으로 조용히 실패해도, 화면을 봤을 때만큼은 이탈 상태를 확실히
+         알아챌 수 있도록 배경색이 깜빡이는 애니메이션을 추가한다. 소리에만
+         의존하지 않는 이중 안전장치다. */
+      animation: offTrailPulse 1s ease-in-out infinite;
+    }
+    @keyframes offTrailPulse {
+      0%, 100% { background: #ffcdd2; }
+      50% { background: #ef9a9a; }
+    }
+
+    /* 현재 내 위치 GPS 펄스 및 나아갈 방향 빔 스타일 */
+    .custom-gps-icon {
+      overflow: visible !important;
+    }
+    .gps-marker-container {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+    }
+    .gps-heading-wrapper {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      top: 0;
+      left: 0;
+      transform-origin: 40px 40px;
+      /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
+      pointer-events: none;
+    }
+    /* 정지 시 자이로(핸드폰 회전)가 실제로 화면을 움직이고 있음을 짧게
+       알려주는 하이라이트 — handleOrientation이 0.6초짜리 타이머로 토글 */
+    .gps-heading-wrapper.gyro-active {
+      filter: drop-shadow(0 0 6px rgba(255, 193, 7, 0.9));
+      transition: filter 0.2s ease-out;
+    }
+    .gps-heading-svg {
+      width: 80px;
+      height: 80px;
+      display: block;
+    }
+    .my-gps-pulse {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.35);
+      border: 2px solid rgba(25, 118, 210, 0.6);
+      animation: pulseGps 2s infinite ease-out;
+      pointer-events: none;
+    }
+    .my-gps-dot {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #1976d2;
+      border: 3.5px solid #ffffff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+      pointer-events: none;
+    }
+    @keyframes pulseGps {
+      0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.7); }
+      70% { box-shadow: 0 0 0 18px rgba(25, 118, 210, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
+    }
+
+    /* 마커 라벨 뱃지 */
+    .route-badge {
+      color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px;
+      border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+      text-align: center; display: inline-block;
+    }
+
+    /* 초기 안내 모달 */
+    .empty-modal {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(5px);
+      display: none; justify-content: center; align-items: center; padding: 20px;
+      box-sizing: border-box;
+    }
+    .modal-box {
+      position: relative;
+      background: #ffffff; padding: 28px 22px; border-radius: 20px;
+      text-align: center; max-width: 360px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .modal-close-btn {
+      position: absolute; top: 12px; right: 12px;
+      background: none; border: none; font-size: 20px; color: #888;
+      cursor: pointer; padding: 4px; border-radius: 50%; width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close-btn:hover { background: #f0f0f0; color: #111; }
+    .modal-box .icon { font-size: 44px; margin-bottom: 8px; }
+    .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
+    .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
+    .btn-select-main {
+      width: 100%; padding: 15px; font-size: 16px; font-weight: 800; color: #ffffff;
+      background: #2e7d32; border: none; border-radius: 12px; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(46,125,50,0.3);
+    }
+
+    /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
+    .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
+    .saved-route-item {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      background: #f1f8e9; border: 1.5px solid #c8e6c9; border-radius: 12px;
+      padding: 12px 14px; cursor: pointer;
+    }
+    .saved-route-item:active { background: #e8f5e9; }
+    .saved-route-info { flex: 1; min-width: 0; }
+    .saved-route-name { font-size: 14px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .saved-route-date { font-size: 11px; color: #689f38; margin-top: 2px; }
+    .saved-route-del {
+      flex-shrink: 0;
+      background: #ffebee; border: 1.5px solid #ffcdd2; font-size: 18px; cursor: pointer;
+      padding: 6px 10px; border-radius: 10px; color: #d32f2f; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+    }
+    .saved-route-del:hover { background: #ffcdd2; transform: scale(1.15); }
+    .btn-route-list {
+      background: #e8f5e9; border: 1.5px solid #81c784; color: #1b5e20;
+      font-size: 12.5px; font-weight: 800; padding: 6px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-route-list:hover { background: #c8e6c9; }
+    /* 홈 화면에 추가 안내 버튼 — 실제 설치(beforeinstallprompt)는 쓰지
+       않는다. Google Play Protect가 처음 보는 PWA 설치 요청을 "안전하지
+       않은 앱"으로 오탐 차단한 전례가 있어, 대신 브라우저 표준 메뉴에서
+       직접 하도록 안내만 한다. */
+    .btn-install {
+      background: #e3f2fd; border: 1.5px solid #90caf9; color: #1565c0;
+      font-size: 12.5px; font-weight: 800; padding: 6px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-install:hover { background: #bbdefb; }
+
+    /* 화면 오른쪽 하단 줌 컨트롤 (+/-) 스타일 */
+    .leaflet-bottom.leaflet-right {
+      margin-bottom: 24px !important;
+      margin-right: 14px !important;
+    }
+    .leaflet-control-zoom {
+      border: 1.5px solid #c8e6c9 !important;
+      border-radius: 12px !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.2) !important;
+    }
+    .leaflet-control-zoom a {
+      width: 40px !important;
+      height: 40px !important;
+      line-height: 40px !important;
+      font-size: 22px !important;
+      font-weight: 900 !important;
+      color: #1b5e20 !important;
+      background-color: #ffffff !important;
+      transition: background 0.15s;
+    }
+    .leaflet-control-zoom a:active,
+    .leaflet-control-zoom a:hover {
+      background-color: #e8f5e9 !important;
+      color: #2e7d32 !important;
+    }
+
+  </style>
+</head>
+<body>
+
+<!-- 인앱 브라우저(iOS 등, 자동 전환 불가) 안내 배너 — head의 감지 스크립트가
+     window.__gajaShowOpenInBrowserBanner를 세팅했을 때만 노출한다.
+     GPS/지도 로직과 완전히 독립적으로 즉시 보여야 하므로 별도 인라인 스크립트로 처리. -->
+<div id="inAppBrowserBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:100000; background:#1b5e20; color:#fff; padding:12px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+  ⚠️ 카카오톡 등 인앱 브라우저에서는 GPS가 부정확할 수 있습니다.<br>
+  우측 상단 <b>[···]</b> 또는 공유 버튼에서 <b>"Safari로 열기"</b>를 선택해주세요.
+  <button type="button" onclick="document.getElementById('inAppBrowserBanner').style.display='none'" style="position:absolute; top:8px; right:10px; background:none; border:none; color:#fff; font-size:16px; cursor:pointer;">✕</button>
+</div>
+<script>
+  if (window.__gajaShowOpenInBrowserBanner) {
+    document.getElementById('inAppBrowserBanner').style.display = 'block';
+  }
+</script>
+
+<div id="mapContainer">
+  <div id="map"></div>
+</div>
+
+<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) -->
+<div class="top-header">
+  <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
+      📲 바로가기
+    </button>
+    <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
+      📋 내 코스
+    </button>
+  </div>
+</div>
+
+<!-- 우측 플로팅 버튼 -->
+<div class="fab-col">
+  <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">📍</button>
+  <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
+  <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+</div>
+
+<!-- 지도 레이어 선택 메뉴 -->
+<div class="layer-menu" id="layerMenu">
+  <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도(등고선)</div>
+  <div class="layer-item" id="lyrBasic" onclick="switchLayer('basic')">🧭 네이버 일반지도</div>
+  <div class="layer-item" id="lyrSatellite" onclick="switchLayer('satellite')">🛰️ 네이버 위성지도</div>
+  <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (해외/전세계)</div>
+</div>
+
+<!-- 저장된 코스 목록 모달 (오프라인 코스 선택 전용) -->
+<div class="empty-modal" id="emptyModal" style="display: none;">
+  <div class="modal-box">
+    <button class="modal-close-btn" onclick="closeModal()" title="닫기">✕</button>
+    <div class="icon">⛰️</div>
+    <h2 id="modalTitle">저장된 등산로 코스</h2>
+    <p id="modalDesc">이전에 열어보았거나 저장된 등산로 코스 목록입니다.</p>
+
+    <div style="margin-top: 16px; font-size: 12px; color: #2e7d32; font-weight: 700; text-align: center;">👣 Crafted by <b>가자go</b></div>
+    <!-- 저장된 코스 목록이 있을 때 아래에 표시 -->
+    <div class="saved-route-list" id="savedRouteList" style="display: none; margin-top: 16px;"></div>
+  </div>
+</div>
+
+<!-- 플로팅 GPS 상태 뱃지 (내 위치 켰을 때만 표시) -->
+<div class="gps-toast" id="gpsToast"></div>
+
+<script>
+  // 1. PWA 서비스 워커 등록 (산속 오프라인 지도 캐싱 지원 및 최신 자동 새로고침)
+  if ('serviceWorker' in navigator) {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js?v=6')
+        .then(reg => {
+          reg.update(); // 최신 버전 감지 즉시 백그라운드 갱신
+          console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
+        })
+        .catch(err => console.warn('PWA ServiceWorker 등록 알림:', err));
+    });
+  }
+
+  // 1-1. "홈 화면에 추가" 안내. beforeinstallprompt로 자동 설치를 걸면
+  // Google Play Protect가 처음 보는 PWA를 "안전하지 않은 앱"으로 오탐
+  // 차단한 전례가 있어, 실제 설치는 하지 않고 브라우저 메뉴로 유도하는
+  // 안내만 보여준다.
+  //
+  // manifest.json의 display를 "browser"로 뒀기 때문에(같은 이유로
+  // Play Protect 오탐을 피함) 홈 화면에서 열어도 display-mode:
+  // standalone이 매치되지 않는다 — 즉 "이미 바로가기가 있는지"를
+  // 브라우저가 구분해서 알려줄 방법이 없다. 대신 사용자가 안내 버튼을
+  // 한 번이라도 누르면(=바로가기를 만들었다고 볼 수 있는 시점)
+  // localStorage에 기록해두고, 그 다음부터는 버튼 자체를 숨긴다.
+  const INSTALL_GUIDE_SEEN_KEY = 'gajago_install_guide_seen';
+
+  function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true || // iOS Safari 전용 플래그
+           localStorage.getItem(INSTALL_GUIDE_SEEN_KEY) === '1';
+  }
+
+  function showInstallGuide() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const msg = isIOS
+      ? '📲 홈 화면에 추가하기\n\n하단 [공유] 버튼(⬆️)을 누른 뒤\n"홈 화면에 추가"를 선택하세요.'
+      : '📲 홈 화면에 추가하기\n\n우측 상단 메뉴(⋮)를 누른 뒤\n"홈 화면에 추가"를 선택하세요.';
+    showToastBadge(msg, 5000);
+    try { localStorage.setItem(INSTALL_GUIDE_SEEN_KEY, '1'); } catch(e) {}
+    const btn = document.getElementById('installBtn');
+    if (btn) btn.style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (isRunningStandalone()) {
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.style.display = 'none';
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // 📡 GpsFilterEngine — 검증된 아웃도어 GPS 트래킹 앱(산길샘 계열)의
+  // 표준 4단계 필터링 파이프라인을 적용한 엔진.
+  // (1) 수집 검증(정확도/시간간격) → (2) 정지/이동 상태 판정 →
+  // (3) 좌표 이동평균 스무딩 + 방위각 히스테리시스 → (4) 거리 누적
+  // 기존에 직접 짠 칼만 필터 + 적응형 게인 조합은 파라미터를 추정으로
+  // 넣어야 해서 고칠 때마다 다른 부작용(고정/지연/흔들림)이 반복됐다.
+  // 이 엔진은 단순 이동평균과 명확한 문턱값만 쓰므로 동작을 예측하기
+  // 쉽고, 등산 앱들이 실제로 쓰는 것으로 알려진 표준 수치를 그대로 따른다.
+  class GpsFilterEngine {
+    constructor(config = {}) {
+      this.config = {
+        MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
+        MIN_INTERVAL_MS: 400,    // 최소 수신 간격
+        MIN_DISTANCE: 1.5,       // ⚠️ 현재 정지/이동 판정 로직에서는 쓰이지 않는다
+                                 // (아래에서 계산한 속도(calculatedSpeed) 기준으로
+                                 // 대체됨 — 산속 등 GPS 픽스 간격이 불규칙한 환경에서
+                                 // 거리만으로 판정하면 정지/이동이 계속 뒤바뀌는
+                                 // 문제가 있었다). 다른 로직에서 참조할 수 있어
+                                 // 설정값 자체는 남겨둔다.
+        STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
+        // 회전 반응이 느렸던 진짜 원인은 이동평균(WINDOW_SIZE)이었다.
+        // 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어 새
+        // 방향에 완전히 수렴하기까지 여러 번의 갱신(체감 2~3초 이상)이
+        // 걸리는 구조적 지연이 있었다. 이동평균을 제거하고 원시 좌표를
+        // 그대로 쓰는 대신, 문턱값(BEARING_THRESHOLD)만으로 미세한
+        // 흔들림을 걸러낸다. 이동평균이 없는 구조에서는 이 문턱이
+        // GPS 순간 노이즈(수 미터 오차가 방위각으로는 수십 도 차이를
+        // 낼 수 있음)를 거르는 유일한 방어선이므로, 표준안의 15도로
+        // 되돌린다 — 6~8도는 노이즈를 거르기엔 너무 낮았다.
+        BEARING_THRESHOLD: 15.0,
+        // 반경 클러스터 검사 — 속도만으로는 "느리지만 계속 전진 중"과
+        // "제자리에서 서성임"을 구분하기 어려운 경우를 보완한다. 최근
+        // CLUSTER_WINDOW_SEC 동안의 모든 위치가 CLUSTER_RADIUS_M 반경
+        // 안에 갇혀 있으면(=거의 안 움직였으면) 속도 계산값과 무관하게
+        // 정지로 확정한다. 정지 판정 자체는 여전히 즉시 반영되며(10초
+        // 지연 없음), 이 검사는 추가 보완 조건일 뿐이다.
+        CLUSTER_WINDOW_SEC: 15,  // 반경 검사 시간 윈도우(초)
+        CLUSTER_RADIUS_M: 7.0,   // 이 반경(m) 안에 윈도우 내내 갇혀 있으면 정지로 간주
+        ...config
+      };
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
+      this.recentPoints = []; // 반경 클러스터 검사용 최근 위치 큐
+    }
+
+    // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
+    reset() {
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
+      this.recentPoints = [];
+    }
+
+    // 최근 윈도우(CLUSTER_WINDOW_SEC)의 모든 위치가 한 지점 기준
+    // CLUSTER_RADIUS_M 반경 안에 갇혀 있는지 확인한다 — "서성임" 감지용.
+    _isTrappedInRadius(latestRaw) {
+      const windowStart = latestRaw.timestamp - (this.config.CLUSTER_WINDOW_SEC * 1000);
+      this.recentPoints = this.recentPoints.filter(p => p.timestamp >= windowStart);
+      this.recentPoints.push({ latitude: latestRaw.latitude, longitude: latestRaw.longitude, timestamp: latestRaw.timestamp });
+
+      if (this.recentPoints.length < 3) return false;
+      // 윈도우 시간을 충분히(80% 이상) 채웠을 때만 판정 — 막 시작한
+      // 직후에는 데이터가 부족해 오판할 수 있으므로 건너뛴다.
+      const timeSpan = (this.recentPoints[this.recentPoints.length - 1].timestamp - this.recentPoints[0].timestamp) / 1000;
+      if (timeSpan < this.config.CLUSTER_WINDOW_SEC * 0.8) return false;
+
+      const anchor = this.recentPoints[0];
+      return this.recentPoints.every(p => haversineMeters(anchor.latitude, anchor.longitude, p.latitude, p.longitude) <= this.config.CLUSTER_RADIUS_M);
+    }
+
+    // raw: { latitude, longitude, accuracy, speed, timestamp }
+    // 반환값이 null이면 "이번 픽스는 버림" — 화면 갱신 자체를 하지 않는다.
+    process(raw) {
+      // 1단계: 수집 검증
+      if (raw.accuracy > this.config.MAX_ACCURACY) return null;
+      if (this.lastConfirmed && (raw.timestamp - this.lastConfirmed.timestamp < this.config.MIN_INTERVAL_MS)) {
+        return null;
+      }
+
+      // 첫 포인트는 그대로 확정 (비교 대상이 없으므로)
+      if (!this.lastConfirmed) {
+        this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, isStopped: false, timestamp: raw.timestamp };
+        return {
+          latitude: raw.latitude, longitude: raw.longitude,
+          bearing: null, totalDistance: 0, isStopped: false, timestamp: raw.timestamp
+        };
+      }
+
+      // 2단계: 정지/이동 상태 판정. 이전에는 "정지→이동" 전환 시 연속
+      // 3회 픽스를 요구했는데(MOVE_RESUME_STREAK), 이게 GPS가 초당 1회
+      // 갱신되는 상황에서 최소 3초, 게다가 MIN_DISTANCE(1.5m)씩 매번
+      // 움직여야 하니 실제로는 3m 이상 이동해야 겨우 "이동중"으로 인식
+      // 되는 심각한 반응 지연의 원인이었다. 반응 속도를 우선해 이 연속성
+      // 요구를 제거하고, 매 픽스의 판정을 그대로 즉시 반영한다.
+      //
+      // ⚠️ 거리(rawDist)만으로 판정했더니, 산속·숲·건물 사이처럼 GPS
+      // 신호가 약해 픽스 간격이 불규칙한 환경(1초가 아니라 2~3초에 한
+      // 번씩 들어오는 등)에서 문제가 생겼다. 픽스 간격이 길어지면 같은
+      // 속도로 걸어도 한 번에 이동한 거리가 커져서, MIN_DISTANCE 문턱을
+      // 넘었다 못 넘었다 하며 정지/이동이 계속 뒤바뀌는(깜빡이는) 원인이
+      // 되었다. GPS 칩이 주는 speed 필드는 관성/평활 지연이 있어 이미
+      // 배제했으므로, 대신 우리가 직접 "거리 ÷ 실제 경과시간"으로 속도를
+      // 계산해 판정 기준으로 쓴다 — 픽스 간격이 얼마나 불규칙하든 속도
+      // 자체는 일관되게 비교할 수 있어 산속에서도 안정적으로 판정된다.
+      const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
+      const elapsedSec = Math.max((raw.timestamp - this.lastConfirmed.timestamp) / 1000, 0.001); // 0으로 나누기 방지
+      const calculatedSpeed = rawDist / elapsedSec; // m/s, 우리가 직접 계산 — GPS 칩의 speed 필드는 쓰지 않음
+
+      // 반경 클러스터 검사: 속도 계산값만으로는 "느리지만 계속 전진"과
+      // "GPS 좌표가 이리저리 튀지만 실제로는 제자리에 서있음"을 구분하지
+      // 못하는 경우가 있다. 최근 15초간 위치가 7m 반경 안에서만 맴돌았다면
+      // 속도 계산이 순간적으로 문턱을 넘나들어도 정지로 확정한다.
+      const isTrapped = this._isTrappedInRadius(raw);
+      const isStopped = calculatedSpeed < this.config.STOP_SPEED_CUTOFF || isTrapped;
+
+      if (isStopped) {
+        // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
+        this.lastConfirmed = { ...this.lastConfirmed, isStopped: true, timestamp: raw.timestamp };
+        return {
+          latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
+          bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
+          isStopped: true, timestamp: raw.timestamp
+        };
+      }
+
+      // 3단계: 좌표 스무딩 — 이동평균(3~5개)을 제거했다.
+      // 이동평균은 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어
+      // 새 방향에 완전히 수렴하기까지 여러 번의 갱신(체감 2~3초 이상)이
+      // 걸리는 구조적 지연이 있었다 — 파라미터를 아무리 낮춰도 이 지연
+      // 자체는 없어지지 않았다. 정지 판정(2단계)이 이미 노이즈로 인한
+      // 오탐을 걸러주므로, 여기서는 최신 원시 좌표를 그대로 쓴다.
+      const smoothLat = raw.latitude;
+      const smoothLon = raw.longitude;
+
+      // 방위각 계산 — heading을 무조건 우선하지 않고, 좌표 기반 계산
+      // (coordinateBearing)과 항상 병행 계산해 서로 검증한다.
+      // 이전에는 "heading이 있고 속도만 충분하면 무조건 heading 채택"
+      // 이었는데, 이러면 GPS 칩의 heading이 편향된 값을 지속적으로 줄 때
+      // (예: 실제 92도인데 heading이 계속 123도) 그 잘못된 값이 그대로
+      // 반영되고, 심지어 BEARING_THRESHOLD 히스테리시스가 그 잘못된 값을
+      // 오래 고정시켜버리는 문제가 있었다.
+      // coordinateBearing은 이미 계산에 필요한 좌표(lastConfirmed, 현재
+      // 위치)가 있으므로 추가 비용 없이 항상 구할 수 있다. 두 값의 차이가
+      // 크면(45도 이상) heading이 편향되었을 가능성이 높다고 보고
+      // coordinateBearing을 대신 채택한다.
+      const coordinateBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      let newBearing;
+      const hasValidHeading = raw.heading !== undefined && raw.heading !== null && !isNaN(raw.heading)
+        && raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF;
+
+      const HEADING_DISAGREEMENT_THRESHOLD = 45.0; // 이 각도(deg) 이상 차이나면 heading을 의심
+
+      if (hasValidHeading) {
+        const disagreement = Math.abs(shortestAngleDiff(raw.heading, coordinateBearing));
+        if (disagreement >= HEADING_DISAGREEMENT_THRESHOLD) {
+          // heading과 좌표계산이 크게 어긋남 — heading이 편향됐을 가능성이
+          // 높으므로 좌표 기반 계산을 대신 채택한다.
+          console.warn(`⚠️ heading 불일치 감지: raw.heading=${raw.heading.toFixed(1)}° vs coordinateBearing=${coordinateBearing.toFixed(1)}° (차이 ${disagreement.toFixed(1)}°) → 좌표계산 채택`);
+          newBearing = coordinateBearing;
+        } else {
+          newBearing = raw.heading;
+        }
+      } else {
+        newBearing = coordinateBearing;
+      }
+
+      // 진단 로그 — 실측 검증용. 문제 재현 시 콘솔에서 이 값들을 그대로
+      // 확인해 raw.heading 자체가 틀렸는지, 그 이후 단계(히스테리시스,
+      // continuousHeading 누적, displayedRot 애니메이션)에서 틀어지는지
+      // 구분한다.
+      console.log(`[GPS] speed=${raw.speed} accuracy=${raw.accuracy} rawHeading=${hasValidHeading ? raw.heading.toFixed(1) : 'N/A'} coordBearing=${coordinateBearing.toFixed(1)} chosenBearing=${newBearing.toFixed(1)}`);
+
+      if (this.lastConfirmed.bearing !== null) {
+        const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
+        if (bearingDelta < this.config.BEARING_THRESHOLD) {
+          newBearing = this.lastConfirmed.bearing;
+        }
+      }
+
+      // 4단계: 거리 누적
+      const stepDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      this.totalDistance += stepDist;
+
+      this.lastConfirmed = { latitude: smoothLat, longitude: smoothLon, bearing: newBearing, isStopped: false, timestamp: raw.timestamp };
+
+      return {
+        latitude: smoothLat, longitude: smoothLon,
+        bearing: newBearing, totalDistance: this.totalDistance,
+        isStopped: false, timestamp: raw.timestamp
+      };
+    }
+  }
+
+  const gpsFilterEngine = new GpsFilterEngine();
+  // ────────────────────────────────────────────────────────────────
+
+  let map = null;
+  let currentLayer = null;
+  let polyline = null;
+  let markers = [];
+  let currentPoints = [];
+  let userGpsMarker = null;
+  let watchId = null;
+  let currentHeading = null;
+  let lastKnownPos = null;
+  let isCompassActive = false;
+  let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태 — 나침반 사용 여부 결정에 참조
+  let guideLine = null; // 등산로 연결 점선 가이드
+
+  function getKoreanDirection(deg) {
+    const dirs = ['북(N)', '북동(NE)', '동(E)', '남동(SE)', '남(S)', '남서(SW)', '서(W)', '북서(NW)'];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    return dirs[idx];
+  }
+
+  function getKoreanDirectionShort(deg) {
+    const dirs = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+    return dirs[idx];
+  }
+
+  function calculateBearing(lat1, lon1, lat2, lon2) {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+              Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+    let brng = Math.atan2(y, x) * 180 / Math.PI;
+    return (brng + 360) % 360;
+  }
+
+  let isHeadingUp = false;      // 🧭 길찾기 회전 모드 (스마트폰 위쪽이 항상 갈 방향)
+  let showHeadingArrow = false; // 🧭 방향 화살표(시야각 빔) 표시 여부 — GPS 1클릭째는 숨기고, 2클릭째부터 표시
+  let smoothedHeading = null;
+  let continuousHeading = 0;   // 360도 경계 스핀 방지용 연속 각도
+  // --- 정지 시 자이로(상대 회전) 추적용 상태 ---
+  let stopBaseHeading = null;        // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
+  let lastOrientationAlpha = null;   // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
+  let gyroRelativeRotation = 0;      // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
+  let stopEnteredAt = null;          // 정지 진입 시각(ms) — 장시간 드리프트 재정렬 판단용
+  let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
+  let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
+  let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
+  let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
+  let lastToastUpdate = 0;
+  let gpsMovementHeading = null;
+  let lastGpsMoveTime = 0;
+
+  // 최단 각도 오차 계산 (-180 ~ +180)
+  function shortestAngleDiff(target, current) {
+    let diff = (target - current) % 360;
+    if (diff < -180) diff += 360;
+    if (diff > 180) diff -= 360;
+    return diff;
+  }
+
+  // 네이버지도/카카오맵/산길샘과 같은 방식: 걷고 있을 때는 나침반(자기장
+  // 센서)을 아예 쓰지 않고 GPS가 알려주는 실제 이동 방향만 쓴다. 나침반은
+  // 건물·자동차·손 안의 금속 등 자기장 교란에 취약해서, 3D 틸트 보정
+  // 같은 복잡한 계산을 얹어도 "정면으로 향한 건물이 화면 위쪽과 안 맞는"
+  // 문제가 계속 생겼다 — 반면 GPS 이동 방향은 자기장과 무관해 훨씬
+  // 안정적이다. 정지 시에도 지자기 절대값(alpha)은 쓰지 않고, 정지 진입
+  // 순간의 궤적 방향을 기준점으로 잡은 뒤 alpha의 변화량(delta)만
+  // 자이로처럼 상대적으로 누적해 폰을 돌린 만큼만 화면을 회전시킨다.
+
+  // GpsFilterEngine이 이미 방위각 히스테리시스(15도 미만 변화 무시)를
+  // 적용한 값을 넘겨주므로, 여기서는 복잡한 적응형 게인 없이 화면 회전값
+  // (continuousHeading)에 그대로 반영하기만 하면 된다. 360도 경계에서
+  // 회전이 반대로 크게 도는 것만 shortestAngleDiff로 방지한다.
+  // 기존의 게인 단계별 분기(0.15~1.0)는 파라미터를 추정으로 넣어야 해서
+  // 고칠 때마다 다른 부작용이 반복됐다 — 표준 파이프라인 도입 후에는
+  // 입력값 자체가 이미 안정적이므로 복잡한 게인 로직이 불필요하다.
+  function applySmoothedHeading(rawHeading) {
+    if (rawHeading === null || isNaN(rawHeading)) return;
+
+    if (smoothedHeading === null) {
+      smoothedHeading = rawHeading;
+      continuousHeading = rawHeading;
+      displayedRot = rawHeading; // 첫 값은 애니메이션 없이 그 자리에서 바로 시작
+      updateHeadingDisplay(smoothedHeading, continuousHeading);
+      return;
+    }
+
+    const diff = shortestAngleDiff(rawHeading, smoothedHeading);
+    continuousHeading += diff; // 이미 필터링된 값이므로 그대로(게인 1.0) 반영
+    smoothedHeading = ((continuousHeading % 360) + 360) % 360;
+
+    updateHeadingDisplay(smoothedHeading, continuousHeading);
+  }
+
+  // 지도/화살표/나침반 바늘이 실제로 화면에 그려지고 있는 각도(연속각,
+  // 360도 경계 넘어갈 수 있음). 목표(continuousHeading)와 분리해두고
+  // 아래 애니메이션 루프가 매 프레임 이 값을 목표 쪽으로 조금씩 옮긴다.
+  let displayedRot = 0;
+  let headingAnimRunning = false;
+  // 궤적(GPX) 예정 방향과 실제 GPS 이동 방향의 차이(도). watchPosition
+  // 콜백에서 매 픽스마다 갱신되고, 아래 회전 애니메이션 루프가 이 값을
+  // 참조해 회전 속도를 조절한다. 차이가 작으면(궤적과 거의 같은 방향으로
+  // 가고 있으면) 천천히, 차이가 크면(방향을 크게 틀었거나 갈림길) 빠르게
+  // 돈다 — GPS 노이즈로 인한 미세한 방향 흔들림은 궤적과 비교하면 대부분
+  // "거의 안 벗어난" 것으로 나오므로 자연히 느리게 처리되어 걸러진다.
+  let trailDeviationDeg = 0;
+
+  function updateHeadingDisplay(heading, rotAngle) {
+    if (heading === null || isNaN(heading)) return;
+    currentHeading = ((heading % 360) + 360) % 360;
+    startHeadingAnimationLoop();
+  }
+
+  // GPS/나침반 갱신은 간격이 불규칙(400ms~수초)해서, CSS transition으로
+  // 회전을 걸면 매번 새 목표로 애니메이션이 재시작되며 "어떤 때는 빠르고
+  // 어떤 때는 느리게, 딱딱 끊어지며" 도는 문제가 있었다. 대신 목표각
+  // (continuousHeading)은 즉시 갱신하되, 실제로 화면에 그리는 각도
+  // (displayedRot)는 이 루프가 매 프레임 목표를 따라잡게 해서 지도·화살표가
+  // 부드럽게 돈다.
+  //
+  // 회전 속도는 고정값이 아니라 "궤적 예정 방향과 실제 이동 방향의 차이
+  // (trailDeviationDeg)"에 따라 달라진다. GPX 궤적 자체가 "이 구간은
+  // 대략 어느 방향이어야 하는지"를 이미 알려주므로, 이걸 기준 삼으면
+  // GPS 노이즈로 인한 미세한 흔들림과 실제 방향 전환을 자연히 구분할 수
+  // 있다: 궤적과 거의 같은 방향이면(=노이즈일 가능성이 높으면) 천천히,
+  // 궤적에서 크게 벗어나면(=갈림길이나 실제 방향 전환일 가능성이 높으면)
+  // 빠르게 돈다.
+  function startHeadingAnimationLoop() {
+    if (headingAnimRunning) return;
+    headingAnimRunning = true;
+
+    // 궤적 이탈 각도에 따른 최대 회전 속도(초당 도).
+    // 15도 미만 이탈: 궤적과 거의 일치 → 노이즈일 가능성이 높으므로 천천히.
+    // 15~45도: 완만한 커브 정도 → 중간 속도.
+    // 45도 이상: 갈림길/방향 전환/역주행 가능성 → 빠르게 반응.
+    const MIN_DEG_PER_SEC = 60;
+    const MAX_DEG_PER_SEC = 320;
+    // 목표와의 차이가 이 값 이하로 좁혀지면 그 프레임에서 바로 스냅하고
+    // 루프를 멈춘다 — 계속 미세하게 수렴만 하다 안 멈추는 것을 방지.
+    const SNAP_THRESHOLD = 0.05;
+
+    let lastTs = null;
+
+    function step(ts) {
+      if (lastTs === null) lastTs = ts;
+      const dtSec = Math.min((ts - lastTs) / 1000, 0.1); // 탭 전환 등으로 큰 델타가 생기는 것 방지
+      lastTs = ts;
+
+      // 궤적 이탈 각도(0~180)를 0~1로 정규화해 회전 속도를 선형 보간한다.
+      const deviationRatio = Math.min(Math.abs(trailDeviationDeg), 90) / 90;
+      const degPerSec = MIN_DEG_PER_SEC + (MAX_DEG_PER_SEC - MIN_DEG_PER_SEC) * deviationRatio;
+
+      const diff = continuousHeading - displayedRot;
+      const maxStep = degPerSec * dtSec;
+
+      if (Math.abs(diff) <= Math.max(SNAP_THRESHOLD, maxStep)) {
+        displayedRot = continuousHeading;
+      } else {
+        displayedRot += Math.sign(diff) * maxStep;
+      }
+
+      renderHeadingRotation(displayedRot);
+
+      if (Math.abs(continuousHeading - displayedRot) > SNAP_THRESHOLD) {
+        requestAnimationFrame(step);
+      } else {
+        headingAnimRunning = false;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function renderHeadingRotation(continuousRot) {
+    // 1. 🧭 길찾기 회전 모드: 지도를 회전시켜 내가 갈 방향을 항상 화면 위쪽으로 정렬!
+    // CSS의 translate(-50%, -50%)를 항상 함께 유지해야 한다 — rotate만
+    // 단독으로 넣으면 transform이 통째로 교체되면서 중앙 고정이 풀려
+    // 지도가 화면 밖으로 밀려나거나 한쪽으로 쏠려 보이게 된다.
+    //
+    // ⚠️ 드래그 중(isMapBeingDragged) 또는 손을 뗀 뒤 자동 복귀 유예 시간
+    // 중(isMapDragReturnPending)에는 지도 회전을 반영하지 않는다.
+    // Leaflet의 드래그 기능은 화면 좌표와 지도 내부 좌표계가 일치한다는
+    // 전제로 동작하는데, 지도가 CSS로 회전된 상태에서 드래그하면 사용자가
+    // 끈 방향과 실제 이동하는 지도 영역이 어긋나 엉뚱하게 느껴지는 문제가
+    // 있었다. 드래그 시작 시점의 회전각에서 그대로 "동결"시켜두면 그 동안은
+    // 화면과 Leaflet 좌표계가 일치해 드래그가 직관적으로 맞게 작동하고,
+    // 유예 시간 중에도 사용자가 살펴보던 화면이 갑자기 돌아가지 않는다.
+    // continuousHeading 자체는 내부적으로 계속 갱신되므로(updateHeadingDisplay가
+    // 계속 호출됨), 유예 시간이 끝나 복귀할 때는 최신 방향으로 바로 돈다.
+    const mapEl = document.getElementById('map');
+    if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up') && !isMapBeingDragged && !isMapDragReturnPending) {
+      mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
+    }
+
+    // 2. 내 위치 마커 화살표 — 지도 좌표계와 무관한 화면 요소이므로
+    // 드래그 중에도 계속 실제 방향을 정확히 반영해도 무방하다.
+    const wrapper = document.getElementById('gpsHeadingWrapper');
+    if (wrapper) {
+      // 길찾기 회전 모드: 지도가 -continuousRot 만큼 돌고 있으므로, 화살표가 continuousRot 회전하여
+      // 화면에서는 항상 전방(12시, 위쪽)으로 듬직하게 고정됨!
+      wrapper.style.transform = `rotate(${continuousRot}deg)`;
+    }
+  }
+
+  // 정지 시에는 alpha의 절대값(지자기 나침반)을 쓰지 않는다 — 그건 두 차례
+  // 시도 후 폐기됐다. 대신 정지 진입 순간의 trailBearing을 기준점으로 잡고,
+  // 이후 alpha의 변화량(delta)만 자이로처럼 누적해 상대 회전만 반영한다.
+  // 이렇게 하면 자기장 절대 오차와 무관하게, 폰을 돌린 만큼만 화면이 따라
+  // 돈다. 손떨림 무시(deadband), 장시간 정지 시 드리프트 자동 재정렬도
+  // 함께 처리한다.
+
+  // 손떨림/호흡 등으로 인한 미세한 각도 흔들림을 무시하는 불감 영역(deadband).
+  // 이 값 미만의 delta는 누적하지 않는다 — 가만히 서 있어도 alpha가 ±0.5도
+  // 내외로 계속 흔들려 불필요하게 화면을 다시 그리는 것을 막는다.
+  const ORIENTATION_DEADBAND_DEG = 1.0;
+  // 정지가 이 시간(ms) 이상 지속되면 다음 자이로 이벤트에서 기준점을 최신
+  // 궤적 방향으로 슬며시 재정렬한다(드리프트 완화).
+  const STOP_REALIGN_MS = 5 * 60 * 1000;
+
+  function handleOrientation(e) {
+    if (e.alpha === null || isNaN(e.alpha)) return;
+
+    if (lastOrientationAlpha === null) {
+      lastOrientationAlpha = e.alpha;
+      return; // 첫 이벤트는 기준점만 잡고, 회전량 계산은 다음 이벤트부터
+    }
+
+    const delta = shortestAngleDiff(e.alpha, lastOrientationAlpha);
+    if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return; // 손떨림 수준의 미세 흔들림 무시
+    lastOrientationAlpha = e.alpha;
+
+    // 이동 중이거나 아직 정지 기준점이 없으면(스냅샷 전) 화면에 반영하지 않는다.
+    if (!isCurrentlyStopped || stopBaseHeading === null) return;
+
+    // 장시간 정지 드리프트 재정렬: 기준점을 최신 궤적 방향으로 되돌리고
+    // 상대 회전 누적을 0으로 리셋한다. 재정렬 순간 목표각이 바뀌므로,
+    // 기존 회전 애니메이션 루프(startHeadingAnimationLoop)가 그 차이를
+    // 자동으로 부드럽게 보간해 "스르륵" 되돌아가는 효과가 자연히 생긴다.
+    if (stopEnteredAt !== null && (Date.now() - stopEnteredAt) > STOP_REALIGN_MS && latestStopTrailBearing !== null) {
+      stopBaseHeading = latestStopTrailBearing;
+      gyroRelativeRotation = 0;
+      stopEnteredAt = Date.now(); // 재정렬 시각 갱신 — 반복 재정렬 방지
+    }
+
+    // e.alpha는 표준상 반시계 방향이 증가(시계 방향으로 돌리면 alpha는
+    // 감소)인데, 화면 회전(stopBaseHeading/continuousHeading)은 시계
+    // 방향이 증가하는 나침반 방식이다. 이 방향 관례 차이 때문에 delta를
+    // 그대로 더하면 실제로 핸드폰을 돌린 방향과 반대로(좌우 반전) 화면이
+    // 도는 문제가 있었다 — 부호를 반전해 실제 회전 방향과 맞춘다.
+    gyroRelativeRotation -= delta;
+    applySmoothedHeading(((stopBaseHeading + gyroRelativeRotation) % 360 + 360) % 360);
+
+    // 자이로가 실제로 화면을 움직이고 있음을 짧게 표시(0.6초 페이드)
+    const headingWrapper = document.getElementById('gpsHeadingWrapper');
+    if (headingWrapper) {
+      headingWrapper.classList.add('gyro-active');
+      clearTimeout(gyroActiveTimeout);
+      gyroActiveTimeout = setTimeout(() => headingWrapper.classList.remove('gyro-active'), 600);
+    }
+  }
+
+  function initCompass() {
+    if (isCompassActive) return;
+    isCompassActive = true;
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+          }
+        })
+        .catch(() => {});
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.addEventListener('deviceorientation', handleOrientation, true);
+    }
+  }
+
+  // ⭐ 네이버지도/카카오맵 스타일 길찾기 회전 모드 전환
+  // enable=false(정북 고정) 경로는 이제 GPS를 끌 때 지도 transform을
+  // 원상복구하는 용도로만 호출된다(항상 isQuiet=true) — 사용자가 직접
+  // 정북 고정 모드로 전환하는 UI는 더 이상 없다.
+  function setHeadingUpMode(enable, isQuiet = false) {
+    isHeadingUp = enable;
+    const mapEl = document.getElementById('map');
+
+    if (enable) {
+      initCompass();
+      mapEl.classList.add('heading-up');
+      map.invalidateSize();
+      if (lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
+      }
+      if (!isQuiet) {
+        showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
+      }
+    } else {
+      mapEl.classList.remove('heading-up');
+      mapEl.style.transform = '';
+      map.invalidateSize();
+      if (lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
+      }
+    }
+    updateHeadingDisplay(currentHeading, continuousHeading);
+  }
+
+  // 🔊 이탈 경고음 — 별도 음원 파일 없이 브라우저 내장 오디오로 생성.
+  // 산속 오프라인 상태에서도 파일 다운로드 없이 항상 울려야 하므로
+  // Web Audio API로 직접 비프음을 합성한다.
+  let audioCtx = null;
+  let lastBeepTime = 0;
+  let beepStreak = 0; // 연속 경고 횟수 — 길어질수록 간격을 늘림(배터리/피로도 절감)
+
+  function playOffTrailBeep() {
+    const now = Date.now();
+    // 1~3회차: 30초 간격 / 4회차부터: 60초 / 8회차부터: 120초로 점진
+    // 완화 — 계속 같은 이탈 상태가 오래 지속되면 알림 피로를 줄인다.
+    // (3초는 너무 잦아 피로하다는 피드백으로 30초로 조정)
+    let cooldown = 30000;
+    if (beepStreak >= 8) cooldown = 120000;
+    else if (beepStreak >= 4) cooldown = 60000;
+
+    if (now - lastBeepTime < cooldown) return;
+    lastBeepTime = now;
+    beepStreak++;
+
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      // "삐-삐" 두 번 울리는 경고음
+      [0, 0.35].forEach(delay => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.value = 880;
+        const t = audioCtx.currentTime + delay;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        osc.start(t);
+        osc.stop(t + 0.25);
+      });
+
+      // 소리를 못 듣는 상황(바람, 주머니 속) 대비 진동 동시 발생
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      } else {
+        console.warn('⚠️ 이 기기/브라우저는 진동(vibrate)을 지원하지 않습니다 — 소리와 화면 깜빡임에만 의존합니다.');
+      }
+    } catch (e) {
+      // 개선 4: 오디오 재생이 실패해도(브라우저 정책, AudioContext 문제 등)
+      // 완전히 조용히 넘어가지 않는다. 소리/진동 둘 다 실패하면 사용자가
+      // 이탈 사실 자체를 놓칠 위험이 있으므로, 최소한 콘솔에 원인을 남겨
+      // 문제 파악이 가능하게 하고 진동으로라도 한 번 더 시도한다.
+      console.warn('⚠️ 이탈 경고음 재생 실패:', e);
+      try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e2) {}
+    }
+  }
+
+  // 궤적 복귀 시 연속 카운터 초기화 — 재이탈하면 다시 15초부터 시작
+  function resetOffTrailStreak() {
+    beepStreak = 0;
+  }
+
+  function showToastBadge(msg, durationMs) {
+    let b = document.getElementById('compassNoticeToast');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'compassNoticeToast';
+      b.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.95); color:#fff; font-size:13px; font-weight:700; padding:10px 20px; border-radius:20px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:center; backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.4s; line-height:1.5; white-space:pre-line;';
+      document.body.appendChild(b);
+    }
+    b.innerText = msg;
+    b.style.opacity = '1';
+    b.style.display = 'block';
+    clearTimeout(b._timer);
+    b._timer = setTimeout(() => {
+      b.style.opacity = '0';
+      setTimeout(() => { b.style.display = 'none'; }, 400);
+    }, durationMs || 3200);
+  }
+
+  function stopCompass() {
+    isCompassActive = false;
+    window.removeEventListener('deviceorientation', handleOrientation, true);
+    window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
+  }
+
+  function createGpsIconHtml(heading) {
+    const rot = (heading !== null && !isNaN(heading)) ? heading : 0;
+    // GPS를 처음 켰을 때(1클릭)는 방향 화살표 없이 단순 위치 점만 보여주고,
+    // [내 위치] 버튼을 한 번 더 눌러야(2클릭) 방향 화살표가 나타난다.
+    const arrowHtml = showHeadingArrow ? `
+        <div class="gps-heading-wrapper" id="gpsHeadingWrapper" style="transform: rotate(${rot}deg);">
+          <svg viewBox="0 0 80 80" class="gps-heading-svg">
+            <defs>
+              <radialGradient id="coneGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                <stop offset="0%" stop-color="#1976d2" stop-opacity="0.65"/>
+                <stop offset="55%" stop-color="#0288d1" stop-opacity="0.25"/>
+                <stop offset="100%" stop-color="#0288d1" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <!-- 60도 부채꼴 시야각 빔 (나아갈 방향을 환하게 비춤) -->
+            <path d="M 40 40 L 12 2 A 44 44 0 0 1 68 2 Z" fill="url(#coneGrad)"/>
+            <!-- 선명한 전방 진행방향 화살표 -->
+            <polygon points="40,3 48,23 40,19 32,23" fill="#0d47a1" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+    ` : '';
+    return `
+      <div class="gps-marker-container">
+        ${arrowHtml}
+        <div class="my-gps-pulse"></div>
+        <div class="my-gps-dot"></div>
+      </div>
+    `;
+  }
+  // 버전 번호를 고정한다. 온라인일 때마다 최신 버전을 새로 받아오면, 이전에
+  // 저장해둔 오프라인 타일 캐시의 URL(버전 포함)과 새 요청 URL이 달라져
+  // 캐시가 있어도 매번 다시 다운로드하는 문제가 있었다. 네이버 타일 서버의
+  // 버전 문자열은 실제로 거의 바뀌지 않으므로 고정값으로 캐시 재사용을
+  // 보장하고, 버전이 바뀌어 지도가 깨지는 게 확인되면 이 값만 수동으로
+  // 갱신한다.
+  const naverTileVersion = '1788514292';
+
+  // 2. 지도 초기화
+  function initMap() {
+    map = L.map('map', {
+      center: [35.755, 127.674],
+      zoom: 14,
+      zoomControl: false,
+      maxZoom: 19,
+      dragging: false
+    });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // 컨트롤(줌 버튼 및 출처)을 map 외부로 이동하여 지도 회전 시에도 화면 우측 하단에 단단히 고정
+    setTimeout(() => {
+      const ctrl = map.getContainer().querySelector('.leaflet-control-container');
+      if (ctrl && ctrl.parentNode === map.getContainer()) {
+        document.body.appendChild(ctrl);
+      }
+    }, 100);
+
+    // 길찾기 회전 모드에서는 손가락으로 확대/축소(핀치줌, 더블탭)해도
+    // 화면 중심이 내 위치를 벗어나지 않아야 한다. Leaflet의 핀치줌은
+    // 손가락 중심점 기준으로 확대되어 중심이 살짝씩 밀릴 수 있으므로,
+    // 줌 동작이 끝날 때마다 다시 내 위치로 중심을 맞춘다.
+    map.on('zoomend', () => {
+      if (isHeadingUp && lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: false });
+      }
+    });
+
+    // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
+    // 있게 한다.
+    // A안: 길찾기 회전 모드에서는 지도가 CSS로 회전되어 있어 Leaflet
+    // 기본 드래그(화면 좌표 = 지도 좌표 전제)를 그대로 쓰면 사용자가
+    // 끈 방향과 실제 이동 방향이 어긋난다. Leaflet 기본 드래그(위
+    // dragging: false)를 끄고, 화면에서의 이동량(dx, dy)을 현재 회전각
+    // 만큼 역회전시켜 map.panBy로 직접 넘기는 수동 드래그로 교체한다.
+    //
+    // 회전 부호는 한 곳에서만 결정한다: renderHeadingRotation()에서
+    // CSS는 rotate(-displayedRot)로 적용되므로, 화면이 실제로 돌아간
+    // 각도는 -displayedRot이다. 화면 이동량을 지도 좌표계로 되돌리려면
+    // 그 회전을 "역"으로 취소해야 하므로 +displayedRot만큼 회전시키면
+    // 된다 — 그래서 rotateDragDelta에는 displayedRot을 그대로 전달한다.
+    // (반전 후 다시 반전하는 이중 계산을 피해 이 한 곳에서만 부호를 결정한다.)
+    //
+    // 개선 2: 이전에는 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시켰는데,
+    // 이러면 다른 지역을 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와
+    // "드래그가 안 되는 것"처럼 느껴지는 문제가 있었다. 손을 뗀 뒤에도
+    // 일정 시간(7초)은 그 자리에 머물게 두고, 그 시간이 지나야 자동으로
+    // 내 위치로 복귀한다. 유예 시간 중 다시 드래그하면 타이머를 리셋해
+    // 계속 둘러보고 싶어하는 경우를 배려한다.
+    const DRAG_RETURN_DELAY_MS = 7000;
+    let dragReturnTimer = null;
+
+    let manualDragActive = false;
+    let manualDragLastX = 0;
+    let manualDragLastY = 0;
+
+    function rotateDragDelta(dx, dy, angleDeg) {
+      const rad = angleDeg * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return {
+        x: dx * cos - dy * sin,
+        y: dx * sin + dy * cos
+      };
+    }
+
+    function startManualMapDrag(clientX, clientY) {
+      manualDragActive = true;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+
+      isMapBeingDragged = true;
+      isMapDragReturnPending = false;
+      if (dragReturnTimer) {
+        clearTimeout(dragReturnTimer);
+        dragReturnTimer = null;
+      }
+    }
+
+    function moveManualMapDrag(clientX, clientY) {
+      if (!manualDragActive) return;
+
+      const dx = clientX - manualDragLastX;
+      const dy = clientY - manualDragLastY;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+      if (dx === 0 && dy === 0) return;
+
+      // 화면 회전각(displayedRot)만큼 역회전시켜 실제 지도 좌표계 기준
+      // 이동량으로 변환한다 — 부호 결정은 이 한 곳에서만 이뤄진다.
+      const corrected = rotateDragDelta(dx, dy, displayedRot);
+      map.panBy([-corrected.x, -corrected.y], { animate: false });
+    }
+
+    function endManualMapDrag() {
+      if (!manualDragActive) return;
+      manualDragActive = false;
+
+      isMapBeingDragged = false;
+      isMapDragReturnPending = true;
+      if (dragReturnTimer) clearTimeout(dragReturnTimer);
+      dragReturnTimer = setTimeout(() => {
+        dragReturnTimer = null;
+        isMapDragReturnPending = false;
+        if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
+          map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          renderHeadingRotation(displayedRot); // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀
+        }
+      }, DRAG_RETURN_DELAY_MS);
+    }
+
+    const mapContainerEl = map.getContainer();
+
+    mapContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startManualMapDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    mapContainerEl.addEventListener('touchmove', (e) => {
+      if (!manualDragActive || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      moveManualMapDrag(touch.clientX, touch.clientY);
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
+    mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
+
+    // 데스크톱 테스트용 마우스 드래그 (스마트폰 앱이라 실사용 빈도는 낮지만 개발 확인용으로 유지)
+    mapContainerEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      startManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!manualDragActive) return;
+      moveManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', endManualMapDrag);
+
+    // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
+    switchLayer('terrain');
+  }
+
+  function switchLayer(type) {
+    // 개선 3: 레이어를 지도에서 제거(removeLayer)하는 것만으로는 그
+    // 타일레이어 객체와 내부에 쌓인 타일 참조가 완전히 정리되지 않아
+    // 지도 종류를 자주 바꿔가며 오래 쓰면 메모리 사용량이 점점 늘어날
+    // 수 있다. clearLayers()로 내부 타일 캐시를 명시적으로 비우고
+    // null로 참조를 끊어 가비지 컬렉션이 확실히 회수하게 한다.
+    // (브라우저 자체의 HTTP 캐시는 웹앱이 직접 지울 수 없는 영역이라
+    // 이 범위 밖이며, 반복 방문 시 타일 로딩 속도를 오히려 높여준다.)
+    if (currentLayer) {
+      map.removeLayer(currentLayer);
+      if (typeof currentLayer.clearLayers === 'function') {
+        currentLayer.clearLayers();
+      }
+      currentLayer = null;
+    }
+
+    const layerItems = document.querySelectorAll('.layer-item');
+    layerItems.forEach(el => el.classList.remove('selected'));
+
+    let url = '';
+    let maxNative = 17;
+
+    if (type === 'terrain') {
+      url = `https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrTerrain').classList.add('selected');
+    } else if (type === 'basic') {
+      url = `https://map.pstatic.net/nrb/styles/basic/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrBasic').classList.add('selected');
+    } else if (type === 'satellite') {
+      url = `https://map.pstatic.net/nrb/styles/satellite/${naverTileVersion}/{z}/{x}/{y}.png`;
+      document.getElementById('lyrSatellite').classList.add('selected');
+    } else if (type === 'opentopo') {
+      url = 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+      maxNative = 16;
+      document.getElementById('lyrTopo').classList.add('selected');
+    }
+
+    currentLayer = L.tileLayer(url, {
+      maxZoom: 19,
+      maxNativeZoom: maxNative, // 최대 확대 시 타일을 부드럽게 자동 확대
+      attribution: '© NAVER | 가자go'
+    }).addTo(map);
+
+    document.getElementById('layerMenu').style.display = 'none';
+  }
+
+  function toggleLayerMenu() {
+    const menu = document.getElementById('layerMenu');
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  // 두 좌표 간 거리 계산 (미터)
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  // 점(사용자 위치)에서 등산로 선분(GPX의 연속된 두 점을 잇는 선)까지의
+  // 최단거리를 미터로 계산한다. GPX는 점(waypoint)들의 나열이라, 점까지의
+  // 거리만 재면 점 간격이 넓은 구간(30~40m씩 떨어진 경우가 실제로 있다)에서는
+  // 산길 정중앙에 서 있어도 "가장 가까운 점"까지 30m 넘게 떨어진 것으로
+  // 잘못 계산되어 실제로는 이탈이 아닌데 이탈로 오판했다. 점이 아니라
+  // 산길 자체(선분)까지의 거리를 재야 이 문제가 없다.
+  //
+  // 등산로 규모(길어야 수 km)에서는 위경도를 평면으로 근사해도 오차가
+  // 무시할 만큼 작으므로, 매 GPS 갱신마다 무거운 구면삼각법을 반복하는 대신
+  // 등장방형 투영(위도 1도=111320m, 경도는 위도의 cos만큼 보정)으로
+  // 로컬 평면 좌표를 만들어 계산한다.
+  function pointToSegmentMeters(plat, plon, alat, alon, blat, blon) {
+    const latRef = plat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+
+    const px = (plon - alon) * mPerDegLon;
+    const py = (plat - alat) * mPerDegLat;
+    const bx = (blon - alon) * mPerDegLon;
+    const by = (blat - alat) * mPerDegLat;
+
+    const segLenSq = bx * bx + by * by;
+    let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = bx * t;
+    const closestY = by * t;
+    const dx = px - closestX;
+    const dy = py - closestY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // 왕복(원점회귀) 코스에서는 같은 좌표 부근에 "갈 때"와 "올 때" 두 개의
+  // 선분이 겹쳐 있어, 매번 전역 탐색을 하면 엉뚱하게 반대쪽(이미 지나온
+  // 반대 방향 구간)이 최근접점으로 잡힐 수 있다. 직전에 찾은 인덱스
+  // 근처만 우선 탐색하면 이 문제가 없고, 계산량도 크게 줄어든다.
+  let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
+  const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
+  const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
+  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 방향 일치도를 볼 때 쓰는 최신 이동방향
+
+  // 왕복 코스에서 나가는 길과 돌아오는 길이 물리적으로 거의 같은 좌표에
+  // 겹치는 구간(특히 왕복 전환점 근처)에서는, 순수 최단거리만으로는 두
+  // 세그먼트 중 어느 쪽이 "진짜 지금 걷고 있는 방향"인지 구분할 수 없다
+  // — 그날의 GPS 오차에 따라 순방향/역방향이 뒤집혀 잡히면서 "순방향으로
+  // 걷고 있는데 역주행 경고가 계속 온다"는 문제가 생겼다.
+  // 거리가 이 값(m) 이내로 비슷한 후보가 여럿이면, 최근 실제 이동 방향
+  // (gpsMovementHeading)과 세그먼트 방향이 더 일치하는 쪽을 우선한다.
+  const AMBIGUOUS_DISTANCE_MARGIN_M = 8.0;
+
+  // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
+  function findNearestInRange(lat, lon, points, startIdx, endIdx) {
+    let minDist = Infinity;
+    let nearestPoint = points[startIdx] || points[0];
+    let nearestIdx = startIdx;
+    let bestScore = Infinity; // 거리에 방향 불일치 페널티를 더한 종합 점수
+
+    for (let i = startIdx; i < endIdx; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+
+      // 거리 하나만으로 최선을 결정하지 않고, 최단거리보다
+      // AMBIGUOUS_DISTANCE_MARGIN_M 이내로 붙어있는 후보들 사이에서는
+      // 진행 방향과의 일치도로 승부를 가른다.
+      let score = d;
+      if (latestMovementBearingForTrailMatch !== null && d < minDist + AMBIGUOUS_DISTANCE_MARGIN_M) {
+        const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+        const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
+        // 방향이 어긋날수록(최대 180도) 거리에 페널티를 더한다. 계수는
+        // "방향이 정반대(180도)면 거리 차이 8m 정도는 뒤집을 만큼" 크게.
+        score = d + (mismatch / 180) * AMBIGUOUS_DISTANCE_MARGIN_M;
+      }
+
+      if (d < minDist) minDist = d;
+      if (score < bestScore) {
+        bestScore = score;
+        nearestIdx = i;
+        const dA = haversineMeters(lat, lon, a.lat, a.lon);
+        const dB = haversineMeters(lat, lon, b.lat, b.lon);
+        nearestPoint = dA <= dB ? a : b;
+      }
+    }
+
+    return { distance: minDist, point: nearestPoint, index: nearestIdx };
+  }
+
+  // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
+  // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
+  // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
+  //
+  // 탐색 전략: 직전 위치(lastNearestIdx) 주변 윈도우를 먼저 확인하고,
+  // 그 안에서 거리가 너무 멀면(50m 초과 — 갑자기 멀리 벗어났거나 이제
+  // 막 시작한 경우) 전체 트랙을 다시 훑는 전역 탐색으로 안전하게 전환한다.
+  // 이렇게 하면 왕복 코스에서 반대편 구간으로 잘못 붙는 문제를 막으면서도,
+  // 사용자가 크게 우회하거나 중간에 새로 진입해도 위치를 영영 놓치지 않는다.
+  function nearestPointOnTrail(lat, lon, points) {
+    if (!points || points.length === 0) {
+      lastNearestIdx = -1;
+      return { distance: 999999, point: null, index: -1 };
+    }
+    if (points.length === 1) {
+      lastNearestIdx = 0;
+      return { distance: haversineMeters(lat, lon, points[0].lat, points[0].lon), point: points[0], index: 0 };
+    }
+
+    const maxIdx = points.length - 2; // 선분 시작 인덱스의 최댓값 (i, i+1 쌍이므로)
+    let result;
+
+    if (lastNearestIdx >= 0) {
+      // 1차: 직전 위치 주변 윈도우만 탐색 (빠르고, 왕복 구간 혼선 방지)
+      const startIdx = Math.max(0, lastNearestIdx - TRAIL_WINDOW_RADIUS);
+      const endIdx = Math.min(maxIdx, lastNearestIdx + TRAIL_WINDOW_RADIUS);
+      result = findNearestInRange(lat, lon, points, startIdx, endIdx);
+
+      // 2차: 윈도우 안에서 찾은 결과가 너무 멀면(50m 초과) 안전장치로
+      // 전역 탐색으로 재전환 — 사용자가 크게 이탈했다가 다른 지점으로
+      // 복귀했거나, 처음 GPS를 켠 시점일 수 있다.
+      if (result.distance > TRAIL_FALLBACK_THRESHOLD_M) {
+        result = findNearestInRange(lat, lon, points, 0, maxIdx);
+      }
+    } else {
+      // 최초 1회는 윈도우 기준점이 없으므로 전역 탐색
+      result = findNearestInRange(lat, lon, points, 0, maxIdx);
+    }
+
+    lastNearestIdx = result.index;
+    return result;
+  }
+
+  // 코스별 전체 누적거리 배열 — currentPoints가 바뀔 때마다 다시 계산해둔다.
+  // 매번 새로 계산하면 GPS 갱신마다(초당 1회) 전체 배열을 순회해야 해서
+  // 비효율적이므로, drawRoute에서 한 번만 만들어 캐시해둔다.
+  let cumulativeDistances = [];
+  let currentMilestones = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
+
+  
+  // GPX 경유지/지명을 경로상 누적거리(distanceM)에 매핑
+  function buildMilestones(points, waypoints, cumDistances) {
+    if (!points || !points.length) return [];
+    const totalDistM = (cumDistances && cumDistances.length) ? cumDistances[cumDistances.length - 1] : 0;
+    const list = [];
+    const seen = new Set();
+
+    if (waypoints && waypoints.length > 0) {
+      waypoints.forEach(w => {
+        const n = (w.name || '').trim();
+        if (!n || seen.has(n)) return;
+        seen.add(n);
+
+        let minD = Infinity;
+        let nearestIdx = 0;
+        for (let i = 0; i < points.length; i++) {
+          const d = haversineMeters(w.lat, w.lon, points[i].lat, points[i].lon);
+          if (d < minD) { minD = d; nearestIdx = i; }
+        }
+        const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] : 0;
+
+        let icon = '📍';
+        let color = '#2e7d32';
+        if (n.includes('들머리') || n.includes('출발')) {
+          icon = '🚩'; color = '#1976d2';
+        } else if (n.includes('날머리') || n.includes('도착')) {
+          icon = '🏁'; color = '#d32f2f';
+        } else if (n.endsWith('봉') || n.endsWith('산') || n.includes('정상') || n.includes('최고지점')) {
+          icon = '⛰️'; color = '#e65100';
+        } else if (n.endsWith('재') || n.endsWith('령') || n.endsWith('고개')) {
+          icon = '🏔️'; color = '#00838f';
+        } else if (n.endsWith('사') || n.endsWith('암') || n.includes('절')) {
+          icon = '⛩️'; color = '#c2185b';
+        } else if (n.includes('삼거리') || n.includes('사거리') || n.includes('갈림길') || n.includes('분기')) {
+          icon = '🔀'; color = '#6a1b9a';
+        }
+
+        list.push({ name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color });
+      });
+    }
+
+    // 최고지점(정상) 자동 감지 (웨이포인트에 산/봉우리/정상이 없는 일반 GPX 대비)
+    const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
+    if (!hasPeak) {
+      const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
+      if (withEle.length > 0) {
+        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+        const peakIdx = points.indexOf(peak);
+        const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
+        list.push({
+          name: `정상 (${Math.round(peak.ele)}m)`,
+          lat: peak.lat,
+          lon: peak.lon,
+          ele: peak.ele,
+          distanceM: peakDistM,
+          icon: '⛰️',
+          color: '#e65100'
+        });
+      }
+    }
+
+    // 들머리 / 날머리가 없으면 기본 추가
+    if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
+      const startPt = points[0];
+      list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2' });
+    }
+    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
+      const endPt = points[points.length - 1];
+      list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f' });
+    }
+
+    list.sort((a, b) => a.distanceM - b.distanceM);
+    return list;
+  }
+
+  function buildCumulativeDistances(points) {
+    const dists = [0];
+    for (let i = 1; i < points.length; i++) {
+      const d = haversineMeters(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+      dists.push(dists[i-1] + d);
+    }
+    return dists;
+  }
+
+  // 지그재그(헤어핀) 구간 오안내 방지용 전방 지점 탐색.
+  // "다음 N번째 인덱스"가 아니라 "궤적을 따라 실제로 targetMeters만큼
+  // 앞선 좌표"를 찾는다. 인덱스 기준으로는 GPX 점 간격에 따라 5m 앞일
+  // 수도 200m 앞일 수도 있고, 급하게 꺾이는 구간에서는 산 반대편 궤적을
+  // 가리킬 수 있다 — 누적거리 기준이면 이 문제가 없다.
+  function findPointAheadByDistance(points, distances, fromIdx, targetMeters) {
+    if (!points || points.length === 0 || fromIdx < 0) return null;
+    const fromDist = distances[fromIdx];
+    const targetDist = fromDist + targetMeters;
+
+    for (let i = fromIdx; i < points.length - 1; i++) {
+      if (distances[i + 1] >= targetDist) {
+        // i와 i+1 사이 어딘가 — 선형 보간으로 정확한 지점을 만든다.
+        const segStart = distances[i];
+        const segEnd = distances[i + 1];
+        const segLen = segEnd - segStart;
+        const t = segLen > 0 ? (targetDist - segStart) / segLen : 0;
+        return {
+          lat: points[i].lat + (points[i+1].lat - points[i].lat) * t,
+          lon: points[i].lon + (points[i+1].lon - points[i].lon) * t
+        };
+      }
+    }
+    // 코스 끝까지 targetMeters가 안 나오면 마지막 점을 반환 (거의 다 왔다는 뜻)
+    return points[points.length - 1];
+  }
+
+  // 방위각 차이를 "오른쪽/왼쪽" 쉬운 말로 변환 — 길찾기 회전 모드에서는
+  // 화면 위쪽이 항상 내가 갈 방향이므로, 시계 숫자나 절대 방위 대신
+  // 화면 기준 좌/우로 안내하는 것이 시니어에게 훨씬 직관적이다.
+  // angleDiff: 내 진행방향(currentHeading) 대비 목표 방위각의 차이(-180~180),
+  // 양수는 시계방향(오른쪽), 음수는 반시계방향(왼쪽) — angleDiffToClockDirection의
+  // 기존 부호 규약(1~5시=오른쪽, 7~11시=왼쪽)을 그대로 승계한다.
+  function angleDiffToPlainKorean(angleDiff) {
+    const abs = Math.abs(angleDiff);
+    const side = angleDiff >= 0 ? '오른쪽' : '왼쪽';
+    if (abs <= 15) return '그대로 직진하세요';
+    if (abs <= 45) return `${side}으로 조금`;
+    if (abs <= 100) return `${side}으로`;
+    return `${side}으로 많이`;
+  }
+
+  // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
+  // 이걸 안 하면 이전 코스에서 남은 인덱스를 기준으로 새 코스를 윈도우
+  // 탐색하게 되어 엉뚱한 결과가 나올 수 있다.
+  function resetTrailSearchWindow() {
+    lastNearestIdx = -1;
+  }
+
+  // 타일 좌표 계산 함수
+  function latLonToTile(lat, lon, zoom) {
+    const latRad = lat * Math.PI / 180;
+    const n = Math.pow(2, zoom);
+    const x = Math.floor((lon + 180) / 360 * n);
+    const y = Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n);
+    return { x, y };
+  }
+
+  function getTilesForBounds(minLat, maxLat, minLon, maxLon, zoom) {
+    const p1 = latLonToTile(maxLat, minLon, zoom);
+    const p2 = latLonToTile(minLat, maxLon, zoom);
+    const minX = Math.min(p1.x, p2.x);
+    const maxX = Math.max(p1.x, p2.x);
+    const minY = Math.min(p1.y, p2.y);
+    const maxY = Math.max(p1.y, p2.y);
+
+    const tiles = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        tiles.push({ z: zoom, x, y });
+      }
+    }
+    return tiles;
+  }
+
+  // GPX 파싱
+  function parseGPX(xmlText) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'application/xml');
+    const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+    if (!trkpts.length) throw new Error('트랙 좌표를 찾을 수 없습니다.');
+
+    const points = trkpts.map(pt => {
+      const lat = parseFloat(pt.getAttribute('lat'));
+      const lon = parseFloat(pt.getAttribute('lon'));
+      const eleEl = pt.getElementsByTagName('ele')[0];
+      const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+      const timeEl = pt.getElementsByTagName('time')[0];
+      const time = timeEl ? new Date(timeEl.textContent) : null;
+      return { lat, lon, ele, time };
+    }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+    const cleanedPoints = removeGpxSpikes(points);
+    const wpts = Array.from(xml.getElementsByTagName('wpt')).map(wpt => {
+      const lat = parseFloat(wpt.getAttribute('lat'));
+      const lon = parseFloat(wpt.getAttribute('lon'));
+      const nameEl = wpt.getElementsByTagName('name')[0];
+      const name = nameEl ? nameEl.textContent.trim() : '';
+      const eleEl = wpt.getElementsByTagName('ele')[0];
+      const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+      return { lat, lon, name, ele };
+    }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
+    cleanedPoints.waypoints = wpts;
+    return cleanedPoints;
+  }
+
+  // 개선 5: GPX 파일 자체에 기록 당시 GPS 오차로 생긴 "스파이크"(실제
+  // 등산로는 완만한데 좌표 하나가 뾰족하게 튀어나온 지점)를 걸러낸다.
+  // 이런 스파이크는 실시간 GPS 노이즈와 달리 파일에 이미 박제되어 있어
+  // 매번 그 지점을 지날 때마다 방향 계산이 똑같이 틀어지는 원인이었다.
+  //
+  // 판정 기준: 연속된 세 점(A-B-C)에서 A→B 방향과 B→C 방향이 급격히
+  // 꺾이면서(150도 이상, 거의 되돌아오는 수준) 동시에 B가 A-C 직선에서
+  // 비정상적으로 멀리 떨어져 있으면(스파이크 폭 대비 A-C 거리가 매우
+  // 짧음) 스파이크로 간주해 B를 제거한다. 실제 등산로의 급한 코너(정상,
+  // 갈림길 등)는 A-C 거리 자체가 어느 정도 되므로 이 조건에 잘 안 걸린다.
+  function removeGpxSpikes(points) {
+    if (!points || points.length < 3) return points;
+
+    const SPIKE_ANGLE_THRESHOLD = 150; // 이 각도(deg) 이상 급격히 꺾이면 의심
+    const SPIKE_MAX_AC_DIST_M = 15;    // A-C 거리가 이보다 짧으면 "제자리에서 튄" 스파이크로 판정
+
+    const result = [points[0]];
+    for (let i = 1; i < points.length - 1; i++) {
+      const a = result[result.length - 1];
+      const b = points[i];
+      const c = points[i + 1];
+
+      const bearingAB = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+      const bearingBC = calculateBearing(b.lat, b.lon, c.lat, c.lon);
+      const turnAngle = Math.abs(shortestAngleDiff(bearingBC, bearingAB));
+      const distAC = haversineMeters(a.lat, a.lon, c.lat, c.lon);
+
+      const isSpike = turnAngle >= SPIKE_ANGLE_THRESHOLD && distAC <= SPIKE_MAX_AC_DIST_M;
+      if (isSpike) {
+        console.warn(`⚠️ GPX 스파이크 감지 및 제거: 인덱스 ${i}, 꺾인각 ${turnAngle.toFixed(1)}°, A-C거리 ${distAC.toFixed(1)}m`);
+        continue; // b를 건너뛰고 result에 넣지 않음
+      }
+      result.push(b);
+    }
+    result.push(points[points.length - 1]);
+    return result;
+  }
+
+  // 산에서 여러 코스를 오프라인으로 골라볼 수 있도록 배열로 보관하되,
+  // 같은 GPX 파일이나 같은 코스는 반드시 1개만 유지하며 최신 내용으로 갱신(upsert)한다.
+  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v1';
+  const MAX_SAVED_ROUTES = 5;
+
+  function extractGpxFileName(str) {
+    if (!str) return '';
+    try { str = decodeURIComponent(str); } catch(e) {}
+    const m = str.match(/([^\/\?#&=:"']+\.gpx)/i);
+    return m ? m[1].toLowerCase().replace(/\.gpx$/i, '').trim() : '';
+  }
+
+  function normalizeCourseKey(name, url) {
+    const file = extractGpxFileName(url) || extractGpxFileName(name);
+    if (file) {
+      return file.replace(/[_-\s]+/g, '').toLowerCase();
+    }
+    if (name) {
+      let n = name;
+      try { n = decodeURIComponent(n); } catch(e) {}
+      return n.replace(/^🚩\s*/, '')
+              .replace(/등산지도|등산로|지도/g, '')
+              .replace(/[_-\s]+/g, '')
+              .toLowerCase()
+              .trim();
+    }
+    return '';
+  }
+
+  function isSameRoute(a, b) {
+    if (!a || !b) return false;
+    if (a.sourceUrl && b.sourceUrl && a.sourceUrl === b.sourceUrl) return true;
+    const keyA = normalizeCourseKey(a.name, a.sourceUrl);
+    const keyB = normalizeCourseKey(b.name, b.sourceUrl);
+    if (keyA && keyB && keyA === keyB) return true;
+    return false;
+  }
+
+  function loadSavedRoutes() {
+    try {
+      const raw = localStorage.getItem(SAVED_ROUTES_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) return [];
+
+      // 기존 저장 목록에 동일 코스가 중복 누적된 경우 최신 1개만 남기고 자동 정리
+      const unique = [];
+      list.forEach(item => {
+        if (!unique.some(u => isSameRoute(u, item))) {
+          unique.push(item);
+        }
+      });
+      if (unique.length !== list.length) {
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(unique));
+      }
+      return unique;
+    } catch(e) { return []; }
+  }
+
+  function saveRouteToStorage(courseName, sourceUrl, points) {
+    try {
+      const newRoute = {
+        name: courseName,
+        sourceUrl: sourceUrl || null,
+        points: points,
+        waypoints: points.waypoints || [],
+        savedAt: Date.now()
+      };
+      let list = loadSavedRoutes();
+      // 같은 코스가 이미 있으면 기존 항목을 모두 제거하고 최신으로 맨 앞에 1개만 등록
+      list = list.filter(r => !isSameRoute(r, newRoute));
+      list.unshift(newRoute);
+      if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      // 방금 밀려난 코스가 있다면 그 타일도 정리한다(비동기, 결과를 기다리지 않음).
+      cleanupEvictedCourseTiles().catch(() => {});
+    } catch(e) {
+      try {
+        let list = loadSavedRoutes();
+        list = list.slice(0, Math.ceil(list.length / 2));
+        const newRoute = { name: courseName, sourceUrl: sourceUrl || null, points: points, savedAt: Date.now() };
+        list = list.filter(r => !isSameRoute(r, newRoute));
+        list.unshift(newRoute);
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      } catch(e2) {}
+    }
+  }
+
+  function findSavedRoute(courseName, url) {
+    const target = { name: courseName, sourceUrl: url };
+    return loadSavedRoutes().find(r => isSameRoute(r, target)) || null;
+  }
+
+  // 경로 그리기
+  // sourceUrl: 로컬 저장소 키로 쓰는 GPX 원본 주소. 코스명(courseName)만으로는
+  // 서로 다른 GPX가 같은 이름으로 뽑혀 캐시가 뒤섞이는 문제가 있었다 —
+  // 반드시 원본 URL로 구분해야 한다.
+  function drawRoute(points, courseName, sourceUrl, isFromCache) {
+    if (!map || !points.length) return;
+    currentPoints = points;
+    resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
+    gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
+    cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
+
+    if (polyline) map.removeLayer(polyline);
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
+    const latlngs = points.map(p => [p.lat, p.lon]);
+
+    // 깔끔하고 선명한 등산로 빨간선
+    polyline = L.polyline(latlngs, {
+      color: '#d32f2f',
+      weight: 5,
+      opacity: 0.95
+    }).addTo(map);
+
+    fitRoute();
+
+    const makeBadge = (lat, lon, title, bg) => {
+      const icon = L.divIcon({
+        className: 'custom-badge-icon',
+        html: `<div class="route-badge" style="background:${bg};">${title}</div>`,
+        iconAnchor: [30, 12]
+      });
+      return L.marker([lat, lon], { icon }).addTo(map);
+    };
+
+    currentMilestones = buildMilestones(points, points.waypoints, cumulativeDistances);
+    if (currentMilestones && currentMilestones.length > 0) {
+      currentMilestones.forEach(m => {
+        markers.push(makeBadge(m.lat, m.lon, `${m.icon} ${m.name}`, m.color));
+      });
+    } else {
+      const start = points[0];
+      const end = points[points.length - 1];
+      markers.push(makeBadge(start.lat, start.lon, '🚩 들머리', '#1976d2'));
+      markers.push(makeBadge(end.lat, end.lon, '🏁 날머리', '#d32f2f'));
+      const withEle = points.filter(p => p.ele !== null);
+      if (withEle.length) {
+        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+        markers.push(makeBadge(peak.lat, peak.lon, `⛰️ 정상 (${Math.round(peak.ele)}m)`, '#e65100'));
+      }
+    }
+
+    // 거리 및 고도 정보 계산 생략 (지도 화면 극대화)
+
+    if (courseName) {
+      document.getElementById('trailName').innerText = '🚩 ' + courseName;
+      let cleanTitle = courseName.replace(/^🚩\s*/, '').trim();
+      if (!cleanTitle.includes('등산지도') && !cleanTitle.includes('등산로') && !cleanTitle.includes('지도')) {
+        cleanTitle += ' 등산지도';
+      }
+      document.title = cleanTitle;
+      const meta = document.getElementById('appleAppTitle');
+      if (meta) meta.content = cleanTitle;
+    }
+
+    // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원,
+    // 여러 코스를 동시에 보관해 오프라인 상태에서도 목록에서 골라볼 수 있다)
+    saveRouteToStorage(courseName, sourceUrl, points);
+
+    document.getElementById('emptyModal').style.display = 'none';
+
+    // 지도가 열리는 즉시 백그라운드에서 오프라인 등산지도 자동 캐시 저장!
+    // 단, 이 코스가 이전에 이미 완전히 저장되어 있다면 autoSaveOfflineMap
+    // 내부에서 완료 플래그를 확인해 네트워크 접근 없이 즉시 반환한다.
+    const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
+    autoSaveOfflineMap(points, tileCourseKey);
+
+    // 등산로 코스가 열리면 길찾기(내 위치 추적)를 기본으로 바로 시작한다.
+    // 매번 GPS 버튼을 눌러야 시작되던 이전 방식 대신, 산에서 지도만 켜면
+    // 곧바로 방향 안내가 되도록 opt-out 대신 opt-in을 뒤집었다. 이미 GPS가
+    // 켜져 있으면(코스를 다시 불러온 경우 등) 중복 시작하지 않는다.
+    if (watchId === null) {
+      startGpsTracking();
+    }
+  }
+
+  // 코스를 화면 시각적 정중앙에 정확히 배치 (상단 헤더 여백 보정)
+  function fitRoute() {
+    if (!map || !polyline) return;
+    map.fitBounds(polyline.getBounds(), {
+      paddingTopLeft: [40, 85],
+      paddingBottomRight: [40, 45]
+    });
+  }
+
+  // 코스별 타일 다운로드 완료 여부를 기록하는 플래그.
+  // 기존에는 좌표(saveRouteToStorage)만 저장됐고 타일 캐싱 성공 여부는
+  // 어디에도 남지 않아, 코스를 다시 열 때마다 이미 받은 타일까지
+  // cache.match()로 수백 번씩 재확인했다. 완료 플래그가 있으면 이 확인을
+  // localStorage 조회 1번으로 끝내고, 온전히 끝난 코스는 네트워크를
+  // 아예 건드리지 않는다.
+  const TILES_SAVED_KEY = 'gajago_tiles_saved_v1';
+
+  function getTileSaveStatus(courseKey) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      return map[courseKey] || null; // { status: 'complete'|'partial', savedAt, tileCount, failedCount }
+    } catch(e) { return null; }
+  }
+
+  function setTileSaveStatus(courseKey, statusObj) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      map[courseKey] = statusObj;
+      localStorage.setItem(TILES_SAVED_KEY, JSON.stringify(map));
+    } catch(e) {}
+  }
+
+  // 코스명+원본URL로 고유 키 생성 (기존 normalizeCourseKey 재사용)
+  function getTileCourseKey(courseName, sourceUrl) {
+    return normalizeCourseKey(courseName, sourceUrl) || (sourceUrl || courseName || 'unknown');
+  }
+
+  // 저장된 코스 목록(saved_hiking_routes_v1, 최대 MAX_SAVED_ROUTES개)에서
+  // 밀려나 더 이상 존재하지 않는 코스의 오프라인 지도 타일을 Cache Storage에서
+  // 지운다. 타일 캐시(gaja-trail-cache-v5)에는 자동 삭제가 없어서, 여러
+  // 산을 다니며 코스를 계속 열어보면 오래된 코스의 타일이 스마트폰
+  // 저장공간에 무한정 쌓이는 문제가 있었다 — 코스 목록에서 밀려나는
+  // 시점(=더 이상 이 앱에서 접근할 방법이 없어지는 시점)에 맞춰 정리한다.
+  async function cleanupEvictedCourseTiles() {
+    if (!('caches' in window)) return;
+
+    let tileStatusMap;
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      tileStatusMap = raw ? JSON.parse(raw) : {};
+    } catch(e) { return; }
+
+    const trackedKeys = Object.keys(tileStatusMap);
+    if (trackedKeys.length === 0) return;
+
+    const activeKeys = new Set(
+      loadSavedRoutes().map(r => getTileCourseKey(r.name, r.sourceUrl))
+    );
+    const evictedKeys = trackedKeys.filter(k => !activeKeys.has(k));
+    if (evictedKeys.length === 0) return;
+
+    try {
+      const cache = await caches.open('gaja-trail-cache-v5');
+      for (const key of evictedKeys) {
+        const entry = tileStatusMap[key];
+        const urls = (entry && entry.tileUrls) || [];
+        for (const url of urls) {
+          await cache.delete(url).catch(() => {});
+        }
+        delete tileStatusMap[key];
+      }
+      localStorage.setItem(TILES_SAVED_KEY, JSON.stringify(tileStatusMap));
+      console.log(`🧹 저장 목록에서 밀려난 코스 ${evictedKeys.length}개의 오프라인 타일 정리 완료`);
+    } catch(e) {}
+  }
+
+  // 지도가 열리면 자동으로 주변 지형도 타일을 백그라운드 캐싱 (산속 통신두절 대비)
+  let isSavingCache = false;
+  async function autoSaveOfflineMap(points, courseKey) {
+    if (isSavingCache || !points || !points.length) return;
+
+    // ⭐ 이미 완전히 저장된 코스면 네트워크 접근 자체를 하지 않는다.
+    if (courseKey) {
+      const existing = getTileSaveStatus(courseKey);
+      if (existing && existing.status === 'complete') {
+        console.log('⚡ 이미 오프라인 지도가 완전히 저장된 코스 — 재다운로드 생략:', courseKey);
+        return;
+      }
+    }
+
+    // 산속에서 데이터가 아예 안 터지는 상태라면 시도 자체가 배터리 낭비다.
+    if (navigator.onLine === false) {
+      console.log('📡 오프라인 상태 — 타일 다운로드 시도 안 함');
+      return;
+    }
+
+    isSavingCache = true;
+
+    // 상단 자동 저장 미니 알림 뱃지
+    let badge = document.getElementById('offlineAutoBadge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'offlineAutoBadge';
+      badge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#ffffff; font-size:12px; font-weight:700; padding:8px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.2); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.6s ease;';
+      document.body.appendChild(badge);
+    }
+    badge.style.opacity = '1';
+    badge.innerText = '💾 오프라인 등산지도 자동 저장 중... (0%)';
+
+    // 경로의 기하학적 중심 계산
+    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    points.forEach(p => {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+    });
+
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+
+    // 위도 및 경도 방향의 실제 거리(km) 계산
+    const latDistKm = (maxLat - minLat) * 111.0;
+    const lonDistKm = (maxLon - minLon) * 111.0 * Math.cos(centerLat * Math.PI / 180);
+
+    // 한쪽으로 치우치지 않도록 더 긴 축 기준으로 동서남북 사방 동일 반경(정사각형 대칭) 설정
+    const maxHalfKm = Math.max(latDistKm, lonDistKm) / 2.0;
+    const padKm = 1.6; // 사방 균일 여유 마진 (약 1.6km)
+    const radiusKm = maxHalfKm + padKm;
+
+    const dLat = radiusKm / 111.0;
+    const dLon = radiusKm / (111.0 * Math.cos(centerLat * Math.PI / 180));
+
+    const symMinLat = centerLat - dLat;
+    const symMaxLat = centerLat + dLat;
+    const symMinLon = centerLon - dLon;
+    const symMaxLon = centerLon + dLon;
+
+    // 사방 대칭 정사각형 영역으로 줌 13~17 타일 목록 생성
+    const tileUrls = [];
+    for (let z = 13; z <= 17; z++) {
+      const tiles = getTilesForBounds(symMinLat, symMaxLat, symMinLon, symMaxLon, z);
+      tiles.forEach(t => {
+        tileUrls.push(`https://map.pstatic.net/nrb/styles/terrain/${naverTileVersion}/${t.z}/${t.x}/${t.y}.png`);
+      });
+    }
+
+    const total = tileUrls.length;
+
+    try {
+      const cache = await caches.open('gaja-trail-cache-v5');
+      await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
+
+      let completed = 0;
+      let failedCount = 0;
+      const batchSize = 12;
+      for (let i = 0; i < tileUrls.length; i += batchSize) {
+        const batch = tileUrls.slice(i, i + batchSize);
+        await Promise.all(batch.map(async url => {
+          try {
+            const match = await cache.match(url);
+            if (!match) {
+              const res = await fetch(url, { mode: 'cors' });
+              if (res.ok) {
+                await cache.put(url, res);
+              } else {
+                failedCount++;
+              }
+            }
+          } catch(e) {
+            failedCount++;
+          }
+          completed++;
+        }));
+        const pct = Math.round((completed / total) * 100);
+        badge.innerText = `💾 오프라인 등산지도 자동 저장 중... (${pct}%)`;
+      }
+
+      if (failedCount === 0) {
+        badge.innerText = '✅ 오프라인 등산지도 저장 완료! (산속 통신두절 대비)';
+        badge.style.background = 'rgba(46,125,50,0.95)';
+        // 완전 성공 — 다음부터는 이 코스를 열어도 재다운로드하지 않는다.
+        // tileUrls도 함께 저장해둬야, 나중에 이 코스가 저장 목록에서
+        // 밀려날 때 정확히 이 타일들만 캐시에서 지울 수 있다(정리 로직 참고).
+        if (courseKey) {
+          setTileSaveStatus(courseKey, { status: 'complete', savedAt: Date.now(), tileCount: total, failedCount: 0, tileUrls });
+        }
+      } else {
+        badge.innerText = `⚠️ 오프라인 저장 완료 (일부 타일 ${failedCount}개 실패 — 오프라인 시 해당 구간 미표시될 수 있음)`;
+        badge.style.background = 'rgba(230,81,0,0.95)';
+        // 일부만 성공 — 다음에 다시 열면 실패한 부분을 포함해 재시도할 수 있도록
+        // 'partial'로 기록한다 (완전 재다운로드는 아니지만 재시도 여지를 남김).
+        if (courseKey) {
+          setTileSaveStatus(courseKey, { status: 'partial', savedAt: Date.now(), tileCount: total, failedCount, tileUrls });
+        }
+      }
+      // 밀려난 오래된 코스가 있으면 그 코스의 타일들을 캐시에서 정리한다
+      // (저장공간이 무한정 쌓이지 않도록). 실패해도 오프라인 지도 저장
+      // 자체는 이미 끝났으므로 조용히 넘어간다.
+      cleanupEvictedCourseTiles().catch(() => {});
+      setTimeout(() => {
+        badge.style.opacity = '0';
+        setTimeout(() => badge.remove(), 600);
+      }, 3000);
+    } catch(err) {
+      console.warn('오프라인 캐시 자동 저장 실패:', err);
+      badge.remove();
+    } finally {
+      isSavingCache = false;
+    }
+  }
+
+  // 모달 닫기
+  function closeModal() {
+    const modal = document.getElementById('emptyModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // 🌟 저장된 등산로 코스 목록 팝업 열기 (전역 함수로 언제든지 즉시 호출 가능)
+  function showSavedRouteList(message) {
+    const routes = loadSavedRoutes();
+    const modal = document.getElementById('emptyModal');
+    if (!modal) return;
+    const desc = document.getElementById('modalDesc');
+    const listEl = document.getElementById('savedRouteList');
+
+    if (!routes || routes.length === 0) {
+      if (desc) desc.innerHTML = message || '현재 오프라인으로 저장된 등산로 코스가 없습니다.<br><br>💡 GPX 파일을 열거나 블로그 등산지도 링크를 누르시면 자동으로 저장됩니다.';
+      if (listEl) {
+        listEl.innerHTML = '';
+        listEl.style.display = 'none';
+      }
+      modal.style.display = 'flex';
+      return;
+    }
+
+    if (desc) desc.innerHTML = message || '저장된 코스를 터치하시면 오프라인 지도로 즉시 열립니다.';
+    if (listEl) {
+      listEl.innerHTML = routes.map((r, i) => {
+        const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
+        const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
+        return `
+          <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
+            <div class="saved-route-info">
+              <div class="saved-route-name">⛰️ ${safeName}</div>
+              <div class="saved-route-date">저장일: ${dateStr}</div>
+            </div>
+            <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
+              🗑️
+            </button>
+          </div>
+        `;
+      }).join('');
+      listEl.style.display = 'flex';
+    }
+    modal.style.display = 'flex';
+  }
+  window.showSavedRouteList = showSavedRouteList;
+
+  function openSavedRouteByIndex(index) {
+    const routes = loadSavedRoutes();
+    const r = routes[index];
+    if (!r) return;
+    closeModal();
+    if (r.waypoints) r.points.waypoints = r.waypoints;
+    drawRoute(r.points, r.name, r.sourceUrl);
+  }
+  window.openSavedRouteByIndex = openSavedRouteByIndex;
+
+  function deleteSavedRouteByIndex(event, index) {
+    if (event) event.stopPropagation();
+    const routes = loadSavedRoutes();
+    const target = routes[index];
+    const targetName = target ? target.name : '이 코스';
+    if (confirm(`'${targetName}' 코스를 저장 목록에서 삭제하시겠습니까?`)) {
+      routes.splice(index, 1);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+      showSavedRouteList();
+    }
+  }
+  window.deleteSavedRouteByIndex = deleteSavedRouteByIndex;
+
+  // PC 드래그 앤 드롭(Drag & Drop) 파일 열기 지원
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.name.toLowerCase().endsWith('.gpx')) {
+        const fakeEvt = { target: { files: [file] } };
+        onFileSelected(fakeEvt);
+      } else {
+        alert('이 파일은 열 수 없어요.\n\n등산로 지도(.gpx) 파일만 불러올 수 있습니다.\n다른 파일을 다시 선택해 주세요.');
+      }
+    }
+  });
+
+  function onFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+    const sourceUrl = 'file:' + file.name;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const points = parseGPX(evt.target.result);
+        closeModal();
+        drawRoute(points, courseName, sourceUrl);
+      } catch(err) {
+        console.error('GPX 파싱 실패:', err);
+        alert('이 등산로 파일을 읽을 수 없어요.\n\n파일이 손상되었거나 등산로 지도 파일이 아닌 것 같습니다.\n다른 파일로 다시 시도해보세요.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // 등산로 진행 및 코스 일탈/역주행 실시간 상태 안내 토스트
+  // 히스테리시스: 35m 넘으면 "이탈 상태" 진입, 25m 밑으로 돌아와야 "정상"으로 해제.
+  // 경계선(30m 부근)에서 왔다갔다 하며 토스트가 깜빡이는 것을 막는다.
+  let isOffTrailState = false;
+  let offTrailStreakCount = 0; // GPS 갱신마다 1씩 증가 — 연속 3회(약 3초) 이상일 때만 경고음
+
+  // 이탈 히스테리시스 상태만 갱신하는 함수 — updateNavigationToast와
+  // 정지 시 방향 고정 로직(watchPosition 콜백) 양쪽에서 공유해서 쓴다.
+  // 갱신 시점이 늦으면(예: 이 함수를 안 쓰고 updateNavigationToast 안에서만
+  // 갱신하면) 정지 시 방향 고정 로직이 "한 픽스 전"의 낡은 이탈 상태를
+  // 참조하게 되는 문제가 있었다.
+  function updateOffTrailHysteresis(minDistanceM) {
+    if (!isOffTrailState && minDistanceM > 35) {
+      isOffTrailState = true;
+    } else if (isOffTrailState && minDistanceM < 25) {
+      isOffTrailState = false;
+      offTrailStreakCount = 0;
+      resetOffTrailStreak(); // 궤적 복귀 → 다음 이탈은 15초부터 다시 경고
+    }
+  }
+
+  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+    const toast = document.getElementById('gpsToast');
+    if (!toast || toast.style.display === 'none') return;
+    if (!lastKnownPos) return;
+
+    if (nearestPoint && isOffTrailState) {
+      // 숲/계곡 GPS 수신 불안정 시 오알람 방지 (정확도가 25m보다 나쁘면 대기)
+      if (accuracy > 25 && offTrailStreakCount < 4) {
+        toast.className = 'gps-toast';
+        toast.innerText = `📡 숲·계곡 GPS 수신 대기 중 (오차 ±${Math.round(accuracy)}m)`;
+        return;
+      }
+      offTrailStreakCount++;
+      // 화면은 항상 내가 가는 방향이 위쪽인 길찾기 회전 모드이므로,
+      // 등산로 복귀 방향도 "북동쪽" 같은 절대 방위가 아니라 화면 기준
+      // 오른쪽/왼쪽 상대 방향으로 안내해야 나침반 없이도 바로 알 수 있다.
+      const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
+      const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, currentHeading);
+      toast.className = 'gps-toast warning';
+      toast.innerText = `⚠️ [이탈] ${Math.round(minDistanceM)}m 벗어났어요 · ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
+
+      // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
+      // 유지될 때만 실제 경고음을 울린다.
+      if (offTrailStreakCount >= 3) {
+        playOffTrailBeep();
+      }
+    } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
+      // 정지 중에는 "정지 중" 안내만, 이동 중에는 남은 거리만 표시한다.
+      // (이전에는 여기서 궤적 방향과 실제 이동 방향을 비교해 역주행 여부를
+      // 판정했으나, 개선 1로 그 판정 자체를 제거했다 — 녹색 점선과 이탈
+      // 경고가 이미 필요한 안내를 제공하므로 더 이상 계산할 필요가 없다.)
+      const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+      const traveledDist = cumulativeDistances[nearestIdx] || 0;
+      const remainingDist = Math.max(0, totalDist - traveledDist);
+      const remainingStr = remainingDist >= 1000
+        ? `${(remainingDist / 1000).toFixed(1)}km`
+        : `${Math.round(remainingDist)}m`;
+
+      const fmtM = m => m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`;
+
+      // 지명(마일스톤) 기반 실시간 구간 및 다음 목적지 판정
+      if (currentMilestones && currentMilestones.length >= 2) {
+        let prevM = currentMilestones[0];
+        let nextM = currentMilestones[currentMilestones.length - 1];
+        for (let i = 0; i < currentMilestones.length; i++) {
+          if (currentMilestones[i].distanceM <= traveledDist + 15) {
+            prevM = currentMilestones[i];
+          }
+          if (currentMilestones[i].distanceM > traveledDist + 15) {
+            nextM = currentMilestones[i];
+            break;
+          }
+        }
+        const distToNextM = Math.max(0, nextM.distanceM - traveledDist);
+
+        if (isCurrentlyStopped) {
+          // 정지 시: 앞쪽 등산로(20m 앞) 또는 다음 지명 방향과 나침반 방위 비교
+          const targetPt = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20) || nextM;
+          const targetBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, targetPt.lat, targetPt.lon);
+          
+          let dirGuide = '등산로 방향';
+          if (currentHeading !== null && !isNaN(currentHeading)) {
+            const toNextAngleDiff = shortestAngleDiff(targetBearing, currentHeading);
+            dirGuide = angleDiffToPlainKorean(toNextAngleDiff);
+          }
+
+          toast.className = 'gps-toast';
+          toast.innerText = `🧭 정지 중 · [${nextM.name}] ${dirGuide} (남은 ${fmtM(distToNextM)})`;
+          return;
+        }
+
+        toast.className = 'gps-toast';
+        toast.innerText = `🧭 [${prevM.name} ➔ ${nextM.name}] · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
+        return;
+      }
+
+      if (isCurrentlyStopped) {
+        toast.className = 'gps-toast';
+        toast.innerText = `🧭 정지 중 · 남은 ${remainingStr}`;
+        return;
+      }
+
+      toast.className = 'gps-toast';
+      toast.innerText = `🧭 위쪽으로 따라가세요 · 남은 ${remainingStr}`;
+    } else {
+      toast.className = 'gps-toast';
+      toast.innerText = `🧭 위쪽으로 따라가세요`;
+    }
+  }
+
+  // 화면 자동 꺼짐 방지 (Wake Lock) — 길찾기 회전 모드(화살표 ON, 2클릭)
+  // 동안에는 화면을 계속 봐야 하므로 자동 잠금을 막는다. 지원 안 하는
+  // 브라우저(구형 iOS Safari 등)에서는 조용히 무시한다.
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } catch (e) {}
+  }
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release().catch(() => {});
+      wakeLock = null;
+    }
+  }
+  // 화면이 숨겨지면(다른 앱으로 전환, 화면 꺼짐 등) GPS 수신을 완전히
+  // 멈춘다. watchPosition을 백그라운드에서도 계속 돌리면 배터리와
+  // 메모리를 불필요하게 소모하고, 등산 중 화면을 계속 볼 필요가 없는
+  // 순간(주머니에 넣기 등)까지 계산을 이어갈 이유가 없다.
+  // 다시 화면이 보이면 GPS를 재시작하고 관련 상태를 전부 초기화해
+  // "새로 시작하는 것"처럼 처리한다 — 숨겨진 동안 실제로 이동했을 수
+  // 있는데 옛 위치·방향값이 남아있으면 복귀 시 급격한 격차를 좁히려
+  // 하면서 지도·나침반·화살표가 한꺼번에 튀는 원인이 되기 때문이다.
+  let wasTrackingBeforeHidden = false;
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      if (watchId !== null) {
+        wasTrackingBeforeHidden = true;
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        releaseWakeLock();
+        stopCompass();
+      }
+    } else if (document.visibilityState === 'visible') {
+      if (wasTrackingBeforeHidden) {
+        wasTrackingBeforeHidden = false;
+        gpsFilterEngine.reset();
+        smoothedHeading = null;
+        gpsMovementHeading = null;
+        isCurrentlyStopped = false;
+        startGpsTracking(); // GPS 재시작 — 내부에서 initCompass, wakeLock 등도 함께 재요청됨
+      }
+    }
+  });
+
+  // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
+  function toggleGPS() {
+    if (watchId !== null) {
+      stopGpsTracking();
+    } else {
+      startGpsTracking();
+    }
+  }
+
+  function stopGpsTracking() {
+    const btn = document.getElementById('gpsBtn');
+    const toast = document.getElementById('gpsToast');
+    setHeadingUpMode(false, true);
+    showHeadingArrow = false;
+    releaseWakeLock();
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    stopCompass();
+    if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
+    if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+    btn.innerText = '📍';
+    btn.classList.remove('active');
+    toast.style.display = 'none';
+    showToastBadge('📍 내 위치 추적을 종료했습니다.');
+  }
+
+  function startGpsTracking() {
+    const btn = document.getElementById('gpsBtn');
+    const toast = document.getElementById('gpsToast');
+
+    if (!navigator.geolocation) {
+      alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
+      return;
+    }
+
+    // 나침반 센서 즉시 활성화
+    initCompass();
+    showHeadingArrow = true;
+
+    // GPS를 새로 켤 때마다 필터를 초기화한다. 이전에 종료했던 위치의
+    // 필터 상태가 남아있으면, 완전히 새로운 위치에서 다시 시작할 때
+    // "예전 위치 → 새 위치"로 수렴하는 과도기 동안 오히려 부자연스럽게
+    // 흔들리거나 지연될 수 있다.
+    gpsFilterEngine.reset();
+    // 방향값도 함께 초기화한다. 이걸 빠뜨리면 이전 세션에서 마지막으로
+    // 확정됐던 방향(smoothedHeading/continuousHeading)이 그대로 남아있어,
+    // GPS를 껐다 다시 켰을 때 회전이 엉뚱한 각도에서 시작되거나 전혀
+    // 회전하지 않는 것처럼 보이는 재현성 버그의 원인이 되었다.
+    smoothedHeading = null;
+    continuousHeading = 0;
+    gpsMovementHeading = null;
+    isCurrentlyStopped = false;
+
+    // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
+    // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
+    // [내 위치] 버튼을 누른 지금 오디오를 미리 열어둔다.
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
+
+    btn.innerText = '🧭';
+    btn.classList.add('active');
+    requestWakeLock();
+    toast.style.display = 'block';
+    toast.className = 'gps-toast';
+    toast.innerText = '📡 GPS 수신 중...';
+    showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
+
+    let isFirstFix = true;
+
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const accuracy = Math.round(pos.coords.accuracy);
+        lastKnownPos = { lat, lon }; // 화면 표시·이탈판정용 — 지연 없는 원시 좌표를 그대로 사용
+
+        // 📡 GpsFilterEngine에 원시 픽스를 넣으면, 표준 파이프라인이
+        // (1)오차 필터 → (2)정지/이동 판정 → (3)좌표 스무딩+방위각
+        // 히스테리시스를 전부 내부에서 처리한 결과를 반환한다.
+        // 반환값이 null이면 이번 픽스는 신뢰할 수 없어(오차 초과 또는
+        // 너무 빠른 중복 수신) 버려진 것이므로 이번 갱신은 건너뛴다.
+        const result = gpsFilterEngine.process({
+          latitude: lat,
+          longitude: lon,
+          accuracy: accuracy,
+          speed: pos.coords.speed,
+          heading: pos.coords.heading,
+          timestamp: Date.now()
+        });
+
+        if (!result) {
+          // 신뢰할 수 없는 픽스 — 방향/거리 갱신 없이 다음 수신을 기다린다.
+          return;
+        }
+
+        const wasStoppedBeforeThisFix = isCurrentlyStopped; // 전환 감지용 — 이번 픽스로 덮어쓰기 전 스냅샷
+        isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태
+
+        // 왕복 겹침 구간에서 순방향/역방향 세그먼트를 구분할 때 쓸 최신
+        // 이동 방향. gpsMovementHeading(전역, 아직 이번 픽스로 안 갱신됨)
+        // 대신 이번 픽스에서 막 나온 result.bearing을 우선 쓴다 — 정지
+        // 상태라 이번엔 방위각이 없으면 직전 값(gpsMovementHeading)으로
+        // 대체한다.
+        latestMovementBearingForTrailMatch = (!result.isStopped && result.bearing !== null)
+          ? result.bearing
+          : gpsMovementHeading;
+
+        // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
+        // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
+        // 구간에서 산길 위에 서 있는데도 이탈로 오판되지 않는다.
+        const nearest = nearestPointOnTrail(lat, lon, currentPoints);
+        const minDistanceM = nearest.distance;
+        const nearestPoint = nearest.point;
+        const nearestIdx = nearest.index;
+
+        // 정지 시 방향 고정 로직(아래)이 최신 이탈 상태를 참조할 수 있도록
+        // 여기서 먼저 히스테리시스를 갱신한다. updateNavigationToast 안에서만
+        // 갱신하면 이 시점엔 아직 "한 픽스 전"의 낡은 값이라 정지 시 방향이
+        // 엉뚱하게 계산되는 문제가 있었다.
+        updateOffTrailHysteresis(minDistanceM);
+
+        // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
+        // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
+        // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
+        if (!result.isStopped && result.bearing !== null) {
+          // 이동 재개 — 자이로 상대 회전 추적 상태를 정리해 다음 정지 시 새로
+          // 스냅샷하게 한다. 리스너 자체는 끄지 않는다(다음 정지 시 어차피 새로
+          // 스냅샷하므로 득이 없고, on/off를 반복하면 iOS 권한 재확인 관련
+          // 복잡성만 늘어난다).
+          stopBaseHeading = null;
+          gyroRelativeRotation = 0;
+          lastOrientationAlpha = null;
+          stopEnteredAt = null;
+          latestStopTrailBearing = null;
+
+          gpsMovementHeading = result.bearing;
+          lastGpsMoveTime = Date.now();
+
+          // 궤적(GPX) 예정 방향 — 내 위치에서 궤적을 따라 20m 앞선 지점을
+          // 향하는 방향. 실제 GPS 이동 방향(result.bearing)과 이 값의
+          // 차이가 회전 애니메이션 속도를 결정한다(startHeadingAnimationLoop
+          // 참고): 궤적과 거의 같은 방향이면 노이즈일 가능성이 높아
+          // 천천히, 크게 벗어나면 실제 방향 전환일 가능성이 높아 빠르게.
+          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
+            const aheadForDeviation = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
+            if (aheadForDeviation) {
+              const trailExpectedBearing = calculateBearing(lat, lon, aheadForDeviation.lat, aheadForDeviation.lon);
+              trailDeviationDeg = shortestAngleDiff(result.bearing, trailExpectedBearing);
+              console.log(`[TRAIL] result.bearing=${result.bearing.toFixed(1)} trailExpectedBearing=${trailExpectedBearing.toFixed(1)} trailDeviationDeg=${trailDeviationDeg.toFixed(1)} continuousHeading=${continuousHeading.toFixed(1)}`);
+            }
+          }
+
+          applySmoothedHeading(result.bearing);
+        } else if (result.isStopped) {
+          // 멈추면 나침반(핸드폰이 향한 방향)이 아니라 GPX 궤적의 "정방향"
+          // 진행 방향으로 지도를 고정한다. 나침반은 8자 보정 없이는
+          // 신뢰할 수 없음이 확인되어 폐기했다 — 산에서 길을 잃지 않으려면
+          // "핸드폰이 향한 방향"이 아니라 "내가 가야 할 방향"이 항상 화면
+          // 위쪽이어야 한다는 목적에는 오히려 이 방식이 더 부합한다.
+          // 역방향으로 걷다가 멈추면 이 순간 바로 지도가 홱 돌아서(화살표도
+          // 그쪽을 가리켜서) "반대로 가고 있었다"는 걸 즉시 알 수 있다.
+          //
+          // ⚠️ 이탈 상태에서도 "가장 가까운 지점으로 직선 복귀" 방향을
+          // 쓰면 안 된다 — 그 직선상에 절벽·계곡 등 위험 지형이 있을 수
+          // 있다. 실제로 안전한 길은 GPX가 그려놓은 경로 자체이므로,
+          // 이탈 여부와 무관하게 항상 "궤적을 따라 20m 앞" 진행 방향만
+          // 가리킨다. 이탈했다는 사실 자체는 별도 텍스트/경고음으로
+          // 안내한다(updateNavigationToast).
+          //
+          // 방향 계산의 시작점은 "내 실제 위치(lat, lon)"가 아니라
+          // "궤적 위 가장 가까운 지점(nearestPoint)"이어야 한다. 이탈
+          // 거리가 클수록(예: 89m) 내 실제 위치를 시작점으로 쓰면 방향에
+          // "궤적으로 복귀하는 성분"이 섞여 들어가 엉뚱한 대각선 방향이
+          // 나온다 — nearestPoint를 시작점으로 하면 순수하게 "궤적을
+          // 따라가는 방향"만 계산된다.
+          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1 && nearestPoint) {
+            const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
+            if (aheadPoint) {
+              const trailBearing = calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon);
+              trailDeviationDeg = 90;
+              latestStopTrailBearing = trailBearing; // 장시간 드리프트 재정렬이 참조할 최신 궤적 방향 — 매 픽스마다 갱신
+
+              // 정지 상태로 막 전환된 순간에만 기준점(0도 오프셋)을 스냅샷한다.
+              // ⚠️ 기준점은 GPX 궤적 방향(trailBearing)이 아니라 "정지 직전까지
+              // 실제로 걷던 방향(currentHeading)"으로 잡아야 한다. GPX 궤적
+              // 방향과 실제 이동 방향은 GPX 오차·지그재그 보행 등으로 미세하게
+              // 다를 수 있는데, 궤적 방향을 기준으로 스냅샷하면 정지하는
+              // 순간 그 차이만큼 화면이 갑자기 홱 틀어지는 문제가 있었다.
+              // 실제 걷던 방향을 그대로 이어받으면 "가만히 서 있는데 화면이
+              // 제멋대로 바뀌는" 현상 없이, 이후 자이로(핸드폰 회전)만
+              // 반영되어 자연스럽다.
+              if (!wasStoppedBeforeThisFix) {
+                // currentHeading이 아직 없으면(GPS를 켜자마자 걷지도 않고
+                // 바로 정지 상태로 시작한 경우) 기준으로 삼을 실제 이동
+                // 방향이 없으므로, 이때만 예외적으로 GPX 궤적 방향을 쓴다.
+                stopBaseHeading = currentHeading !== null ? currentHeading : trailBearing;
+                gyroRelativeRotation = 0;
+                lastOrientationAlpha = null; // 다음 deviceorientation 이벤트에서 새 기준 alpha를 잡게 함
+                stopEnteredAt = Date.now();
+                if (currentHeading === null) {
+                  applySmoothedHeading(trailBearing); // 화면에 표시할 초기값 자체가 없으므로 이번만 반영
+                }
+              }
+            }
+          }
+        }
+
+        // 마커 생성 또는 이동
+        if (!userGpsMarker) {
+          const gpsIcon = L.divIcon({
+            className: 'custom-gps-icon',
+            html: createGpsIconHtml(currentHeading),
+            iconSize: [80, 80],
+            iconAnchor: [40, 40]
+          });
+          userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
+          map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+          // 내 위치를 켜는 순간부터 지도 회전(길찾기 모드)과 방향 화살표를 함께 시작한다.
+          if (!isHeadingUp) {
+            setHeadingUpMode(true, true);
+          }
+        } else {
+          userGpsMarker.setLatLng([lat, lon]);
+          if (isFirstFix) {
+            map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+          } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
+            // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정.
+            // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중이거나
+            // (isMapBeingDragged) 손을 뗀 뒤 자동 복귀 유예 시간 중에는
+            // (isMapDragReturnPending) GPS 픽스(약 1초 간격)가 화면을 곧바로
+            // 원위치로 튕겨버리는 것을 막는다 — 유예 시간이 지나면
+            // dragend 핸들러의 타이머가 알아서 복귀시킨다.
+            map.setView([lat, lon], map.getZoom(), { animate: false });
+          }
+        }
+        isFirstFix = false;
+
+        // 갈 방향 안내 (등산로 복귀 가이드 점선)
+        if (nearestPoint && minDistanceM > 12) {
+          const guideCoords = [[lat, lon], [nearestPoint.lat, nearestPoint.lon]];
+          if (!guideLine) {
+            guideLine = L.polyline(guideCoords, {
+              color: '#00e676',
+              weight: 3.5,
+              dashArray: '6, 8',
+              opacity: 0.95
+            }).addTo(map);
+          } else {
+            guideLine.setLatLngs(guideCoords);
+          }
+        } else if (guideLine) {
+          map.removeLayer(guideLine);
+          guideLine = null;
+        }
+
+        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+      },
+      err => {
+        toast.className = 'gps-toast warning';
+        toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
+        btn.innerText = '📍';
+        btn.classList.remove('active');
+        watchId = null;
+        showHeadingArrow = false;
+        releaseWakeLock();
+        stopCompass();
+        if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    );
+  }
+
+  // 느린 프록시에서 무한정 기다리지 않도록 각 시도마다 제한시간을 둔다.
+  // 스마트폰 이동통신망에서는 corsproxy.io 응답이 수십 초씩 걸리는 경우가
+  // 실제로 있었는데, 타임아웃이 없으면 다음 단계(더 빠를 수 있는 경로)로
+  // 못 넘어가고 그 프록시 하나만 계속 기다리게 된다.
+  async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // 외부 서버(네이버 등) 및 깃허브 tracks에서 안전하게 GPX를 가져오는 고성능 로더
+  async function fetchGPXFile(targetUrl) {
+    let cleanUrl = targetUrl.trim();
+    // %25EA 등 이중 인코딩된 URL을 완전 해독 후 올바른 1회 인코딩 적용
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(cleanUrl);
+        if (next === cleanUrl) break;
+        cleanUrl = next;
+      } catch(e) { break; }
+    }
+    try {
+      cleanUrl = encodeURI(cleanUrl);
+    } catch(e) {}
+
+    const errors = [];
+
+    // 1. 직접 다운로드 시도 (GitHub Pages, Raw, CORS 허용 서버 등)
+    try {
+      const res = await fetchWithTimeout(cleanUrl, 5000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+        errors.push(`1) 직접 다운로드: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`1) 직접 다운로드 실패: HTTP ${res.status}`);
+      }
+    } catch(e) {
+      errors.push(`1) 직접 다운로드 실패: ${e.message || '네트워크/CORS 제한'}`);
+    }
+
+    // 2. 🌟 핵심 복구 기능: 네이버 블로그 링크가 만료(403)되었을 때
+    // URL 속 파일명(예: 남덕유산_20250501.gpx)을 추출하여 우리 tracks 저장소에서 즉시 대체 로드!
+    try {
+      const match = cleanUrl.match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (match && match[1]) {
+        let fname = match[1];
+        try { fname = decodeURIComponent(fname); } catch(e) {}
+        const fallbacks = [
+          `./tracks/${encodeURIComponent(fname)}`,
+          `https://hjwpro1971.github.io/gaja/tracks/${encodeURIComponent(fname)}`,
+          `https://raw.githubusercontent.com/hjwpro1971/gaja/main/tracks/${encodeURIComponent(fname)}`
+        ];
+        for (const fb of fallbacks) {
+          try {
+            const res = await fetchWithTimeout(fb, 5000);
+            if (res.ok) {
+              const text = await res.text();
+              if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+                console.log('대체 트랙 저장소에서 복구 성공:', fb);
+                return text;
+              }
+            }
+          } catch(e) {}
+        }
+        errors.push(`2) 저장소 대체 복구: '${fname}' 파일 없음`);
+      } else {
+        errors.push(`2) 저장소 대체 복구: 파일명 추출 불가`);
+      }
+    } catch(e) {
+      errors.push(`2) 저장소 대체 복구 실패: ${e.message}`);
+    }
+
+    // 3. allorigins 공개 프록시 시도
+    try {
+      const res = await fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(cleanUrl), 6000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+        errors.push(`3) 공개 프록시: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`3) 공개 프록시 실패: HTTP ${res.status}`);
+      }
+    } catch(e) {
+      errors.push(`3) 공개 프록시 실패: ${e.message || '타임아웃'}`);
+    }
+
+    // 4. 나스 서버 로컬 프록시 시도
+    try {
+      const res = await fetchWithTimeout('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl), 6000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+        errors.push(`4) 로컬 프록시: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`4) 로컬 프록시 실패: HTTP ${res.status}`);
+      }
+    } catch(e) {
+      errors.push(`4) 로컬 프록시 실패: ${e.message || '연결 불가'}`);
+    }
+
+    throw new Error('모든 방식으로 등산로 파일을 불러오지 못했습니다.\n[상세 사유]\n' + errors.join('\n'));
+  }
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    initMap();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
+    let gpxUrl = urlParams.get('url') || urlParams.get('file');
+    const courseName = urlParams.get('name');
+    let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
+
+    if (!decodedCourseName && gpxUrl) {
+      const m = decodeURIComponent(gpxUrl).match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (m && m[1]) {
+        decodedCourseName = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+      }
+    }
+    if (!decodedCourseName) decodedCourseName = '등산로 코스';
+
+    // 페이지 진입 즉시 상단 헤더 및 창 타이틀에 산 이름 반영
+    const trailEl = document.getElementById('trailName');
+    if (trailEl) trailEl.innerText = '🚩 ' + decodedCourseName;
+    let pageTitle = decodedCourseName;
+    if (!pageTitle.includes('등산지도') && !pageTitle.includes('등산로') && !pageTitle.includes('지도')) {
+      pageTitle += ' 등산지도';
+    }
+    document.title = pageTitle;
+    const appleMeta = document.getElementById('appleAppTitle');
+    if (appleMeta) appleMeta.content = pageTitle;
+
+    // 같은 코스를 다시 열 때 매번 외부 프록시를 거쳐 GPX를 재다운로드하지
+    // 않도록, url 파라미터가 있으면 먼저 localStorage에 같은 원본 GPX
+    // 주소(sourceUrl)로 저장된 좌표가 있는지 찾아본다. 코스명이 아니라
+    // 반드시 원본 주소로 비교해야 한다 — "남덕유산_20250501.gpx"와
+    // "남덕유산_20251217.gpx"처럼 코스명은 같아도 실제로는 전혀 다른 GPX인
+    // 경우가 있어, 이름만 보고 캐시를 재사용하면 엉뚱한 지도가 뜨는 버그가
+    // 있었다.
+    // 🌟 핵심: 다운받기 전에 캐시에 이미 저장되어 있는지 먼저 체크!
+    // 동일한 GPX 파일명 또는 코스명이 이미 있으면 외부 다운로드를 하지 않고 캐시에서 즉시 복원 (0.001초 로딩 & 중복 방지)
+    if (gpxUrl || decodedCourseName) {
+      const cached = findSavedRoute(decodedCourseName, gpxUrl);
+      if (cached) {
+        console.log('⚡ 이미 저장된 등산로 코스가 캐시에 있어 외부 다운로드를 생략하고 즉시 엽니다:', cached.name);
+        drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true); // isFromCache = true
+        gpxUrl = null; // 외부 다운로드 생략
+
+        // 상단에 캐시 즉시 복원 완료 안내 뱃지 1.8초간 표시
+        const fastBadge = document.createElement('div');
+        fastBadge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:99999; background:rgba(27,94,32,0.95); color:#ffffff; font-size:13px; font-weight:800; padding:10px 20px; border-radius:24px; box-shadow:0 4px 16px rgba(0,0,0,0.3); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.5s;';
+        fastBadge.innerHTML = '⚡ 저장된 코스로 즉시 열었습니다 (다운로드 생략)';
+        document.body.appendChild(fastBadge);
+        setTimeout(() => {
+          fastBadge.style.opacity = '0';
+          setTimeout(() => fastBadge.remove(), 500);
+        }, 1800);
+      }
+    }
+
+    if (gpxUrl) {
+      // 로딩 안내 뱃지 화면 상단 표시
+      const loadingEl = document.createElement('div');
+      loadingEl.id = 'gpxLoadingBadge';
+      loadingEl.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#fff; font-size:13px; font-weight:700; padding:10px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.25); backdrop-filter:blur(4px); pointer-events:none;';
+      loadingEl.innerText = '⏳ 등산로 코스를 불러오는 중입니다...';
+      document.body.appendChild(loadingEl);
+
+      try {
+        const xml = await fetchGPXFile(gpxUrl);
+        const points = parseGPX(xml);
+        drawRoute(points, decodedCourseName, gpxUrl);
+        if (document.getElementById('gpxLoadingBadge')) {
+          document.getElementById('gpxLoadingBadge').remove();
+        }
+      } catch(err) {
+        console.warn('자동 GPX 다운로드 실패:', err);
+        if (document.getElementById('gpxLoadingBadge')) {
+          document.getElementById('gpxLoadingBadge').remove();
+        }
+        alert('등산로 지도를 불러오지 못했어요.\n\n💡 인터넷 연결을 확인한 뒤 다시 시도해보세요.\n그래도 안 되면, 아래 저장된 코스 목록에서 골라보세요.');
+        showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.');
+      }
+    } else if (!hadGpxUrl) {
+      // url 파라미터 없이 열린 경우(즐겨찾기 등) — 저장된 코스 목록을 보여준다.
+      // 산속에서 완전히 오프라인이어도 이전에 저장해둔 여러 코스 중 하나를
+      // 골라 바로 열어볼 수 있어야 한다는 게 이 기능의 목적이다.
+      showSavedRouteList();
+    }
+
+
+  });
+</script>
+
+</body>
+</html>

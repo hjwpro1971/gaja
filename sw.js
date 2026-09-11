@@ -6,7 +6,9 @@ const CORE_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './favicon.png'
+  './favicon.png',
+  './track_viewer.html',
+  './gpx-map.html'
 ];
 
 self.addEventListener('install', event => {
@@ -47,7 +49,7 @@ self.addEventListener('fetch', event => {
         }
         return networkResponse;
       }).catch(() => {
-        const fallbackTarget = url.includes('viewer_pc.html') ? './viewer_pc.html' : './viewer.html';
+        const fallbackTarget = url.includes('viewer_pc.html') ? './viewer_pc.html' : (url.includes('track_viewer.html') ? './track_viewer.html' : './viewer.html');
         return caches.match(req).then(cached => cached || caches.match(fallbackTarget));
       })
     );
