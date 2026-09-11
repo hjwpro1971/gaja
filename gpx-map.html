@@ -1016,8 +1016,8 @@ async function initRoutePOIs(points) {
       if (p.lon < minLon) minLon = p.lon;
       if (p.lon > maxLon) maxLon = p.lon;
     });
-    minLat -= 0.005; maxLat += 0.005;
-    minLon -= 0.005; maxLon += 0.005;
+    minLat -= 0.010; maxLat += 0.010;
+    minLon -= 0.010; maxLon += 0.010;
     
     let candidateElements = [];
     if (window.KoreaPOIs) {
@@ -1055,7 +1055,8 @@ async function initRoutePOIs(points) {
       if (endFacility && c.name.includes(endFacility) && haversineKm(endPt, c) <= 0.3) return;
   
       const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: c.lat, lon: c.lon }, points, cumDist);
-      if (minDistKm <= 0.25) {
+      // 등산로에서 직선거리 최대 650m 이내의 봉우리, 고개, 사찰, 조망 명소까지 포괄 발굴
+      if (minDistKm <= 0.65) {
         if (routeDistKm < 0.12 || routeDistKm > totalDist - 0.12) return;
   
         const dedupeKey = `${c.name}_${Math.round(routeDistKm * 3)}`;
