@@ -52,6 +52,7 @@
 </style>
   <script src="korea_pois.js"></script>
   <script src="my_custom_pois.js"></script>
+  <script src="gh_token.js"></script>
 </head>
 <body>
 <div class="layout">
@@ -2020,7 +2021,7 @@ restoreGpxDraftIfAny();
       return;
     }
 
-    let token = localStorage.getItem(GH_TOKEN_KEY);
+    let token = localStorage.getItem('gh_gaja_upload_token') || localStorage.getItem(GH_TOKEN_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     if (!token) {
       token = prompt('GitHub Personal Access Token (PAT)을 입력하세요:');
       if (!token || !token.trim()) return;
