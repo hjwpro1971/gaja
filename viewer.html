@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_stopmove_responsive1';
+      const APP_BUILD = 'v20260909_speed_threshold_fix1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -582,8 +582,14 @@
       // 속도만 비정상적으로 빠르게(순간 GPS 튐 등) 나오는 경우"를 걸러내는
       // 보조 조건으로만 쓴다 — 즉 거리가 짧으면 기본적으로 정지로 보되,
       // speed가 명백히 높을 때만 예외적으로 이동으로 본다.
+      // ⚠️ speed 문턱을 STOP_SPEED_CUTOFF의 2배(1.0m/s)로 뒀더니, 등산
+      // 저속 보행(시속 2~3km, 초당 0.5~0.8m)에서는 이 속도조차 못 미쳐
+      // "이동 중인데 정지로 판정"되는 오탐이 잦아졌다. STOP_SPEED_CUTOFF를
+      // 그대로 문턱으로 써서, 정지 판정 기준(0.5m/s 미만)과 이동 판정
+      // 기준을 동일한 경계선으로 맞춘다 — 거리가 짧아도 속도가 0.5m/s
+      // 이상이면 이동으로 인정한다.
       const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
-      const speedSaysMoving = raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF * 2; // 명확히 빠른 경우만 이동 취급
+      const speedSaysMoving = raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF;
       const isStopped = rawDist < this.config.MIN_DISTANCE && !speedSaysMoving;
 
       if (isStopped) {
