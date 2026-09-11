@@ -2121,24 +2121,42 @@ restoreGpxDraftIfAny();
       // 1. GitHub tracks/ 에 자동 배포
       await deployToGitHubTracks(true);
 
-      // 2. 텔레그램 봇으로 링크 전송 (NAS 8991 포트)
+      // 2. 텔레그램 봇으로 링크 전송
       btn.innerHTML = '✈️ 텔레그램 전송 중...';
-      const res = await fetch('http://192.168.219.119:8991/api/gpx-notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: linkUrl, courseName })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        btn.innerHTML = '✅ 전송 완료!';
-        alert(`🎉 텔레그램으로 [${courseName}] 등산지도가 전송되었습니다! 📱\n스마트폰 텔레그램에서 바로 확인해보세요.`);
-        setTimeout(() => {
-          btn.innerHTML = origText;
-          btn.disabled = false;
-        }, 2500);
+      const botToken = window.__TELEGRAM_BOT_TOKEN;
+      const chatId = window.__TELEGRAM_CHAT_ID;
+
+      if (botToken && chatId) {
+        // HTTPS 직접 호출 (브라우저 Mixed Content 차단 방지)
+        const tgText = `⛰️ <b><a href="${linkUrl}">${courseName} 오프라인 등산지도</a></b>\n\n위 링크를 누르면 스마트폰에서 등산 지도와 지명, 실시간 길찾기 내비게이션이 바로 열립니다.`;
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: tgText,
+            parse_mode: 'HTML'
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.description || '텔레그램 API 전송 실패');
       } else {
-        throw new Error(data.message || '전송 실패');
+        // 폴백: NAS 프록시 호출
+        const res = await fetch('http://192.168.219.119:8991/api/gpx-notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: linkUrl, courseName })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || '전송 실패');
       }
+
+      btn.innerHTML = '✅ 전송 완료!';
+      alert(`🎉 텔레그램으로 [${courseName}] 등산지도가 전송되었습니다! 📱\n스마트폰 텔레그램에서 바로 확인해보세요.`);
+      setTimeout(() => {
+        btn.innerHTML = origText;
+        btn.disabled = false;
+      }, 2500);
     } catch (err) {
       alert('전송 중 오류: ' + err.message);
       btn.innerHTML = origText;
