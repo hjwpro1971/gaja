@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260910_manual_drag_rotation_fix1';
+      const APP_BUILD = 'v20260909_heading_priority1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -515,10 +515,15 @@
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
         MIN_INTERVAL_MS: 400,    // 최소 수신 간격
-        MIN_DISTANCE: 5.0,       // 이전 확정점 대비 최소 이동 인정 거리(m).
-                                 // 이 값이 자이로/GPS 방향 판단의 경계선이다:
-                                 // 5m 미만 이동(또는 정지)은 자이로가, 5m 이상
-                                 // 확정 이동은 GPS 이동 방향이 화면 회전을 담당한다.
+        MIN_DISTANCE: 1.5,       // 이전 확정점 대비 최소 이동 인정 거리(m).
+                                 // 기존 5m는 GPS 좌표 오차와 실제 이동을 확실히
+                                 // 구분하려는 목적이었으나, 다른 지도 앱들은 1m
+                                 // 수준의 짧은 이동에도 방향을 잡는 것으로 확인돼
+                                 // 1.5m로 낮췄다. 짧은 거리에서도 방향을 신뢰
+                                 // 있게 잡을 수 있는 건 아래 heading 필드 우선
+                                 // 사용 덕분이다 — 좌표 계산만으로는 짧은 거리일수록
+                                 // 오차에 취약하지만, GPS 칩이 직접 주는 heading은
+                                 // 짧은 이동에서도 상대적으로 안정적이다.
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
         // 회전 반응이 느렸던 진짜 원인은 이동평균(WINDOW_SIZE)이었다.
         // 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어 새
@@ -606,8 +611,22 @@
       const smoothLat = raw.latitude;
       const smoothLon = raw.longitude;
 
-      // 방위각 계산 및 히스테리시스 — 문턱 미만 변화는 이전 방향 유지
-      let newBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      // 방위각 계산 — GPS 칩이 직접 주는 heading 필드를 우선 신뢰한다.
+      // 좌표 두 점만으로 계산하는 방식(calculateBearing)은 짧은 이동
+      // 거리일수록 오차에 취약해서(예: 1.5m 이동 중 좌표가 살짝만 어긋나도
+      // 방위각이 크게 틀어짐), 다른 지도 앱들처럼 1m 안팎의 짧은 이동에도
+      // 안정적으로 방향을 잡으려면 heading을 활용해야 한다. heading이
+      // 없거나(null/NaN) 신뢰할 수 없는 상황(속도가 정지 컷오프 미만)에만
+      // 기존 좌표 기반 계산으로 대체한다. (나침반은 사용하지 않는다 —
+      // 정지 시 방향은 별도로 자이로 상대 회전만 이용한다.)
+      let newBearing;
+      const hasValidHeading = raw.heading !== undefined && raw.heading !== null && !isNaN(raw.heading)
+        && raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF;
+      if (hasValidHeading) {
+        newBearing = raw.heading;
+      } else {
+        newBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      }
       if (this.lastConfirmed.bearing !== null) {
         const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
         if (bearingDelta < this.config.BEARING_THRESHOLD) {
@@ -934,15 +953,6 @@
       if (lastKnownPos) {
         map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       }
-      // 길찾기 모드를 끄면 화면의 CSS 회전(transform)은 위에서 이미
-      // 초기화했지만, 드래그 방향 보정에 쓰이는 displayedRot(및 계산의
-      // 근거가 되는 continuousHeading/smoothedHeading)은 그대로 남아있으면
-      // GPS가 꺼진 뒤 자유롭게 드래그할 때 moveManualMapDrag가 여전히
-      // "마지막 회전각" 기준으로 좌표를 보정해버려, 실제로는 회전 안 된
-      // 화면인데 드래그 방향이 엉뚱하게 틀어지는 버그가 있었다.
-      displayedRot = 0;
-      continuousHeading = 0;
-      smoothedHeading = null;
     }
     updateHeadingDisplay(currentHeading, continuousHeading);
   }
@@ -2224,7 +2234,6 @@
     // 회전하지 않는 것처럼 보이는 재현성 버그의 원인이 되었다.
     smoothedHeading = null;
     continuousHeading = 0;
-    displayedRot = 0;
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
 
@@ -2265,6 +2274,7 @@
           longitude: lon,
           accuracy: accuracy,
           speed: pos.coords.speed,
+          heading: pos.coords.heading,
           timestamp: Date.now()
         });
 
