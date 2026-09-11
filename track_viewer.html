@@ -2807,6 +2807,7 @@
       const cached = findSavedRoute(decodedCourseName, gpxUrl);
       if (cached) {
         console.log('⚡ 이미 저장된 등산로 코스가 캐시에 있어 외부 다운로드를 생략하고 즉시 엽니다:', cached.name);
+        if (cached.waypoints) cached.points.waypoints = cached.waypoints;
         drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true); // isFromCache = true
         gpxUrl = null; // 외부 다운로드 생략
 
