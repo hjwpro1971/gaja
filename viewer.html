@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_distance_only_stop1';
+      const APP_BUILD = 'v20260909_radius_cluster1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -515,15 +515,12 @@
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
         MIN_INTERVAL_MS: 400,    // 최소 수신 간격
-        MIN_DISTANCE: 1.5,       // 이전 확정점 대비 최소 이동 인정 거리(m).
-                                 // 기존 5m는 GPS 좌표 오차와 실제 이동을 확실히
-                                 // 구분하려는 목적이었으나, 다른 지도 앱들은 1m
-                                 // 수준의 짧은 이동에도 방향을 잡는 것으로 확인돼
-                                 // 1.5m로 낮췄다. 짧은 거리에서도 방향을 신뢰
-                                 // 있게 잡을 수 있는 건 아래 heading 필드 우선
-                                 // 사용 덕분이다 — 좌표 계산만으로는 짧은 거리일수록
-                                 // 오차에 취약하지만, GPS 칩이 직접 주는 heading은
-                                 // 짧은 이동에서도 상대적으로 안정적이다.
+        MIN_DISTANCE: 1.5,       // ⚠️ 현재 정지/이동 판정 로직에서는 쓰이지 않는다
+                                 // (아래에서 계산한 속도(calculatedSpeed) 기준으로
+                                 // 대체됨 — 산속 등 GPS 픽스 간격이 불규칙한 환경에서
+                                 // 거리만으로 판정하면 정지/이동이 계속 뒤바뀌는
+                                 // 문제가 있었다). 다른 로직에서 참조할 수 있어
+                                 // 설정값 자체는 남겨둔다.
         STOP_SPEED_CUTOFF: 0.5,  // 이 속도(m/s) 미만이면 정지로 간주
         // 회전 반응이 느렸던 진짜 원인은 이동평균(WINDOW_SIZE)이었다.
         // 방향이 실제로 바뀐 순간에도 옛 좌표들이 평균에 남아있어 새
@@ -535,16 +532,43 @@
         // 낼 수 있음)를 거르는 유일한 방어선이므로, 표준안의 15도로
         // 되돌린다 — 6~8도는 노이즈를 거르기엔 너무 낮았다.
         BEARING_THRESHOLD: 15.0,
+        // 반경 클러스터 검사 — 속도만으로는 "느리지만 계속 전진 중"과
+        // "제자리에서 서성임"을 구분하기 어려운 경우를 보완한다. 최근
+        // CLUSTER_WINDOW_SEC 동안의 모든 위치가 CLUSTER_RADIUS_M 반경
+        // 안에 갇혀 있으면(=거의 안 움직였으면) 속도 계산값과 무관하게
+        // 정지로 확정한다. 정지 판정 자체는 여전히 즉시 반영되며(10초
+        // 지연 없음), 이 검사는 추가 보완 조건일 뿐이다.
+        CLUSTER_WINDOW_SEC: 15,  // 반경 검사 시간 윈도우(초)
+        CLUSTER_RADIUS_M: 7.0,   // 이 반경(m) 안에 윈도우 내내 갇혀 있으면 정지로 간주
         ...config
       };
       this.lastConfirmed = null;
       this.totalDistance = 0;
+      this.recentPoints = []; // 반경 클러스터 검사용 최근 위치 큐
     }
 
     // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
     reset() {
       this.lastConfirmed = null;
       this.totalDistance = 0;
+      this.recentPoints = [];
+    }
+
+    // 최근 윈도우(CLUSTER_WINDOW_SEC)의 모든 위치가 한 지점 기준
+    // CLUSTER_RADIUS_M 반경 안에 갇혀 있는지 확인한다 — "서성임" 감지용.
+    _isTrappedInRadius(latestRaw) {
+      const windowStart = latestRaw.timestamp - (this.config.CLUSTER_WINDOW_SEC * 1000);
+      this.recentPoints = this.recentPoints.filter(p => p.timestamp >= windowStart);
+      this.recentPoints.push({ latitude: latestRaw.latitude, longitude: latestRaw.longitude, timestamp: latestRaw.timestamp });
+
+      if (this.recentPoints.length < 3) return false;
+      // 윈도우 시간을 충분히(80% 이상) 채웠을 때만 판정 — 막 시작한
+      // 직후에는 데이터가 부족해 오판할 수 있으므로 건너뛴다.
+      const timeSpan = (this.recentPoints[this.recentPoints.length - 1].timestamp - this.recentPoints[0].timestamp) / 1000;
+      if (timeSpan < this.config.CLUSTER_WINDOW_SEC * 0.8) return false;
+
+      const anchor = this.recentPoints[0];
+      return this.recentPoints.every(p => haversineMeters(anchor.latitude, anchor.longitude, p.latitude, p.longitude) <= this.config.CLUSTER_RADIUS_M);
     }
 
     // raw: { latitude, longitude, accuracy, speed, timestamp }
@@ -572,16 +596,25 @@
       // 되는 심각한 반응 지연의 원인이었다. 반응 속도를 우선해 이 연속성
       // 요구를 제거하고, 매 픽스의 판정을 그대로 즉시 반영한다.
       //
-      // ⚠️ speed 필드는 완전히 제거했다. GPS 칩/OS가 speed를 계산할 때
-      // 최근 몇 초간의 이동 이력을 평균·평활 처리해서 제공하는 경우가
-      // 흔해서, 실제로는 이미 멈췄는데도 speed 필드만 관성으로 몇 초간
-      // 계속 "이동 중" 값을 보고해 정지 인식이 3초 이상 늦어지는 원인이
-      // 되었다. 순수하게 거리(직전 확정점 대비 rawDist)만으로 판정하면
-      // 이 지연 없이 멈추는 즉시 다음 픽스에서 바로 정지로 인식된다.
-      // GPS 좌표 자체의 순간 튐은 MAX_ACCURACY·BEARING_THRESHOLD 등
-      // 다른 필터로 대응한다.
+      // ⚠️ 거리(rawDist)만으로 판정했더니, 산속·숲·건물 사이처럼 GPS
+      // 신호가 약해 픽스 간격이 불규칙한 환경(1초가 아니라 2~3초에 한
+      // 번씩 들어오는 등)에서 문제가 생겼다. 픽스 간격이 길어지면 같은
+      // 속도로 걸어도 한 번에 이동한 거리가 커져서, MIN_DISTANCE 문턱을
+      // 넘었다 못 넘었다 하며 정지/이동이 계속 뒤바뀌는(깜빡이는) 원인이
+      // 되었다. GPS 칩이 주는 speed 필드는 관성/평활 지연이 있어 이미
+      // 배제했으므로, 대신 우리가 직접 "거리 ÷ 실제 경과시간"으로 속도를
+      // 계산해 판정 기준으로 쓴다 — 픽스 간격이 얼마나 불규칙하든 속도
+      // 자체는 일관되게 비교할 수 있어 산속에서도 안정적으로 판정된다.
       const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
-      const isStopped = rawDist < this.config.MIN_DISTANCE;
+      const elapsedSec = Math.max((raw.timestamp - this.lastConfirmed.timestamp) / 1000, 0.001); // 0으로 나누기 방지
+      const calculatedSpeed = rawDist / elapsedSec; // m/s, 우리가 직접 계산 — GPS 칩의 speed 필드는 쓰지 않음
+
+      // 반경 클러스터 검사: 속도 계산값만으로는 "느리지만 계속 전진"과
+      // "GPS 좌표가 이리저리 튀지만 실제로는 제자리에 서있음"을 구분하지
+      // 못하는 경우가 있다. 최근 15초간 위치가 7m 반경 안에서만 맴돌았다면
+      // 속도 계산이 순간적으로 문턱을 넘나들어도 정지로 확정한다.
+      const isTrapped = this._isTrappedInRadius(raw);
+      const isStopped = calculatedSpeed < this.config.STOP_SPEED_CUTOFF || isTrapped;
 
       if (isStopped) {
         // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
@@ -602,22 +635,44 @@
       const smoothLat = raw.latitude;
       const smoothLon = raw.longitude;
 
-      // 방위각 계산 — GPS 칩이 직접 주는 heading 필드를 우선 신뢰한다.
-      // 좌표 두 점만으로 계산하는 방식(calculateBearing)은 짧은 이동
-      // 거리일수록 오차에 취약해서(예: 1.5m 이동 중 좌표가 살짝만 어긋나도
-      // 방위각이 크게 틀어짐), 다른 지도 앱들처럼 1m 안팎의 짧은 이동에도
-      // 안정적으로 방향을 잡으려면 heading을 활용해야 한다. heading이
-      // 없거나(null/NaN) 신뢰할 수 없는 상황(속도가 정지 컷오프 미만)에만
-      // 기존 좌표 기반 계산으로 대체한다. (나침반은 사용하지 않는다 —
-      // 정지 시 방향은 별도로 자이로 상대 회전만 이용한다.)
+      // 방위각 계산 — heading을 무조건 우선하지 않고, 좌표 기반 계산
+      // (coordinateBearing)과 항상 병행 계산해 서로 검증한다.
+      // 이전에는 "heading이 있고 속도만 충분하면 무조건 heading 채택"
+      // 이었는데, 이러면 GPS 칩의 heading이 편향된 값을 지속적으로 줄 때
+      // (예: 실제 92도인데 heading이 계속 123도) 그 잘못된 값이 그대로
+      // 반영되고, 심지어 BEARING_THRESHOLD 히스테리시스가 그 잘못된 값을
+      // 오래 고정시켜버리는 문제가 있었다.
+      // coordinateBearing은 이미 계산에 필요한 좌표(lastConfirmed, 현재
+      // 위치)가 있으므로 추가 비용 없이 항상 구할 수 있다. 두 값의 차이가
+      // 크면(45도 이상) heading이 편향되었을 가능성이 높다고 보고
+      // coordinateBearing을 대신 채택한다.
+      const coordinateBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
       let newBearing;
       const hasValidHeading = raw.heading !== undefined && raw.heading !== null && !isNaN(raw.heading)
         && raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF;
+
+      const HEADING_DISAGREEMENT_THRESHOLD = 45.0; // 이 각도(deg) 이상 차이나면 heading을 의심
+
       if (hasValidHeading) {
-        newBearing = raw.heading;
+        const disagreement = Math.abs(shortestAngleDiff(raw.heading, coordinateBearing));
+        if (disagreement >= HEADING_DISAGREEMENT_THRESHOLD) {
+          // heading과 좌표계산이 크게 어긋남 — heading이 편향됐을 가능성이
+          // 높으므로 좌표 기반 계산을 대신 채택한다.
+          console.warn(`⚠️ heading 불일치 감지: raw.heading=${raw.heading.toFixed(1)}° vs coordinateBearing=${coordinateBearing.toFixed(1)}° (차이 ${disagreement.toFixed(1)}°) → 좌표계산 채택`);
+          newBearing = coordinateBearing;
+        } else {
+          newBearing = raw.heading;
+        }
       } else {
-        newBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+        newBearing = coordinateBearing;
       }
+
+      // 진단 로그 — 실측 검증용. 문제 재현 시 콘솔에서 이 값들을 그대로
+      // 확인해 raw.heading 자체가 틀렸는지, 그 이후 단계(히스테리시스,
+      // continuousHeading 누적, displayedRot 애니메이션)에서 틀어지는지
+      // 구분한다.
+      console.log(`[GPS] speed=${raw.speed} accuracy=${raw.accuracy} rawHeading=${hasValidHeading ? raw.heading.toFixed(1) : 'N/A'} coordBearing=${coordinateBearing.toFixed(1)} chosenBearing=${newBearing.toFixed(1)}`);
+
       if (this.lastConfirmed.bearing !== null) {
         const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
         if (bearingDelta < this.config.BEARING_THRESHOLD) {
@@ -2327,6 +2382,7 @@
             if (aheadForDeviation) {
               const trailExpectedBearing = calculateBearing(lat, lon, aheadForDeviation.lat, aheadForDeviation.lon);
               trailDeviationDeg = shortestAngleDiff(result.bearing, trailExpectedBearing);
+              console.log(`[TRAIL] result.bearing=${result.bearing.toFixed(1)} trailExpectedBearing=${trailExpectedBearing.toFixed(1)} trailDeviationDeg=${trailDeviationDeg.toFixed(1)} continuousHeading=${continuousHeading.toFixed(1)}`);
             }
           }
 
