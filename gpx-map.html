@@ -133,16 +133,17 @@
     </fieldset>
 
     <fieldset id="share-fieldset" style="margin-top:12px; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
-      <legend style="font-weight:700; color:#2b6cb0;">🚀 모바일 내비 배포 & 카톡 공유</legend>
+      <legend style="font-weight:700; color:#2b6cb0;">🚀 모바일 내비 배포 & 공유</legend>
       <div style="margin-bottom:8px;">
         <label for="share-course-title" style="font-size:12px; font-weight:700; color:#4a5568; margin-bottom:4px; display:block;">공유 안내 메시지 제목:</label>
         <input type="text" id="share-course-title" value="대전 계룡산 산행 가이드 지도" placeholder="예: 대전 계룡산 산행 가이드 지도" style="width:100%; padding:6px 8px; font-size:12.5px; border:1px solid #cbd5e0; border-radius:6px; font-family:inherit;">
       </div>
+      <button class="btn" id="btn-telegram-send" type="button" style="width:100%; margin-bottom:8px; padding:9px; font-size:13px; font-weight:800; color:#ffffff; background:linear-gradient(135deg, #2AABEE 0%, #229ED9 100%); border:none; border-radius:6px; cursor:pointer; display:flex; justify-content:center; align-items:center; gap:6px; box-shadow:0 3px 8px rgba(42,171,238,0.35);">✈️ 텔레그램으로 보내기 (원클릭 자동배포)</button>
       <div style="display:flex; gap:6px; margin-bottom:8px;">
         <button class="btn" id="btn-deploy-github" type="button" style="flex:1; font-weight:700; background:#24292e; border-color:#24292e; color:#ffffff; font-size:12px;">🚀 GitHub tracks에 배포</button>
-        <button class="btn" id="btn-copy-share-msg" type="button" style="flex:1; font-weight:700; background:#ecc94b; border-color:#d69e2e; color:#744210; font-size:12px;">📋 카톡 메시지 복사</button>
+        <button class="btn" id="btn-copy-share-msg" type="button" style="flex:1; font-weight:700; background:#ecc94b; border-color:#d69e2e; color:#744210; font-size:12px;">📋 링크/메시지 복사</button>
       </div>
-      <textarea id="share-msg-preview" rows="4" style="width:100%; font-size:11.5px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748; line-height:1.45; resize:vertical; background:#fff;" readonly placeholder="GitHub에 배포하면 카톡 공유 링크가 여기에 자동으로 완성됩니다."></textarea>
+      <textarea id="share-msg-preview" rows="4" style="width:100%; font-size:11.5px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748; line-height:1.45; resize:vertical; background:#fff;" readonly placeholder="배포하면 공유 링크가 여기에 자동으로 완성됩니다."></textarea>
     </fieldset>
     <div class="action-bar">
       <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled style="flex:1;">전체캡쳐</button>
@@ -2015,16 +2016,16 @@ restoreGpxDraftIfAny();
     return { title, fileName, linkUrl, msg };
   }
 
-  async function deployToGitHubTracks() {
+  async function deployToGitHubTracks(silent = false) {
     if (!loadedPoints || loadedPoints.length < 2) {
-      alert('먼저 GPX 파일을 불러와주세요.');
-      return;
+      if (!silent) alert('먼저 GPX 파일을 불러와주세요.');
+      return false;
     }
 
     let token = localStorage.getItem('gh_gaja_upload_token') || localStorage.getItem(GH_TOKEN_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     if (!token) {
       token = prompt('GitHub Personal Access Token (PAT)을 입력하세요:');
-      if (!token || !token.trim()) return;
+      if (!token || !token.trim()) return false;
       token = token.trim();
       localStorage.setItem(GH_TOKEN_KEY, token);
     }
@@ -2086,11 +2087,61 @@ restoreGpxDraftIfAny();
       }
 
       updateShareMessagePreview();
-      alert(`🎉 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [카톡 메시지 복사] 버튼을 눌러 산행 모임이나 친구들에게 카톡으로 바로 공유하세요!`);
+      if (!silent) {
+        alert(`🎉 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [링크/메시지 복사] 또는 [텔레그램으로 보내기]를 눌러 공유하세요!`);
+      }
+      return true;
     } catch(err) {
-      alert('GitHub 배포 실패:\n' + err.message);
+      if (!silent) alert('GitHub 배포 실패:\n' + err.message);
+      throw err;
     } finally {
       btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  }
+
+  async function sendToTelegramBot() {
+    if (!loadedPoints || loadedPoints.length < 2) {
+      alert('먼저 GPX 파일을 불러와주세요.');
+      return;
+    }
+
+    const { title, fileName, linkUrl } = updateShareMessagePreview();
+    const courseName = title || '등산 코스';
+
+    const confirmed = confirm(`⛰️ [텔레그램 전송]\n\n코스명: ${courseName}\n파일: tracks/${fileName}\n\nGitHub에 자동 배포 후 내 스마트폰 텔레그램으로 전송하시겠습니까?`);
+    if (!confirmed) return;
+
+    const btn = document.getElementById('btn-telegram-send');
+    const origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '🚀 GitHub 배포 중...';
+
+    try {
+      // 1. GitHub tracks/ 에 자동 배포
+      await deployToGitHubTracks(true);
+
+      // 2. 텔레그램 봇으로 링크 전송 (NAS 8991 포트)
+      btn.innerHTML = '✈️ 텔레그램 전송 중...';
+      const res = await fetch('http://192.168.219.119:8991/api/gpx-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: linkUrl, courseName })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        btn.innerHTML = '✅ 전송 완료!';
+        alert(`🎉 텔레그램으로 [${courseName}] 등산지도가 전송되었습니다! 📱\n스마트폰 텔레그램에서 바로 확인해보세요.`);
+        setTimeout(() => {
+          btn.innerHTML = origText;
+          btn.disabled = false;
+        }, 2500);
+      } else {
+        throw new Error(data.message || '전송 실패');
+      }
+    } catch (err) {
+      alert('전송 중 오류: ' + err.message);
+      btn.innerHTML = origText;
       btn.disabled = false;
     }
   }
@@ -2104,21 +2155,22 @@ restoreGpxDraftIfAny();
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
-        alert('📋 카톡 공유 메시지가 클립보드에 복사되었습니다!\n카카오톡 대화방에 [붙여넣기]하세요.');
+        alert('📋 공유 메시지가 클립보드에 복사되었습니다!\n대화방이나 메모장에 [붙여넣기]하세요.');
       }).catch(() => {
         previewEl.select();
         document.execCommand('copy');
-        alert('📋 카톡 공유 메시지가 복사되었습니다!');
+        alert('📋 공유 메시지가 복사되었습니다!');
       });
     } else {
       previewEl.select();
       document.execCommand('copy');
-      alert('📋 카톡 공유 메시지가 복사되었습니다!');
+      alert('📋 공유 메시지가 복사되었습니다!');
     }
   }
 
   document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
-  document.getElementById('btn-deploy-github').addEventListener('click', deployToGitHubTracks);
+  document.getElementById('btn-deploy-github').addEventListener('click', () => deployToGitHubTracks(false));
+  document.getElementById('btn-telegram-send').addEventListener('click', sendToTelegramBot);
   document.getElementById('btn-copy-share-msg').addEventListener('click', copyShareMessage);
   document.getElementById('share-course-title').addEventListener('input', updateShareMessagePreview);
 
