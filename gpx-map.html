@@ -1910,10 +1910,14 @@ restoreGpxDraftIfAny();
 
     const wpts = [];
     const startPt = loadedPoints[0];
-    wpts.push({ name: startTrailName || '들머리', lat: startPt.lat, lon: startPt.lon, ele: startPt.ele, routeDistKm: 0 });
+    if (!specialMarkersMap['start'].deleted) {
+      wpts.push({ name: startTrailName || '들머리', lat: startPt.lat, lon: startPt.lon, ele: startPt.ele, routeDistKm: 0 });
+    }
 
     const endPt = loadedPoints[loadedPoints.length - 1];
-    wpts.push({ name: endTrailName || '날머리', lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
+    if (!specialMarkersMap['end'].deleted) {
+      wpts.push({ name: endTrailName || '날머리', lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
+    }
 
     if (!specialMarkersMap['peak_top'].deleted) {
       const withEle = loadedPoints.filter(p => p.ele !== null);

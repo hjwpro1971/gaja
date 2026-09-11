@@ -1501,34 +1501,38 @@
       });
     }
 
-    // 최고지점(정상) 자동 감지 (웨이포인트에 산/봉우리/정상이 없는 일반 GPX 대비)
-    const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
-    if (!hasPeak) {
-      const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
-      if (withEle.length > 0) {
-        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
-        const peakIdx = points.indexOf(peak);
-        const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
-        list.push({
-          name: `정상 (${Math.round(peak.ele)}m)`,
-          lat: peak.lat,
-          lon: peak.lon,
-          ele: peak.ele,
-          distanceM: peakDistM,
-          icon: '⛰️',
-          color: '#e65100'
-        });
-      }
-    }
+    const hasAnyWaypoint = waypoints && waypoints.length > 0;
 
-    // 들머리 / 날머리가 없으면 기본 추가
-    if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
-      const startPt = points[0];
-      list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2' });
-    }
-    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
-      const endPt = points[points.length - 1];
-      list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f' });
+    // 최고지점(정상) 자동 감지 (웨이포인트가 아예 없는 일반 GPX 대비)
+    if (!hasAnyWaypoint) {
+      const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
+      if (!hasPeak) {
+        const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
+        if (withEle.length > 0) {
+          const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+          const peakIdx = points.indexOf(peak);
+          const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
+          list.push({
+            name: `정상 (${Math.round(peak.ele)}m)`,
+            lat: peak.lat,
+            lon: peak.lon,
+            ele: peak.ele,
+            distanceM: peakDistM,
+            icon: '⛰️',
+            color: '#e65100'
+          });
+        }
+      }
+
+      // 들머리 / 날머리가 없으면 기본 추가
+      if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
+        const startPt = points[0];
+        list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2' });
+      }
+      if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
+        const endPt = points[points.length - 1];
+        list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f' });
+      }
     }
 
     list.sort((a, b) => a.distanceM - b.distanceM);
