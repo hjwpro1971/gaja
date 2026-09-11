@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -129,6 +129,19 @@
       <button class="btn" id="btn-generate-course" type="button" style="width:100%; margin-bottom:8px; font-weight:700; background:#edf2f7; border-color:#cbd5e0; color:#2d3748;">코스 텍스트 자동 생성</button>
       <button class="btn" id="btn-export-nav-gpx" type="button" style="width:100%; margin-bottom:8px; font-weight:700; background:#2b6cb0; border-color:#2b6cb0; color:#ffffff;">🧭 내비용 스마트 GPX 다운로드</button>
       <textarea id="course-text-output" rows="3" style="width:100%; display:none; resize:vertical; font-size:12px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748;" readonly></textarea>
+    </fieldset>
+
+    <fieldset id="share-fieldset" style="margin-top:12px; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+      <legend style="font-weight:700; color:#2b6cb0;">🚀 모바일 내비 배포 & 카톡 공유</legend>
+      <div style="margin-bottom:8px;">
+        <label for="share-course-title" style="font-size:12px; font-weight:700; color:#4a5568; margin-bottom:4px; display:block;">공유 안내 메시지 제목:</label>
+        <input type="text" id="share-course-title" value="대전 계룡산 산행 가이드 지도" placeholder="예: 대전 계룡산 산행 가이드 지도" style="width:100%; padding:6px 8px; font-size:12.5px; border:1px solid #cbd5e0; border-radius:6px; font-family:inherit;">
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button class="btn" id="btn-deploy-github" type="button" style="flex:1; font-weight:700; background:#24292e; border-color:#24292e; color:#ffffff; font-size:12px;">🚀 GitHub tracks에 배포</button>
+        <button class="btn" id="btn-copy-share-msg" type="button" style="flex:1; font-weight:700; background:#ecc94b; border-color:#d69e2e; color:#744210; font-size:12px;">📋 카톡 메시지 복사</button>
+      </div>
+      <textarea id="share-msg-preview" rows="4" style="width:100%; font-size:11.5px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748; line-height:1.45; resize:vertical; background:#fff;" readonly placeholder="GitHub에 배포하면 카톡 공유 링크가 여기에 자동으로 완성됩니다."></textarea>
     </fieldset>
     <div class="action-bar">
       <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled style="flex:1;">전체캡쳐</button>
@@ -1221,6 +1234,13 @@ function handleGPXFile(e) {
       saveHandoffToSummary(gpxBaseName, stats);
       saveGpxDraft(points, gpxBaseName);
       initRoutePOIs(points);
+
+      const shareTitleEl = document.getElementById('share-course-title');
+      if (shareTitleEl) {
+        let cleanName = gpxBaseName.replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+        shareTitleEl.value = cleanName + ' 산행 가이드 지도';
+        if (typeof updateShareMessagePreview === 'function') updateShareMessagePreview();
+      }
     } catch (err) {
       warnBox.style.display = 'block';
       warnBox.textContent = '⚠ GPX 파일을 읽는 중 오류: ' + err.message;
@@ -1869,13 +1889,13 @@ initMap();
 restoreGpxDraftIfAny();
 
   document.getElementById('btn-generate-course').addEventListener('click', generateCourseText);
-  document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
+  const GH_TOKEN_KEY = 'gajaGitHubToken';
+  const GH_REPO_OWNER = 'hjwpro1971';
+  const GH_REPO_NAME = 'gaja';
 
-  function exportNavGpx() {
-    if (!loadedPoints || loadedPoints.length < 2) {
-      alert('GPX 데이터를 먼저 불러오세요.');
-      return;
-    }
+  // 내비용 스마트 GPX XML 생성 공통 함수
+  function buildNavGpxXml() {
+    if (!loadedPoints || loadedPoints.length < 2) return null;
 
     const cumDist = [0];
     let totalDist = 0;
@@ -1956,7 +1976,16 @@ restoreGpxDraftIfAny();
     lines.push('  </trk>');
     lines.push('</gpx>');
 
-    const blob = new Blob([lines.join('\n')], { type: 'application/gpx+xml;charset=utf-8' });
+    return lines.join('\n');
+  }
+
+  function exportNavGpx() {
+    const xml = buildNavGpxXml();
+    if (!xml) {
+      alert('GPX 데이터를 먼저 불러오세요.');
+      return;
+    }
+    const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1966,6 +1995,132 @@ restoreGpxDraftIfAny();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
+
+  function getComputedNavFileName() {
+    return (gpxBaseName || 'trail') + '_nav.gpx';
+  }
+
+  function updateShareMessagePreview() {
+    const titleInput = document.getElementById('share-course-title');
+    const title = (titleInput ? titleInput.value : '').trim() || (gpxBaseName ? gpxBaseName + ' 등산지도' : '등산 안내 지도');
+    const fileName = getComputedNavFileName();
+    const fileParam = 'tracks/' + encodeURIComponent(fileName);
+    const linkUrl = 'https://hjwpro1971.github.io/gaja/track_viewer.html?file=' + fileParam + '&name=' + encodeURIComponent(title);
+    
+    const msg = '🚩 [' + title + ']\n\n아래 링크를 누르면 등산 지도와 지명, 실시간 길찾기 내비게이션이 바로 열립니다:\n👉 ' + linkUrl + '\n\n(산행 전 위 링크를 열어 [홈 화면에 추가]해 두시면 산속 오프라인에서도 100% 작동합니다.)';
+
+    const previewEl = document.getElementById('share-msg-preview');
+    if (previewEl) previewEl.value = msg;
+    return { title, fileName, linkUrl, msg };
+  }
+
+  async function deployToGitHubTracks() {
+    if (!loadedPoints || loadedPoints.length < 2) {
+      alert('먼저 GPX 파일을 불러와주세요.');
+      return;
+    }
+
+    let token = localStorage.getItem(GH_TOKEN_KEY);
+    if (!token) {
+      token = prompt('GitHub Personal Access Token (PAT)을 입력하세요:');
+      if (!token || !token.trim()) return;
+      token = token.trim();
+      localStorage.setItem(GH_TOKEN_KEY, token);
+    }
+
+    const { fileName } = updateShareMessagePreview();
+    const xmlContent = buildNavGpxXml();
+    const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/tracks/${encodeURIComponent(fileName)}`;
+
+    const btn = document.getElementById('btn-deploy-github');
+    const originalText = btn.textContent;
+    btn.textContent = '🚀 배포 중...';
+    btn.disabled = true;
+
+    try {
+      let sha = null;
+      try {
+        const getRes = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          sha = getData.sha;
+        }
+      } catch(e) {}
+
+      const bytes = new TextEncoder().encode(xmlContent);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64Content = btoa(binary);
+
+      const payload = {
+        message: `Upload nav track: ${fileName} via GPX Map Builder`,
+        content: base64Content
+      };
+      if (sha) payload.sha = sha;
+
+      const putRes = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!putRes.ok) {
+        if (putRes.status === 401) {
+          localStorage.removeItem(GH_TOKEN_KEY);
+          throw new Error('인증 실패 (토큰 만료 또는 권한 오류). 다시 시도해주세요.');
+        }
+        const errJson = await putRes.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${putRes.status}`);
+      }
+
+      updateShareMessagePreview();
+      alert(`🎉 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [카톡 메시지 복사] 버튼을 눌러 산행 모임이나 친구들에게 카톡으로 바로 공유하세요!`);
+    } catch(err) {
+      alert('GitHub 배포 실패:\n' + err.message);
+    } finally {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  }
+
+  function copyShareMessage() {
+    const previewEl = document.getElementById('share-msg-preview');
+    if (!previewEl || !previewEl.value) {
+      updateShareMessagePreview();
+    }
+    const text = previewEl.value;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert('📋 카톡 공유 메시지가 클립보드에 복사되었습니다!\n카카오톡 대화방에 [붙여넣기]하세요.');
+      }).catch(() => {
+        previewEl.select();
+        document.execCommand('copy');
+        alert('📋 카톡 공유 메시지가 복사되었습니다!');
+      });
+    } else {
+      previewEl.select();
+      document.execCommand('copy');
+      alert('📋 카톡 공유 메시지가 복사되었습니다!');
+    }
+  }
+
+  document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
+  document.getElementById('btn-deploy-github').addEventListener('click', deployToGitHubTracks);
+  document.getElementById('btn-copy-share-msg').addEventListener('click', copyShareMessage);
+  document.getElementById('share-course-title').addEventListener('input', updateShareMessagePreview);
+
 
   
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));('click', () => zoomBy(1));
