@@ -1947,7 +1947,7 @@ restoreGpxDraftIfAny();
 
     if (loadedPoiList && loadedPoiList.length > 0) {
       loadedPoiList.forEach(item => {
-        if (!item.isTerminal) {
+        if (!item.isTerminal && !item.deleted) {
           wpts.push({
             name: item.name,
             lat: item.lat,
