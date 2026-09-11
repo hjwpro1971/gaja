@@ -478,7 +478,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=10')
+      navigator.serviceWorker.register('./sw.js?v=11')
         .then(reg => {
           reg.update(); // 최신 버전 감지 즉시 백그라운드 갱신
           console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
@@ -719,6 +719,77 @@
 
   const gpsFilterEngine = new GpsFilterEngine();
   // ────────────────────────────────────────────────────────────────
+
+  // --- 산행 네비게이션 AI 분석용 데이터 로거 ---
+  class HikingDataLogger {
+    constructor() {
+      this.logs = [];
+      this.isLogging = false;
+    }
+    start() {
+      this.logs = [];
+      this.isLogging = true;
+      console.log("🟢 [DataLogger] 산행 데이터 기록 시작");
+    }
+    stop() {
+      this.isLogging = false;
+      console.log(`🔴 [DataLogger] 산행 데이터 기록 종료 (총 ${this.logs.length}개 기록됨)`);
+    }
+    log(data) {
+      if (!this.isLogging) return;
+      
+      let moveDist = 0;
+      if (this.lastLat !== undefined && this.lastLng !== undefined && data.lat && data.lng) {
+        moveDist = haversineMeters(this.lastLat, this.lastLng, data.lat, data.lng);
+      }
+      this.lastLat = data.lat;
+      this.lastLng = data.lng;
+
+      const record = {
+        timestamp: new Date().toISOString(),
+        state: data.state || 'WALK',
+        lat: data.lat ? Number(data.lat.toFixed(7)) : 0,
+        lng: data.lng ? Number(data.lng.toFixed(7)) : 0,
+        accuracy: data.accuracy ? Number(data.accuracy.toFixed(1)) : 0,
+        speed: data.speed ? Number(data.speed.toFixed(2)) : 0,
+        moveDist: Number(moveDist.toFixed(1)),
+        deviceHeading: data.deviceHeading ? Math.round(data.deviceHeading) : 0,
+        mapHeading: data.mapHeading ? Math.round(data.mapHeading) : 0,
+        distToNext: data.distToNext ? Math.round(data.distToNext) : 0,
+        clockDirection: data.clockDirection || ''
+      };
+      this.logs.push(record);
+    }
+    exportCSV(filename = `hiking_log_${new Date().toISOString().slice(0, 10)}.csv`) {
+      if (this.logs.length === 0) {
+        alert("저장된 로그 데이터가 없습니다.");
+        return;
+      }
+      const headers = Object.keys(this.logs[0]);
+      const csvRows = [headers.join(',')];
+      for (const row of this.logs) {
+        const values = headers.map(header => {
+          const val = row[header];
+          return typeof val === 'string' ? `"${val}"` : val;
+        });
+        csvRows.push(values.join(','));
+      }
+      const csvContent = "\uFEFF" + csvRows.join('\n'); // UTF-8 BOM
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      console.log(`💾 [DataLogger] CSV 저장 완료: ${filename}`);
+      showToastBadge("💾 데이터 로깅 CSV 파일이 다운로드 되었습니다.");
+    }
+  }
+  const hikingLogger = new HikingDataLogger();
+  // ---------------------------------------------
 
   let map = null;
   let currentLayer = null;
@@ -2562,6 +2633,12 @@
     btn.classList.remove('active');
     toast.style.display = 'none';
     showToastBadge('📍 내 위치 추적을 종료했습니다.');
+    
+    // [데이터 로깅 종료]
+    if (hikingLogger.isLogging) {
+      hikingLogger.stop();
+      hikingLogger.exportCSV();
+    }
   }
 
   function startGpsTracking() {
@@ -2572,6 +2649,9 @@
       alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
       return;
     }
+
+    // [데이터 로깅 시작]
+    hikingLogger.start();
 
     // 나침반 센서 즉시 활성화
     initCompass();
@@ -2803,6 +2883,29 @@
         }
 
         updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+        
+        // [데이터 로깅]
+        if (hikingLogger.isLogging) {
+          let nextDist = 0;
+          let clockStr = '';
+          const tText = toast.innerText || '';
+          const matchDist = tText.match(/([0-9,]+)m 남음/);
+          if (matchDist) nextDist = parseInt(matchDist[1].replace(/,/g, ''), 10);
+          const matchClock = tText.match(/([0-9]+시 방향)/);
+          if (matchClock) clockStr = matchClock[1];
+
+          hikingLogger.log({
+            state: isCurrentlyStopped ? 'STOP' : 'WALK',
+            lat: lat,
+            lng: lon,
+            accuracy: accuracy,
+            speed: pos.coords.speed || 0,
+            deviceHeading: currentHeading,
+            mapHeading: isHeadingUp && map ? map.getBearing() : 0,
+            distToNext: nextDist,
+            clockDirection: clockStr
+          });
+        }
       },
       err => {
         toast.className = 'gps-toast warning';
