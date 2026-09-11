@@ -49,7 +49,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260909_speed_threshold_fix1';
+      const APP_BUILD = 'v20260909_distance_only_stop1';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -570,27 +570,18 @@
       // 갱신되는 상황에서 최소 3초, 게다가 MIN_DISTANCE(1.5m)씩 매번
       // 움직여야 하니 실제로는 3m 이상 이동해야 겨우 "이동중"으로 인식
       // 되는 심각한 반응 지연의 원인이었다. 반응 속도를 우선해 이 연속성
-      // 요구를 제거하고, 매 픽스의 판정을 그대로 즉시 반영한다. GPS 튐으로
-      // 인한 오탐은 MIN_DISTANCE·MAX_ACCURACY·BEARING_THRESHOLD 등 다른
-      // 필터로 대응한다.
+      // 요구를 제거하고, 매 픽스의 판정을 그대로 즉시 반영한다.
       //
-      // ⚠️ 실제로 멈췄는데도 정지 인식이 10초 가까이 늦어지는 문제가
-      // 있었다. 원인은 "거리 AND 속도" 조건 — 거리는 이미 짧아졌는데도
-      // GPS 칩이 주는 speed 필드가 관성/내부 평활 처리로 몇 초간 계속
-      // STOP_SPEED_CUTOFF 이상을 보고하면 정지 판정 자체가 막혔다.
-      // 거리 조건(rawDist)을 주된 기준으로 삼고, speed는 "거리는 짧은데
-      // 속도만 비정상적으로 빠르게(순간 GPS 튐 등) 나오는 경우"를 걸러내는
-      // 보조 조건으로만 쓴다 — 즉 거리가 짧으면 기본적으로 정지로 보되,
-      // speed가 명백히 높을 때만 예외적으로 이동으로 본다.
-      // ⚠️ speed 문턱을 STOP_SPEED_CUTOFF의 2배(1.0m/s)로 뒀더니, 등산
-      // 저속 보행(시속 2~3km, 초당 0.5~0.8m)에서는 이 속도조차 못 미쳐
-      // "이동 중인데 정지로 판정"되는 오탐이 잦아졌다. STOP_SPEED_CUTOFF를
-      // 그대로 문턱으로 써서, 정지 판정 기준(0.5m/s 미만)과 이동 판정
-      // 기준을 동일한 경계선으로 맞춘다 — 거리가 짧아도 속도가 0.5m/s
-      // 이상이면 이동으로 인정한다.
+      // ⚠️ speed 필드는 완전히 제거했다. GPS 칩/OS가 speed를 계산할 때
+      // 최근 몇 초간의 이동 이력을 평균·평활 처리해서 제공하는 경우가
+      // 흔해서, 실제로는 이미 멈췄는데도 speed 필드만 관성으로 몇 초간
+      // 계속 "이동 중" 값을 보고해 정지 인식이 3초 이상 늦어지는 원인이
+      // 되었다. 순수하게 거리(직전 확정점 대비 rawDist)만으로 판정하면
+      // 이 지연 없이 멈추는 즉시 다음 픽스에서 바로 정지로 인식된다.
+      // GPS 좌표 자체의 순간 튐은 MAX_ACCURACY·BEARING_THRESHOLD 등
+      // 다른 필터로 대응한다.
       const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
-      const speedSaysMoving = raw.speed !== null && raw.speed >= this.config.STOP_SPEED_CUTOFF;
-      const isStopped = rawDist < this.config.MIN_DISTANCE && !speedSaysMoving;
+      const isStopped = rawDist < this.config.MIN_DISTANCE;
 
       if (isStopped) {
         // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
