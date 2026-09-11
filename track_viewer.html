@@ -423,7 +423,7 @@
 </div>
 
 <!-- 좌측 하단 시뮬레이션(따라가기) 컨트롤 패널 -->
-<div class="sim-control-panel" style="position: absolute; left: 16px; bottom: 30px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+<div class="sim-control-panel" style="position: absolute; left: 16px; bottom: 80px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center;">
   <div id="simSpeedOptions" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 4px;">
     <button class="sim-speed-btn" onclick="setSimSpeed(5, event)">5x</button>
     <button class="sim-speed-btn" onclick="setSimSpeed(4, event)">4x</button>
@@ -478,7 +478,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=12')
+      navigator.serviceWorker.register('./sw.js?v=13')
         .then(reg => {
           reg.update(); // 최신 버전 감지 즉시 백그라운드 갱신
           console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
@@ -966,19 +966,19 @@
     const mapEl = document.getElementById('map');
     if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up') && !isMapBeingDragged && !isMapDragReturnPending) {
       if (isCurrentlyStopped) {
-        // 🛑 정지 시 (갈림길에서 멈춤): 나침반 + 자이로 헤딩업 정렬 (스마트폰 돌리는 방향대로 지도가 회전)
+        // 정지 중 (나침반 연동): 실제 나침반 방향 (부드러운 회전)
         mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
+        window.actualMapRotation = continuousRot;
       } else {
-        // 🚶 이동 중 (속도 있음): 지도는 정북 고정 (화면이 돌지 않고 안정적, 내 위치 마커만 진행)
+        // 이동 중 (정북 고정): 화면 고정 (지도 상단이 북쪽)
         mapEl.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+        window.actualMapRotation = 0;
       }
     }
 
-    // 2. 내 위치 마커 화살표
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
-      // 정지 시: 지도가 -continuousRot 만큼 회전하므로 화살표는 continuousRot 회전하여 화면 정면(12시)을 유지
-      // 이동 중: 지도가 0도(정북 고정)이므로 화살표는 continuousRot 회전하여 지도 위에서 실제 진행 방향을 가리킴
+      // 내 위치 마커의 방향 화살표 회전
       wrapper.style.transform = `rotate(${continuousRot}deg)`;
     }
   }
@@ -1303,9 +1303,10 @@
       manualDragLastY = clientY;
       if (dx === 0 && dy === 0) return;
 
-      // 화면 회전각(displayedRot)만큼 역회전시켜 실제 지도 좌표계 기준
+      // 화면 회전각(actualMapRotation)만큼 역회전시켜 실제 지도 좌표계 기준
       // 이동량으로 변환한다 — 부호 결정은 이 한 곳에서만 이뤄진다.
-      const corrected = rotateDragDelta(dx, dy, displayedRot);
+      const currentRot = window.actualMapRotation || 0;
+      const corrected = rotateDragDelta(dx, dy, currentRot);
       map.panBy([-corrected.x, -corrected.y], { animate: false });
     }
 
