@@ -1008,8 +1008,8 @@ ${trkpts}    </trkseg>
     }
   });
 
-  // viewer.html의 스키마와 동일하게 저장 (saved_hiking_routes_v1)
-  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v1';
+  // track_viewer.html의 스키마와 동일하게 저장 (saved_hiking_routes_v2)
+  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v2';
   const MAX_SAVED_ROUTES = 5;
 
   function loadSavedRoutes() {
@@ -1028,6 +1028,7 @@ ${trkpts}    </trkseg>
         name: courseName,
         sourceUrl: sourceKey,
         points: points,
+        waypoints: points.waypoints || [],
         savedAt: Date.now()
       });
       if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
@@ -1036,7 +1037,7 @@ ${trkpts}    </trkseg>
       try {
         let list = loadSavedRoutes();
         list = list.slice(0, Math.ceil(list.length / 2));
-        list.unshift({ name: courseName, sourceUrl: sourceKey, points: points, savedAt: Date.now() });
+        list.unshift({ name: courseName, sourceUrl: sourceKey, points: points, waypoints: points.waypoints || [], savedAt: Date.now() });
         localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
       } catch(e2) {}
     }
@@ -1066,7 +1067,7 @@ ${trkpts}    </trkseg>
         time: p.time || null
       }));
       saveRouteToViewerStorage(courseName, sourceKey, pointsToSave);
-      window.open('./viewer.html', '_blank');
+      window.open('./track_viewer.html', '_blank');
     } catch(e) {
       alert('뷰어 연동 중 오류: ' + e.message);
     }
