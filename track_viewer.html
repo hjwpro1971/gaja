@@ -2280,7 +2280,7 @@
 
     try {
       const cache = await caches.open('gaja-trail-cache-v5');
-      await cache.addAll(['./viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
+      await cache.addAll(['./track_viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
 
       let completed = 0;
       let failedCount = 0;
@@ -3053,7 +3053,7 @@
             accuracy: accuracy,
             speed: pos.coords.speed || 0,
             deviceHeading: currentHeading,
-            mapHeading: isHeadingUp && map ? map.getBearing() : 0,
+            mapHeading: isHeadingUp ? Math.round(displayedRot) : 0,
             distToNext: nextDist,
             clockDirection: clockStr
           });
