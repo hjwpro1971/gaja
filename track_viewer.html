@@ -2671,7 +2671,7 @@
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
       const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
       toast.className = 'gps-toast warning';
-      let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(1) + 'km' : Math.round(minDistanceM) + 'm';
+      let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
       toast.innerText = `🚨 [이탈] ${distStr} 벗어났어요 ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
       // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
@@ -2687,8 +2687,8 @@
       const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
       const traveledDist = cumulativeDistances[nearestIdx] || 0;
       const remainingDist = Math.max(0, totalDist - traveledDist);
-      const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(1)}km` : '';
-      const fmtM = m => `${(m / 1000).toFixed(1)}km`;
+      const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
+      const fmtM = m => `${(m / 1000).toFixed(2)}km`;
 
       // 지명(마일스톤) 기반 실시간 구간 및 다음 목적지 판정
       if (currentMilestones && currentMilestones.length >= 2) {
