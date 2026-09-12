@@ -2193,8 +2193,10 @@ restoreGpxDraftIfAny();
         if (!data.ok) throw new Error(data.message || '전송 실패');
       }
 
-      btn.innerHTML = '✅ 전송 완료!';
-      alert(`🎉 텔레그램으로 [${courseName}] 등산지도가 전송되었습니다! 📱\n스마트폰 텔레그램에서 바로 확인해보세요.`);
+      btn.innerHTML = '✨ 전송 완료!';
+      alert(`✅ 텔레그램으로 [${courseName}] 전송되었습니다! 🚀\n스마트폰 텔레그램을 바로 확인해보세요.`);
+      // (기능 추가) 배포/전송 완료 후, 사용자의 로컬(예: Y:\gaja-tools\tracks)로 저장할 수 있게 다운로드 창 띄우기
+      exportNavGpx();
       setTimeout(() => {
         btn.innerHTML = origText;
         btn.disabled = false;
