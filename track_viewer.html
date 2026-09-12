@@ -1178,6 +1178,14 @@
   // 원점 대비 상대 회전량을 계산해 지도+화살표를 함께 돌린다(renderStoppedRotation).
   // 3방향(폰/경로/지도) 일치 판정은 이 원점과 무관하게 항상 "폰 절대방위 vs
   // 경로 순방향"을 직접 비교한다.
+  //
+  // ⚠️ 이동 중 회전에 쓰는 continuousHeading/displayedRot(GPS 절대방위 기준
+  // 애니메이션 상태)을 여기서 재사용하면 안 된다 — 과거에 applySmoothedHeading을
+  // 공유했더니, 이동 중 남아있던 절대방위 값(예: 190도)과 정지 진입 직후의
+  // 상대회전값(예: 0도)의 차이를 "회전량"으로 오인해 지도가 한 번에 크게
+  // 튀는(심하면 180도 가까이 뒤집히는) 버그가 있었다. 정지 중 회전은 사용자가
+  // 실시간으로 폰을 돌리는 걸 그대로 따라가야 하므로, 부드러운 보간 없이
+  // relativeRotation을 renderStoppedRotation에 즉시 전달한다.
   function applyStopPhoneRotation(phoneAbsHeading) {
     // [핵심] 정지 후 1회성 이벤트: 이 순간의 폰 센서값을 기준점(0도)으로 확정
     if (referenceHeading === null) {
@@ -1186,7 +1194,7 @@
 
     // 기준점(referenceHeading) 대비 현재 폰이 얼마나 더 돌아갔는지(상대 회전) 계산
     const relativeRotation = shortestAngleDiff(phoneAbsHeading, referenceHeading);
-    applySmoothedHeading((relativeRotation + 360) % 360);
+    renderStoppedRotation((relativeRotation + 360) % 360);
 
     // 폰 방향(θ_phone)과 경로 순방향(θ_forward)을 실시간 비교하여 마커 아이콘(❓/🔵/🔴) 변경.
     // 이 판정은 회전 기준점(원점)과 무관하게 항상 절대 방위끼리 비교한다.
@@ -1578,7 +1586,15 @@
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
-          renderHeadingRotation(displayedRot); // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀
+          // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀.
+          // ⚠️ displayedRot(이동용 GPS 절대방위 값)을 정지 중에 쓰면 안 된다 —
+          // 정지 중엔 window.actualMapRotation(renderStoppedRotation이 저장해둔
+          // 최신 상대회전각)을, 이동 중엔 displayedRot을 각각 써야 한다.
+          if (isCurrentlyStopped) {
+            renderStoppedRotation(window.actualMapRotation || 0);
+          } else {
+            renderMovingRotation(displayedRot);
+          }
         }
       }, DRAG_RETURN_DELAY_MS);
     }
@@ -2990,7 +3006,6 @@
         const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearest.index, 20);
         if (aheadPoint) {
           latestStopTrailBearing = calculateBearing(nearest.point.lat, nearest.point.lon, aheadPoint.lat, aheadPoint.lon);
-          trailDeviationDeg = 90;
         }
       }
     }
@@ -3091,10 +3106,13 @@
         const wasStoppedBeforeThisFix = isCurrentlyStopped; // 전환 감지용 — 이번 픽스로 덮어쓰기 전 스냅샷
         isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태
 
-        // 정지 ↔ 이동 상태가 전환된 경우 지도 회전(정북 고정 또는 헤딩업)을 즉시 갱신
-        if (wasStoppedBeforeThisFix !== isCurrentlyStopped && displayedRot !== null) {
-          renderHeadingRotation(displayedRot);
-        }
+        // ⚠️ 정지 ↔ 이동 전환 시 displayedRot(이동용 GPS 절대방위 애니메이션
+        // 값)으로 renderHeadingRotation을 호출하지 않는다 — 정지 진입 직후
+        // 이 값을 상대회전으로 잘못 해석해 지도가 한 번에 크게 튀는 버그가
+        // 있었다. 각 전환은 아래에서 이미 적절한 값으로 화면을 갱신한다:
+        // 이동 진입은 이 아래 result.bearing 분기의 applySmoothedHeading이,
+        // 정지 진입은 applyStopPhoneRotation(또는 다음 orientation 이벤트)이
+        // 담당한다.
 
         // 왕복 겹침 구간에서 순방향/역방향 세그먼트를 구분할 때 쓸 최신
         // 이동 방향. gpsMovementHeading(전역, 아직 이번 픽스로 안 갱신됨)
@@ -3184,7 +3202,6 @@
             const aheadPoint = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
             if (aheadPoint) {
               const trailBearing = calculateBearing(nearestPoint.lat, nearestPoint.lon, aheadPoint.lat, aheadPoint.lon);
-              trailDeviationDeg = 90;
               latestStopTrailBearing = trailBearing; // 장시간 드리프트 재정렬이 참조할 최신 궤적 방향 — 매 픽스마다 갱신
 
               // 정지 상태로 막 전환된 순간(1회성 이벤트): 이전 이동 방향을
