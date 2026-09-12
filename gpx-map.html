@@ -2023,16 +2023,61 @@ restoreGpxDraftIfAny();
 
   function updateShareMessagePreview() {
     const titleInput = document.getElementById('share-course-title');
-    const title = (titleInput ? titleInput.value : '').trim() || (gpxBaseName ? gpxBaseName + ' 등산지도' : '등산 안내 지도');
+    const title = (titleInput ? titleInput.value : '').trim() || (gpxBaseName ? gpxBaseName + ' 코스' : '내 산행 코스');
     const fileName = getComputedNavFileName();
-    const fileParam = 'tracks/' + encodeURIComponent(fileName);
-    const linkUrl = 'https://hjwpro1971.github.io/gaja/track_viewer.html?file=' + fileParam + '&name=' + encodeURIComponent(title);
+    const htmlFileName = fileName.replace(/\.gpx$/i, '.html');
     
-    const msg = '🚩 [' + title + ']\n\n아래 링크를 누르면 등산 지도와 지명, 실시간 길찾기 내비게이션이 바로 열립니다:\n👉 ' + linkUrl + '\n\n(산행 전 위 링크를 열어 [홈 화면에 추가]해 두시면 산속 오프라인에서도 100% 작동합니다.)';
+    // 카카오톡 썸네일 속이기용 정적 HTML 링크 반환
+    const linkUrl = 'https://hjwpro1971.github.io/gaja/tracks/' + encodeURIComponent(htmlFileName);
+    
+    const msg = '⛰️ [' + title + ']\n\n아래 링크를 누르시면 스마트폰에서 등산 지도와 지명, 실시간 길찾기 내비게이션이 바로 열립니다:\n👉 ' + linkUrl + '\n\n(※ 처음 여신 후 우측 상단 메뉴에서 [홈 화면에 추가]를 해두시면 산속 오프라인에서도 100% 작동합니다.)';
 
     const previewEl = document.getElementById('share-msg-preview');
     if (previewEl) previewEl.value = msg;
-    return { title, fileName, linkUrl, msg };
+    return { title, fileName, htmlFileName, linkUrl, msg };
+  }
+
+  async function uploadToGitHub(token, path, content, commitMsg) {
+    const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/${path}`;
+    let sha = null;
+    try {
+      const getRes = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        sha = getData.sha;
+      }
+    } catch(e) {}
+
+    const bytes = new TextEncoder().encode(content);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Content = btoa(binary);
+
+    const payload = { message: commitMsg, content: base64Content };
+    if (sha) payload.sha = sha;
+
+    const putRes = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!putRes.ok) {
+      if (putRes.status === 401) {
+        localStorage.removeItem(GH_TOKEN_KEY);
+        throw new Error('권한 오류 (토큰 만료 또는 권한 부족). 다시 시도해주세요.');
+      }
+      const errJson = await putRes.json().catch(() => ({}));
+      throw new Error(errJson.message || `HTTP ${putRes.status}`);
+    }
   }
 
   async function deployToGitHubTracks(silent = false) {
@@ -2043,71 +2088,48 @@ restoreGpxDraftIfAny();
 
     let token = localStorage.getItem('gh_gaja_upload_token') || localStorage.getItem(GH_TOKEN_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     if (!token) {
-      token = prompt('GitHub Personal Access Token (PAT)을 입력하세요:');
+      token = prompt('GitHub Personal Access Token (PAT)를 입력하세요:');
       if (!token || !token.trim()) return false;
       token = token.trim();
       localStorage.setItem(GH_TOKEN_KEY, token);
     }
 
-    const { fileName } = updateShareMessagePreview();
+    const { title, fileName, htmlFileName } = updateShareMessagePreview();
     const xmlContent = buildNavGpxXml();
-    const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/tracks/${encodeURIComponent(fileName)}`;
+    
+    // 카카오톡 썸네일 속이기용 미끼 HTML 생성
+    const redirectHtml = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <meta property="og:title" content="${title}">
+  <meta property="og:description" content="실시간 등산로 길찾기 및 방향 탐색 내비게이션">
+  <meta property="og:image" content="https://hjwpro1971.github.io/gaja/images/app_icon_192.png">
+  <script>
+    window.location.replace('../track_viewer.html?file=tracks/${encodeURIComponent(fileName)}&name=${encodeURIComponent(title)}');
+  </script>
+</head>
+<body>
+  <p>지도로 이동 중입니다...</p>
+</body>
+</html>`;
 
     const btn = document.getElementById('btn-deploy-github');
     const originalText = btn.textContent;
-    btn.textContent = '🚀 배포 중...';
+    btn.textContent = '⏳ 배포 중...';
     btn.disabled = true;
 
     try {
-      let sha = null;
-      try {
-        const getRes = await fetch(url, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github.v3+json'
-          }
-        });
-        if (getRes.ok) {
-          const getData = await getRes.json();
-          sha = getData.sha;
-        }
-      } catch(e) {}
-
-      const bytes = new TextEncoder().encode(xmlContent);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64Content = btoa(binary);
-
-      const payload = {
-        message: `Upload nav track: ${fileName} via GPX Map Builder`,
-        content: base64Content
-      };
-      if (sha) payload.sha = sha;
-
-      const putRes = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!putRes.ok) {
-        if (putRes.status === 401) {
-          localStorage.removeItem(GH_TOKEN_KEY);
-          throw new Error('인증 실패 (토큰 만료 또는 권한 오류). 다시 시도해주세요.');
-        }
-        const errJson = await putRes.json().catch(() => ({}));
-        throw new Error(errJson.message || `HTTP ${putRes.status}`);
-      }
+      // 1. GPX 파일 업로드
+      await uploadToGitHub(token, `tracks/${encodeURIComponent(fileName)}`, xmlContent, `Upload nav track: ${fileName}`);
+      
+      // 2. 카카오톡 썸네일용 미끼 HTML 파일 업로드
+      await uploadToGitHub(token, `tracks/${encodeURIComponent(htmlFileName)}`, redirectHtml, `Upload redirect html for: ${title}`);
 
       updateShareMessagePreview();
       if (!silent) {
-        alert(`🎉 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [링크/메시지 복사] 또는 [텔레그램으로 보내기]를 눌러 공유하세요!`);
+        alert(`🚀 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [링크/메시지 복사] 또는 [텔레그램 전송]을 이용하세요!`);
       }
       return true;
     } catch(err) {
