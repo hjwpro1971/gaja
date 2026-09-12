@@ -414,7 +414,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v22)
+      📲 바로가기 (v23)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -478,7 +478,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=22')
+      navigator.serviceWorker.register('./sw.js?v=23')
         .then(reg => {
           reg.update(); // 최신 버전 감지 즉시 백그라운드 갱신
           console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
@@ -833,9 +833,10 @@
   let stopBaseHeading = null;        // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
   let lastOrientationAlpha = null;   // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
   let gyroRelativeRotation = 0;      // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
-  let stopEnteredAt = null;          // 정지 진입 시각(ms) — 장시간 드리프트 재정렬 판단용
-  let latestStopTrailBearing = null; // 정지 중 매 픽스마다 갱신되는 최신 궤적 방향(화면엔 미반영, 재정렬용)
-  let gyroActiveTimeout = null;      // 자이로 활성 하이라이트 페이드아웃 타이머
+  let stopEnteredAt = null;          
+  let latestStopTrailBearing = null; 
+  let referenceHeading = null; // 정지 순간 확정되는 나침반 기준 방향
+  let gyroActiveTimeout = null; // 페이드아웃 타이머
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
   let lastToastUpdate = 0;
@@ -1013,13 +1014,24 @@
 
     if (!isCurrentlyStopped) return; // 이동 중에는 GPS 방위각 사용
 
-    // --- 상호작용형 UI (사용자가 폰을 돌리며 탐색) ---
-    // 1) 지도는 폰을 돌리는 대로 실시간 회전한다!
-    stopBaseHeading = phoneAbsHeading;
-    applySmoothedHeading(phoneAbsHeading);
+    // [핵심] 정지 후 1회성 이벤트: 이 순간의 폰 센서값을 기준점(0도)으로 확정하고 정렬 회전
+    if (referenceHeading === null) {
+      referenceHeading = phoneAbsHeading;
+    }
 
-    // 2) 폰 방향(θ_phone)과 경로 순방향(θ_forward)을 실시간 비교하여 마커 아이콘(❓/🔵/🔴)만 변경
+    // 기준점(referenceHeading) 대비 현재 폰이 얼마나 더 돌아갔는지(상대 회전) 계산
+    const relativeRotation = shortestAngleDiff(phoneAbsHeading, referenceHeading);
+
+    // 지도를 (진행방향 정렬 회전량 + 폰의 추가 상대 회전량) 만큼 회전시킨다.
+    // 지도 좌표계에서 경로 방향(θ_forward)을 위로 돌리는 각도 = -latestStopTrailBearing
+    // 지도 회전은 시계 반대 방향이 양수이므로 전체 회전값은 -latestStopTrailBearing - relativeRotation
     if (latestStopTrailBearing !== null) {
+      const totalRotation = -latestStopTrailBearing - relativeRotation;
+      // applySmoothedHeading(continuousRot) 에는 0~360 의 양수 방위각을 전달해야 함.
+      // (continuousRot 의 음수값이 맵 회전각이 됨)
+      applySmoothedHeading((latestStopTrailBearing + relativeRotation + 360) % 360);
+      
+      // 폰 방향(θ_phone)과 경로 순방향(θ_forward)을 실시간 비교하여 마커 아이콘(❓/🔵/🔴) 변경
       const diffFromRoute = shortestAngleDiff(phoneAbsHeading, latestStopTrailBearing);
       const absDiff = Math.abs(diffFromRoute);
       
@@ -2912,13 +2924,14 @@
               // 제멋대로 바뀌는" 현상 없이, 이후 자이로(핸드폰 회전)만
               // 반영되어 자연스럽다.
               if (!wasStoppedBeforeThisFix) {
-                // [이동 -> 정지] 상태로 방금 전환됨!
-                // 설계 요약: 기존 이동 방향(currentHeading)을 폐기하고 방향 탐색 상태로 진입
-                stopBaseHeading = null;
+                // [이동 -> 정지] 상태로 방금 전환됨! (1회성 이벤트)
+                // 설계: 이 시점의 나침반 방향을 읽어 지도를 정렬하고 그 상태를 기준(referenceHeading)으로 확정
+                stopBaseHeading = null; 
+                referenceHeading = null; // 정지 진입 시 일단 초기화 (다음 센서 업데이트에서 확정)
                 gyroRelativeRotation = 0;
-                lastOrientationAlpha = null; // 새 센서값 기다림
+                lastOrientationAlpha = null; 
                 stopEnteredAt = Date.now();
-                isDirectionSearching = true; // 방향 탐색 중 (❓ 표시)
+                isDirectionSearching = true; 
                 updateGpsDirectionState();
               }
             }
