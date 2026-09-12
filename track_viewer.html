@@ -655,7 +655,7 @@
       const isTrapped = this._isTrappedInRadius(raw);
 
       // 🚦 상태 전이 로직      // 🧭 가속도 기반 보행 진동 판별 (0.8 이상이면 걷는 중으로 간주)
-      const isWalkingVibration = (typeof walkVibrationLevel !== 'undefined') && (walkVibrationLevel > 0.8);
+      const isWalkingVibration = false;
 
       const prevState = this.state;
 
@@ -1092,8 +1092,9 @@
   function renderStoppedRotation(relativeRotation) {
     const mapEl = document.getElementById('map');
     if (mapEl) {
-      mapEl.style.transform = `translate(-50%, -50%) rotate(${-relativeRotation}deg)`;
-      window.actualMapRotation = relativeRotation;
+      // (설계 원복) 지도 자체는 회전하지 않음 (정북 고정 원칙 준수)
+      mapEl.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+      window.actualMapRotation = 0;
     }
 
     const wrapper = document.getElementById('gpsHeadingWrapper');
@@ -3196,9 +3197,10 @@
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
           map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
           // 내 위치를 켜는 순간부터 지도 회전(길찾기 모드)과 방향 화살표를 함께 시작한다.
-          if (!isHeadingUp) {
-            setHeadingUpMode(true, true);
-          }
+          // (설계 원복) GPS 추적 시 강제로 회전 모드 켜는 꼼수 제거 (정북 고정 유지)
+          // if (!isHeadingUp) {
+          //   setHeadingUpMode(true, true);
+          // }
         } else {
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {

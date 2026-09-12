@@ -982,6 +982,9 @@ async function initRoutePOIs(points) {
   const wpts = points.waypoints || [];
   if (wpts.length > 0) {
     wpts.forEach((w, idx) => {
+      // (버그 수정) 파일 재로드 시, 시스템이 자동 생성하는 스페셜 마커가 일반 마커로 중복 생성되는 현상(지명 증식) 방지
+      if (w.name && (w.name.includes('들머리') || w.name.includes('날머리') || w.name.includes('최고고도') || w.name.includes('최고('))) return;
+
       const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: w.lat, lon: w.lon }, points, cumDist);
       // User waypoints are never filtered by distance
       // if (routeDistKm < 0.10 || routeDistKm > totalDist - 0.10) return;
