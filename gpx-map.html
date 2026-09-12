@@ -138,13 +138,9 @@
         <label for="share-course-title" style="font-size:12px; font-weight:700; color:#4a5568; margin-bottom:4px; display:block;">공유 안내 메시지 제목:</label>
         <input type="text" id="share-course-title" value="대전 계룡산 산행 가이드 지도" placeholder="예: 대전 계룡산 산행 가이드 지도" style="width:100%; padding:6px 8px; font-size:12.5px; border:1px solid #cbd5e0; border-radius:6px; font-family:inherit;">
       </div>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <button class="btn" id="btn-telegram-send" type="button" style="flex:1; padding:9px; font-size:13px; font-weight:800; color:#ffffff; background:linear-gradient(135deg, #2AABEE 0%, #229ED9 100%); border:none; border-radius:6px; cursor:pointer; box-shadow:0 3px 8px rgba(42,171,238,0.35);">✈️ 텔레그램</button>
-        <button class="btn" id="btn-mobile-share" type="button" style="flex:1; padding:9px; font-size:13px; font-weight:800; color:#391B1B; background:#FEE500; border:none; border-radius:6px; cursor:pointer; box-shadow:0 3px 8px rgba(254,229,0,0.35);">💬 카카오톡 공유</button>
-      </div>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <button class="btn" id="btn-deploy-github" type="button" style="flex:1; font-weight:700; background:#24292e; border-color:#24292e; color:#ffffff; font-size:12px;">🚀 GitHub tracks에 배포</button>
-        <button class="btn" id="btn-copy-share-msg" type="button" style="flex:1; font-weight:700; background:#ecc94b; border-color:#d69e2e; color:#744210; font-size:12px;">📋 링크/메시지 복사</button>
+      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+        <button class="btn" id="btn-telegram-send" type="button" style="width:100%; padding:9px; font-size:13px; font-weight:800; color:#ffffff; background:linear-gradient(135deg, #2AABEE 0%, #229ED9 100%); border:none; border-radius:6px; cursor:pointer; box-shadow:0 3px 8px rgba(42,171,238,0.35);">✈️ 텔레그램으로 전송</button>
+        <button class="btn" id="btn-deploy-github" type="button" style="width:100%; padding:9px; font-weight:700; background:#24292e; border:none; border-radius:6px; color:#ffffff; font-size:12px; cursor:pointer; box-shadow:0 3px 8px rgba(36,41,46,0.35);">🚀 GitHub tracks에 배포</button>
       </div>
       <textarea id="share-msg-preview" rows="4" style="width:100%; font-size:11.5px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748; line-height:1.45; resize:vertical; background:#fff;" readonly placeholder="배포하면 공유 링크가 여기에 자동으로 완성됩니다."></textarea>
     </fieldset>
@@ -2141,46 +2137,7 @@ restoreGpxDraftIfAny();
     }
   }
 
-  async function shareViaMobile() {
-    if (!loadedPoints || loadedPoints.length < 2) {
-      alert('먼저 GPX 파일을 불러와주세요.');
-      return;
-    }
-    
-    if (!navigator.share) {
-      alert('이 기기나 브라우저에서는 모바일 공유 기능을 지원하지 않습니다.\n아래의 [링크/메시지 복사] 버튼을 이용해주세요.');
-      return;
-    }
-    
-    const { title, fileName, linkUrl } = updateShareMessagePreview();
-    const courseName = title || '내 코스';
-    
-    const confirmed = confirm(`💬 [카카오톡 / 모바일 공유]\n\n코스명: ${courseName}\n\nGitHub에 파일을 배포한 뒤 공유창을 엽니다. 진행하시겠습니까?`);
-    if (!confirmed) return;
-    
-    const btn = document.getElementById('btn-mobile-share');
-    const origText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '⏳ 업로드 중...';
-    
-    try {
-      await deployToGitHubTracks(true);
-      btn.innerHTML = '💬 공유창 여는 중...';
-      
-      await navigator.share({
-        title: `${courseName} 산행 가이드`,
-        text: `⛰️ ${courseName} 산행 가이드\n\n위 링크를 누르시면 스마트폰 웹 브라우저가 열리며, 실시간 방향탐색 네비게이션이 바로 시작됩니다.\n\n`,
-        url: linkUrl
-      });
-    } catch(err) {
-      if (err.name !== 'AbortError') { // 사용자가 공유창을 취소하고 닫은 경우는 에러 메시지 생략
-        alert('모바일 공유 중 오류가 발생했습니다:\n' + err.message);
-      }
-    } finally {
-      btn.innerHTML = origText;
-      btn.disabled = false;
-    }
-  }
+
 
   async function sendToTelegramBot() {
     if (!loadedPoints || loadedPoints.length < 2) {
@@ -2246,33 +2203,9 @@ restoreGpxDraftIfAny();
     }
   }
 
-  function copyShareMessage() {
-    const previewEl = document.getElementById('share-msg-preview');
-    if (!previewEl || !previewEl.value) {
-      updateShareMessagePreview();
-    }
-    const text = previewEl.value;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('📋 공유 메시지가 클립보드에 복사되었습니다!\n대화방이나 메모장에 [붙여넣기]하세요.');
-      }).catch(() => {
-        previewEl.select();
-        document.execCommand('copy');
-        alert('📋 공유 메시지가 복사되었습니다!');
-      });
-    } else {
-      previewEl.select();
-      document.execCommand('copy');
-      alert('📋 공유 메시지가 복사되었습니다!');
-    }
-  }
-
   document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
   document.getElementById('btn-deploy-github').addEventListener('click', () => deployToGitHubTracks(false));
   document.getElementById('btn-telegram-send').addEventListener('click', sendToTelegramBot);
-  document.getElementById('btn-mobile-share').addEventListener('click', shareViaMobile);
-  document.getElementById('btn-copy-share-msg').addEventListener('click', copyShareMessage);
   document.getElementById('share-course-title').addEventListener('input', updateShareMessagePreview);
 
 
