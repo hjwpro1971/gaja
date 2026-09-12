@@ -221,6 +221,13 @@
       0%, 100% { background: #ffcdd2; }
       50% { background: #ef9a9a; }
     }
+    /* 역방향(경로를 등지고 반대로 이동 중) 안내 카드 — 이탈(.warning, 진한
+       빨강+깜빡임)과는 구분되는 상태이므로 연한 빨간 배경으로만 표시하고
+       깜빡이지는 않는다. 화살표 색(🔴)과 카드 색을 일치시켜 한눈에
+       "지금 반대로 가고 있다"를 알 수 있게 한다. */
+    .gps-toast.reversed {
+      background: #ffebee; border: 2px solid #e57373; color: #c62828;
+    }
 
     /* 현재 내 위치 GPS 펄스 및 나아갈 방향 빔 스타일 */
     .custom-gps-icon {
@@ -2632,6 +2639,19 @@
     }
   }
 
+  // 화면 안내(시계 방향/좌우 안내)에 쓸 "현재 향한 절대 방위"를 반환한다.
+  // ⚠️ currentHeading은 정지 중일 때 applyStopPhoneRotation()이 원점(정지
+  // 확정 순간의 폰 방위) 대비 "상대 회전각"으로 덮어써버리므로, 정지 중에는
+  // currentHeading을 그대로 쓰면 안 된다 — 대신 lastKnownPhoneHeading(폰의
+  // 실제 절대 방위 캐시)을 써야 한다. 이동 중에는 currentHeading이 여전히
+  // GPS 기반 절대 방위이므로 그대로 사용한다.
+  function getCurrentAbsHeadingForGuidance() {
+    if (isCurrentlyStopped && lastKnownPhoneHeading !== null) {
+      return lastKnownPhoneHeading;
+    }
+    return currentHeading;
+  }
+
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
@@ -2649,7 +2669,7 @@
       // 등산로 복귀 방향도 "북동쪽" 같은 절대 방위가 아니라 화면 기준
       // 오른쪽/왼쪽 상대 방향으로 안내해야 나침반 없이도 바로 알 수 있다.
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
-      const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, currentHeading);
+      const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
       toast.className = 'gps-toast warning';
       let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(1) + 'km' : Math.round(minDistanceM) + 'm';
       toast.innerText = `🚨 [이탈] ${distStr} 벗어났어요 ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
@@ -2692,19 +2712,24 @@
           const targetBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, targetPt.lat, targetPt.lon);
           
           let clockInfo = { clock: '진행 방향', arrow: '🧭' };
-          if (currentHeading !== null && !isNaN(currentHeading)) {
-            const toNextAngleDiff = shortestAngleDiff(targetBearing, currentHeading);
+          const guidanceHeading = getCurrentAbsHeadingForGuidance();
+          if (guidanceHeading !== null && !isNaN(guidanceHeading)) {
+            const toNextAngleDiff = shortestAngleDiff(targetBearing, guidanceHeading);
             clockInfo = angleDiffToClockDirection(toNextAngleDiff);
           }
 
-          toast.className = 'gps-toast';
+          // 역방향(경로를 등지고 반대로 가고 있음) 상태면 카드도 화살표
+          // 색(🔴)과 맞춰 연한 빨간 배경으로 표시한다.
+          toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
           toast.innerText = `🧭 [정지] ${nextM.name} · ${clockInfo.arrow} ${clockInfo.clock} (${fmtM(distToNextM)} 남음)`;
           return;
         }
 
         // 🚶 이동 중 (속도 있음) → "구간 안내"
         // "동학사 갈림길 → 관음봉 · 450m 남음"
-        toast.className = 'gps-toast';
+        // 역방향(경로를 등지고 반대로 가고 있음) 상태면 카드도 화살표
+        // 색(🔴)과 맞춰 연한 빨간 배경으로 표시한다.
+        toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
         toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
         return;
       }
@@ -2713,12 +2738,13 @@
         // 지명이 없는 일반 GPX의 경우에도 정지 시 시계 방향 안내
         const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
         let clockInfo = { clock: '등산로 방향', arrow: '🧭' };
-        if (aheadPt && currentHeading !== null && !isNaN(currentHeading)) {
+        const guidanceHeading = getCurrentAbsHeadingForGuidance();
+        if (aheadPt && guidanceHeading !== null && !isNaN(guidanceHeading)) {
           const targetBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, aheadPt.lat, aheadPt.lon);
-          const toNextAngleDiff = shortestAngleDiff(targetBearing, currentHeading);
+          const toNextAngleDiff = shortestAngleDiff(targetBearing, guidanceHeading);
           clockInfo = angleDiffToClockDirection(toNextAngleDiff);
         }
-        toast.className = 'gps-toast';
+        toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
         toast.innerText = `🧭 [정지] 등산로 ${clockInfo.arrow} ${clockInfo.clock} · 남은 ${remainingStr}`;
         return;
       }
@@ -3189,7 +3215,7 @@
         if (!userGpsMarker) {
           const gpsIcon = L.divIcon({
             className: 'custom-gps-icon',
-            html: createGpsIconHtml(currentHeading),
+            html: createGpsIconHtml(getCurrentAbsHeadingForGuidance()),
             iconSize: [80, 80],
             iconAnchor: [40, 40]
           });
