@@ -478,7 +478,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=14')
+      navigator.serviceWorker.register('./sw.js?v=15')
         .then(reg => {
           reg.update(); // 최신 버전 감지 즉시 백그라운드 갱신
           console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
@@ -1914,7 +1914,13 @@
       try {
         let list = loadSavedRoutes();
         list = list.slice(0, Math.ceil(list.length / 2));
-        const newRoute = { name: courseName, sourceUrl: sourceUrl || null, points: points, savedAt: Date.now() };
+        const newRoute = { 
+          name: courseName, 
+          sourceUrl: sourceUrl || null, 
+          points: points, 
+          waypoints: points.waypoints || [], 
+          savedAt: Date.now() 
+        };
         list = list.filter(r => !isSameRoute(r, newRoute));
         list.unshift(newRoute);
         localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
@@ -3081,53 +3087,44 @@
     // 있었다.
     // 🌟 핵심: 다운받기 전에 캐시에 이미 저장되어 있는지 먼저 체크!
     // 동일한 GPX 파일명 또는 코스명이 이미 있으면 외부 다운로드를 하지 않고 캐시에서 즉시 복원 (0.001초 로딩 & 중복 방지)
-    if (gpxUrl || decodedCourseName) {
-      const cached = findSavedRoute(decodedCourseName, gpxUrl);
-      if (cached) {
-        console.log('⚡ 이미 저장된 등산로 코스가 캐시에 있어 외부 다운로드를 생략하고 즉시 엽니다:', cached.name);
-        if (cached.waypoints) cached.points.waypoints = cached.waypoints;
-        drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true); // isFromCache = true
-        gpxUrl = null; // 외부 다운로드 생략
-
-        // 상단에 캐시 즉시 복원 완료 안내 뱃지 1.8초간 표시
-        const fastBadge = document.createElement('div');
-        fastBadge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:99999; background:rgba(27,94,32,0.95); color:#ffffff; font-size:13px; font-weight:800; padding:10px 20px; border-radius:24px; box-shadow:0 4px 16px rgba(0,0,0,0.3); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.5s;';
-        fastBadge.innerHTML = '⚡ 저장된 코스로 즉시 열었습니다 (다운로드 생략)';
-        document.body.appendChild(fastBadge);
-        setTimeout(() => {
-          fastBadge.style.opacity = '0';
-          setTimeout(() => fastBadge.remove(), 500);
-        }, 1800);
-      }
-    }
-
     if (gpxUrl) {
-      // 로딩 안내 뱃지 화면 상단 표시
       const loadingEl = document.createElement('div');
       loadingEl.id = 'gpxLoadingBadge';
       loadingEl.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#fff; font-size:13px; font-weight:700; padding:10px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.25); backdrop-filter:blur(4px); pointer-events:none;';
-      loadingEl.innerText = '⏳ 등산로 코스를 불러오는 중입니다...';
+      loadingEl.innerText = '🔄 등산 코스 불러오는 중...';
       document.body.appendChild(loadingEl);
 
       try {
+        // 항상 원격 최신본 다운로드를 시도하여 에디터 수정사항이 즉시 반영되도록 함.
         const xml = await fetchGPXFile(gpxUrl);
         const points = parseGPX(xml);
         drawRoute(points, decodedCourseName, gpxUrl);
-        if (document.getElementById('gpxLoadingBadge')) {
-          document.getElementById('gpxLoadingBadge').remove();
-        }
       } catch(err) {
-        console.warn('자동 GPX 다운로드 실패:', err);
-        if (document.getElementById('gpxLoadingBadge')) {
-          document.getElementById('gpxLoadingBadge').remove();
+        console.warn('원격 GPX 다운로드 실패. 오프라인 캐시 폴백 시도:', err);
+        // 인터넷이 끊긴 산속이거나 서버 오류 시 로컬 캐시에서 꺼내어 그려준다 (완벽한 오프라인 지원).
+        const cached = findSavedRoute(decodedCourseName, gpxUrl);
+        if (cached) {
+          console.log('오프라인 캐시에서 등산로 복원 완료:', cached.name);
+          if (cached.waypoints) cached.points.waypoints = cached.waypoints;
+          drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true);
+          
+          const fastBadge = document.createElement('div');
+          fastBadge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:99999; background:rgba(27,94,32,0.95); color:#ffffff; font-size:13px; font-weight:800; padding:10px 20px; border-radius:24px; box-shadow:0 4px 16px rgba(0,0,0,0.3); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.5s;';
+          fastBadge.innerHTML = '⚡ 오프라인 저장된 코스를 열었습니다';
+          document.body.appendChild(fastBadge);
+          setTimeout(() => {
+            fastBadge.style.opacity = '0';
+            setTimeout(() => fastBadge.remove(), 500);
+          }, 1800);
+        } else {
+          alert('등산로를 불러오지 못했습니다.\n\n인터넷 연결을 확인하고 다시 시도해 주세요.\n(또는 내 코스 목록에서 열어보세요)');
+          showSavedRouteList('저장된 GPX 목록을 불러왔습니다.');
         }
-        alert('등산로 지도를 불러오지 못했어요.\n\n💡 인터넷 연결을 확인한 뒤 다시 시도해보세요.\n그래도 안 되면, 아래 저장된 코스 목록에서 골라보세요.');
-        showSavedRouteList('⚠️ GPX 파일을 불러오지 못했습니다.');
+      } finally {
+        const badge = document.getElementById('gpxLoadingBadge');
+        if (badge) badge.remove();
       }
     } else if (!hadGpxUrl) {
-      // url 파라미터 없이 열린 경우(즐겨찾기 등) — 저장된 코스 목록을 보여준다.
-      // 산속에서 완전히 오프라인이어도 이전에 저장해둔 여러 코스 중 하나를
-      // 골라 바로 열어볼 수 있어야 한다는 게 이 기능의 목적이다.
       showSavedRouteList();
     }
 
