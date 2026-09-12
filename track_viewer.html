@@ -539,16 +539,28 @@
   // 넣어야 해서 고칠 때마다 다른 부작용(고정/지연/흔들림)이 반복됐다.
   // 이 엔진은 단순 이동평균과 명확한 문턱값만 쓰므로 동작을 예측하기
   // 쉽고, 등산 앱들이 실제로 쓰는 것으로 알려진 표준 수치를 그대로 따른다.
+  // 이동/정지 상태 머신의 4개 상태. 단순 boolean(정지냐 아니냐) 대신
+  // 중간 상태(STOPPING/MOVING_CANDIDATE)를 둬서, GPS 한두 번의 튐만으로
+  // 상태가 바로 반대로 뒤집히지 않도록 한다 — 뒤집히려면 일정 시간(STOPPING)
+  // 또는 연속 확인(MOVING_CANDIDATE)을 통과해야 한다.
+  const MotionState = Object.freeze({
+    MOVING: 'MOVING',
+    STOPPING: 'STOPPING',               // 정지 후보 — 일정 시간(STOPPING_CONFIRM_MS) 유지되어야 STOPPED 확정
+    STOPPED: 'STOPPED',
+    MOVING_CANDIDATE: 'MOVING_CANDIDATE' // 이동 후보 — 연속 확인(MOVE_CONFIRM_STREAK) 되어야 MOVING 확정
+  });
+
   class GpsFilterEngine {
     constructor(config = {}) {
       this.config = {
         MAX_ACCURACY: 15.0,      // 이 오차(m)를 넘는 픽스는 버림
         MIN_INTERVAL_MS: 400,    // 최소 수신 간격
-        MIN_DISTANCE: 1.5,
+        MIN_DISTANCE: 1.5,       // 이 거리(m) 미만의 픽스 간 이동은 GPS 오차로 간주 — 방위각 재계산도, recentSpeeds 반영도 하지 않는다
         // 🚦 정지/이동 히스테리시스 임계값        // 🚧 산악 지형 특화 튜닝 (오르막 오판 방지)
-        STOP_SPEED_CUTOFF_KMH: 0.3, // 0.3 km/h 이하가 10초(10회) 유지되어야 정지 (가속도 센서 보조)
+        STOP_SPEED_CUTOFF_KMH: 0.3, // 0.3 km/h 이하이면서 보행 진동도 없어야 정지 후보(STOPPING) 진입
         MOVE_SPEED_CUTOFF_KMH: 1.0, // 이동 재개 속도
-        STOP_CONFIRM_STREAK: 10,    // 정지 확정까지 10초 대기 (즉시 정지는 🧭 버튼 사용)
+        STOPPING_CONFIRM_MS: 4000,  // STOPPING 진입 후 이 시간(ms) 유지되면 STOPPED 확정 (기존 10초 카운트 방식보다 짧게 — "정지 즉시 회전 시작" 체감을 위함, 실기기 테스트 후 조정)
+        MOVE_CONFIRM_STREAK: 2,     // MOVING_CANDIDATE가 연속 이만큼 확인되어야 MOVING 확정 — GPS 튐 1회로는 전환 안 되게
         BEARING_THRESHOLD: 15.0,
         CLUSTER_WINDOW_SEC: 15,  // 반경 검사 시간 윈도우(초)
         CLUSTER_RADIUS_M: 7.0,   // 이 반경(m) 안에 윈도우 내내 갇혀 있으면 정지로 간주
@@ -558,8 +570,9 @@
       this.totalDistance = 0;
       this.recentPoints = [];
       this.recentSpeeds = [];       // 단발성 튐 방지용 최근 3~5개 속도 샘플(km/h)
-      this.stopStreakCount = 0;     // 정지 조건 연속 카운터
-      this.currentStateIsStopped = false; // 현재 히스테리시스 상태
+      this.state = MotionState.MOVING;
+      this.stoppingEnteredAt = null;      // STOPPING 상태 진입 시각(ms) — STOPPING_CONFIRM_MS 경과 판정용
+      this.movingCandidateStreak = 0;     // MOVING_CANDIDATE 연속 확인 횟수
     }
 
     // 새 코스 시작 시 또는 화면 복귀 시 상태를 완전히 초기화한다.
@@ -568,8 +581,17 @@
       this.totalDistance = 0;
       this.recentPoints = [];
       this.recentSpeeds = [];
-      this.stopStreakCount = 0;
-      this.currentStateIsStopped = false;
+      this.state = MotionState.MOVING;
+      this.stoppingEnteredAt = null;
+      this.movingCandidateStreak = 0;
+    }
+
+    // 🧭 즉시 방향 찾기(forceDirectionSearch)가 내부 필드를 직접 건드리지
+    // 않고 이 메서드를 통해서만 정지 상태를 강제 주입하도록 하는 공개 API.
+    forceStopped() {
+      this.state = MotionState.STOPPED;
+      this.stoppingEnteredAt = null;
+      this.movingCandidateStreak = 0;
     }
 
     // 최근 윈도우(CLUSTER_WINDOW_SEC)의 모든 위치가 한 지점 기준
@@ -600,7 +622,8 @@
         this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, isStopped: false, timestamp: raw.timestamp };
         return {
           latitude: raw.latitude, longitude: raw.longitude,
-          bearing: null, totalDistance: 0, isStopped: false, timestamp: raw.timestamp
+          bearing: null, totalDistance: 0, isStopped: false,
+          state: this.state, stateChanged: false, timestamp: raw.timestamp
         };
       }
 
@@ -610,44 +633,81 @@
       const calculatedSpeedMps = rawDist / elapsedSec; // m/s
       const calculatedSpeedKmh = calculatedSpeedMps * 3.6; // km/h
 
+      // ⭐ MIN_DISTANCE 필터: 두 픽스 사이 실제 이동거리가 이 값(1.5m)보다
+      // 작으면, 그 사이 계산된 속도는 GPS 오차가 지배하는 값일 가능성이
+      // 높으므로 recentSpeeds(이동/정지 판정 재료)에 반영하지 않는다.
+      // 저속 보행 시 실제 이동거리(0.4~1m)가 GPS 오차(5~15m)보다 작아,
+      // 이 필터가 없으면 속도/방위각 계산이 노이즈만으로 결정되어 버린다.
+      const isBelowMinDistance = rawDist < this.config.MIN_DISTANCE;
+
       // 최근 3개 GPS 샘플의 속도 이동평균 (단발성 튄 값에 즉각 반응하지 않도록 보호)
-      this.recentSpeeds.push(calculatedSpeedKmh);
-      if (this.recentSpeeds.length > 3) {
-        this.recentSpeeds.shift();
+      if (!isBelowMinDistance) {
+        this.recentSpeeds.push(calculatedSpeedKmh);
+        if (this.recentSpeeds.length > 3) {
+          this.recentSpeeds.shift();
+        }
       }
-      const avgSpeedKmh = this.recentSpeeds.reduce((a, b) => a + b, 0) / this.recentSpeeds.length;
+      const avgSpeedKmh = this.recentSpeeds.length > 0
+        ? this.recentSpeeds.reduce((a, b) => a + b, 0) / this.recentSpeeds.length
+        : 0;
 
       // 반경 클러스터 검사: 최근 15초간 7m 반경 안에서만 맴돌았으면 서성임/정지 확정
       const isTrapped = this._isTrappedInRadius(raw);
 
-      // 🚦 히스테리시스 상태 전이 로직      // 🧭 가속도 기반 보행 진동 판별 (0.8 이상이면 걷는 중으로 간주)
+      // 🚦 상태 전이 로직      // 🧭 가속도 기반 보행 진동 판별 (0.8 이상이면 걷는 중으로 간주)
       const isWalkingVibration = (typeof walkVibrationLevel !== 'undefined') && (walkVibrationLevel > 0.8);
 
-      // 🔄 정지/이동 판정 상태 머신:
-      if (this.currentStateIsStopped) {
-        // [정지 중] -> 이동 전환:
-        const highSpeedCount = this.recentSpeeds.filter(s => s >= this.config.MOVE_SPEED_CUTOFF_KMH).length;
-        // 속도가 회복되거나, 확실한 보행 진동이 있으면 이동 재개로 판단 (단, isTrapped면 무시)
-        if ((avgSpeedKmh >= 1.0 || highSpeedCount >= 2 || isWalkingVibration) && !isTrapped) {
-          this.currentStateIsStopped = false;
-          this.stopStreakCount = 0;
-        }
-      } else {
-        // [이동 중] -> 정지 전환:
-        // 속도도 낮고, "보행 진동도 없을 때"만 카운트를 올린다! (가파른 오르막 오판 방지)
-        if (calculatedSpeedKmh <= this.config.STOP_SPEED_CUTOFF_KMH && !isWalkingVibration) {
-          this.stopStreakCount++;
-        } else {
-          this.stopStreakCount = 0;
-        }
+      const prevState = this.state;
 
-        // 연속 10초(10회) 조건을 만족하거나, 15초 이상 갇혀있으면서 진동도 없으면 정지 판정
-        if (this.stopStreakCount >= this.config.STOP_CONFIRM_STREAK || (isTrapped && !isWalkingVibration)) {
-          this.currentStateIsStopped = true;
+      // 🔄 정지/이동 판정 상태 머신 (MOVING ⇄ STOPPING ⇄ STOPPED ⇄ MOVING_CANDIDATE ⇄ MOVING):
+      if (this.state === MotionState.MOVING) {
+        // [이동 중] -> 정지 후보(STOPPING) 진입:
+        // 속도도 낮고, "보행 진동도 없을 때"만 진입한다! (가파른 오르막 오판 방지)
+        if ((calculatedSpeedKmh <= this.config.STOP_SPEED_CUTOFF_KMH || isBelowMinDistance) && !isWalkingVibration) {
+          this.state = MotionState.STOPPING;
+          this.stoppingEnteredAt = raw.timestamp;
+        }
+      } else if (this.state === MotionState.STOPPING) {
+        // [정지 후보] -> 조건이 깨지면 즉시 MOVING으로 롤백(오탐 취소):
+        if (!((calculatedSpeedKmh <= this.config.STOP_SPEED_CUTOFF_KMH || isBelowMinDistance) && !isWalkingVibration)) {
+          this.state = MotionState.MOVING;
+          this.stoppingEnteredAt = null;
+        } else {
+          // 조건이 계속 유지되면, 일정 시간(STOPPING_CONFIRM_MS) 경과 또는
+          // 반경에 갇혀있으면(isTrapped) STOPPED로 확정.
+          const stoppingElapsedMs = raw.timestamp - this.stoppingEnteredAt;
+          if (stoppingElapsedMs >= this.config.STOPPING_CONFIRM_MS || (isTrapped && !isWalkingVibration)) {
+            this.state = MotionState.STOPPED;
+            this.stoppingEnteredAt = null;
+          }
+        }
+      } else if (this.state === MotionState.STOPPED) {
+        // [정지 확정] -> 이동 후보(MOVING_CANDIDATE) 진입:
+        const highSpeedCount = this.recentSpeeds.filter(s => s >= this.config.MOVE_SPEED_CUTOFF_KMH).length;
+        if ((avgSpeedKmh >= this.config.MOVE_SPEED_CUTOFF_KMH || highSpeedCount >= 2 || isWalkingVibration) && !isTrapped) {
+          this.state = MotionState.MOVING_CANDIDATE;
+          this.movingCandidateStreak = 1;
+        }
+      } else if (this.state === MotionState.MOVING_CANDIDATE) {
+        // [이동 후보] -> 조건이 깨지면 즉시 STOPPED로 롤백(보수적으로 유지):
+        const highSpeedCount = this.recentSpeeds.filter(s => s >= this.config.MOVE_SPEED_CUTOFF_KMH).length;
+        if ((avgSpeedKmh >= this.config.MOVE_SPEED_CUTOFF_KMH || highSpeedCount >= 2 || isWalkingVibration) && !isTrapped) {
+          this.movingCandidateStreak++;
+          // 연속 확인(MOVE_CONFIRM_STREAK)되어야 MOVING 확정 — GPS 튐 1회로는 전환 안 되게
+          if (this.movingCandidateStreak >= this.config.MOVE_CONFIRM_STREAK) {
+            this.state = MotionState.MOVING;
+            this.movingCandidateStreak = 0;
+          }
+        } else {
+          this.state = MotionState.STOPPED;
+          this.movingCandidateStreak = 0;
         }
       }
 
-      const isStopped = this.currentStateIsStopped;
+      const stateChanged = this.state !== prevState;
+      // 화면 로직과의 하위호환을 위해 "STOPPED로 확정된 상태"만 isStopped=true로 취급한다.
+      // STOPPING/MOVING_CANDIDATE는 아직 확정 전이므로 계속 이동 중(false)으로 처리.
+      const isStopped = this.state === MotionState.STOPPED;
 
       if (isStopped) {
         // 정지 상태 — 방위각을 이전 값으로 고정(freeze), 거리 누적 안 함
@@ -655,7 +715,17 @@
         return {
           latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
           bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
-          isStopped: true, timestamp: raw.timestamp
+          isStopped: true, state: this.state, stateChanged, timestamp: raw.timestamp
+        };
+      }
+
+      // ⭐ MIN_DISTANCE 미만 이동은 노이즈로 간주 — 방위각을 재계산하지 않고
+      // 직전 확정 방위각을 그대로 유지한다(좌표/거리도 갱신하지 않음).
+      if (isBelowMinDistance) {
+        return {
+          latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
+          bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
+          isStopped: false, state: this.state, stateChanged, timestamp: raw.timestamp
         };
       }
 
@@ -725,7 +795,7 @@
       return {
         latitude: smoothLat, longitude: smoothLon,
         bearing: newBearing, totalDistance: this.totalDistance,
-        isStopped: false, timestamp: raw.timestamp
+        isStopped: false, state: this.state, stateChanged, timestamp: raw.timestamp
       };
     }
   }
@@ -976,31 +1046,61 @@
     requestAnimationFrame(step);
   }
 
+  // ⭐ 설계 원칙: 이동 중엔 지도가 "절대" 돌지 않는다(정북 고정), 화살표만
+  // 정북 기준 실제 방위로 돈다. 정지 중엔 지도+화살표가 폰 회전량만큼
+  // 함께(3자 동기화) 상대 회전한다. 이 둘을 완전히 분리된 함수로 나눠서,
+  // 정지 중 로직이 실수로 이동 중 지도 회전에 섞여 들어갈 수 없는 구조로
+  // 강제한다 — renderHeadingRotation은 상태를 보고 둘 중 하나로만 위임하는
+  // 얇은 디스패처 역할만 한다.
   function renderHeadingRotation(continuousRot) {
     const mapEl = document.getElementById('map');
-    if (isHeadingUp && mapEl && mapEl.classList.contains('heading-up') && !isMapBeingDragged && !isMapDragReturnPending) {
-      if (isCurrentlyStopped) {
-        // 정지 시 (나침반 연동): 지도는 폰의 실시간 방향(continuousRot = phoneAbsHeading) 역방향으로 회전
-        mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
-        window.actualMapRotation = continuousRot;
-      } else {
-        // 이동 시 (GPS 진행방향 연동): 지도는 GPS 방향으로 회전
-        mapEl.style.transform = `translate(-50%, -50%) rotate(${-continuousRot}deg)`;
-        window.actualMapRotation = continuousRot;
-      }
+    if (!isHeadingUp || !mapEl || !mapEl.classList.contains('heading-up') || isMapBeingDragged || isMapDragReturnPending) {
+      return;
+    }
+
+    if (isCurrentlyStopped) {
+      renderStoppedRotation(continuousRot);
+    } else {
+      renderMovingRotation(continuousRot);
+    }
+  }
+
+  // 이동 중 렌더링: 지도는 정북 고정(회전 없음), 화살표만 정북 기준
+  // 실제 방위(gpsAbsHeadingDeg)로 회전해 "내가 지금 어느 방향으로 가고
+  // 있는지"를 보여준다.
+  function renderMovingRotation(gpsAbsHeadingDeg) {
+    const mapEl = document.getElementById('map');
+    // 이미 0도로 고정돼 있으면 재대입하지 않는다 — 매 프레임 불필요한
+    // style 대입/리플로우를 피하기 위한 가드.
+    if (mapEl && window.actualMapRotation !== 0) {
+      mapEl.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+      window.actualMapRotation = 0;
     }
 
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
-      if (isCurrentlyStopped && latestStopTrailBearing !== null) {
-        // [핵심] 정지 시: 화살표는 항상 지도 위에서 "경로가 가야 할 앞쪽 방향(θ_forward)"을 가리키도록 고정!
-        // 지도가 -θ_phone 으로 회전하므로, 화면상 화살표 각도는 (θ_forward - θ_phone) 이 된다.
-        // 폰 방향(θ_phone)이 경로 방향(θ_forward)과 45도 내로 일치하면 화면 12시 쪽에 화살표가 위치하게 됨.
-        wrapper.style.transform = `rotate(${latestStopTrailBearing}deg)`;
-      } else {
-        // 이동 시: 화살표가 화면 12시 방향을 유지하도록 지도 회전각과 상쇄
-        wrapper.style.transform = `rotate(${continuousRot}deg)`;
-      }
+      // 화살표는 정북 기준 절대 방위를 그대로 표시 — 지도가 안 돌기 때문에
+      // 더 이상 "지도 회전각과 상쇄"시킬 필요가 없다.
+      wrapper.style.transform = `rotate(${gpsAbsHeadingDeg}deg)`;
+    }
+  }
+
+  // 정지 중 렌더링: 지도와 화살표가 폰 회전량(relativeRotation)만큼
+  // 함께(3자 동기화) 상대 회전한다. 회전 기준점은 GPX 경로 방향이
+  // 아니라 "정지 확정 순간의 폰 방위 자체(0도)"다 — latestStopTrailBearing은
+  // 여기서 회전 계산에 쓰지 않는다(🔵/🔴 방향 판정에만 사용, updateGpsDirectionState 참고).
+  function renderStoppedRotation(relativeRotation) {
+    const mapEl = document.getElementById('map');
+    if (mapEl) {
+      mapEl.style.transform = `translate(-50%, -50%) rotate(${-relativeRotation}deg)`;
+      window.actualMapRotation = relativeRotation;
+    }
+
+    const wrapper = document.getElementById('gpsHeadingWrapper');
+    if (wrapper) {
+      // 지도 회전과 상쇄되어, 화살표는 항상 "폰이 실제로 향한 방향"을
+      // 화면상 일관되게 가리킨다 — 핸드폰/화살표/지도 3자가 항상 일치.
+      wrapper.style.transform = `rotate(${relativeRotation}deg)`;
     }
   }
 
@@ -1018,6 +1118,76 @@
 
   const ORIENTATION_DEADBAND_DEG = 1.0;
 
+  // 정지 여부와 무관하게 항상 최신 폰 방위를 캐싱해둔다. 정지가 확정되는
+  // 순간(watchPosition 콜백에서 state가 STOPPED로 바뀌는 그 프레임) 다음
+  // deviceorientation 이벤트를 기다리지 않고 이 캐시값으로 즉시 원점을
+  // 잡기 위함이다 — "정지 판정 즉시 회전 시작"이라는 요구사항을 만족시키려면
+  // 서로 다른 이벤트 소스(GPS 픽스 vs 센서 이벤트) 사이의 시차를 최대한
+  // 줄여야 한다.
+  let lastKnownPhoneHeading = null;
+
+  // 두 방위각(현재 방향 vs GPX 궤적 다음 목적지 방향)을 비교해 🔵(정방향)/
+  // 🔴(역방향)/❓(애매함) 판정을 UI에 반영하는 공용 헬퍼. 정지 중(폰 방위
+  // 기준, applyStopPhoneRotation)과 이동 중(GPS 이동방향 기준,
+  // updateMovingDirectionJudgement) 양쪽에서 동일한 판정 규칙을 쓴다 —
+  // 판정 기준은 "지금 향한 방향이 가야 할 방향과 45도 이내로 일치하는가"로,
+  // 이동/정지 상태와 무관하게 항상 동일해야 하기 때문이다.
+  function updateDirectionArrowJudgement(currentBearing, targetBearing) {
+    const diffFromRoute = shortestAngleDiff(currentBearing, targetBearing);
+    const absDiff = Math.abs(diffFromRoute);
+
+    if (absDiff <= 45) {
+      // 🔵 정방향
+      if (isDirectionSearching || isDirectionReversed) {
+        isDirectionSearching = false;
+        isDirectionReversed = false;
+        updateGpsDirectionState();
+      }
+    } else if (absDiff >= 135 && absDiff <= 225) {
+      // 🔴 역방향
+      if (isDirectionSearching || !isDirectionReversed) {
+        isDirectionSearching = false;
+        isDirectionReversed = true;
+        updateGpsDirectionState();
+      }
+    } else {
+      // ❓ 애매함 (아직 못 찾음)
+      if (!isDirectionSearching) {
+        isDirectionSearching = true;
+        isDirectionReversed = false;
+        updateGpsDirectionState();
+      }
+    }
+  }
+
+  // 이동 중 정/역방향 판정 — GPS 이동방향과 GPX 궤적의 다음 목적지 방향을
+  // 비교한다. watchPosition 콜백의 이동 분기에서 trailExpectedBearing을
+  // 계산한 직후 호출된다.
+  function updateMovingDirectionJudgement(gpsBearing, trailExpectedBearing) {
+    updateDirectionArrowJudgement(gpsBearing, trailExpectedBearing);
+  }
+
+  // 정지 확정 순간 폰의 실제 방위를 0도(원점)로 스냅샷하고, 이후 그
+  // 원점 대비 상대 회전량을 계산해 지도+화살표를 함께 돌린다(renderStoppedRotation).
+  // 3방향(폰/경로/지도) 일치 판정은 이 원점과 무관하게 항상 "폰 절대방위 vs
+  // 경로 순방향"을 직접 비교한다.
+  function applyStopPhoneRotation(phoneAbsHeading) {
+    // [핵심] 정지 후 1회성 이벤트: 이 순간의 폰 센서값을 기준점(0도)으로 확정
+    if (referenceHeading === null) {
+      referenceHeading = phoneAbsHeading;
+    }
+
+    // 기준점(referenceHeading) 대비 현재 폰이 얼마나 더 돌아갔는지(상대 회전) 계산
+    const relativeRotation = shortestAngleDiff(phoneAbsHeading, referenceHeading);
+    applySmoothedHeading((relativeRotation + 360) % 360);
+
+    // 폰 방향(θ_phone)과 경로 순방향(θ_forward)을 실시간 비교하여 마커 아이콘(❓/🔵/🔴) 변경.
+    // 이 판정은 회전 기준점(원점)과 무관하게 항상 절대 방위끼리 비교한다.
+    if (latestStopTrailBearing !== null) {
+      updateDirectionArrowJudgement(phoneAbsHeading, latestStopTrailBearing);
+    }
+  }
+
   function handleOrientation(e) {
     if (e.alpha === null || isNaN(e.alpha)) return;
 
@@ -1026,62 +1196,20 @@
     if (phoneAbsHeading === undefined || phoneAbsHeading === null) {
       phoneAbsHeading = (360 - e.alpha) % 360;
     }
+    lastKnownPhoneHeading = phoneAbsHeading; // 정지 판정 즉시 사용할 수 있도록 항상 캐싱
 
     if (lastOrientationAlpha === null) {
       lastOrientationAlpha = e.alpha;
-      return; 
+      return;
     }
 
     const delta = shortestAngleDiff(e.alpha, lastOrientationAlpha);
-    if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return; 
+    if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return;
     lastOrientationAlpha = e.alpha;
 
     if (!isCurrentlyStopped) return; // 이동 중에는 GPS 방위각 사용
 
-    // [핵심] 정지 후 1회성 이벤트: 이 순간의 폰 센서값을 기준점(0도)으로 확정하고 정렬 회전
-    if (referenceHeading === null) {
-      referenceHeading = phoneAbsHeading;
-    }
-
-    // 기준점(referenceHeading) 대비 현재 폰이 얼마나 더 돌아갔는지(상대 회전) 계산
-    const relativeRotation = shortestAngleDiff(phoneAbsHeading, referenceHeading);
-
-    // 지도를 (진행방향 정렬 회전량 + 폰의 추가 상대 회전량) 만큼 회전시킨다.
-    // 지도 좌표계에서 경로 방향(θ_forward)을 위로 돌리는 각도 = -latestStopTrailBearing
-    // 지도 회전은 시계 반대 방향이 양수이므로 전체 회전값은 -latestStopTrailBearing - relativeRotation
-    if (latestStopTrailBearing !== null) {
-      const totalRotation = -latestStopTrailBearing - relativeRotation;
-      // applySmoothedHeading(continuousRot) 에는 0~360 의 양수 방위각을 전달해야 함.
-      // (continuousRot 의 음수값이 맵 회전각이 됨)
-      applySmoothedHeading((latestStopTrailBearing + relativeRotation + 360) % 360);
-      
-      // 폰 방향(θ_phone)과 경로 순방향(θ_forward)을 실시간 비교하여 마커 아이콘(❓/🔵/🔴) 변경
-      const diffFromRoute = shortestAngleDiff(phoneAbsHeading, latestStopTrailBearing);
-      const absDiff = Math.abs(diffFromRoute);
-      
-      if (absDiff <= 45) {
-        // 🔵 정방향 
-        if (isDirectionSearching || isDirectionReversed) {
-          isDirectionSearching = false;
-          isDirectionReversed = false;
-          updateGpsDirectionState();
-        }
-      } else if (absDiff >= 135 && absDiff <= 225) {
-        // 🔴 역방향
-        if (isDirectionSearching || !isDirectionReversed) {
-          isDirectionSearching = false;
-          isDirectionReversed = true;
-          updateGpsDirectionState();
-        }
-      } else {
-        // ❓ 애매함 (아직 못 찾음)
-        if (!isDirectionSearching) {
-          isDirectionSearching = true;
-          isDirectionReversed = false;
-          updateGpsDirectionState();
-        }
-      }
-    }
+    applyStopPhoneRotation(phoneAbsHeading);
 
     // 자이로 동작 UI 효과
     const headingWrapper = document.getElementById('gpsHeadingWrapper');
@@ -2647,6 +2775,12 @@
         smoothedHeading = null;
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
+        // 방향 상태도 함께 초기화 — 숨겨진 동안 실제로 이동했을 수 있으므로
+        // 이전 방향 판정(🔵/🔴)을 재사용하지 않고 ❓부터 다시 탐색한다.
+        isDirectionSearching = false;
+        isDirectionReversed = false;
+        referenceHeading = null;
+        lastKnownPhoneHeading = null;
         startGpsTracking(); // GPS 재시작 — 내부에서 initCompass, wakeLock 등도 함께 재요청됨
       }
     }
@@ -2802,28 +2936,28 @@
     if (watchId === null) {
       startGpsTracking(); // GPS 꺼져있으면 켜기
     }
-    
+
     // 강제 UI 전환을 위해 플래그 세팅
     isCurrentlyStopped = true;
     stopBaseHeading = null;
     referenceHeading = null;
     isDirectionSearching = true;
     updateGpsDirectionState();
-    
-    // GpsFilterEngine에도 정지 상태 강제 주입
+
+    // GpsFilterEngine 내부 필드를 직접 건드리지 않고 공개 API로만 상태를 주입한다.
     if (typeof gpsFilterEngine !== 'undefined') {
-      gpsFilterEngine.currentStateIsStopped = true;
-      gpsFilterEngine.stopStreakCount = 20; // 넉넉히 주입
+      gpsFilterEngine.forceStopped();
     }
 
-    // ⚠️ handleOrientation()은 latestStopTrailBearing이 null이면 회전/방향
-    // 판정을 아예 건너뛴다(정지 시 기준 방향이 없으면 계산할 게 없어서).
-    // 이 값은 원래 watchPosition 콜백이 GPS 픽스를 받을 때마다 계산하는데,
-    // GPS를 이제 막 켜는 시점(startGpsTracking 직후)이나 아직 픽스가 한
-    // 번도 안 들어온 시점에 이 버튼을 누르면 다음 픽스가 올 때까지
-    // 나침반이 전혀 돌지 않는 문제가 있었다 — lastKnownPos와 currentPoints가
-    // 이미 있으면(코스는 열려 있고 위치도 한 번은 잡힌 상태) 여기서 즉시
-    // 계산해 채워준다.
+    // ⚠️ applyStopPhoneRotation()의 🔵/🔴/❓ 판정은 latestStopTrailBearing이
+    // null이면 건너뛴다(정지 시 기준 방향이 없으면 계산할 게 없어서). 이 값은
+    // 원래 watchPosition 콜백이 GPS 픽스를 받을 때마다 계산하는데, GPS를
+    // 이제 막 켜는 시점(startGpsTracking 직후)이나 아직 픽스가 한 번도 안
+    // 들어온 시점에 이 버튼을 누르면 다음 픽스가 올 때까지 판정이 안 되는
+    // 문제가 있었다 — lastKnownPos와 currentPoints가 이미 있으면(코스는
+    // 열려 있고 위치도 한 번은 잡힌 상태) 여기서 즉시 계산해 채워준다.
+    // applyStopPhoneRotation 호출보다 반드시 먼저 실행해야 그 호출 안에서
+    // 바로 판정이 이뤄진다.
     if (lastKnownPos && currentPoints && currentPoints.length > 1) {
       const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
       if (nearest.index >= 0 && nearest.point) {
@@ -2833,6 +2967,12 @@
           trailDeviationDeg = 90;
         }
       }
+    }
+
+    // 정지 판정 즉시 원점을 잡는다는 원칙은 이 버튼에도 동일하게 적용된다 —
+    // 최신 폰 방위 캐시가 있으면 다음 센서 이벤트를 기다리지 않고 바로 확정.
+    if (lastKnownPhoneHeading !== null) {
+      applyStopPhoneRotation(lastKnownPhoneHeading);
     }
 
     // 나침반 권한/활성화 재확인
@@ -2871,6 +3011,10 @@
     continuousHeading = 0;
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
+    isDirectionSearching = false;
+    isDirectionReversed = false;
+    referenceHeading = null;
+    lastKnownPhoneHeading = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -2983,18 +3127,19 @@
               const trailExpectedBearing = calculateBearing(lat, lon, aheadForDeviation.lat, aheadForDeviation.lon);
               trailDeviationDeg = shortestAngleDiff(result.bearing, trailExpectedBearing);
               console.log(`[TRAIL] result.bearing=${result.bearing.toFixed(1)} trailExpectedBearing=${trailExpectedBearing.toFixed(1)} trailDeviationDeg=${trailDeviationDeg.toFixed(1)} continuousHeading=${continuousHeading.toFixed(1)}`);
+              // 이동 중 정/역방향 판정 — GPS 이동방향(result.bearing)과
+              // GPX 궤적의 다음 목적지 방향(trailExpectedBearing)을 비교해
+              // 🔵(정방향)/🔴(역방향)/❓(애매함)을 갱신한다.
+              updateMovingDirectionJudgement(result.bearing, trailExpectedBearing);
             }
           }
 
           applySmoothedHeading(result.bearing);
         } else if (result.isStopped) {
-          // 멈추면 나침반(핸드폰이 향한 방향)이 아니라 GPX 궤적의 "정방향"
-          // 진행 방향으로 지도를 고정한다. 나침반은 8자 보정 없이는
-          // 신뢰할 수 없음이 확인되어 폐기했다 — 산에서 길을 잃지 않으려면
-          // "핸드폰이 향한 방향"이 아니라 "내가 가야 할 방향"이 항상 화면
-          // 위쪽이어야 한다는 목적에는 오히려 이 방식이 더 부합한다.
-          // 역방향으로 걷다가 멈추면 이 순간 바로 지도가 홱 돌아서(화살표도
-          // 그쪽을 가리켜서) "반대로 가고 있었다"는 걸 즉시 알 수 있다.
+          // 멈추면 latestStopTrailBearing(경로 순방향)을 갱신해둔다 — 이
+          // 값은 더 이상 지도 회전 기준으로 쓰이지 않고(회전 기준은 정지
+          // 확정 순간의 폰 방위 자체, applyStopPhoneRotation 참고),
+          // 폰 방향과 비교해 🔵/🔴/❓을 판정하는 용도로만 쓰인다.
           //
           // ⚠️ 이탈 상태에서도 "가장 가까운 지점으로 직선 복귀" 방향을
           // 쓰면 안 된다 — 그 직선상에 절벽·계곡 등 위험 지형이 있을 수
@@ -3016,25 +3161,25 @@
               trailDeviationDeg = 90;
               latestStopTrailBearing = trailBearing; // 장시간 드리프트 재정렬이 참조할 최신 궤적 방향 — 매 픽스마다 갱신
 
-              // 정지 상태로 막 전환된 순간에만 기준점(0도 오프셋)을 스냅샷한다.
-              // ⚠️ 기준점은 GPX 궤적 방향(trailBearing)이 아니라 "정지 직전까지
-              // 실제로 걷던 방향(currentHeading)"으로 잡아야 한다. GPX 궤적
-              // 방향과 실제 이동 방향은 GPX 오차·지그재그 보행 등으로 미세하게
-              // 다를 수 있는데, 궤적 방향을 기준으로 스냅샷하면 정지하는
-              // 순간 그 차이만큼 화면이 갑자기 홱 틀어지는 문제가 있었다.
-              // 실제 걷던 방향을 그대로 이어받으면 "가만히 서 있는데 화면이
-              // 제멋대로 바뀌는" 현상 없이, 이후 자이로(핸드폰 회전)만
-              // 반영되어 자연스럽다.
+              // 정지 상태로 막 전환된 순간(1회성 이벤트): 이전 이동 방향을
+              // 절대 재사용하지 않고, "정지 판정이 내려지는 즉시" 핸드폰이
+              // 향한 실제 방위를 0도(원점)로 새로 잡는다 — 이후 사용자가
+              // 폰을 돌리는 만큼 지도+화살표가 함께(3자 동기화) 돈다.
               if (!wasStoppedBeforeThisFix) {
-                // [이동 -> 정지] 상태로 방금 전환됨! (1회성 이벤트)
-                // 설계: 이 시점의 나침반 방향을 읽어 지도를 정렬하고 그 상태를 기준(referenceHeading)으로 확정
-                stopBaseHeading = null; 
-                referenceHeading = null; // 정지 진입 시 일단 초기화 (다음 센서 업데이트에서 확정)
+                stopBaseHeading = null;
+                referenceHeading = null; // 원점 재설정 — 아래에서 즉시(또는 다음 센서 이벤트에서) 확정
                 gyroRelativeRotation = 0;
-                lastOrientationAlpha = null; 
+                lastOrientationAlpha = null;
                 stopEnteredAt = Date.now();
-                isDirectionSearching = true; 
+                isDirectionSearching = true;
                 updateGpsDirectionState();
+
+                // deviceorientation의 최신 캐시값이 있으면 다음 센서
+                // 이벤트를 기다리지 않고 이 자리에서 즉시 원점을 확정한다
+                // (GPS 픽스 콜백과 센서 이벤트 콜백 사이의 시차를 최소화).
+                if (lastKnownPhoneHeading !== null) {
+                  applyStopPhoneRotation(lastKnownPhoneHeading);
+                }
               }
             }
           }
