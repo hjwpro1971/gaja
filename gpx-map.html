@@ -2144,7 +2144,7 @@ restoreGpxDraftIfAny();
 
       if (botToken && chatId) {
         // HTTPS 직접 호출 (브라우저 Mixed Content 차단 방지)
-        const tgText = `🚨 <b>${courseName} 길 안내</b>\n\n👉 ${linkUrl}\n\n위 링크를 누르시면 스마트폰 웹 브라우저가 열리며, 실시간 방향탐색 네비게이션이 바로 시작됩니다.`;
+        const tgText = `⛰️ <b><a href="${linkUrl}">${courseName} 산행 가이드</a></b>\n\n위 링크를 누르시면 스마트폰 웹 브라우저가 열리며, 실시간 방향탐색 네비게이션이 바로 시작됩니다.`;
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
