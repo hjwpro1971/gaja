@@ -35,13 +35,18 @@
 
         const isAndroid = /Android/i.test(ua);
         if (isAndroid) {
-          const target = window.location.href;
-          const noScheme = target.replace(/^https?:\/\//, '');
-          window.location.href = 'intent://' + noScheme +
-            '#Intent;scheme=https;package=com.android.chrome;end';
+          if (/KAKAOTALK/i.test(ua)) {
+            // 카카오톡 전용 외부 브라우저 호출 스킴 (이걸 써야 카톡에서 에러 없이 크롬으로 넘어감)
+            window.location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(window.location.href);
+          } else {
+            const target = window.location.href;
+            const noScheme = target.replace(/^https?:\/\//, '');
+            window.location.href = 'intent://' + noScheme +
+              '#Intent;scheme=https;package=com.android.chrome;end';
+          }
         } else {
-          // iOS 등 intent 스킴이 없는 환경: 자동 전환은 불가능하므로
-          // 페이지 로드 후 안내 배너만 띄운다(아래 DOMContentLoaded 참고).
+          // iOS 등 intent 미지원 환경: 자동 전환이 불가능하므로
+          // 최상단에 안내 배너를 띄울 플래그 설정(아래 DOMContentLoaded 시점).
           window.__gajaShowOpenInBrowserBanner = true;
         }
       } catch(e) {}
