@@ -2184,7 +2184,35 @@ restoreGpxDraftIfAny();
   // 만나면 "같은 길이 데이터상 두 조각으로 쪼개진 이음매"일 뿐이므로
   // 제외한다(mountain_junctions.js 원본 제작 때 검증된 필터 — 종점
   // 노이즈만으로도 39~46%가 걸러졌었다).
-  function extractJunctions(ways) {
+  function haversineMForJunction(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = toRadJ(lat2 - lat1), dLon = toRadJ(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadJ(lat1)) * Math.cos(toRadJ(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.asin(Math.sqrt(a));
+  }
+
+  function wayLengthM(way) {
+    const geom = way.geometry || [];
+    let len = 0;
+    for (let i = 1; i < geom.length; i++) {
+      const a = geom[i - 1], b = geom[i];
+      if (!a || !b) continue;
+      len += haversineMForJunction(a.lat, a.lon, b.lat, b.lon);
+    }
+    return len;
+  }
+
+  // 실제 등산로가 아니라 "누군가 잠깐 GPS를 켜놓고 남긴 미완성 조각"
+  // (OSM에 way=path로 등록돼 있지만 노드 몇 개짜리 극히 짧은 구간)이
+  // 메인 등산로와 우연히 겹치면, 사람 눈엔 갈림길이 아닌데 자동 감지가
+  // 갈림길로 오판하는 사례가 실제로 있었다(보해산 실측 — 14m짜리
+  // way가 메인 등산로와 교차해 가짜 갈림길로 잡힘). 정식 등산로는
+  // 보통 수백m 이상 이어지므로, 이보다 짧은 way는 애초에 교차점 판정
+  // 대상에서 제외한다.
+  const MIN_WAY_LENGTH_M = 50;
+
+  function extractJunctions(waysRaw) {
+    const ways = waysRaw.filter(w => wayLengthM(w) >= MIN_WAY_LENGTH_M);
     const coordWays = new Map();
     ways.forEach(way => {
       const geom = way.geometry || [];
@@ -2230,11 +2258,17 @@ restoreGpxDraftIfAny();
       const geo = await geocodeMountain(mountainName);
       setStatus(`좌표 확인: ${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)} — 주변 등산로 조회 중... (수십 초 걸릴 수 있습니다)`);
 
-      const bbox = computeBbox(geo.lat, geo.lon, 4); // 반경 4km
+      const SEARCH_RADIUS_KM = 4;
+      const bbox = computeBbox(geo.lat, geo.lon, SEARCH_RADIUS_KM);
       const ways = await fetchHikingPaths(bbox);
       setStatus(`등산로 ${ways.length}개 구간 발견 — 갈림길 추출 중...`);
 
-      const junctions = extractJunctions(ways);
+      let junctions = extractJunctions(ways);
+      // bbox는 사각형이라 모서리 쪽은 산 정상에서 반경보다 더 멀리
+      // 떨어질 수 있다(√2배까지) — 정상 좌표 기준 원형 반경을 벗어난
+      // 지점은 다른 산의 등산로가 우연히 섞여 들어온 것일 수 있으므로
+      // 한 번 더 걸러낸다.
+      junctions = junctions.filter(j => haversineMForJunction(geo.lat, geo.lon, j.lat, j.lon) / 1000 <= SEARCH_RADIUS_KM);
       if (junctions.length === 0) {
         setStatus(`"${mountainName}" 주변에서 갈림길을 찾지 못했습니다. OSM에 등산로 데이터가 부족한 지역일 수 있습니다.`, true);
         return;
