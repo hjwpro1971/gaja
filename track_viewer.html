@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260914_wayfind_mode';
+      const APP_BUILD = 'v20260914_wayfind_dial_mode';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v45').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v46').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -367,6 +367,35 @@
     }
     .btn-wayfind-confirm:disabled { background: #9e9e9e; box-shadow: none; cursor: default; }
 
+    /* 🧭 길찾기 모드 — 손가락 회전(지도 다이얼) 방식.
+       나침반 대신 사용자가 직접 다이얼을 돌려 실제 산길과 맞춘다. */
+    .wayfind-tab-bar { display: flex; gap: 6px; margin-bottom: 14px; }
+    .wayfind-tab-btn {
+      flex: 1; padding: 9px 6px; font-size: 12.5px; font-weight: 700; border-radius: 10px;
+      border: 1.5px solid #c8e6c9; background: #f1f8e9; color: #558b2f; cursor: pointer;
+    }
+    .wayfind-tab-btn.active { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+    .wayfind-dial-wrap {
+      position: relative; width: 200px; height: 200px; margin: 4px auto 16px;
+      border-radius: 50%; background: #f1f8e9; border: 2px solid #c8e6c9;
+      touch-action: none; -webkit-user-select: none; user-select: none;
+    }
+    .wayfind-dial-rotor {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      transform-origin: center center;
+    }
+    .wayfind-dial-trail-glyph {
+      position: absolute; top: 8px; left: 50%; transform: translateX(-50%); font-size: 30px;
+    }
+    .wayfind-dial-me { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: #2e7d32; border: 2px solid #fff; box-shadow: 0 0 0 1px #2e7d32; }
+    .wayfind-dial-fixed-marker {
+      position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; font-weight: 800; color: #888;
+    }
+    .wayfind-dial-hint { font-size: 12px; color: #777; margin-bottom: 14px; }
+    .wayfind-course-result { display: none; }
+    .wayfind-course-result.show { display: block; }
+
     /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
     .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
     .saved-route-item {
@@ -458,7 +487,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v45)
+      📲 바로가기 (v46)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -506,13 +535,38 @@
     <button class="modal-close-btn" onclick="closeWayfindMode()" title="닫기">✕</button>
     <div class="icon">🧭</div>
     <h2>길찾기</h2>
-    <p>실제 산길을 바라본 상태에서<br>휴대폰을 천천히 돌려주세요.<br>화살표가 위(12시)를 가리키면 맞은 방향입니다.</p>
-    <div class="wayfind-compass-wrap">
-      <div class="wayfind-compass-arrow" id="wayfindArrow"><div class="glyph">⬆️</div></div>
-      <div class="wayfind-compass-center"></div>
+
+    <div class="wayfind-tab-bar">
+      <button class="wayfind-tab-btn active" id="wayfindTabCompassBtn" onclick="switchWayfindTab('compass')">나침반으로 맞추기</button>
+      <button class="wayfind-tab-btn" id="wayfindTabDialBtn" onclick="switchWayfindTab('dial')">손으로 돌려서 맞추기</button>
     </div>
-    <div class="wayfind-status-badge" id="wayfindStatusBadge">방향을 맞춰주세요</div>
-    <button class="btn-wayfind-confirm" id="wayfindConfirmBtn" onclick="confirmWayfindDirection()" disabled>이 방향으로 확정</button>
+
+    <div id="wayfindPaneCompass">
+      <p>실제 산길을 바라본 상태에서<br>휴대폰을 천천히 돌려주세요.<br>화살표가 위(12시)를 가리키면 맞은 방향입니다.</p>
+      <div class="wayfind-compass-wrap">
+        <div class="wayfind-compass-arrow" id="wayfindArrow"><div class="glyph">⬆️</div></div>
+        <div class="wayfind-compass-center"></div>
+      </div>
+      <div class="wayfind-status-badge" id="wayfindStatusBadge">방향을 맞춰주세요</div>
+      <button class="btn-wayfind-confirm" id="wayfindConfirmBtn" onclick="confirmWayfindDirection()" disabled>이 방향으로 확정</button>
+    </div>
+
+    <div id="wayfindPaneDial" style="display:none;">
+      <p class="wayfind-dial-hint">나침반 없이, 실제로 보이는 산길과<br>아래 다이얼을 손가락으로 돌려 맞춰주세요.<br>(MagSafe·금속 거치대의 나침반 간섭이 걱정될 때 추천)</p>
+      <div class="wayfind-dial-wrap" id="wayfindDialWrap">
+        <div class="wayfind-dial-fixed-marker">내가 보는 정면</div>
+        <div class="wayfind-dial-rotor" id="wayfindDialRotor">
+          <div class="wayfind-dial-trail-glyph">🥾</div>
+        </div>
+        <div class="wayfind-dial-me"></div>
+      </div>
+      <button class="btn-wayfind-confirm" id="wayfindDialConfirmBtn" onclick="confirmWayfindDial()">이 방향으로 확정</button>
+    </div>
+
+    <div class="wayfind-course-result" id="wayfindCourseResult">
+      <div class="wayfind-status-badge" id="wayfindCourseBadge">이동하면 진행 방향을 확인해 드려요</div>
+      <button class="btn-wayfind-confirm" onclick="closeWayfindMode()" style="background:#546e7a;">닫기</button>
+    </div>
   </div>
 </div>
 
@@ -561,7 +615,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=45')
+      navigator.serviceWorker.register('./sw.js?v=46')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1923,6 +1977,147 @@
     }
   }
 
+  // --- 탭 전환 (나침반 방식 ↔ 손가락 회전 방식) ---
+  let wayfindActiveTab = 'compass';
+
+  function switchWayfindTab(tab) {
+    wayfindActiveTab = tab;
+    const compassBtn = document.getElementById('wayfindTabCompassBtn');
+    const dialBtn = document.getElementById('wayfindTabDialBtn');
+    const compassPane = document.getElementById('wayfindPaneCompass');
+    const dialPane = document.getElementById('wayfindPaneDial');
+    const resultPane = document.getElementById('wayfindCourseResult');
+    if (resultPane) resultPane.classList.remove('show');
+
+    if (tab === 'compass') {
+      compassBtn.classList.add('active');
+      dialBtn.classList.remove('active');
+      compassPane.style.display = 'block';
+      dialPane.style.display = 'none';
+      startWayfindCompassSensor();
+    } else {
+      compassBtn.classList.remove('active');
+      dialBtn.classList.add('active');
+      compassPane.style.display = 'none';
+      dialPane.style.display = 'block';
+      stopWayfindCompassSensor(); // MagSafe 등 나침반 간섭이 걱정될 때 쓰는 탭 — 센서는 완전히 꺼둔다
+    }
+  }
+
+  // --- 나침반 방식 ---
+  function startWayfindCompassSensor() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleWayfindOrientation, true);
+          } else {
+            alert('나침반 권한이 허용되지 않았어요.\n"손으로 돌려서 맞추기" 탭을 사용해 주세요.');
+          }
+        })
+        .catch(() => {});
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
+      window.addEventListener('deviceorientation', handleWayfindOrientation, true);
+    }
+  }
+
+  function stopWayfindCompassSensor() {
+    window.removeEventListener('deviceorientation', handleWayfindOrientation, true);
+    window.removeEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
+  }
+
+  // --- 손가락 회전(다이얼) 방식 — 나침반/자기장 센서를 전혀 쓰지 않는다.
+  // MagSafe 자석, 금속 거치대의 자력계 간섭을 피하고 싶은 사용자를 위한
+  // 대안. 사용자가 직접 눈으로 실제 산길과 다이얼을 맞추는 것 자체가
+  // 입력값이라 센서 오차 자체가 존재하지 않는다.
+  let wayfindDialRotation = 0; // 다이얼 회전각(도) — 0 = 다이얼 위쪽(🥾)이 "내가 보는 정면"과 일치
+  let wayfindDialDragging = false;
+  let wayfindDialDragStartAngle = 0;
+  let wayfindDialDragStartRotation = 0;
+
+  function wayfindDialAngleFromEvent(evt, wrapEl) {
+    const rect = wrapEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const point = evt.touches ? evt.touches[0] : evt;
+    const dx = point.clientX - cx;
+    const dy = point.clientY - cy;
+    return Math.atan2(dx, -dy) * (180 / Math.PI); // 12시 방향 기준 시계방향 각도
+  }
+
+  function handleWayfindDialDragStart(evt) {
+    const wrap = document.getElementById('wayfindDialWrap');
+    if (!wrap) return;
+    wayfindDialDragging = true;
+    wayfindDialDragStartAngle = wayfindDialAngleFromEvent(evt, wrap);
+    wayfindDialDragStartRotation = wayfindDialRotation;
+    evt.preventDefault();
+  }
+
+  function handleWayfindDialDragMove(evt) {
+    if (!wayfindDialDragging) return;
+    const wrap = document.getElementById('wayfindDialWrap');
+    if (!wrap) return;
+    const currentAngle = wayfindDialAngleFromEvent(evt, wrap);
+    const delta = shortestAngleDiff(currentAngle, wayfindDialDragStartAngle);
+    wayfindDialRotation = ((wayfindDialDragStartRotation + delta) % 360 + 360) % 360;
+    renderWayfindDial();
+    evt.preventDefault();
+  }
+
+  function handleWayfindDialDragEnd() {
+    wayfindDialDragging = false;
+  }
+
+  function renderWayfindDial() {
+    const rotor = document.getElementById('wayfindDialRotor');
+    if (rotor) rotor.style.transform = `rotate(${wayfindDialRotation}deg)`;
+  }
+
+  function initWayfindDialEvents() {
+    const wrap = document.getElementById('wayfindDialWrap');
+    if (!wrap || wrap._wayfindBound) return;
+    wrap._wayfindBound = true;
+    wrap.addEventListener('mousedown', handleWayfindDialDragStart);
+    window.addEventListener('mousemove', handleWayfindDialDragMove);
+    window.addEventListener('mouseup', handleWayfindDialDragEnd);
+    wrap.addEventListener('touchstart', handleWayfindDialDragStart, { passive: false });
+    window.addEventListener('touchmove', handleWayfindDialDragMove, { passive: false });
+    window.addEventListener('touchend', handleWayfindDialDragEnd);
+  }
+
+  function confirmWayfindDial() {
+    // 다이얼 회전각(wayfindDialRotation)이 곧 "실제 산길이 내가 보는 정면
+    // 기준 몇 도 방향에 있는가"라는 사용자 입력이다. 이후 GPS 이동방향과
+    // 비교할 절대 기준이 없으므로(나침반을 안 쓰기 때문), 이동 확인은
+    // "GPS가 잡히기 시작하면 그 이동방향 자체를 경로 진행방향으로 삼아
+    // 안내를 재개한다"는 문구로 안내한다 — 정밀 비교 대신 사용자가
+    // 이동 후 스스로 확인하도록 유도.
+    showWayfindCourseGuide(true);
+  }
+
+  function confirmWayfindDirection() {
+    showWayfindCourseGuide(false);
+  }
+
+  function showWayfindCourseGuide(isDialMode) {
+    const compassPane = document.getElementById('wayfindPaneCompass');
+    const dialPane = document.getElementById('wayfindPaneDial');
+    const resultPane = document.getElementById('wayfindCourseResult');
+    const badge = document.getElementById('wayfindCourseBadge');
+    if (compassPane) compassPane.style.display = 'none';
+    if (dialPane) dialPane.style.display = 'none';
+    if (resultPane) resultPane.classList.add('show');
+    if (badge) {
+      badge.textContent = isDialMode
+        ? '🚶 방향이 확정되었습니다.\n이제 걸으면 GPS가 실제 이동방향을 잡아\n경로와 맞는지 자동으로 안내해 드려요.'
+        : '🧭 방향이 확정되었습니다.';
+    }
+    showToastBadge('방향이 확정되었습니다.');
+    stopWayfindCompassSensor();
+  }
+
   function openWayfindMode() {
     wayfindTargetBearing = computeWayfindTargetBearing();
     if (wayfindTargetBearing === null) {
@@ -1938,38 +2133,25 @@
     const badge = document.getElementById('wayfindStatusBadge');
     if (badge) { badge.textContent = '방향을 맞춰주세요'; badge.className = 'wayfind-status-badge'; }
 
+    const resultPane = document.getElementById('wayfindCourseResult');
+    if (resultPane) resultPane.classList.remove('show');
+
+    wayfindDialRotation = 0;
+    initWayfindDialEvents();
+    renderWayfindDial();
+
     isWayfindActive = true;
     wayfindLastAlpha = null;
 
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
-        .then(state => {
-          if (state === 'granted') {
-            window.addEventListener('deviceorientation', handleWayfindOrientation, true);
-          } else {
-            alert('나침반 권한이 허용되지 않아 길찾기 모드를 사용할 수 없어요.');
-            closeWayfindMode();
-          }
-        })
-        .catch(() => { closeWayfindMode(); });
-    } else {
-      window.addEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
-      window.addEventListener('deviceorientation', handleWayfindOrientation, true);
-    }
+    switchWayfindTab('compass');
   }
 
   function closeWayfindMode() {
     isWayfindActive = false;
     wayfindTargetBearing = null;
-    window.removeEventListener('deviceorientation', handleWayfindOrientation, true);
-    window.removeEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
+    stopWayfindCompassSensor();
     const modal = document.getElementById('wayfindModal');
     if (modal) modal.style.display = 'none';
-  }
-
-  function confirmWayfindDirection() {
-    showToastBadge('🧭 방향이 확정되었습니다.');
-    closeWayfindMode();
   }
 
   // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
