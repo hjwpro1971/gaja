@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_milestone_realign';
+      const APP_BUILD = 'v20260913_arrow_rotation_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v32').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v33').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -464,7 +464,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v32)
+      📲 바로가기 (v33)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -547,7 +547,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=32')
+      navigator.serviceWorker.register('./sw.js?v=33')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1069,11 +1069,20 @@
       window.actualMapRotation = relativeRotation;
     }
 
+    // ⚠️ 화살표(#gpsHeadingWrapper)는 지도(#map) 위에 얹힌 Leaflet 마커의
+    // 자식 DOM이라, 부모(#map)가 -relativeRotation만큼 이미 회전되어
+    // 있는 상태를 그대로 물려받는다. 화면상 화살표가 순수하게
+    // arrowRotation(절대각)만큼만 돌아 보이게 하려면, 부모가 걸어둔
+    // 회전을 먼저 상쇄(+relativeRotation)한 뒤 원하는 각도를 더해야
+    // 한다 — 이 보정 없이 arrowRotation만 적용하면 화면상 실제 회전은
+    // "arrowRotation - relativeRotation"이 되어, 목표가 9시인데 화살표가
+    // 정반대(3시)를 가리키는 등 지도 회전각만큼 어긋나 보이는 버그가
+    // 있었다.
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
-      wrapper.style.transform = `rotate(${arrowRotation}deg)`;
+      wrapper.style.transform = `rotate(${arrowRotation + relativeRotation}deg)`;
     }
-    lastStopArrowRotation = arrowRotation; // 드래그 복귀 시 재사용
+    lastStopArrowRotation = arrowRotation; // 드래그 복귀 시 재사용(절대각 그대로 보관)
   }
 
   // --- 가속도 센서 (보행 진동 감지) ---
