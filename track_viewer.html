@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260914_preemptive_turn_guidance';
+      const APP_BUILD = 'v20260914_countdown_turn_alert';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v42').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v43').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v42)
+      📲 바로가기 (v43)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=42')
+      navigator.serviceWorker.register('./sw.js?v=43')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2523,12 +2523,28 @@
   }
 
   // 다음 갈림길(nextM)까지 남은 거리(distToNextM)를 보고 하단 큰
-  // 화살표(좌회전/우회전/직진 아이콘) 표시 여부를 결정한다. 거리 기준
-  // 하나로만 판정하므로 GPS 오차로 인한 깜빡임 걱정이 없다 — 방향
-  // 판정 자체가 없기 때문이다. TURN_ALERT_DISTANCE_M 이내로 들어오면
-  // 뜨고, 통과하면(다음 마일스톤이 바뀌면) 자연히 사라진다.
-  const TURN_ALERT_DISTANCE_M = 60;
+  // 화살표(좌회전/우회전/직진 아이콘) 표시 여부와 알람 소리를 결정한다.
+  // 거리 기준만으로 판정하므로 GPS 오차로 인한 깜빡임 걱정이 없다 —
+  // 방향 판정 자체가 없기 때문이다.
+  //
+  // 단계별 동작(사용자 요청):
+  //   60m, 50m, 40m 전 — 각각 짧은 카운트다운 알람음 1회씩(10m
+  //     간격으로 끊어서 "점점 가까워지고 있다"는 감각을 준다)
+  //   30m 이내 — 소리 없이 화살표만 계속 표시(더 이상 깜짝 알람으로
+  //     방해하지 않고, 조용히 방향만 안내)
+  //   통과(다음 마일스톤으로 넘어감) — 화살표 자동으로 사라짐
+  //   갈림길 근처에서 실제로 궤적을 벗어남(isOffTrailState) — "엉뚱한
+  //     방향으로 가고 있다"는 판단은 내 heading을 다시 측정하는 게
+  //     아니라, 이미 있는 이탈 감지(updateOffTrailHysteresis)가 대신
+  //     맡는다. updateNavigationToast는 isOffTrailState일 때 이 함수
+  //     자체를 호출하지 않고 이탈 경고 분기로 빠지므로, 경고음
+  //     (playOffTrailBeep)은 자동으로 울린다 — 여기서 따로 처리할 것
+  //     없음.
+  const TURN_ALERT_DISTANCE_M = 60;   // 화살표가 뜨기 시작하는 거리
+  const TURN_ALERT_QUIET_DISTANCE_M = 30; // 이 거리부터는 소리 없이 화살표만
+  const TURN_ALERT_BEEP_STEP_M = 10;  // 카운트다운 알람 간격(60/50/40m)
   let lastAlertedMilestoneKey = null;
+  let lastBeepedStepKey = null; // "갈림길이름@30m단위구간" — 같은 10m 구간에서 중복 알람 방지
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     const key = nextM.name + '@' + nextM.distanceM;
@@ -2536,25 +2552,33 @@
     // 안내할 게 없으므로 화살표를 띄우지 않는다.
     if (!nextM.turnLabel || nextM.turnLabel === '직진' || distToNextM > TURN_ALERT_DISTANCE_M) {
       hideBottomDirectionArrow();
-      if (key !== lastAlertedMilestoneKey) lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
+      if (key !== lastAlertedMilestoneKey) {
+        lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
+        lastBeepedStepKey = null;
+      }
       return;
     }
 
-    const arrowByLabel = {
-      '좌회전': '↖️', '급좌회전': '⬅️', '우회전': '↗️', '급우회전': '➡️',
-    };
-    const arrow = arrowByLabel[nextM.turnLabel] || '⬆️';
     const label = `${nextM.name} · ${nextM.turnLabel} (${Math.round(distToNextM)}m 앞)`;
     // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 화면 회전용
     // 각도가 아니라 turnAngle(미리 계산된 절대 회전각)을 그대로 넘긴다 —
     // 화살표 아이콘 회전 자체가 "이 지점에서 꺾이는 방향"을 고정적으로
     // 보여주는 용도로 바뀌었으므로 내 현재 heading과 무관하다.
     showBottomDirectionArrow(nextM.turnAngle, label, false);
+    lastAlertedMilestoneKey = key;
 
-    if (key !== lastAlertedMilestoneKey) {
-      lastAlertedMilestoneKey = key;
-      playTurnAlertBeep();
+    if (distToNextM > TURN_ALERT_QUIET_DISTANCE_M) {
+      // 60/50/40m 구간 — 10m 단위로 끊어 그 구간에 처음 진입했을 때만
+      // 짧게 1번 알람. Math.floor로 구간을 묶어 GPS 픽스가 촘촘해도
+      // 같은 10m 구간 안에서는 중복으로 울리지 않는다.
+      const stepIdx = Math.floor(distToNextM / TURN_ALERT_BEEP_STEP_M);
+      const stepKey = key + '@' + stepIdx;
+      if (stepKey !== lastBeepedStepKey) {
+        lastBeepedStepKey = stepKey;
+        playTurnAlertBeep();
+      }
     }
+    // 30m 이내는 의도적으로 소리를 울리지 않는다 — 화살표만 조용히 표시.
   }
 
   // 화면 자동 꺼짐 방지 (Wake Lock) — 길찾기 회전 모드(화살표 ON, 2클릭)
