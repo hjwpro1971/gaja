@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_sw_skipwaiting_fix';
+      const APP_BUILD = 'v20260913_min_segment_30m';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v29').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v30').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -424,7 +424,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v29)
+      📲 바로가기 (v30)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -497,7 +497,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=29')
+      navigator.serviceWorker.register('./sw.js?v=30')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -925,7 +925,12 @@
   // ════════════════════════════════════════════════════════════════
   const DIRECTION_CONFIG = {
     SEGMENT_RATIO: 0.07,           // 이동 중 지도 재정렬 구간 길이 = 코스 전체 거리의 7%
-    MIN_SEGMENT_LENGTH_M: 100,     // 구간 길이 최소값(m) — 짧은 코스 보호
+    // 구간 길이 최소값(m) — 짧은 코스 보호. 원래 100m였으나, 짧고 갈림길이
+    // 많은 코스(예: 전체 220m에 갈림길 4개짜리 아파트 산책로)에서는 코스
+    // 전체가 사실상 구간 1개로 묶여 갈림길에서 지도/화살표가 전혀
+    // 재정렬되지 않는 문제가 있었다. 실사용 피드백으로 30m로 낮춤 —
+    // 나중에 실제 긴 등산로에서 테스트하며 다시 늘릴 수 있다.
+    MIN_SEGMENT_LENGTH_M: 30,
     STOP_TARGET_DISTANCE: 20,      // 정지 중 목표점까지의 거리(m) — 10/15/20/30/50 중 튜닝 예정
     REVERSE_ENTER_THRESHOLD: 110,  // 정방향 → 역방향 전환 각도차(도)
     REVERSE_EXIT_THRESHOLD: 70,    // 역방향 → 정방향 전환 각도차(도)
