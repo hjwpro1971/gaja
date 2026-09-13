@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_northup_sensorless';
+      const APP_BUILD = 'v20260913_gyro_stop_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v36').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v35').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -119,6 +119,32 @@
       position: absolute; top: 0; left: 0;
       transform-origin: center center;
     }
+    /* 🧭 네이버지도/카카오맵 스타일 길찾기 회전 모드 (스마트폰 위쪽이 내가 갈 방향)
+       스마트폰은 세로가 가로보다 훨씬 긴 화면(예: 390×844)이라, 기존처럼
+       vmax(가로/세로 중 큰 값=세로 기준)로 "정사각형"을 만들면 그 정사각형의
+       중심을 top/left/margin(%)으로 잡을 때 가로세로 여백 비율이 달라져
+       회전 중 좌우로 쏠려 보이는 문제가 있었다. 대신 세로 기준(vh)으로
+       충분히 큰 정사각형을 만들고, transform: translate(-50%, -50%)로
+       "요소 자기 자신 크기의 절반"만큼 당겨 화면 비율과 무관하게 항상
+       뷰포트 정중앙에 고정한다. */
+    #map.heading-up {
+      /* 160vh는 회전 중 모서리가 절대 안 잘리도록 넉넉히 잡은 값이었지만,
+         그만큼 브라우저가 매 프레임 다시 그려야 할 픽셀(타일 이미지 포함)
+         양이 많아 회전 애니메이션이 프레임을 못 따라가 "느리게" 보이는
+         원인이 되었다. 스마트폰 화면 대각선을 충분히 커버하면서도
+         레이어를 작게 유지하는 120vh로 축소해 렌더링 부담을 줄인다. */
+      width: 120vh !important;
+      height: 120vh !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) rotate(0deg);
+      /* CSS transition을 쓰지 않는다 — 회전은 애니메이션/보간 없이
+         즉시 반영된다(방향 재설계 원칙: 디버깅 단순화를 위해 처음엔
+         애니메이션 없이 구현). */
+      will-change: transform;
+      backface-visibility: hidden;
+    }
+
     /* 상단 헤더 바 */
     .top-header {
       position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
@@ -272,7 +298,14 @@
       top: 0;
       left: 0;
       transform-origin: 40px 40px;
+      /* transition 제거 — requestAnimationFrame 루프가 담당(위 #map.heading-up 주석 참고) */
       pointer-events: none;
+    }
+    /* 정지 시 자이로(핸드폰 회전)가 실제로 화면을 움직이고 있음을 짧게
+       알려주는 하이라이트 — handleOrientation이 0.6초짜리 타이머로 토글 */
+    .gps-heading-wrapper.gyro-active {
+      filter: drop-shadow(0 0 6px rgba(255, 193, 7, 0.9));
+      transition: filter 0.2s ease-out;
     }
     .gps-heading-svg {
       width: 80px;
@@ -431,7 +464,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v36)
+      📲 바로가기 (v35)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +548,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=36')
+      navigator.serviceWorker.register('./sw.js?v=35')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -904,10 +937,11 @@
     }
     // 1초마다 현재 전역 상태를 그대로 스냅샷한다 — watchPosition 콜백
     // 내부 값을 별도로 안 건드리고, 이미 존재하는 전역 변수만 읽는다.
-    // 센서(나침반/자이로) 제거 이후에는 GPS 좌표 기반 값만 남는다.
     captureSnapshot() {
       if (!this.isLogging) return;
+      const mapEl = document.getElementById('map');
       const wrapper = document.getElementById('gpsHeadingWrapper');
+      const mapCssTransform = mapEl ? mapEl.style.transform : '';
       const arrowCssTransform = wrapper ? wrapper.style.transform : '';
 
       this.logs.push({
@@ -915,9 +949,18 @@
         lat: lastKnownPos ? Number(lastKnownPos.lat.toFixed(7)) : '',
         lon: lastKnownPos ? Number(lastKnownPos.lon.toFixed(7)) : '',
         isCurrentlyStopped: isCurrentlyStopped,
+        isDirectionSearching: isDirectionSearching,
         isDirectionReversed: isDirectionReversed,
+        referenceHeading: referenceHeading !== null ? Math.round(referenceHeading) : '',
+        phoneHeading: phoneHeading !== null ? Math.round(phoneHeading) : '',
+        lastKnownPhoneHeading: lastKnownPhoneHeading !== null ? Math.round(lastKnownPhoneHeading) : '',
         gpsMovementHeading: gpsMovementHeading !== null ? Math.round(gpsMovementHeading) : '',
         stopTargetBearing: stopTargetBearing !== null ? Math.round(stopTargetBearing) : '',
+        segmentTargetBearing: segmentTargetBearing !== null ? Math.round(segmentTargetBearing) : '',
+        currentSegmentTargetKey: currentSegmentTargetKey || '',
+        actualMapRotation: window.actualMapRotation !== undefined ? Math.round(window.actualMapRotation) : '',
+        lastStopArrowRotation: Math.round(lastStopArrowRotation || 0),
+        mapCssTransform: mapCssTransform,
         arrowCssTransform: arrowCssTransform,
       });
     }
@@ -963,7 +1006,8 @@
   let userGpsMarker = null;
   let watchId = null;
   let lastKnownPos = null;
-  let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태
+  let isCompassActive = false;
+  let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태 — 나침반 사용 여부 결정에 참조
   let guideLine = null; // 등산로 연결 점선 가이드
 
   function getKoreanDirection(deg) {
@@ -987,9 +1031,16 @@
     return (brng + 360) % 360;
   }
 
-  let isHeadingUp = false;      // GPS 켜짐(내 위치 자동 센터링) 모드 — 더 이상 지도를 회전시키지 않는다
+  let isHeadingUp = false;      // 🧭 길찾기 회전 모드 (스마트폰 위쪽이 항상 갈 방향)
   let showHeadingArrow = false; // 🧭 방향 화살표(시야각 빔) 표시 여부 — GPS 1클릭째는 숨기고, 2클릭째부터 표시
+  // --- 정지 시 자이로(상대 회전) 추적용 상태 ---
+  let stopBaseHeading = null;        // 정지 진입 순간의 화면 기준각(trailBearing) 스냅샷
+  let lastOrientationAlpha = null;   // 직전 deviceorientation 이벤트의 alpha (delta 계산용)
+  let gyroRelativeRotation = 0;      // 스냅샷 이후 누적된 상대 회전량(도, 연속값)
   let stopEnteredAt = null;
+  let referenceHeading = null; // 정지 순간 확정되는 나침반 기준 방향(원점 스냅샷, 그 이후로는 다시 읽지 않음)
+  let referenceAlpha = null;   // 원점 스냅샷 시점의 raw deviceorientation alpha — 이후 자이로 상대 변화량 계산 기준
+  let gyroActiveTimeout = null; // 페이드아웃 타이머
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
   let lastToastUpdate = 0;
@@ -997,12 +1048,21 @@
   let lastGpsMoveTime = 0;
 
   // ════════════════════════════════════════════════════════════════
-  // ⭐ 방향 안내 원칙(2026-09-13 전면 단순화): 나침반/자이로 센서를
-  // 완전히 배제하고 GPX 좌표 계산만으로 안내한다. 지도는 항상 북쪽
-  // 고정(회전 없음)이며, 내 위치 화살표는 GPS 이동 방향(gpsMovementHeading)
-  // 만 표시한다. "다음 갈림길이 몇 시 방향인가"는 stopTargetBearing(GPX
-  // 목표 지점의 절대 방위)과 gpsMovementHeading(마지막 진행 방향)을
-  // 비교해서 하단 화살표/텍스트로만 안내한다.
+  // ⭐ 방향/회전 로직 전면 재설계 (설계 문서 기반)
+  //
+  // 핵심 원칙: targetBearing(GPX가 가리키는 목표 방향, 좌표 계산만)과
+  // phoneHeading(핸드폰이 실제로 향한 절대 방위, 센서 측정)을 처음부터
+  // 끝까지 완전히 분리된 별도 변수로 관리한다. 하나의 변수에 섞어서
+  // 누적하지 않는다 — 과거 continuousHeading 하나에 이동 중 GPS 절대방위와
+  // 정지 중 상대회전값을 순차 대입하다 지도가 180도 가까이 튀는 버그가
+  // 반복됐던 근본 원인이 이것이었다.
+  //
+  // 이동 중: 지도는 코스 비례 "구간" 단위로만 이산적으로 재정렬되고,
+  //   화살표는 구간 목표 방향을 단순 표시한다. 정방향/역방향 판정은
+  //   완전히 독립적으로(비대칭 히스테리시스) 항상 작동한다.
+  // 정지 중: 지도는 폰 회전량을 그대로 따라 돌고(relativeRotation),
+  //   화살표는 지도 회전과 무관하게 항상 "다음 GPX 목표 지점"을
+  //   가리킨다(targetBearing과 phoneHeading의 절대각 차이).
   // ════════════════════════════════════════════════════════════════
   const DIRECTION_CONFIG = {
     SEGMENT_RATIO: 0.07,           // 이동 중 지도 재정렬 구간 길이 = 코스 전체 거리의 7%
@@ -1024,7 +1084,12 @@
   let currentSegmentIndex = -1;    // 현재 있는 구간 번호 (폴백용)
   let currentSegmentTargetKey = null; // 마일스톤 기준 재정렬의 "현재 목표" 식별자 — 이게 바뀔 때만 재정렬 트리거
   let segmentTargetBearing = null; // 현재 구간(또는 다음 마일스톤)의 방위각(이동 중 지도 회전 기준)
-  let stopTargetBearing = null;    // 정지 중 목표점 방위각(하단 화살표/텍스트 안내가 참조)
+  let stopTargetBearing = null;    // 정지 중 목표점 방위각(화살표가 가리키는 방향)
+  let lastStopArrowRotation = 0;   // renderStoppedRotation이 마지막으로 적용한 화살표 회전값 — 드래그 복귀 시 재사용
+
+  // phoneHeading 계열 — 센서 측정값 전용, GPX/좌표를 절대 참조하지 않는다.
+  // handleOrientation()에서만 갱신되고, 다른 함수는 읽기만 한다.
+  let phoneHeading = null;
   // ════════════════════════════════════════════════════════════════
 
   // 최단 각도 오차 계산 (-180 ~ +180)
@@ -1035,26 +1100,80 @@
     return diff;
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // ⭐ 전면 단순화(2026-09-13): 지도 회전(길찾기/헤딩업 모드) 및 나침반/
-  // 자이로 센서를 완전히 제거했다. GPX가 이미 경로 전체를 알고 있으므로
-  // 필요한 건 (1)GPS 좌표로 내 위치를 표시하고 (2)다음 갈림길까지 거리와
-  // 방향을 좌표 계산만으로 안내하는 것뿐이다 — 센서 기반 "화면 회전"은
-  // 나침반 오차, 지도/화살표 회전 상쇄 계산 등 부수적 복잡도만 키우고
-  // 실사용 중 반복적으로 불일치가 발생했다.
-  //
-  // 지도는 항상 북쪽 고정(회전 없음)이며, 내 위치 마커의 화살표만 GPS
-  // 진행 방향(gpsMovementHeading, 좌표 기반)으로 회전한다. 정지 중에는
-  // 화살표를 마지막 진행 방향에 고정해둔다(별도 갱신 없음). 갈림길
-  // 방향 안내는 하단 큰 화살표/텍스트(showBottomDirectionArrow,
-  // updateNavigationToast)가 좌표 계산만으로 전담한다.
-  // ════════════════════════════════════════════════════════════════
-  function renderGpsArrow(headingDeg) {
-    if (headingDeg === null || headingDeg === undefined || isNaN(headingDeg)) return;
+  // 네이버지도/카카오맵/산길샘과 같은 방식: 걷고 있을 때는 나침반(자기장
+  // 센서)을 아예 쓰지 않고 GPS가 알려주는 실제 이동 방향만 쓴다. 나침반은
+  // 건물·자동차·손 안의 금속 등 자기장 교란에 취약해서, 3D 틸트 보정
+  // 같은 복잡한 계산을 얹어도 "정면으로 향한 건물이 화면 위쪽과 안 맞는"
+  // 문제가 계속 생겼다 — 반면 GPS 이동 방향은 자기장과 무관해 훨씬
+  // 안정적이다. 정지 시에도 지자기 절대값(alpha)은 쓰지 않고, 정지 진입
+  // 순간의 궤적 방향을 기준점으로 잡은 뒤 alpha의 변화량(delta)만
+  // 자이로처럼 상대적으로 누적해 폰을 돌린 만큼만 화면을 회전시킨다.
+
+  // 이동 중 렌더링(재설계): 매 GPS 픽스마다 회전하지 않고, 코스 비례
+  // "구간" 단위로만 이산적으로 재정렬된다 — 목적이 "전체 코스 중 내
+  // 위치"라는 큰 그림을 보여주는 것이라 화살표 정밀도는 중요하지 않다.
+  // 지도는 segmentTargetBearing(현재 구간의 시작→끝 절대 방위)이 화면
+  // 위로 오도록 회전하고, 화살표도 같은 방향을 그대로 표시한다(이동
+  // 중엔 지도와 화살표가 함께 구간 방향을 가리켜도 문제없다 — 정지
+  // 중처럼 화살표가 별도 목표를 가리킬 필요가 없다).
+  function renderMovingRotation(segTargetBearing) {
+    if (segTargetBearing === null || isNaN(segTargetBearing)) return;
+    const mapEl = document.getElementById('map');
+    // 길찾기 회전 모드가 아니거나(!isHeadingUp), 사용자가 지도를 드래그해
+    // 둘러보는 중이면 화면을 건드리지 않는다 — 과거 renderHeadingRotation
+    // 디스패처가 담당하던 가드를 각 렌더 함수 자체로 옮겼다(디스패처 삭제).
+    if (!isHeadingUp || !mapEl || !mapEl.classList.contains('heading-up') || isMapBeingDragged || isMapDragReturnPending) {
+      return;
+    }
+    if (mapEl) {
+      mapEl.style.transform = `translate(-50%, -50%) rotate(${-segTargetBearing}deg)`;
+      window.actualMapRotation = segTargetBearing;
+    }
+
     const wrapper = document.getElementById('gpsHeadingWrapper');
     if (wrapper) {
-      wrapper.style.transform = `rotate(${headingDeg}deg)`;
+      wrapper.style.transform = `rotate(${segTargetBearing}deg)`;
     }
+  }
+
+  // 정지 중 렌더링(재설계): 지도와 화살표는 더 이상 상쇄 관계가 아니라
+  // 서로 독립적인 두 값을 각자 표시한다.
+  //
+  // - 지도(relativeRotation): "핸드폰 위쪽 = 화면 위쪽"을 유지하기 위해,
+  //   정지 확정 순간의 폰 방위(referenceHeading, 0도)를 기준으로 폰이
+  //   실제로 돌아간 만큼 지도가 그대로 따라 돈다. 사용자가 폰을 왼쪽으로
+  //   돌리면 지도도 왼쪽으로(화면 기준) 돈다.
+  // - 화살표(arrowRotation): 지도 회전과 완전히 별개로, 항상 "다음 GPX
+  //   목표 지점"의 절대 방위(targetBearing)와 폰의 현재 절대 방위
+  //   (phoneAbsHeading)의 차이를 그대로 표시한다. 사용자가 폰을 목표
+  //   방향으로 정확히 돌리면 arrowRotation이 0에 가까워져 화살표가
+  //   화면 12시(폰 정면)에 온다 — "지금 이 방향이 맞다"는 신호.
+  function renderStoppedRotation(relativeRotation, arrowRotation) {
+    const mapEl = document.getElementById('map');
+    // renderMovingRotation과 동일한 가드 — 과거 renderHeadingRotation
+    // 디스패처가 담당하던 조건을 각 렌더 함수로 옮겼다.
+    if (!isHeadingUp || !mapEl || !mapEl.classList.contains('heading-up') || isMapBeingDragged || isMapDragReturnPending) {
+      return;
+    }
+    if (mapEl) {
+      mapEl.style.transform = `translate(-50%, -50%) rotate(${-relativeRotation}deg)`;
+      window.actualMapRotation = relativeRotation;
+    }
+
+    // ⚠️ 화살표(#gpsHeadingWrapper)는 지도(#map) 위에 얹힌 Leaflet 마커의
+    // 자식 DOM이라, 부모(#map)가 -relativeRotation만큼 이미 회전되어
+    // 있는 상태를 그대로 물려받는다. 화면상 화살표가 순수하게
+    // arrowRotation(절대각)만큼만 돌아 보이게 하려면, 부모가 걸어둔
+    // 회전을 먼저 상쇄(+relativeRotation)한 뒤 원하는 각도를 더해야
+    // 한다 — 이 보정 없이 arrowRotation만 적용하면 화면상 실제 회전은
+    // "arrowRotation - relativeRotation"이 되어, 목표가 9시인데 화살표가
+    // 정반대(3시)를 가리키는 등 지도 회전각만큼 어긋나 보이는 버그가
+    // 있었다.
+    const wrapper = document.getElementById('gpsHeadingWrapper');
+    if (wrapper) {
+      wrapper.style.transform = `rotate(${arrowRotation + relativeRotation}deg)`;
+    }
+    lastStopArrowRotation = arrowRotation; // 드래그 복귀 시 재사용(절대각 그대로 보관)
   }
 
   // --- 가속도 센서 (보행 진동 감지) ---
@@ -1069,9 +1188,20 @@
     }
   });
 
+  const ORIENTATION_DEADBAND_DEG = 1.0;
+
+  // 정지 여부와 무관하게 항상 최신 폰 방위를 캐싱해둔다. 정지가 확정되는
+  // 순간(watchPosition 콜백에서 state가 STOPPED로 바뀌는 그 프레임) 다음
+  // deviceorientation 이벤트를 기다리지 않고 이 캐시값으로 즉시 원점을
+  // 잡기 위함이다 — "정지 판정 즉시 회전 시작"이라는 요구사항을 만족시키려면
+  // 서로 다른 이벤트 소스(GPS 픽스 vs 센서 이벤트) 사이의 시차를 최대한
+  // 줄여야 한다.
+  let lastKnownPhoneHeading = null;
+
   // 두 방위각(현재 방향 vs GPX 목표 방향)을 비교해 🔵(정방향)/🔴(역방향)
-  // 판정을 UI에 반영하는 공용 헬퍼. 정지 중과 이동 중
-  // (updateMovingDirectionJudgement) 양쪽에서 동일한 판정 규칙을 쓴다.
+  // 판정을 UI에 반영하는 공용 헬퍼. 정지 중(폰 방위 기준, applyStopPhoneRotation)과
+  // 이동 중(GPS 이동방향 기준, updateMovingDirectionJudgement) 양쪽에서
+  // 동일한 판정 규칙을 쓴다.
   //
   // ⭐ 비대칭 히스테리시스(설계 문서): 정방향 상태에서는 각도차가
   // REVERSE_ENTER_THRESHOLD(110도) 이상 벌어져야 비로소 역방향으로 전환되고,
@@ -1108,15 +1238,153 @@
     updateDirectionArrowJudgement(gpsBearing, trailExpectedBearing);
   }
 
-  // ⭐ GPS 켜짐 모드 전환 — 과거 "길찾기 회전 모드(heading-up)"였던 것을
-  // 단순화: 지도는 더 이상 회전하지 않으므로 이 함수는 이제 지도를 내
-  // 위치로 센터링하는 역할만 한다(나침반 초기화도 하지 않음).
+  // 정지 확정 순간 폰의 실제 방위를 0도(원점)로 스냅샷하고, 이후 그
+  // 원점 대비 상대 회전량으로 지도를 돌린다. 화살표는 지도 회전과 완전히
+  // 독립적으로 targetBearing(다음 GPX 목표 지점)과 phoneHeading의 절대각
+  // 차이만 표시한다 — "targetBearing과 phoneHeading을 완전히 분리된 값으로
+  // 관리하고, 조합은 오직 이 함수(및 renderStoppedRotation) 안에서만
+  // 이뤄진다"는 재설계 원칙을 그대로 구현한 지점이다.
+  //
+  // ⚠️ 이동 중 회전에 쓰던 continuousHeading/displayedRot(GPS 절대방위 기준
+  // 애니메이션 상태)은 여기서 전혀 참조하지 않는다 — 과거에 이 값을
+  // 공유했다가 지도가 180도 가까이 튀는 버그가 있었다. 정지 중 회전은
+  // 사용자가 실시간으로 폰을 돌리는 걸 그대로 따라가야 하므로, 부드러운
+  // 보간 없이 즉시 렌더링한다.
+  // phoneAbsHeading: 나침반(자력계) 절대값. 정지 진입 첫 호출에서만 원점을
+  // 확정하는 데 쓰이고, 그 이후로는 참조하지 않는다 — 나침반은 주변
+  // 자성체(철제 구조물, 차량 등)에 취약해 실사용 중 갑자기 수십 도씩
+  // 틀어지는 사례가 있었다. 원점 확정 이후의 실제 회전 추적은 자이로/
+  // 센서퓨전 기반인 deviceorientation의 alpha 변화량(rawAlpha)만으로
+  // 계산한다 — alpha는 나침반 절대값보다 드리프트는 있을 수 있어도
+  // 순간적인 자성 교란에는 훨씬 안정적이다.
+  function applyStopPhoneRotation(phoneAbsHeading, rawAlpha) {
+    // [핵심] 정지 후 1회성 이벤트: 이 순간의 나침반 값을 기준점(0도)으로
+    // 확정하고, 그 순간의 raw alpha도 함께 스냅샷해 이후 회전 추적의
+    // 기준으로 삼는다.
+    if (referenceHeading === null) {
+      referenceHeading = phoneAbsHeading;
+      referenceAlpha = (typeof rawAlpha === 'number' && !isNaN(rawAlpha)) ? rawAlpha : null;
+    }
+
+    // 지도용: 원점(referenceHeading) 대비 현재 폰이 얼마나 더 돌아갔는지(상대 회전).
+    // referenceAlpha가 있으면 자이로 기반 alpha 변화량으로 계산하고(나침반
+    // 재참조 없음), 없으면(최초 호출 등) 나침반 절대값 차이로 폴백한다.
+    // alpha는 webkitCompassHeading과 반대 방향(360-alpha 관계)이므로 부호를
+    // 뒤집어야 나침반 기준 회전 방향과 일치한다.
+    let relativeRotation;
+    if (referenceAlpha !== null && typeof rawAlpha === 'number' && !isNaN(rawAlpha)) {
+      relativeRotation = ((-shortestAngleDiff(rawAlpha, referenceAlpha)) + 360) % 360;
+    } else {
+      relativeRotation = ((shortestAngleDiff(phoneAbsHeading, referenceHeading)) + 360) % 360;
+    }
+
+    // 화살표/🔵🔴 판정에 쓸 "현재 폰의 절대 방위"도 자이로 상대회전 기반으로
+    // 재계산한다(나침반을 매 프레임 다시 읽지 않음) — 원점 확정 이후에는
+    // referenceHeading + relativeRotation이 나침반 재참조보다 더 안정적이다.
+    const gyroBasedPhoneHeading = referenceAlpha !== null
+      ? (referenceHeading + relativeRotation) % 360
+      : phoneAbsHeading;
+    phoneHeading = gyroBasedPhoneHeading; // phoneHeading 전용 변수 갱신 (센서값, 좌표 계산과 분리) — getCurrentAbsHeadingForGuidance() 등 텍스트 안내도 이 값을 참조
+
+    // 화살표용: targetBearing(다음 GPX 목표 지점의 절대 방위)과 폰의 현재
+    // 절대 방위 차이 — 지도 회전(원점 기준)과는 완전히 무관한 별도 계산.
+    // stopTargetBearing은 watchPosition 콜백이 정지 중 매 픽스마다
+    // computeStopTargetBearing()으로 갱신해둔 값을 그대로 읽기만 한다.
+    const arrowRotation = stopTargetBearing !== null
+      ? ((shortestAngleDiff(stopTargetBearing, gyroBasedPhoneHeading)) + 360) % 360
+      : relativeRotation; // targetBearing을 아직 못 구했으면 임시로 지도와 동일하게(0도 근처)
+
+    renderStoppedRotation(relativeRotation, arrowRotation);
+
+    // 🔵/🔴 판정도 targetBearing과 phoneHeading(자이로 기반)의 절대각 비교로 이뤄진다.
+    if (stopTargetBearing !== null) {
+      updateDirectionArrowJudgement(gyroBasedPhoneHeading, stopTargetBearing);
+    }
+  }
+
+  function handleOrientation(e) {
+    if (e.alpha === null || isNaN(e.alpha)) return;
+
+    // 1. Phone Heading (휴대폰 절대 방위, θ_phone) 추출
+    let phoneAbsHeading = e.webkitCompassHeading;
+    if (phoneAbsHeading === undefined || phoneAbsHeading === null) {
+      phoneAbsHeading = (360 - e.alpha) % 360;
+    }
+    lastKnownPhoneHeading = phoneAbsHeading; // 정지 판정 즉시 사용할 수 있도록 항상 캐싱
+
+    if (lastOrientationAlpha === null) {
+      lastOrientationAlpha = e.alpha;
+      return;
+    }
+
+    const delta = shortestAngleDiff(e.alpha, lastOrientationAlpha);
+    if (Math.abs(delta) < ORIENTATION_DEADBAND_DEG) return;
+    lastOrientationAlpha = e.alpha;
+
+    if (!isCurrentlyStopped) return; // 이동 중에는 GPS 방위각 사용
+
+    applyStopPhoneRotation(phoneAbsHeading, e.alpha);
+
+    // 자이로 동작 UI 효과
+    const headingWrapper = document.getElementById('gpsHeadingWrapper');
+    if (headingWrapper) {
+      headingWrapper.classList.add('gyro-active');
+      clearTimeout(gyroActiveTimeout);
+      gyroActiveTimeout = setTimeout(() => headingWrapper.classList.remove('gyro-active'), 600);
+    }
+  }
+
+  function initCompass() {
+    if (isCompassActive) return;
+    isCompassActive = true;
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+          }
+        })
+        .catch(() => {});
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.addEventListener('deviceorientation', handleOrientation, true);
+    }
+
+    // iOS 13+는 방향 센서와 별개로 가속도 센서(devicemotion)도 자체 권한이
+    // 필요하다 — 이걸 요청하지 않으면 walkVibrationLevel이 영원히 0으로
+    // 남아, 가파른 오르막에서 저속으로 걸을 때 "보행 진동으로 정지 오판
+    // 방지"하는 로직(GpsFilterEngine의 isWalkingVibration)이 iOS에서
+    // 통째로 무력화된다.
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().catch(() => {});
+    }
+  }
+
+  // ⭐ 네이버지도/카카오맵 스타일 길찾기 회전 모드 전환
+  // enable=false(정북 고정) 경로는 이제 GPS를 끌 때 지도 transform을
+  // 원상복구하는 용도로만 호출된다(항상 isQuiet=true) — 사용자가 직접
+  // 정북 고정 모드로 전환하는 UI는 더 이상 없다.
   function setHeadingUpMode(enable, isQuiet = false) {
     isHeadingUp = enable;
-    if (enable && lastKnownPos) {
-      map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
+    const mapEl = document.getElementById('map');
+
+    if (enable) {
+      initCompass();
+      mapEl.classList.add('heading-up');
+      map.invalidateSize();
+      if (lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
+      }
       if (!isQuiet) {
-        showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
+        showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
+      }
+    } else {
+      mapEl.classList.remove('heading-up');
+      mapEl.style.transform = '';
+      map.invalidateSize();
+      if (lastKnownPos) {
+        map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       }
     }
   }
@@ -1215,10 +1483,11 @@
     }, durationMs || 3200);
   }
 
-  // 나침반/자이로 센서를 더 이상 쓰지 않으므로 initCompass/stopCompass는
-  // no-op으로 남겨둔다 — 호출부를 일일이 지우는 대신 안전하게 유지.
-  function initCompass() {}
-  function stopCompass() {}
+  function stopCompass() {
+    isCompassActive = false;
+    window.removeEventListener('deviceorientation', handleOrientation, true);
+    window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
+  }
 
   let isDirectionSearching = false;
   let isDirectionReversed = false;
@@ -1332,7 +1601,7 @@
       zoom: 14,
       zoomControl: false,
       maxZoom: 19,
-      dragging: true
+      dragging: false
     });
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -1356,30 +1625,79 @@
     });
 
     // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
-    // 있게 한다. 지도가 더 이상 회전하지 않으므로(북쪽 고정), 화면 좌표와
-    // 지도 좌표가 항상 일치한다 — Leaflet 기본 드래그(dragging: true)를
-    // 그대로 쓰면 되고, 회전각 역보정을 위한 수동 드래그 구현이 필요 없다.
+    // 있게 한다.
+    // A안: 길찾기 회전 모드에서는 지도가 CSS로 회전되어 있어 Leaflet
+    // 기본 드래그(화면 좌표 = 지도 좌표 전제)를 그대로 쓰면 사용자가
+    // 끈 방향과 실제 이동 방향이 어긋난다. Leaflet 기본 드래그(위
+    // dragging: false)를 끄고, 화면에서의 이동량(dx, dy)을 현재 회전각
+    // 만큼 역회전시켜 map.panBy로 직접 넘기는 수동 드래그로 교체한다.
     //
-    // 개선 2: 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시키면 다른 지역을
-    // 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와 "드래그가 안 되는
-    // 것"처럼 느껴진다. 손을 뗀 뒤에도 일정 시간(7초)은 그 자리에 머물게
-    // 두고, 그 시간이 지나야 자동으로 내 위치로 복귀한다. 유예 시간 중
-    // 다시 드래그하면 타이머를 리셋해 계속 둘러보고 싶어하는 경우를 배려한다.
+    // 회전 부호는 한 곳에서만 결정한다: 지도 CSS는 항상 rotate(-window.actualMapRotation)로
+    // 적용되므로(renderMovingRotation/renderStoppedRotation 공통), 화면이
+    // 실제로 돌아간 각도는 -window.actualMapRotation이다. 화면 이동량을
+    // 지도 좌표계로 되돌리려면 그 회전을 "역"으로 취소해야 하므로
+    // +window.actualMapRotation만큼 회전시키면 된다 — 아래 moveManualMapDrag가
+    // window.actualMapRotation을 그대로 rotateDragDelta에 전달한다.
+    // (반전 후 다시 반전하는 이중 계산을 피해 이 한 곳에서만 부호를 결정한다.)
+    //
+    // 개선 2: 이전에는 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시켰는데,
+    // 이러면 다른 지역을 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와
+    // "드래그가 안 되는 것"처럼 느껴지는 문제가 있었다. 손을 뗀 뒤에도
+    // 일정 시간(7초)은 그 자리에 머물게 두고, 그 시간이 지나야 자동으로
+    // 내 위치로 복귀한다. 유예 시간 중 다시 드래그하면 타이머를 리셋해
+    // 계속 둘러보고 싶어하는 경우를 배려한다.
     const DRAG_RETURN_DELAY_MS = 7000;
     let dragReturnTimer = null;
 
-    map.dragging.enable();
+    let manualDragActive = false;
+    let manualDragLastX = 0;
+    let manualDragLastY = 0;
 
-    map.on('dragstart', () => {
+    function rotateDragDelta(dx, dy, angleDeg) {
+      const rad = angleDeg * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      // 브라우저 화면 좌표계는 Y축이 아래를 향하므로, 표준 2D 회전 행렬과
+      // sin 부호가 반대로 적용되어야 직관적인 손가락 방향(pan)과 일치한다.
+      return {
+        x: dx * cos + dy * sin,
+        y: -dx * sin + dy * cos
+      };
+    }
+
+    function startManualMapDrag(clientX, clientY) {
+      manualDragActive = true;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+
       isMapBeingDragged = true;
       isMapDragReturnPending = false;
       if (dragReturnTimer) {
         clearTimeout(dragReturnTimer);
         dragReturnTimer = null;
       }
-    });
+    }
 
-    map.on('dragend', () => {
+    function moveManualMapDrag(clientX, clientY) {
+      if (!manualDragActive) return;
+
+      const dx = clientX - manualDragLastX;
+      const dy = clientY - manualDragLastY;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+      if (dx === 0 && dy === 0) return;
+
+      // 화면 회전각(actualMapRotation)만큼 역회전시켜 실제 지도 좌표계 기준
+      // 이동량으로 변환한다 — 부호 결정은 이 한 곳에서만 이뤄진다.
+      const currentRot = window.actualMapRotation || 0;
+      const corrected = rotateDragDelta(dx, dy, currentRot);
+      map.panBy([-corrected.x, -corrected.y], { animate: false });
+    }
+
+    function endManualMapDrag() {
+      if (!manualDragActive) return;
+      manualDragActive = false;
+
       isMapBeingDragged = false;
       isMapDragReturnPending = true;
       if (dragReturnTimer) clearTimeout(dragReturnTimer);
@@ -1388,9 +1706,46 @@
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          // 동결 중 쌓인 최신 회전각을 즉시 반영해 위치 복귀와 동시에 회전도 복귀.
+          // 정지 중엔 window.actualMapRotation(지도용)과 lastStopArrowRotation
+          // (화살표용)을, 이동 중엔 segmentTargetBearing(구간 재정렬 값)을 쓴다.
+          if (isCurrentlyStopped) {
+            renderStoppedRotation(window.actualMapRotation || 0, lastStopArrowRotation);
+          } else if (segmentTargetBearing !== null) {
+            renderMovingRotation(segmentTargetBearing);
+          }
         }
       }, DRAG_RETURN_DELAY_MS);
+    }
+
+    const mapContainerEl = map.getContainer();
+
+    mapContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startManualMapDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    mapContainerEl.addEventListener('touchmove', (e) => {
+      if (!manualDragActive || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      moveManualMapDrag(touch.clientX, touch.clientY);
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
+    mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
+
+    // 데스크톱 테스트용 마우스 드래그 (스마트폰 앱이라 실사용 빈도는 낮지만 개발 확인용으로 유지)
+    mapContainerEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      startManualMapDrag(e.clientX, e.clientY);
     });
+    document.addEventListener('mousemove', (e) => {
+      if (!manualDragActive) return;
+      moveManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', endManualMapDrag);
 
     // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
     switchLayer('terrain');
@@ -1783,8 +2138,8 @@
     return Math.floor(traveledDistM / segLenM);
   }
 
-  // 정지 중 하단 화살표/텍스트가 가리킬 "다음 GPX 목표 지점"까지의 방위각을
-  // 계산한다. 순수 좌표 계산만 한다(센서 미사용).
+  // 정지 중 화살표/판정이 가리킬 "다음 GPX 목표 지점"까지의 방위각을 계산한다.
+  // 순수 좌표 계산만 하고 센서 값(phoneHeading)은 전혀 참조하지 않는다.
   function computeStopTargetBearing(fromLat, fromLon, nearestIdx) {
     if (!currentPoints || nearestIdx < 0) return null;
     const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, DIRECTION_CONFIG.STOP_TARGET_DISTANCE);
@@ -2479,13 +2834,14 @@
   }
 
   // 화면 안내(시계 방향/좌우 안내)에 쓸 "현재 향한 절대 방위"를 반환한다.
-  // 센서(나침반/자이로) 완전 배제 — GPS 좌표만으로 "내가 보는 방향"을
-  // 추정한다. 이동 중에는 방금 GPS로 측정된 진행 방향(gpsMovementHeading)을
-  // 쓰고, 정지 중에는 그 값을 그대로 유지한다(멈추기 직전 걷던 방향을
-  // 계속 "정면"으로 간주) — 정지 시 마지막 값을 지우지 않는 것이 이
-  // 함수의 핵심이므로 watchPosition 콜백에서 gpsMovementHeading을
-  // 정지 상태에서는 절대 덮어쓰지 않는다.
+  // 정지 중엔 phoneHeading(센서 절대 방위, 화살표와 동일한 소스) — 이래야
+  // 텍스트 안내와 화살표가 항상 같은 값을 참조해 불일치가 생기지 않는다.
+  // 이동 중엔 gpsMovementHeading(GPS 이동방향, watchPosition 이동 분기에서
+  // 매 픽스마다 갱신)을 쓴다.
   function getCurrentAbsHeadingForGuidance() {
+    if (isCurrentlyStopped && phoneHeading !== null) {
+      return phoneHeading;
+    }
     return gpsMovementHeading;
   }
 
@@ -2503,9 +2859,9 @@
         return;
       }
       offTrailStreakCount++;
-      // 등산로 복귀 방향은 "북동쪽" 같은 절대 방위가 아니라, 마지막 GPS
-      // 진행 방향(getCurrentAbsHeadingForGuidance) 기준 오른쪽/왼쪽
-      // 상대 방향으로 안내한다.
+      // 화면은 항상 내가 가는 방향이 위쪽인 길찾기 회전 모드이므로,
+      // 등산로 복귀 방향도 "북동쪽" 같은 절대 방위가 아니라 화면 기준
+      // 오른쪽/왼쪽 상대 방향으로 안내해야 나침반 없이도 바로 알 수 있다.
       const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
       const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
       toast.className = 'gps-toast warning';
@@ -2649,6 +3005,9 @@
         // 이전 방향 판정(🔵/🔴)을 재사용하지 않고 ❓부터 다시 탐색한다.
         isDirectionSearching = false;
         isDirectionReversed = false;
+        referenceHeading = null;
+        referenceAlpha = null;
+        lastKnownPhoneHeading = null;
         stopTargetBearing = null;
         // 구간 재정렬 인덱스는 리셋하지 않는다 — 같은 코스에서 화면만
         // 잠깐 숨겨졌다 돌아온 것이므로 다음 픽스에서 현재 구간과 비교해
@@ -2813,6 +3172,9 @@
 
     // 강제 UI 전환을 위해 플래그 세팅
     isCurrentlyStopped = true;
+    stopBaseHeading = null;
+    referenceHeading = null;
+    referenceAlpha = null;
     isDirectionSearching = true;
     updateGpsDirectionState();
 
@@ -2821,11 +3183,15 @@
       gpsFilterEngine.forceStopped();
     }
 
-    // stopTargetBearing(다음 GPX 목표 지점 방향)은 watchPosition 콜백이 GPS
-    // 픽스를 받을 때마다 계산하는데, GPS를 이제 막 켜는 시점이나 아직 픽스가
-    // 한 번도 안 들어온 시점에 이 버튼을 누르면 다음 픽스가 올 때까지 판정이
-    // 안 되는 문제가 있었다 — lastKnownPos와 currentPoints가 이미 있으면
-    // 여기서 즉시 계산해 채워준다.
+    // ⚠️ applyStopPhoneRotation()의 화살표/🔵/🔴 판정은 stopTargetBearing이
+    // null이면 건너뛴다(정지 시 목표 방향이 없으면 계산할 게 없어서). 이 값은
+    // 원래 watchPosition 콜백이 GPS 픽스를 받을 때마다 계산하는데, GPS를
+    // 이제 막 켜는 시점(startGpsTracking 직후)이나 아직 픽스가 한 번도 안
+    // 들어온 시점에 이 버튼을 누르면 다음 픽스가 올 때까지 판정이 안 되는
+    // 문제가 있었다 — lastKnownPos와 currentPoints가 이미 있으면(코스는
+    // 열려 있고 위치도 한 번은 잡힌 상태) 여기서 즉시 계산해 채워준다.
+    // applyStopPhoneRotation 호출보다 반드시 먼저 실행해야 그 호출 안에서
+    // 바로 판정이 이뤄진다.
     if (lastKnownPos && currentPoints && currentPoints.length > 1) {
       const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
       if (nearest.index >= 0 && nearest.point) {
@@ -2833,11 +3199,14 @@
       }
     }
 
-    // 🔵/🔴 판정도 GPS 좌표 기반(gpsMovementHeading, 마지막 진행 방향)으로
-    // 즉시 갱신한다 — 센서 이벤트를 기다릴 필요가 없다.
-    if (stopTargetBearing !== null && gpsMovementHeading !== null) {
-      updateDirectionArrowJudgement(gpsMovementHeading, stopTargetBearing);
+    // 정지 판정 즉시 원점을 잡는다는 원칙은 이 버튼에도 동일하게 적용된다 —
+    // 최신 폰 방위 캐시가 있으면 다음 센서 이벤트를 기다리지 않고 바로 확정.
+    if (lastKnownPhoneHeading !== null) {
+      applyStopPhoneRotation(lastKnownPhoneHeading, lastOrientationAlpha);
     }
+
+    // 나침반 권한/활성화 재확인
+    initCompass();
 
     showToastBadge('🧭 강제 방향 탐색 모드로 진입했습니다.');
   }
@@ -2854,6 +3223,8 @@
     // [회전 검증 디버그 로그 시작]
     directionDebugLogger.start();
 
+    // 나침반 센서 리스너 활성화
+    initCompass();
     showHeadingArrow = true;
     document.getElementById('forceStopBtn').style.display = 'block';
 
@@ -2863,14 +3234,21 @@
     // 흔들리거나 지연될 수 있다.
     gpsFilterEngine.reset();
     // 방향값도 함께 초기화한다. 이걸 빠뜨리면 이전 세션에서 마지막으로
-    // 확정됐던 방향(targetBearing 계열)이 그대로 남아있어, GPS를 껐다
-    // 다시 켰을 때 안내가 엉뚱한 각도에서 시작되는 재현성 버그의 원인이
-    // 되었다.
+    // 확정됐던 방향(targetBearing/phoneHeading 계열)이 그대로 남아있어,
+    // GPS를 껐다 다시 켰을 때 회전이 엉뚱한 각도에서 시작되거나 전혀
+    // 회전하지 않는 것처럼 보이는 재현성 버그의 원인이 되었다.
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
     isDirectionSearching = false;
     isDirectionReversed = false;
+    referenceHeading = null;
+    referenceAlpha = null;
+    lastKnownPhoneHeading = null;
+    phoneHeading = null;
     stopTargetBearing = null;
+    currentSegmentIndex = -1; // 다음 픽스에서 첫 구간부터 다시 재정렬 트리거
+    currentSegmentTargetKey = null;
+    segmentTargetBearing = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -2888,7 +3266,7 @@
     toast.style.display = 'block';
     toast.className = 'gps-toast';
     toast.innerText = '📡 GPS 수신 중...';
-    showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
+    showToastBadge('🧭 [내 위치 켜짐]\n핸드폰 위쪽이 내가 갈 방향입니다.\n화면이 자동으로 꺼지지 않습니다.');
 
     let isFirstFix = true;
 
@@ -2919,7 +3297,14 @@
         }
 
         const wasStoppedBeforeThisFix = isCurrentlyStopped; // 전환 감지용 — 이번 픽스로 덮어쓰기 전 스냅샷
-        isCurrentlyStopped = result.isStopped;
+        isCurrentlyStopped = result.isStopped; // 나침반 활성화 여부의 기준이 되는 최신 정지 상태
+
+        // 정지 ↔ 이동 전환 시 화면 갱신은 각 분기 안에서 전담한다 — 이동
+        // 진입은 아래 구간 재정렬 로직(renderMovingRotation)이, 정지 진입은
+        // applyStopPhoneRotation(또는 다음 orientation 이벤트)이 담당한다.
+        // 두 값(targetBearing 계열/phoneHeading 계열)은 서로 다른 변수로
+        // 완전히 분리되어 있으므로 전환 시 섞여서 튀는 문제가 구조적으로
+        // 발생할 수 없다.
 
         // ⭐ 줌 전환 — 이동 중엔 "전체 코스 중 내 위치"를 보여주는 넓은
         // 화면(ZOOM_MOVING), 정지 중엔 "주변 자세히 보기" 목적의 확대
@@ -2956,7 +3341,13 @@
         // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
         // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
         if (!result.isStopped && result.bearing !== null) {
-          // 이동 재개
+          // 이동 재개 — 자이로 상대 회전 추적 상태를 정리해 다음 정지 시 새로
+          // 스냅샷하게 한다. 리스너 자체는 끄지 않는다(다음 정지 시 어차피 새로
+          // 스냅샷하므로 득이 없고, on/off를 반복하면 iOS 권한 재확인 관련
+          // 복잡성만 늘어난다).
+          stopBaseHeading = null;
+          gyroRelativeRotation = 0;
+          lastOrientationAlpha = null;
           stopEnteredAt = null;
           stopTargetBearing = null;
 
@@ -2969,14 +3360,11 @@
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
 
-          // 내 위치 마커의 화살표는 GPS 진행 방향(좌표 기반)으로만 회전한다
-          // — 지도는 회전하지 않으므로(북쪽 고정) 부모/자식 좌표계 보정이
-          // 필요 없이 단순히 이 각도 그대로 걸면 된다.
-          renderGpsArrow(result.bearing);
-
-          // ⭐ 순방향/역방향 판정 — GPS 이동방향(result.bearing, 좌표 기반,
-          // heading 필드 미사용)과 GPX 궤적의 20m 앞 지점 방향을 비교해
-          // 비대칭 히스테리시스(110도/70도)로 🔵/🔴를 갱신한다.
+          // ⭐ 순방향/역방향 판정 — 구간 재정렬과 완전히 독립적으로 항상
+          // 작동한다. GPS 이동방향(result.bearing, 좌표 기반, heading
+          // 필드 미사용)과 GPX 궤적의 20m 앞 지점 방향을 비교해 비대칭
+          // 히스테리시스(110도/70도)로 🔵/🔴를 갱신한다. phoneHeading은
+          // 여기에 전혀 관여하지 않는다.
           if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
             const aheadForDeviation = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
             if (aheadForDeviation) {
@@ -2985,14 +3373,51 @@
             }
           }
 
-          // 지도가 더 이상 회전하지 않으므로(북쪽 고정) 구간별 지도 재정렬
-          // 로직은 필요 없다 — 갈림길 방향 안내는 하단 화살표/텍스트가
-          // findNextMilestone() + gpsMovementHeading만으로 전담한다.
+          // ⭐ 재정렬 — 매 픽스마다 지도를 돌리지 않고, "다음 갈림길
+          // (마일스톤)"이 바뀔 때만 현재 위치→그 마일스톤 방향으로 지도를
+          // 한 번 회전시켜 고정한다.
+          //
+          // ⚠️ 애초에는 코스 길이 비례 고정 거리(segmentLengthM) 구간으로
+          // 재정렬했는데, 갈림길이 촘촘한 짧은 코스(예: 전체 180m에
+          // 갈림길 4개)에서는 그 구간 경계가 실제 갈림길 위치와 맞지
+          // 않아, 지도가 실제 경로와 다른 엉뚱한 대각선 방향으로 도는
+          // 문제가 실사용 중 확인됐다. 마일스톤 기준으로 바꾸면 "다음
+          // 목적지 방향이 화면 위"라는 목표가 갈림길 단위로 정확히
+          // 맞아떨어진다 — updateNavigationToast의 텍스트 안내("갈림길1
+          // → 갈림길2")와도 findNextMilestone()을 공유해 항상 같은
+          // 목적지를 가리킨다.
+          if (nearestIdx >= 0) {
+            const traveledDist = cumulativeDistances[nearestIdx] || 0;
+            const milestones = findNextMilestone(traveledDist);
+            if (milestones && milestones.nextM) {
+              const newTargetKey = milestones.nextM.name + '@' + milestones.nextM.distanceM;
+              if (newTargetKey !== currentSegmentTargetKey) {
+                segmentTargetBearing = calculateBearing(lat, lon, milestones.nextM.lat, milestones.nextM.lon);
+                renderMovingRotation(segmentTargetBearing);
+                currentSegmentTargetKey = newTargetKey;
+              }
+            } else if (segmentLengthM > 0) {
+              // 마일스톤이 없는 일반 GPX(웨이포인트 없이 단순 트랙)에 대한
+              // 폴백 — 코스 길이 비례 고정 거리 구간 재정렬을 그대로 유지.
+              const newSegIdx = getSegmentIndex(traveledDist, segmentLengthM);
+              if (newSegIdx !== currentSegmentIndex) {
+                const segStartDist = newSegIdx * segmentLengthM;
+                const segEndDist = segStartDist + segmentLengthM;
+                const segStartPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segStartDist);
+                const segEndPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segEndDist);
+                if (segStartPt && segEndPt) {
+                  segmentTargetBearing = calculateBearing(segStartPt.lat, segStartPt.lon, segEndPt.lat, segEndPt.lon);
+                  renderMovingRotation(segmentTargetBearing);
+                }
+                currentSegmentIndex = newSegIdx;
+              }
+            }
+          }
         } else if (result.isStopped) {
           // 멈추면 stopTargetBearing(다음 GPX 목표 지점 방향)을 갱신해둔다 —
-          // 하단 큰 화살표/텍스트 안내(updateNavigationToast)가 이 값과
-          // gpsMovementHeading(마지막 진행 방향, 정지해도 그대로 유지됨)을
-          // 비교해 "몇 시 방향"을 계산하는 유일한 용도로 쓰인다.
+          // 이 값은 지도 회전(폰 상대회전 기준, applyStopPhoneRotation 참고)과
+          // 무관하게, 화살표가 독립적으로 목표점을 가리키고 🔵/🔴를
+          // 판정하는 용도로 쓰인다.
           //
           // ⚠️ 이탈 상태에서도 "가장 가까운 지점으로 직선 복귀" 방향을
           // 쓰면 안 된다 — 그 직선상에 절벽·계곡 등 위험 지형이 있을 수
@@ -3010,14 +3435,34 @@
           if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1 && nearestPoint) {
             // stopTargetBearing(다음 GPX 목표 지점의 절대 방위)을 매 픽스마다
             // 갱신한다 — 정지 중에도 GPS 위치가 미세하게 계속 들어오므로
-            // 목표점이 조금씩 바뀔 수 있다.
+            // 목표점이 조금씩 바뀔 수 있다. 이 값은 지도 회전과 무관하게
+            // 화살표/🔵🔴 판정에만 쓰인다(computeStopTargetBearing/applyStopPhoneRotation 참고).
             stopTargetBearing = computeStopTargetBearing(nearestPoint.lat, nearestPoint.lon, nearestIdx);
 
-            // 센서가 없으므로 정지 진입 즉시(탐색 대기 없이) GPS 좌표만으로
-            // 🔵/🔴 판정을 바로 확정한다 — gpsMovementHeading은 이미 알고
-            // 있는 값이라 기다릴 이유가 없다.
-            if (stopTargetBearing !== null && gpsMovementHeading !== null) {
-              updateDirectionArrowJudgement(gpsMovementHeading, stopTargetBearing);
+            if (stopTargetBearing !== null) {
+              // 정지 상태로 막 전환된 순간(1회성 이벤트): 이전 이동 방향을
+              // 절대 재사용하지 않고, "정지 판정이 내려지는 즉시" 핸드폰이
+              // 향한 실제 방위를 0도(원점)로 새로 잡는다 — 이후 사용자가
+              // 폰을 돌리는 만큼 지도가 그대로 따라 돈다.
+              if (!wasStoppedBeforeThisFix) {
+                stopBaseHeading = null;
+                referenceHeading = null; // 원점 재설정 — 아래에서 즉시(또는 다음 센서 이벤트에서) 확정
+                referenceAlpha = null;   // 자이로 추적 기준점도 함께 재설정 — 다음 handleOrientation 이벤트에서 새로 스냅샷
+                gyroRelativeRotation = 0;
+                lastOrientationAlpha = null;
+                stopEnteredAt = Date.now();
+                isDirectionSearching = true;
+                updateGpsDirectionState();
+              }
+
+              // deviceorientation의 최신 캐시값이 있으면 다음 센서 이벤트를
+              // 기다리지 않고 이 자리에서 즉시 렌더링한다(GPS 픽스 콜백과
+              // 센서 이벤트 콜백 사이의 시차 최소화). 정지 진입 순간뿐
+              // 아니라 정지 중 매 픽스에서도 호출해, 목표점이 갱신될 때
+              // 화살표가 최신 방향을 계속 따라가도록 한다.
+              if (lastKnownPhoneHeading !== null) {
+                applyStopPhoneRotation(lastKnownPhoneHeading, lastOrientationAlpha);
+              }
             }
           }
         }
@@ -3032,7 +3477,7 @@
           });
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
           map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
-          // 내 위치를 켜는 순간부터 GPS 켜짐 모드(자동 센터링)와 방향 화살표를 함께 시작한다.
+          // 내 위치를 켜는 순간부터 지도 회전(길찾기 모드)과 방향 화살표를 함께 시작한다.
           if (!isHeadingUp) {
             setHeadingUpMode(true, true);
           }
