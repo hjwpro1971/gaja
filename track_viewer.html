@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_bottom_arrow_hysteresis';
+      const APP_BUILD = 'v20260913_milestone_coord_dedup';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v40').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v41').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v40)
+      📲 바로가기 (v41)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=40')
+      navigator.serviceWorker.register('./sw.js?v=41')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1668,13 +1668,23 @@
     if (!points || !points.length) return [];
     const totalDistM = (cumDistances && cumDistances.length) ? cumDistances[cumDistances.length - 1] : 0;
     const list = [];
+    // ⚠️ 중복 판정은 "이름"이 아니라 "좌표"로 해야 한다. "갈림길", "쉼터"
+    // 같은 이름은 한 코스 안에서 여러 번 반복되는 게 흔한데, 이름만으로
+    // 중복 제거하면 실제로 서로 다른 지점인 두 번째 이후 "갈림길"들이
+    // 통째로 안내에서 빠지는 버그가 있었다(연인산 코스 실측: 웨이포인트
+    // 11개 중 "갈림길" 이름 6개가 스킵되어 마일스톤이 5개로 줄었다).
+    // 좌표를 적당히 반올림해 키로 쓰면, 완전히 같은 지점을 가리키는 진짜
+    // 중복 항목(예: GPX 편집 중 실수로 두 번 찍힌 경우)만 걸러내고, 이름이
+    // 같아도 좌표가 다른 지점은 각각 별개로 등록된다.
     const seen = new Set();
 
     if (waypoints && waypoints.length > 0) {
       waypoints.forEach(w => {
         const n = (w.name || '').trim();
-        if (!n || seen.has(n)) return;
-        seen.add(n);
+        if (!n) return;
+        const coordKey = w.lat.toFixed(5) + ',' + w.lon.toFixed(5); // 약 1m 단위 반올림
+        if (seen.has(coordKey)) return;
+        seen.add(coordKey);
 
         let minD = Infinity;
         let nearestIdx = 0;
