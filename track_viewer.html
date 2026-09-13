@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_min_segment_30m';
+      const APP_BUILD = 'v20260913_bottom_arrow_nav';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v30').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v31').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -225,6 +225,46 @@
        "지금 반대로 가고 있다"를 알 수 있게 한다. */
     .gps-toast.reversed {
       background: #ffebee; border: 2px solid #e57373; color: #c62828;
+    }
+
+    /* 🧭 하단 대형 방향 화살표 — 내비게이션 앱처럼 정지 시(갈림길에서
+       방향을 찾을 때) 화면 하단 중앙에 크게 표시한다. 텍스트("1시 방향")
+       보다 한눈에 직관적으로 어느 쪽으로 몸을 돌려야 하는지 보여주는 게
+       목적이라, 회전 각도(angleDiffToClockDirection이 계산한 값)를 그대로
+       CSS rotate에 적용해 실제 각도로 회전시킨다(12방향 스냅 없음).
+       화살표 자체의 기본 방향은 "위쪽(12시)=직진"을 기준으로 그려져 있다. */
+    .bottom-direction-arrow {
+      position: absolute; left: 50%; bottom: 100px; z-index: 998;
+      width: 88px; height: 88px; margin-left: -44px;
+      display: none; justify-content: center; align-items: center;
+      pointer-events: none;
+    }
+    .bottom-direction-arrow .arrow-bg {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(6px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25); border: 3px solid #1976d2;
+    }
+    .bottom-direction-arrow.reversed .arrow-bg {
+      border-color: #d32f2f;
+    }
+    .bottom-direction-arrow .arrow-rotor {
+      position: relative; width: 100%; height: 100%;
+      display: flex; justify-content: center; align-items: center;
+      /* transition 없음 — GPS/센서 갱신마다 즉시 반영(다른 회전 로직과
+         동일한 원칙: 처음엔 애니메이션 없이 즉시 반영으로 구현) */
+    }
+    .bottom-direction-arrow .arrow-glyph {
+      font-size: 48px; line-height: 1;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+    }
+    .bottom-direction-arrow .arrow-label {
+      position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; font-weight: 800; color: #1b5e20;
+      white-space: nowrap; background: rgba(255,255,255,0.9);
+      padding: 2px 8px; border-radius: 8px;
+    }
+    .bottom-direction-arrow.reversed .arrow-label {
+      color: #c62828;
     }
 
     /* 현재 내 위치 GPS 펄스 및 나아갈 방향 빔 스타일 */
@@ -424,7 +464,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v30)
+      📲 바로가기 (v31)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -450,6 +490,16 @@
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+</div>
+
+<!-- 🧭 하단 대형 방향 화살표 — 정지 중(갈림길에서 방향을 찾을 때)에만
+     표시. updateGpsDirectionState()가 회전각/색상/라벨을 함께 갱신한다. -->
+<div class="bottom-direction-arrow" id="bottomDirectionArrow">
+  <div class="arrow-bg"></div>
+  <div class="arrow-rotor" id="bottomArrowRotor">
+    <div class="arrow-glyph" id="bottomArrowGlyph">⬆️</div>
+  </div>
+  <div class="arrow-label" id="bottomArrowLabel">12시 방향</div>
 </div>
 
 <!-- 지도 레이어 선택 메뉴 -->
@@ -497,7 +547,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=30')
+      navigator.serviceWorker.register('./sw.js?v=31')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1347,6 +1397,27 @@
         }
       }
     }
+  }
+
+  // 🧭 하단 대형 방향 화살표(내비게이션 스타일) — 정지 시(갈림길에서
+  // 방향을 찾을 때)만 표시. angleDiff는 "목표 방향 - 현재 방향"이며,
+  // angleDiffToClockDirection이 이미 계산한 값을 그대로 재사용해 텍스트
+  // 안내("1시 방향")와 화살표가 항상 같은 값을 가리키도록 한다.
+  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
+    const el = document.getElementById('bottomDirectionArrow');
+    const rotor = document.getElementById('bottomArrowRotor');
+    const label = document.getElementById('bottomArrowLabel');
+    if (!el || !rotor || !label) return;
+
+    el.style.display = 'flex';
+    el.classList.toggle('reversed', !!isReversed);
+    rotor.style.transform = `rotate(${angleDiff}deg)`;
+    label.textContent = clockLabel;
+  }
+
+  function hideBottomDirectionArrow() {
+    const el = document.getElementById('bottomDirectionArrow');
+    if (el) el.style.display = 'none';
   }
 
   function createGpsIconHtml(heading) {
@@ -2632,6 +2703,7 @@
     if (!lastKnownPos) return;
 
     if (nearestPoint && isOffTrailState) {
+      hideBottomDirectionArrow(); // 이탈 안내는 좌/우 상대 방향(angleDiffToPlainKorean)이라 하단 화살표(시계 방향) UI와 별개
       // 숲/계곡 GPS 수신 불안정 시 오알람 방지 (정확도가 25m보다 나쁘면 대기)
       if (accuracy > 25 && offTrailStreakCount < 4) {
         toast.className = 'gps-toast';
@@ -2694,6 +2766,9 @@
           if (guidanceHeading !== null && !isNaN(guidanceHeading)) {
             const toNextAngleDiff = shortestAngleDiff(targetBearingForToast, guidanceHeading);
             clockInfo = angleDiffToClockDirection(toNextAngleDiff);
+            showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
+          } else {
+            hideBottomDirectionArrow();
           }
 
           // 역방향(경로를 등지고 반대로 가고 있음) 상태면 카드도 화살표
@@ -2721,15 +2796,20 @@
         if (stopTargetBearing !== null && guidanceHeading !== null && !isNaN(guidanceHeading)) {
           const toNextAngleDiff = shortestAngleDiff(stopTargetBearing, guidanceHeading);
           clockInfo = angleDiffToClockDirection(toNextAngleDiff);
+          showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
+        } else {
+          hideBottomDirectionArrow();
         }
         toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
         toast.innerText = `🧭 [정지] 등산로 ${clockInfo.arrow} ${clockInfo.clock} · 남은 ${remainingStr}`;
         return;
       }
 
+      hideBottomDirectionArrow(); // 이동 중(속도 있음)에는 시계 방향 안내 자체가 없으므로 숨김
       toast.className = 'gps-toast';
       toast.innerText = `🧭 위쪽으로 따라가세요 · 남은 ${remainingStr}`;
     } else {
+      hideBottomDirectionArrow();
       toast.className = 'gps-toast';
       toast.innerText = `🧭 위쪽으로 따라가세요`;
     }
@@ -2931,6 +3011,7 @@
     btn.innerText = '📍';
     btn.classList.remove('active');
     toast.style.display = 'none';
+    hideBottomDirectionArrow();
     showToastBadge('📍 내 위치 추적을 종료했습니다.');
   }
 
