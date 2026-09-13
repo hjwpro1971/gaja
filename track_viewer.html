@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_arrow_rotation_fix';
+      const APP_BUILD = 'v20260913_direction_debug_logger';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v33').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v34').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -464,7 +464,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v33)
+      📲 바로가기 (v34)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -490,6 +490,7 @@
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+  <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px;">🐞</button>
 </div>
 
 <!-- 🧭 하단 대형 방향 화살표 — 정지 중(갈림길에서 방향을 찾을 때)에만
@@ -547,7 +548,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=33')
+      navigator.serviceWorker.register('./sw.js?v=34')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -907,6 +908,95 @@
   const gpsFilterEngine = new GpsFilterEngine();
   // ────────────────────────────────────────────────────────────────
 
+  // ════════════════════════════════════════════════════════════════
+  // 🐞 회전 로직 검증용 디버그 로거 — 사진으로 한 장씩 비교하는 대신,
+  // 1초 주기로 회전 계산의 모든 중간값을 CSV로 남겨 어느 계산 단계에서
+  // 어긋나는지 데이터로 추적할 수 있게 한다. GPS 추적 시작/종료에 맞춰
+  // 자동 시작/자동 다운로드되며, dumpDirectionDebugLog()로 언제든 수동
+  // 저장도 가능하다.
+  class DirectionDebugLogger {
+    constructor() {
+      this.logs = [];
+      this.isLogging = false;
+      this.timerId = null;
+    }
+    start() {
+      this.logs = [];
+      this.isLogging = true;
+      if (this.timerId) clearInterval(this.timerId);
+      this.timerId = setInterval(() => this.captureSnapshot(), 1000);
+      console.log('🐞 [DirectionDebugLogger] 회전 검증 로그 기록 시작');
+    }
+    stop() {
+      this.isLogging = false;
+      if (this.timerId) {
+        clearInterval(this.timerId);
+        this.timerId = null;
+      }
+      console.log(`🐞 [DirectionDebugLogger] 기록 종료 (총 ${this.logs.length}개)`);
+    }
+    // 1초마다 현재 전역 상태를 그대로 스냅샷한다 — watchPosition 콜백
+    // 내부 값을 별도로 안 건드리고, 이미 존재하는 전역 변수만 읽는다.
+    captureSnapshot() {
+      if (!this.isLogging) return;
+      const mapEl = document.getElementById('map');
+      const wrapper = document.getElementById('gpsHeadingWrapper');
+      const mapCssTransform = mapEl ? mapEl.style.transform : '';
+      const arrowCssTransform = wrapper ? wrapper.style.transform : '';
+
+      this.logs.push({
+        timestamp: new Date().toISOString(),
+        lat: lastKnownPos ? Number(lastKnownPos.lat.toFixed(7)) : '',
+        lon: lastKnownPos ? Number(lastKnownPos.lon.toFixed(7)) : '',
+        isCurrentlyStopped: isCurrentlyStopped,
+        isDirectionSearching: isDirectionSearching,
+        isDirectionReversed: isDirectionReversed,
+        referenceHeading: referenceHeading !== null ? Math.round(referenceHeading) : '',
+        phoneHeading: phoneHeading !== null ? Math.round(phoneHeading) : '',
+        lastKnownPhoneHeading: lastKnownPhoneHeading !== null ? Math.round(lastKnownPhoneHeading) : '',
+        gpsMovementHeading: gpsMovementHeading !== null ? Math.round(gpsMovementHeading) : '',
+        stopTargetBearing: stopTargetBearing !== null ? Math.round(stopTargetBearing) : '',
+        segmentTargetBearing: segmentTargetBearing !== null ? Math.round(segmentTargetBearing) : '',
+        currentSegmentTargetKey: currentSegmentTargetKey || '',
+        actualMapRotation: window.actualMapRotation !== undefined ? Math.round(window.actualMapRotation) : '',
+        lastStopArrowRotation: Math.round(lastStopArrowRotation || 0),
+        mapCssTransform: mapCssTransform,
+        arrowCssTransform: arrowCssTransform,
+      });
+    }
+    exportCSV(filename = `direction_debug_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`) {
+      if (this.logs.length === 0) {
+        alert('저장된 디버그 로그 데이터가 없습니다.');
+        return;
+      }
+      const headers = Object.keys(this.logs[0]);
+      const csvRows = [headers.join(',')];
+      for (const row of this.logs) {
+        const values = headers.map(header => {
+          const val = row[header];
+          return typeof val === 'string' ? `"${val}"` : val;
+        });
+        csvRows.push(values.join(','));
+      }
+      const csvContent = "﻿" + csvRows.join('\n'); // UTF-8 BOM
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      console.log(`🐞 [DirectionDebugLogger] CSV 저장 완료: ${filename}`);
+      showToastBadge('🐞 회전 검증 CSV 파일이 다운로드 되었습니다.');
+    }
+  }
+  const directionDebugLogger = new DirectionDebugLogger();
+  // 언제든 수동으로 지금까지의 로그를 저장하고 싶을 때 콘솔에서
+  // window.__dumpDirectionDebugLog() 호출.
+  window.__dumpDirectionDebugLog = () => directionDebugLogger.exportCSV();
+  // ════════════════════════════════════════════════════════════════
 
   let map = null;
   let currentLayer = null;
@@ -3040,6 +3130,12 @@
     toast.style.display = 'none';
     hideBottomDirectionArrow();
     showToastBadge('📍 내 위치 추적을 종료했습니다.');
+
+    // [회전 검증 디버그 로그 자동 저장]
+    if (directionDebugLogger.isLogging) {
+      directionDebugLogger.stop();
+      directionDebugLogger.exportCSV();
+    }
   }
 
   function forceDirectionSearch() {
@@ -3095,6 +3191,9 @@
       alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
       return;
     }
+
+    // [회전 검증 디버그 로그 시작]
+    directionDebugLogger.start();
 
     // 나침반 센서 리스너 활성화
     initCompass();
