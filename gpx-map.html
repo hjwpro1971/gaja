@@ -52,6 +52,7 @@
 </style>
   <script src="korea_pois.js"></script>
   <script src="my_custom_pois.js"></script>
+  <script src="mountain_junctions.js"></script>
   <script src="gh_token.js"></script>
 </head>
 <body>
@@ -1105,6 +1106,43 @@ async function initRoutePOIs(points) {
         });
       }
     });
+
+    // 3-3. 갈림길 자동 감지 — mountain_junctions.js(OSM 등산로 way들이
+    // 실제로 교차하는 지점만 걸러 미리 계산해둔 정적 데이터)에서, 이
+    // GPX 트랙이 10m 이내로 지나가는 좌표를 자동으로 "갈림길" POI로
+    // 추가한다. 사용자가 매번 손으로 갈림길을 찍지 않아도 되게 하려는
+    // 목적 — 기존 웨이포인트/외부 POI와 마찬가지로 한 번 자동 채워진
+    // 뒤 UI에서 자유롭게 수정/삭제 가능하다.
+    const JUNCTION_MATCH_RADIUS_KM = 0.01; // 10m
+    if (window.MountainJunctions && window.MountainJunctions.length > 0) {
+      window.MountainJunctions.forEach((j, jIdx) => {
+        const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: j.lat, lon: j.lon }, points, cumDist);
+        if (minDistKm > JUNCTION_MATCH_RADIUS_KM) return;
+        if (routeDistKm < 0.02 || routeDistKm > totalDist - 0.02) return; // 들머리/날머리 바로 근처는 제외
+
+        // 좌표 기준 중복 방지(연인산 사례처럼 "갈림길" 이름이 반복돼도
+        // 전부 살아남아야 한다 — 이름이 아니라 실제 좌표로만 중복을 판정).
+        const dedupeKey = `junction_${Math.round(j.lat * 100000)}_${Math.round(j.lon * 100000)}`;
+        if (seenNames.has(dedupeKey)) return;
+        // 이미 다른 소스(웨이포인트/외부 POI)로 10m 이내에 등록된 지점이면
+        // 중복 POI를 만들지 않는다.
+        const tooCloseToExisting = intermediate.some(p => haversineKm({ lat: p.lat, lon: p.lon }, { lat: j.lat, lon: j.lon }) <= JUNCTION_MATCH_RADIUS_KM);
+        if (tooCloseToExisting) return;
+        seenNames.add(dedupeKey);
+
+        intermediate.push({
+          id: 'junction_' + jIdx + '_' + Date.now(),
+          name: '갈림길',
+          category: '갈림길',
+          icon: '🔀',
+          lat: j.lat,
+          lon: j.lon,
+          ele: null,
+          routeDistKm: routeDistKm,
+          isTerminal: false
+        });
+      });
+    }
 
     intermediate.sort((a, b) => a.routeDistKm - b.routeDistKm);
 
