@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260914_battery_sleep_mode';
+      const APP_BUILD = 'v20260914_wayfind_mode';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v44').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v45').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -340,6 +340,33 @@
       box-shadow: 0 4px 12px rgba(46,125,50,0.3);
     }
 
+    /* 🧭 길찾기 모드 — 온트레일 방향 재확인용 수동 나침반 정렬 모달 */
+    .wayfind-compass-wrap {
+      position: relative; width: 160px; height: 160px; margin: 4px auto 16px;
+      border-radius: 50%; background: #f1f8e9; border: 2px solid #c8e6c9;
+    }
+    .wayfind-compass-arrow {
+      position: absolute; top: 50%; left: 50%; width: 0; height: 0;
+      transform-origin: center center;
+      transition: transform 0.15s ease-out;
+    }
+    .wayfind-compass-arrow .glyph {
+      position: absolute; left: -22px; top: -70px; font-size: 44px; line-height: 1;
+    }
+    .wayfind-compass-center { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: #2e7d32; }
+    .wayfind-status-badge {
+      display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
+      margin-bottom: 14px; background: #eceff1; color: #546e7a;
+    }
+    .wayfind-status-badge.aligned { background: #e8f5e9; color: #1b5e20; }
+    .wayfind-status-badge.close { background: #fff3e0; color: #e65100; }
+    .btn-wayfind-confirm {
+      width: 100%; padding: 15px; font-size: 16px; font-weight: 800; color: #ffffff;
+      background: #2e7d32; border: none; border-radius: 12px; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(46,125,50,0.3); margin-top: 4px;
+    }
+    .btn-wayfind-confirm:disabled { background: #9e9e9e; box-shadow: none; cursor: default; }
+
     /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
     .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
     .saved-route-item {
@@ -431,7 +458,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v44)
+      📲 바로가기 (v45)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -454,6 +481,7 @@
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
   <button class="fab-btn" id="forceStopBtn" onclick="forceDirectionSearch()" title="즉시 방향 찾기" style="display:none;">🧭</button>
+  <button class="fab-btn" id="wayfindBtn" onclick="openWayfindMode()" title="길찾기 (방향 맞추기)">🧭</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
@@ -468,6 +496,24 @@
     <div class="arrow-glyph" id="bottomArrowGlyph">⬆️</div>
   </div>
   <div class="arrow-label" id="bottomArrowLabel">12시 방향</div>
+</div>
+
+<!-- 🧭 길찾기 모드 모달 — 온트레일에서 방향이 헷갈릴 때, 사용자가 직접
+     휴대폰을 돌려 실제 길과 맞춘 뒤 확정 버튼을 누르는 수동 방식.
+     GPS/GPX 자동판정 대신 사람의 눈이 최종 확인을 맡는다. -->
+<div class="empty-modal" id="wayfindModal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close-btn" onclick="closeWayfindMode()" title="닫기">✕</button>
+    <div class="icon">🧭</div>
+    <h2>길찾기</h2>
+    <p>실제 산길을 바라본 상태에서<br>휴대폰을 천천히 돌려주세요.<br>화살표가 위(12시)를 가리키면 맞은 방향입니다.</p>
+    <div class="wayfind-compass-wrap">
+      <div class="wayfind-compass-arrow" id="wayfindArrow"><div class="glyph">⬆️</div></div>
+      <div class="wayfind-compass-center"></div>
+    </div>
+    <div class="wayfind-status-badge" id="wayfindStatusBadge">방향을 맞춰주세요</div>
+    <button class="btn-wayfind-confirm" id="wayfindConfirmBtn" onclick="confirmWayfindDirection()" disabled>이 방향으로 확정</button>
+  </div>
 </div>
 
 <!-- 지도 레이어 선택 메뉴 -->
@@ -515,7 +561,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=44')
+      navigator.serviceWorker.register('./sw.js?v=45')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1812,6 +1858,118 @@
     if (abs <= 45) return `${side}으로 조금`;
     if (abs <= 100) return `${side}으로`;
     return `${side}으로 많이`;
+  }
+
+  // ===================================================================
+  // 🧭 길찾기 모드 — 온트레일 방향 재확인용.
+  // 상시 나침반은 쓰지 않는 앱 전체 원칙과 달리, 이 모드는 사용자가
+  // 버튼을 눌러 켠 동안에만 한시적으로 나침반(deviceorientation)을
+  // 구동한다. GPS가 자동으로 순/역방향을 판정하지 않고, 대신 사용자가
+  // 눈으로 실제 길과 지도를 맞춘 뒤 직접 확정 버튼을 눌러야만 방향이
+  // 정해진다 — 나침반 오차를 사람이 최종 보정하는 구조.
+  // ===================================================================
+  const WAYFIND_TARGET_AHEAD_M = 20; // 목표 방위각을 구할 전방 지점 거리
+  const WAYFIND_ALIGNED_DEG = 20;    // 이 이내면 "방향이 맞았습니다"
+  const WAYFIND_CLOSE_DEG = 50;      // 이 이내면 "조금 더" 안내
+
+  let isWayfindActive = false;
+  let wayfindTargetBearing = null; // 이 모드가 켜져 있는 동안의 목표 방위각(고정, 재계산 안 함)
+  let wayfindLastAlpha = null;
+
+  function computeWayfindTargetBearing() {
+    if (!lastKnownPos || !currentPoints || currentPoints.length < 2) return null;
+    const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
+    if (nearest.index < 0) return null;
+    const traveledDist = cumulativeDistances[nearest.index] || 0;
+    const ahead = findPointAheadByDistance(currentPoints, cumulativeDistances, nearest.index, WAYFIND_TARGET_AHEAD_M);
+    if (!ahead) return null;
+    return calculateBearing(lastKnownPos.lat, lastKnownPos.lon, ahead.lat, ahead.lon);
+  }
+
+  function handleWayfindOrientation(e) {
+    if (e.alpha === null || isNaN(e.alpha)) return;
+    if (wayfindTargetBearing === null) return;
+
+    let phoneAbsHeading = e.webkitCompassHeading;
+    if (phoneAbsHeading === undefined || phoneAbsHeading === null) {
+      phoneAbsHeading = (360 - e.alpha) % 360;
+    }
+
+    const diff = shortestAngleDiff(wayfindTargetBearing, phoneAbsHeading);
+    renderWayfindCompass(diff);
+  }
+
+  function renderWayfindCompass(diff) {
+    const arrow = document.getElementById('wayfindArrow');
+    const badge = document.getElementById('wayfindStatusBadge');
+    const confirmBtn = document.getElementById('wayfindConfirmBtn');
+    if (!arrow || !badge || !confirmBtn) return;
+
+    arrow.style.transform = `rotate(${diff}deg)`;
+
+    const abs = Math.abs(diff);
+    if (abs <= WAYFIND_ALIGNED_DEG) {
+      badge.textContent = '🟢 방향이 맞았습니다';
+      badge.className = 'wayfind-status-badge aligned';
+      confirmBtn.disabled = false;
+    } else if (abs <= WAYFIND_CLOSE_DEG) {
+      badge.textContent = `🟠 ${angleDiffToPlainKorean(diff)} 돌려주세요`;
+      badge.className = 'wayfind-status-badge close';
+      confirmBtn.disabled = true;
+    } else {
+      badge.textContent = `${angleDiffToPlainKorean(diff)} 돌려주세요`;
+      badge.className = 'wayfind-status-badge';
+      confirmBtn.disabled = true;
+    }
+  }
+
+  function openWayfindMode() {
+    wayfindTargetBearing = computeWayfindTargetBearing();
+    if (wayfindTargetBearing === null) {
+      alert('현재 위치를 아직 확인할 수 없어요.\n[내 위치] 버튼을 먼저 눌러주세요.');
+      return;
+    }
+
+    const modal = document.getElementById('wayfindModal');
+    if (modal) modal.style.display = 'flex';
+
+    const confirmBtn = document.getElementById('wayfindConfirmBtn');
+    if (confirmBtn) confirmBtn.disabled = true;
+    const badge = document.getElementById('wayfindStatusBadge');
+    if (badge) { badge.textContent = '방향을 맞춰주세요'; badge.className = 'wayfind-status-badge'; }
+
+    isWayfindActive = true;
+    wayfindLastAlpha = null;
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleWayfindOrientation, true);
+          } else {
+            alert('나침반 권한이 허용되지 않아 길찾기 모드를 사용할 수 없어요.');
+            closeWayfindMode();
+          }
+        })
+        .catch(() => { closeWayfindMode(); });
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
+      window.addEventListener('deviceorientation', handleWayfindOrientation, true);
+    }
+  }
+
+  function closeWayfindMode() {
+    isWayfindActive = false;
+    wayfindTargetBearing = null;
+    window.removeEventListener('deviceorientation', handleWayfindOrientation, true);
+    window.removeEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
+    const modal = document.getElementById('wayfindModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function confirmWayfindDirection() {
+    showToastBadge('🧭 방향이 확정되었습니다.');
+    closeWayfindMode();
   }
 
   // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
