@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_direction_hardfilter';
+      const APP_BUILD = 'v20260913_milestone_trail_bearing';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v38').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v39').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v38)
+      📲 바로가기 (v39)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=38')
+      navigator.serviceWorker.register('./sw.js?v=39')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1692,7 +1692,17 @@
           icon = '🔀'; color = '#6a1b9a';
         }
 
-        list.push({ name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color });
+        // 방향 안내(하단 화살표/텍스트)는 웨이포인트의 원본 좌표가 아니라
+        // 트랙에 매칭된 좌표(trailLat/trailLon)를 써야 한다 — 웨이포인트가
+        // 실제 등산로에서 떨어진 지점(정상석, 전망대 등)이면 원본 좌표로
+        // 직선 방향을 계산했을 때 실제 등산로 진행 방향과 다른 방향을
+        // 가리킬 수 있다. name/거리 표시용 lat/lon은 원본을 유지하되,
+        // 방향 계산 전용 필드를 별도로 둔다.
+        const trailPt = points[nearestIdx];
+        list.push({
+          name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
+          trailLat: trailPt.lat, trailLon: trailPt.lon,
+        });
       });
     }
 
@@ -1714,7 +1724,9 @@
             ele: peak.ele,
             distanceM: peakDistM,
             icon: '⛰️',
-            color: '#e65100'
+            color: '#e65100',
+            trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
+            trailLon: peak.lon,
           });
         }
       }
@@ -1722,11 +1734,11 @@
       // 들머리 / 날머리가 없으면 기본 추가
       if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
         const startPt = points[0];
-        list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2' });
+        list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2', trailLat: startPt.lat, trailLon: startPt.lon });
       }
       if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
         const endPt = points[points.length - 1];
-        list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f' });
+        list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
       }
     }
     
@@ -2593,7 +2605,7 @@
           // 발생했던 버그), 반드시 같은 소스를 참조하도록 통일한다.
           const targetBearingForToast = stopTargetBearing !== null
             ? stopTargetBearing
-            : calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nextM.lat, nextM.lon);
+            : calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nextM.trailLat, nextM.trailLon);
 
           let clockInfo = { clock: '진행 방향', arrow: '🧭' };
           const guidanceHeading = getCurrentAbsHeadingForGuidance();
