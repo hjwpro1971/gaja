@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_zoom_direction_arrow_fix';
+      const APP_BUILD = 'v20260913_direction_hardfilter';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v37').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v38').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v37)
+      📲 바로가기 (v38)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=37')
+      navigator.serviceWorker.register('./sw.js?v=38')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1526,48 +1526,64 @@
   let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
   const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
   const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
-  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 방향 일치도를 볼 때 쓰는 최신 이동방향
+  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 진행방향을 판별할 때 쓰는 최신 이동방향
 
-  // 왕복 코스에서 나가는 길과 돌아오는 길이 물리적으로 거의 같은 좌표에
-  // 겹치는 구간(특히 왕복 전환점 근처)에서는, 순수 최단거리만으로는 두
-  // 세그먼트 중 어느 쪽이 "진짜 지금 걷고 있는 방향"인지 구분할 수 없다
-  // — 그날의 GPS 오차에 따라 순방향/역방향이 뒤집혀 잡히면서 "순방향으로
-  // 걷고 있는데 역주행 경고가 계속 온다"는 문제가 생겼다.
-  // 거리가 이 값(m) 이내로 비슷한 후보가 여럿이면, 최근 실제 이동 방향
-  // (gpsMovementHeading)과 세그먼트 방향이 더 일치하는 쪽을 우선한다.
-  const AMBIGUOUS_DISTANCE_MARGIN_M = 8.0;
+  // 실제로 걷는 방향은 항상 하나뿐이다 — GPX 상에 막다른 길을 왕복하는
+  // 구간이 있어 "가는 길"과 "오는 길" 좌표가 거의 겹치더라도, 사용자
+  // 입장에서는 둘 중 하나로 애매할 이유가 없다. 그런데 순수 최단거리
+  // 비교(또는 거리에 작은 방향 페널티만 더하는 방식)는 GPS 오차 1~2m
+  // 차이로도 반대편 세그먼트를 골라버릴 수 있었다 — "순방향으로 잘
+  // 걷고 있는데 역방향으로 오판"되는 근본 원인이었다.
+  // 그래서 페널티가 아니라 하드 필터로 바꾼다: 최근 실제 이동방향과
+  // REVERSE_SEGMENT_EXCLUDE_DEG(90도) 이상 어긋나는 세그먼트는 거리와
+  // 무관하게 아예 후보에서 제외하고, 남은(진행방향과 맞는) 세그먼트들
+  // 중에서만 최단거리로 고른다. 진행방향 정보가 아직 없으면(GPS 막
+  // 켠 시점 등) 필터 없이 순수 거리로 폴백한다.
+  const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
 
   // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
   function findNearestInRange(lat, lon, points, startIdx, endIdx) {
     let minDist = Infinity;
     let nearestPoint = points[startIdx] || points[0];
     let nearestIdx = startIdx;
-    let bestScore = Infinity; // 거리에 방향 불일치 페널티를 더한 종합 점수
 
+    // 1차: 진행방향과 심하게 어긋나는(REVERSE_SEGMENT_EXCLUDE_DEG 이상)
+    // 세그먼트를 제외한 상태로 최단거리를 찾는다.
     for (let i = startIdx; i < endIdx; i++) {
       const a = points[i];
       const b = points[i + 1];
-      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
 
-      // 거리 하나만으로 최선을 결정하지 않고, 최단거리보다
-      // AMBIGUOUS_DISTANCE_MARGIN_M 이내로 붙어있는 후보들 사이에서는
-      // 진행 방향과의 일치도로 승부를 가른다.
-      let score = d;
-      if (latestMovementBearingForTrailMatch !== null && d < minDist + AMBIGUOUS_DISTANCE_MARGIN_M) {
+      if (latestMovementBearingForTrailMatch !== null) {
         const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
         const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
-        // 방향이 어긋날수록(최대 180도) 거리에 페널티를 더한다. 계수는
-        // "방향이 정반대(180도)면 거리 차이 8m 정도는 뒤집을 만큼" 크게.
-        score = d + (mismatch / 180) * AMBIGUOUS_DISTANCE_MARGIN_M;
+        if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) continue; // 반대 방향 세그먼트는 후보에서 제외
       }
 
-      if (d < minDist) minDist = d;
-      if (score < bestScore) {
-        bestScore = score;
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      if (d < minDist) {
+        minDist = d;
         nearestIdx = i;
         const dA = haversineMeters(lat, lon, a.lat, a.lon);
         const dB = haversineMeters(lat, lon, b.lat, b.lon);
         nearestPoint = dA <= dB ? a : b;
+      }
+    }
+
+    // 2차 폴백: 진행방향과 맞는 세그먼트가 범위 안에 하나도 없으면(예:
+    // 방향 전환 직후라 아직 반대편에 있음) 필터 없이 순수 거리로 재탐색 —
+    // "후보가 아예 없어서 위치를 못 찾는" 상황을 막는다.
+    if (minDist === Infinity) {
+      for (let i = startIdx; i < endIdx; i++) {
+        const a = points[i];
+        const b = points[i + 1];
+        const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+        if (d < minDist) {
+          minDist = d;
+          nearestIdx = i;
+          const dA = haversineMeters(lat, lon, a.lat, a.lon);
+          const dB = haversineMeters(lat, lon, b.lat, b.lon);
+          nearestPoint = dA <= dB ? a : b;
+        }
       }
     }
 
