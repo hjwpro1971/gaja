@@ -1,5 +1,5 @@
-// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v28)
-const CACHE_NAME = 'gaja-trail-cache-v28';
+// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v29)
+const CACHE_NAME = 'gaja-trail-cache-v29';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',
@@ -18,6 +18,18 @@ self.addEventListener('install', event => {
     })
   );
   self.skipWaiting();
+});
+
+// 페이지 쪽(track_viewer.html)이 새 서비스워커의 'installed' 상태를
+// 감지하면 이 메시지를 보내 즉시 활성화를 요청한다. self.skipWaiting()을
+// install 시점에 호출해도, PWA가 백그라운드에 오래 떠 있는 등 표준
+// 라이프사이클상 활성화가 지연되는 경우가 있어 명시적으로 한 번 더
+// 트리거한다 — 이게 없으면 사이트 데이터를 완전히 지워야만 최신 버전이
+// 반영되는 문제가 있었다.
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // 활성화 시 구버전 캐시(v1 등) 자동 청소
