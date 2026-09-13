@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_bottom_arrow_nav';
+      const APP_BUILD = 'v20260913_milestone_realign';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v31').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v32').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -464,7 +464,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v31)
+      📲 바로가기 (v32)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -547,7 +547,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=31')
+      navigator.serviceWorker.register('./sw.js?v=32')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -989,9 +989,10 @@
   };
 
   // targetBearing 계열 — 좌표 계산 전용, 센서 값을 절대 참조하지 않는다.
-  let segmentLengthM = 0;          // 코스 로드 시 1회 계산, 코스 전체 길이 기반
-  let currentSegmentIndex = -1;    // 현재 있는 구간 번호
-  let segmentTargetBearing = null; // 현재 구간의 시작→끝 방위각(이동 중 지도 회전 기준)
+  let segmentLengthM = 0;          // 코스 로드 시 1회 계산, 코스 전체 길이 기반 (마일스톤 없는 코스의 폴백용)
+  let currentSegmentIndex = -1;    // 현재 있는 구간 번호 (폴백용)
+  let currentSegmentTargetKey = null; // 마일스톤 기준 재정렬의 "현재 목표" 식별자 — 이게 바뀔 때만 재정렬 트리거
+  let segmentTargetBearing = null; // 현재 구간(또는 다음 마일스톤)의 방위각(이동 중 지도 회전 기준)
   let stopTargetBearing = null;    // 정지 중 목표점 방위각(화살표가 가리키는 방향)
   let lastStopArrowRotation = 0;   // renderStoppedRotation이 마지막으로 적용한 화살표 회전값 — 드래그 복귀 시 재사용
 
@@ -1934,6 +1935,27 @@
     return list;
   }
 
+  // 현재 위치(누적거리 기준 traveledDist)를 기준으로 "다음 마일스톤"과
+  // "직전 마일스톤"을 찾는다. updateNavigationToast의 기존 로직과
+  // 동일한 15m 여유값을 그대로 써서, 이동 중 구간 재정렬이 화면에 보이는
+  // 텍스트 안내("갈림길1 → 갈림길2")와 항상 같은 목적지를 가리키도록
+  // 통일한다.
+  function findNextMilestone(traveledDist) {
+    if (!currentMilestones || currentMilestones.length < 2) return null;
+    let prevM = currentMilestones[0];
+    let nextM = currentMilestones[currentMilestones.length - 1];
+    for (let i = 0; i < currentMilestones.length; i++) {
+      if (currentMilestones[i].distanceM <= traveledDist + 15) {
+        prevM = currentMilestones[i];
+      }
+      if (currentMilestones[i].distanceM > traveledDist + 15) {
+        nextM = currentMilestones[i];
+        break;
+      }
+    }
+    return { prevM, nextM };
+  }
+
   function buildCumulativeDistances(points) {
     const dists = [0];
     for (let i = 1; i < points.length; i++) {
@@ -2254,6 +2276,7 @@
     const totalCourseDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
     segmentLengthM = computeSegmentLength(totalCourseDist);
     currentSegmentIndex = -1;   // 새 코스이므로 구간 재정렬을 처음부터 다시 트리거
+    currentSegmentTargetKey = null;
     segmentTargetBearing = null;
 
     if (polyline) map.removeLayer(polyline);
@@ -2736,19 +2759,14 @@
       const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
       const fmtM = m => `${(m / 1000).toFixed(2)}km`;
 
-      // 지명(마일스톤) 기반 실시간 구간 및 다음 목적지 판정
-      if (currentMilestones && currentMilestones.length >= 2) {
-        let prevM = currentMilestones[0];
-        let nextM = currentMilestones[currentMilestones.length - 1];
-        for (let i = 0; i < currentMilestones.length; i++) {
-          if (currentMilestones[i].distanceM <= traveledDist + 15) {
-            prevM = currentMilestones[i];
-          }
-          if (currentMilestones[i].distanceM > traveledDist + 15) {
-            nextM = currentMilestones[i];
-            break;
-          }
-        }
+      // 지명(마일스톤) 기반 실시간 구간 및 다음 목적지 판정.
+      // ⭐ findNextMilestone()은 이동 중 지도 재정렬 로직(watchPosition
+      // 콜백)과 완전히 동일한 함수 — 텍스트 안내와 지도 회전이 항상 같은
+      // "다음 목적지"를 가리키도록 소스를 통일한다.
+      const milestoneResult = findNextMilestone(traveledDist);
+      if (milestoneResult) {
+        const prevM = milestoneResult.prevM;
+        const nextM = milestoneResult.nextM;
         const distToNextM = Math.max(0, nextM.distanceM - traveledDist);
 
         if (isCurrentlyStopped) {
@@ -3092,6 +3110,7 @@
     phoneHeading = null;
     stopTargetBearing = null;
     currentSegmentIndex = -1; // 다음 픽스에서 첫 구간부터 다시 재정렬 트리거
+    currentSegmentTargetKey = null;
     segmentTargetBearing = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
@@ -3217,23 +3236,44 @@
             }
           }
 
-          // ⭐ 구간별 이산 재정렬 — 매 픽스마다 지도를 돌리지 않고, 현재
-          // 위치가 새 구간(segmentLengthM 단위)으로 넘어갈 때만 그 구간의
-          // 시작→끝 방위각(segmentTargetBearing)으로 지도를 한 번 회전시켜
-          // 고정한다. 지그재그(세부 꺾임)는 무시하고 순수 거리 기준만 본다.
-          if (nearestIdx >= 0 && segmentLengthM > 0) {
+          // ⭐ 재정렬 — 매 픽스마다 지도를 돌리지 않고, "다음 갈림길
+          // (마일스톤)"이 바뀔 때만 현재 위치→그 마일스톤 방향으로 지도를
+          // 한 번 회전시켜 고정한다.
+          //
+          // ⚠️ 애초에는 코스 길이 비례 고정 거리(segmentLengthM) 구간으로
+          // 재정렬했는데, 갈림길이 촘촘한 짧은 코스(예: 전체 180m에
+          // 갈림길 4개)에서는 그 구간 경계가 실제 갈림길 위치와 맞지
+          // 않아, 지도가 실제 경로와 다른 엉뚱한 대각선 방향으로 도는
+          // 문제가 실사용 중 확인됐다. 마일스톤 기준으로 바꾸면 "다음
+          // 목적지 방향이 화면 위"라는 목표가 갈림길 단위로 정확히
+          // 맞아떨어진다 — updateNavigationToast의 텍스트 안내("갈림길1
+          // → 갈림길2")와도 findNextMilestone()을 공유해 항상 같은
+          // 목적지를 가리킨다.
+          if (nearestIdx >= 0) {
             const traveledDist = cumulativeDistances[nearestIdx] || 0;
-            const newSegIdx = getSegmentIndex(traveledDist, segmentLengthM);
-            if (newSegIdx !== currentSegmentIndex) {
-              const segStartDist = newSegIdx * segmentLengthM;
-              const segEndDist = segStartDist + segmentLengthM;
-              const segStartPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segStartDist);
-              const segEndPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segEndDist);
-              if (segStartPt && segEndPt) {
-                segmentTargetBearing = calculateBearing(segStartPt.lat, segStartPt.lon, segEndPt.lat, segEndPt.lon);
+            const milestones = findNextMilestone(traveledDist);
+            if (milestones && milestones.nextM) {
+              const newTargetKey = milestones.nextM.name + '@' + milestones.nextM.distanceM;
+              if (newTargetKey !== currentSegmentTargetKey) {
+                segmentTargetBearing = calculateBearing(lat, lon, milestones.nextM.lat, milestones.nextM.lon);
                 renderMovingRotation(segmentTargetBearing);
+                currentSegmentTargetKey = newTargetKey;
               }
-              currentSegmentIndex = newSegIdx;
+            } else if (segmentLengthM > 0) {
+              // 마일스톤이 없는 일반 GPX(웨이포인트 없이 단순 트랙)에 대한
+              // 폴백 — 코스 길이 비례 고정 거리 구간 재정렬을 그대로 유지.
+              const newSegIdx = getSegmentIndex(traveledDist, segmentLengthM);
+              if (newSegIdx !== currentSegmentIndex) {
+                const segStartDist = newSegIdx * segmentLengthM;
+                const segEndDist = segStartDist + segmentLengthM;
+                const segStartPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segStartDist);
+                const segEndPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, segEndDist);
+                if (segStartPt && segEndPt) {
+                  segmentTargetBearing = calculateBearing(segStartPt.lat, segStartPt.lon, segEndPt.lat, segEndPt.lon);
+                  renderMovingRotation(segmentTargetBearing);
+                }
+                currentSegmentIndex = newSegIdx;
+              }
             }
           }
         } else if (result.isStopped) {
