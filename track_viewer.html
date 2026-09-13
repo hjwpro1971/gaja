@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260914_countdown_turn_alert';
+      const APP_BUILD = 'v20260914_battery_sleep_mode';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v43').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v44').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v43)
+      📲 바로가기 (v44)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=43')
+      navigator.serviceWorker.register('./sw.js?v=44')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -988,12 +988,27 @@
 
   let isHeadingUp = false;      // GPS 켜짐(내 위치 자동 센터링) 모드 — 더 이상 지도를 회전시키지 않는다
   let showHeadingArrow = false; // 🧭 방향 화살표(시야각 빔) 표시 여부 — GPS 1클릭째는 숨기고, 2클릭째부터 표시
-  let stopEnteredAt = null;
+  let stopEnteredAt = null;     // 정지(STOPPED) 확정 시각 — 절전 모드 진입 타이머 기준
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
+
+  // 🔋 배터리 절전 모드 — 오래 정지(휴식/식사 등)하면 GPS 수신을 잠시
+  // 멈춘다. "다시 움직이기 시작했다"를 감지할 두 가지 독립 수단을
+  // 두는 하이브리드 설계(사용자 제안): (1) 가속도 센서로 걷는 진동이
+  // 감지되면 즉시 재시작 — 주 경로, (2) 센서가 안 돌거나 권한이 없는
+  // 기기 대비 안전망으로 SLEEP_WATCHDOG_MS(2분)마다 무조건 한 번씩
+  // GPS를 재시작해 실제로 이동했는지 확인하고, 안 움직였으면 다시
+  // 절전으로 되돌아간다.
+  const SLEEP_AFTER_STOPPED_MS = 5 * 60 * 1000;   // 5분 이상 정지 지속 시 절전 진입
+  const SLEEP_WATCHDOG_MS = 2 * 60 * 1000;        // 절전 중 watchdog 재확인 주기
+  const WALK_VIBRATION_WAKE_THRESHOLD = 0.8;      // 이 값을 넘으면 "걷기 시작"으로 간주(GpsFilterEngine과 동일 기준)
+  let isGpsSleeping = false;      // 지금 절전 모드(GPS 수신 중단) 상태인가
+  let sleepWatchdogTimerId = null; // SLEEP_WATCHDOG_MS 주기 재확인 타이머
+  let sleepCheckPos = null;        // watchdog 재확인 중 받은 첫 픽스(이동 여부 판단 기준점)
+  let sleepCheckStartedAt = null;  // watchdog 재확인 GPS를 켠 시각
 
   // ════════════════════════════════════════════════════════════════
   // ⭐ 방향 안내 원칙(2026-09-14 "미리 안내" 방식으로 전면 재설계):
@@ -1048,6 +1063,13 @@
     if (!isNaN(mag)) {
       if (mag > walkVibrationLevel) walkVibrationLevel = mag; // 최고점 즉시 반영
       else walkVibrationLevel = walkVibrationLevel * 0.9 + mag * 0.1; // 서서히 감쇠
+      // 🔋 절전 모드 중 걷는 진동이 감지되면 GPS를 즉시 재시작한다 —
+      // 배터리 절전(SLEEP_AFTER_STOPPED_MS) 하이브리드 재개 수단의
+      // 주 경로. typeof 체크는 이 리스너가 wakeGpsFromVibration보다
+      // 먼저 스크립트에 나오므로 호이스팅 안전장치.
+      if (mag > WALK_VIBRATION_WAKE_THRESHOLD && typeof wakeGpsFromVibration === 'function') {
+        wakeGpsFromVibration();
+      }
     }
   });
 
@@ -2744,6 +2766,13 @@
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
     if (simInterval !== null) toggleSimulation(); // 시뮬레이션 중이면 끄기
+    // 🔋 절전 모드 중엔 watchId가 null이라도 "GPS가 완전히 꺼진 것"이
+    // 아니다 — 사용자가 버튼을 누르면 절전을 해제하고 즉시 재개한다
+    // (startGpsTracking처럼 화면을 통째로 새로 초기화하지 않는다).
+    if (isGpsSleeping) {
+      exitGpsSleep('사용자가 직접 재개');
+      return;
+    }
     if (watchId !== null) {
       stopGpsTracking();
     } else {
@@ -2757,7 +2786,8 @@
     setHeadingUpMode(false, true);
     showHeadingArrow = false;
     releaseWakeLock();
-    navigator.geolocation.clearWatch(watchId);
+    stopSleepMonitor(); // 🔋 절전 감시 타이머도 함께 정리 — 안 하면 GPS를 완전히 끈 뒤에도 백그라운드에서 계속 돔
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     watchId = null;
     stopCompass();
     if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
@@ -2798,6 +2828,11 @@
     }
     showToastBadge('🧭 다음 갈림길 안내를 다시 표시했습니다.');
   }
+
+  // handleGpsPositionUpdate(아래)와 startGpsTracking 양쪽에서 쓰는
+  // "이번이 GPS 시작 후 첫 픽스인가" 플래그 — 콜백을 이름 붙은 함수로
+  // 분리하면서 함수 지역변수였던 것을 모듈 스코프로 옮겼다.
+  let isFirstFix = true;
 
   function startGpsTracking() {
     const btn = document.getElementById('gpsBtn');
@@ -2844,10 +2879,23 @@
     toast.innerText = '📡 GPS 수신 중...';
     showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
 
-    let isFirstFix = true;
+    isFirstFix = true;
 
     watchId = navigator.geolocation.watchPosition(
-      pos => {
+      handleGpsPositionUpdate,
+      handleGpsError,
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    );
+
+    startSleepMonitor();
+  }
+
+  // GPS 위치/에러 콜백을 이름 붙은 함수로 분리해둔다 — startGpsTracking()
+  // 최초 시작뿐 아니라, 절전 모드에서 깨어날 때(restartWatchPositionOnly)
+  // 도 동일한 콜백을 그대로 재사용해야 하기 때문이다(watchPosition을
+  // 호출할 때마다 매번 새 익명 함수를 정의하면 두 경로의 로직이 어긋날
+  // 위험이 있다).
+  function handleGpsPositionUpdate(pos) {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
@@ -2872,7 +2920,16 @@
           return;
         }
 
+        const wasStoppedBefore = isCurrentlyStopped;
         isCurrentlyStopped = result.isStopped;
+
+        // 🔋 정지 진입/해제 시각 추적 — 절전 모드 진입 타이머(handleSleepTimerTick)
+        // 가 이 시각 기준으로 5분 경과를 판정한다.
+        if (isCurrentlyStopped && !wasStoppedBefore) {
+          stopEnteredAt = Date.now();
+        } else if (!isCurrentlyStopped) {
+          stopEnteredAt = null;
+        }
 
         // 줌 자동 전환(정지/이동 상태에 따른 확대/축소)은 제거했다 —
         // 정지 판정이 갈림길 근처에서 불안정하게 흔들리면 줌도 같이
@@ -2957,21 +3014,149 @@
           guideLine = null;
         }
 
-        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+    updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+  }
+
+  function handleGpsError() {
+    const toast = document.getElementById('gpsToast');
+    const btn = document.getElementById('gpsBtn');
+    toast.className = 'gps-toast warning';
+    toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
+    btn.innerText = '📍';
+    btn.classList.remove('active');
+    watchId = null;
+    showHeadingArrow = false;
+    releaseWakeLock();
+    stopCompass();
+    if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+    stopSleepMonitor();
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // 🔋 배터리 절전 모드
+  //
+  // 5분 이상 정지 상태가 지속되면(휴식, 식사, 사진 촬영 등) GPS 수신을
+  // 잠시 멈춘다. 지도/마커/토스트/웨이크락 등 화면 상태는 그대로 두고
+  // navigator.geolocation.watchId만 정리한다 — 사용자가 직접 끄는
+  // stopGpsTracking()과 달리 UI 초기화는 하지 않는다.
+  //
+  // "다시 움직이기 시작했다"는 하이브리드 방식으로 감지한다:
+  //  (1) 가속도 센서(devicemotion)의 walkVibrationLevel이 문턱을 넘으면
+  //      즉시 GPS 재시작 — 주 경로, 반응이 빠르다.
+  //  (2) 센서 권한이 없거나 devicemotion이 멈춘 기기를 위한 안전망으로,
+  //      절전 중 SLEEP_WATCHDOG_MS(2분)마다 무조건 한 번씩 GPS를 잠깐
+  //      켜서 실제 위치가 바뀌었는지 확인한다. 안 바뀌었으면 다시 절전.
+  // ════════════════════════════════════════════════════════════════
+
+  let sleepTickTimerId = null;
+
+  function startSleepMonitor() {
+    if (sleepTickTimerId) clearInterval(sleepTickTimerId);
+    sleepTickTimerId = setInterval(handleSleepTimerTick, 10000); // 10초마다 정지 지속시간 체크
+  }
+
+  function stopSleepMonitor() {
+    if (sleepTickTimerId) { clearInterval(sleepTickTimerId); sleepTickTimerId = null; }
+    if (sleepWatchdogTimerId) { clearInterval(sleepWatchdogTimerId); sleepWatchdogTimerId = null; }
+    isGpsSleeping = false;
+    sleepCheckPos = null;
+    sleepCheckStartedAt = null;
+  }
+
+  function handleSleepTimerTick() {
+    if (isGpsSleeping || watchId === null) return; // 이미 절전 중이거나 GPS 자체가 꺼져 있으면 할 일 없음
+    if (!isCurrentlyStopped || stopEnteredAt === null) return;
+    if (Date.now() - stopEnteredAt >= SLEEP_AFTER_STOPPED_MS) {
+      enterGpsSleep();
+    }
+  }
+
+  function enterGpsSleep() {
+    if (isGpsSleeping || watchId === null) return;
+    isGpsSleeping = true;
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    showToastBadge('🔋 5분간 움직임이 없어 절전 모드로 전환합니다.\n다시 걸으면 자동으로 위치 추적이 재개됩니다.');
+
+    // watchdog: 진동이 감지되지 않아도 2분마다 한 번씩 스스로 깨어나
+    // 실제로 이동했는지 확인한다.
+    if (sleepWatchdogTimerId) clearInterval(sleepWatchdogTimerId);
+    sleepWatchdogTimerId = setInterval(runSleepWatchdogCheck, SLEEP_WATCHDOG_MS);
+  }
+
+  // 진동 감지(devicemotion)로 걷기 시작을 알아챘을 때 호출 — window의
+  // devicemotion 리스너(walkVibrationLevel 갱신부)에서 함께 호출한다.
+  function wakeGpsFromVibration() {
+    if (!isGpsSleeping) return;
+    exitGpsSleep('진동 감지');
+  }
+
+  // watchdog 주기마다 GPS를 짧게 켜서(약 8초) 실제로 위치가 바뀌었는지
+  // 확인한다. 첫 픽스와 비교해 MIN_DISTANCE 이상 벌어지면 "진짜 이동"
+  // 으로 보고 절전을 해제하고, 아니면 다시 절전 상태로 돌아간다.
+  const SLEEP_WATCHDOG_CHECK_MS = 8000;
+  const SLEEP_WATCHDOG_MOVE_THRESHOLD_M = 8;
+
+  function runSleepWatchdogCheck() {
+    if (!isGpsSleeping) return; // 이미 진동 감지로 깨어난 경우 등
+    sleepCheckPos = null;
+    sleepCheckStartedAt = Date.now();
+
+    const checkWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        if (!sleepCheckPos) {
+          sleepCheckPos = { lat, lon };
+          return;
+        }
+        const movedM = haversineMeters(sleepCheckPos.lat, sleepCheckPos.lon, lat, lon);
+        if (movedM >= SLEEP_WATCHDOG_MOVE_THRESHOLD_M) {
+          navigator.geolocation.clearWatch(checkWatchId);
+          exitGpsSleep('watchdog 이동 확인');
+        }
       },
-      err => {
-        toast.className = 'gps-toast warning';
-        toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
-        btn.innerText = '📍';
-        btn.classList.remove('active');
-        watchId = null;
-        showHeadingArrow = false;
-        releaseWakeLock();
-        stopCompass();
-        if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
-      },
+      () => { /* watchdog 확인용 픽스 실패는 조용히 무시 — 다음 주기에 재시도 */ },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: SLEEP_WATCHDOG_CHECK_MS }
+    );
+
+    // 확인 시간(SLEEP_WATCHDOG_CHECK_MS)이 지나도 못 깨어났으면(정지
+    // 유지) 짧게 켰던 GPS를 다시 정리하고 절전 상태를 유지한다.
+    setTimeout(() => {
+      if (isGpsSleeping) {
+        navigator.geolocation.clearWatch(checkWatchId);
+      }
+    }, SLEEP_WATCHDOG_CHECK_MS + 500);
+  }
+
+  // 절전 모드에서 깨어날 때 GPS만 다시 켠다 — startGpsTracking()처럼
+  // 마커/토스트/웨이크락/디버그로거까지 전부 새로 초기화하지 않는다
+  // (화면은 절전 중에도 그대로 떠 있었으므로 다시 만들 필요가 없다).
+  function restartWatchPositionOnly() {
+    isFirstFix = false; // 이미 추적 중이던 마커가 있으므로 "최초 진입" 카메라 점프는 하지 않는다
+    watchId = navigator.geolocation.watchPosition(
+      handleGpsPositionUpdate,
+      handleGpsError,
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     );
+  }
+
+  function exitGpsSleep(reason) {
+    if (!isGpsSleeping) return;
+    isGpsSleeping = false;
+    if (sleepWatchdogTimerId) { clearInterval(sleepWatchdogTimerId); sleepWatchdogTimerId = null; }
+    sleepCheckPos = null;
+    sleepCheckStartedAt = null;
+    stopEnteredAt = null; // 다시 정지 상태가 되더라도 5분을 새로 카운트
+
+    if (watchId === null) {
+      // startGpsTracking을 그대로 재사용하면 UI 전체가 "새로 켜는"
+      // 상태로 리셋돼버리므로(웨이크락 재요청 등은 무해하지만 마커가
+      // 다시 생성되며 잠깐 깜빡일 수 있다), 대신 watchPosition만 다시
+      // 건다. startGpsTracking 내부의 콜백 로직을 그대로 재사용하기
+      // 위해 restartWatchPositionOnly()를 호출한다.
+      restartWatchPositionOnly();
+    }
+    showToastBadge(`📍 위치 추적을 재개합니다. (${reason})`);
   }
 
   // 느린 프록시에서 무한정 기다리지 않도록 각 시도마다 제한시간을 둔다.
