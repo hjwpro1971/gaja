@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_milestone_trail_bearing';
+      const APP_BUILD = 'v20260913_bottom_arrow_hysteresis';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v39').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v40').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v39)
+      📲 바로가기 (v40)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=39')
+      navigator.serviceWorker.register('./sw.js?v=40')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1015,11 +1015,14 @@
     STOP_TARGET_DISTANCE: 20,      // 정지 중 목표점까지의 거리(m) — 10/15/20/30/50 중 튜닝 예정
     REVERSE_ENTER_THRESHOLD: 110,  // 정방향 → 역방향 전환 각도차(도)
     REVERSE_EXIT_THRESHOLD: 70,    // 역방향 → 정방향 전환 각도차(도)
-    // 하단 큰 화살표 표시 기준(도) — 정지 중이라도 목표 방향과의 각도차가
-    // 이 값 미만(이미 거의 맞는 방향)이면 화살표를 띄우지 않는다. 직선
-    // 구간에서 잠깐 멈췄을 때 불필요하게 "9시 방향" 같은 안내가 뜨는
-    // 문제를 막기 위함 — "갈림길에서 방향이 안 맞을 때만" 뜨게 한다.
-    BOTTOM_ARROW_SHOW_THRESHOLD_DEG: 20,
+    // 하단 큰 화살표 표시/숨김 기준(도) — 비대칭 문턱. 안 뜬 상태에서는
+    // 각도차가 SHOW(30도) 이상 벌어져야 뜨고(직선 구간에서 잠깐 멈춰도
+    // 불필요하게 안 뜨게), 뜬 상태에서는 HIDE(15도) 미만으로 좁혀져야
+    // 사라진다(경계값 근처에서 초 단위로 깜빡이지 않게). 계룡산 코스
+    // 시뮬레이션에서 단일 20도 문턱은 등산로가 완만히 굽는 구간마다
+    // 표시/숨김이 반복되는 문제가 확인됐다.
+    BOTTOM_ARROW_SHOW_THRESHOLD_DEG: 30,
+    BOTTOM_ARROW_HIDE_THRESHOLD_DEG: 15,
   };
 
   // targetBearing 계열 — 좌표 계산 전용, 센서 값을 절대 참조하지 않는다.
@@ -1291,6 +1294,10 @@
   // 방향을 찾을 때)만 표시. angleDiff는 "목표 방향 - 현재 방향"이며,
   // angleDiffToClockDirection이 이미 계산한 값을 그대로 재사용해 텍스트
   // 안내("1시 방향")와 화살표가 항상 같은 값을 가리키도록 한다.
+  // 하단 화살표가 지금 화면에 떠 있는지 여부 — 표시/숨김 판정에 비대칭
+  // 문턱을 적용하기 위해 추적한다(아래 shouldShowBottomArrow 참고).
+  let isBottomArrowVisible = false;
+
   function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
     const el = document.getElementById('bottomDirectionArrow');
     const rotor = document.getElementById('bottomArrowRotor');
@@ -1301,11 +1308,27 @@
     el.classList.toggle('reversed', !!isReversed);
     rotor.style.transform = `rotate(${angleDiff}deg)`;
     label.textContent = clockLabel;
+    isBottomArrowVisible = true;
   }
 
   function hideBottomDirectionArrow() {
     const el = document.getElementById('bottomDirectionArrow');
     if (el) el.style.display = 'none';
+    isBottomArrowVisible = false;
+  }
+
+  // 표시/숨김을 같은 문턱(20도) 하나로 판정하면, 실제 GPX처럼 등산로가
+  // 완만하게 굽어 있는 구간에서 각도차가 문턱을 계속 넘나들어 화살표가
+  // 초 단위로 깜빡이는 문제가 있었다(계룡산 12km 코스 시뮬레이션에서
+  // 확인 — 9.77~11.97km 구간에서만 10회 이상 반복). 방향판정 히스테리시스
+  // (110도/70도)와 같은 원리로 비대칭 문턱을 적용한다: 안 뜬 상태에서는
+  // SHOW_THRESHOLD(30도) 이상 벌어져야 뜨고, 뜬 상태에서는 HIDE_THRESHOLD
+  // (15도) 미만으로 좁혀져야 사라진다 — 경계값 근처에서 계속 안 뒤집힌다.
+  function shouldShowBottomArrow(angleDiff) {
+    const absDiff = Math.abs(angleDiff);
+    return isBottomArrowVisible
+      ? absDiff >= DIRECTION_CONFIG.BOTTOM_ARROW_HIDE_THRESHOLD_DEG
+      : absDiff >= DIRECTION_CONFIG.BOTTOM_ARROW_SHOW_THRESHOLD_DEG;
   }
 
   function createGpsIconHtml(heading) {
@@ -2613,9 +2636,9 @@
             const toNextAngleDiff = shortestAngleDiff(targetBearingForToast, guidanceHeading);
             clockInfo = angleDiffToClockDirection(toNextAngleDiff);
             // 하단 큰 화살표 표시 기준: 정지 + 방향이 아직 안 맞을 때만
-            // (각도차 ≥ BOTTOM_ARROW_SHOW_THRESHOLD_DEG) 띄운다. 이미
-            // 거의 맞는 방향(12시 근처)이면 굳이 안내할 필요가 없다.
-            if (Math.abs(toNextAngleDiff) >= DIRECTION_CONFIG.BOTTOM_ARROW_SHOW_THRESHOLD_DEG) {
+            // 띄운다(비대칭 문턱, shouldShowBottomArrow 참고). 이미 거의
+            // 맞는 방향(12시 근처)이면 굳이 안내할 필요가 없다.
+            if (shouldShowBottomArrow(toNextAngleDiff)) {
               showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
             } else {
               hideBottomDirectionArrow();
@@ -2653,7 +2676,7 @@
         if (stopTargetBearing !== null && guidanceHeading !== null && !isNaN(guidanceHeading)) {
           const toNextAngleDiff = shortestAngleDiff(stopTargetBearing, guidanceHeading);
           clockInfo = angleDiffToClockDirection(toNextAngleDiff);
-          if (Math.abs(toNextAngleDiff) >= DIRECTION_CONFIG.BOTTOM_ARROW_SHOW_THRESHOLD_DEG) {
+          if (shouldShowBottomArrow(toNextAngleDiff)) {
             showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
           } else {
             hideBottomDirectionArrow();
