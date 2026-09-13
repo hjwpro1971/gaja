@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260913_milestone_coord_dedup';
+      const APP_BUILD = 'v20260914_preemptive_turn_guidance';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v41').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v42').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -431,7 +431,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v41)
+      📲 바로가기 (v42)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -460,8 +460,8 @@
   <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px;">🐞</button>
 </div>
 
-<!-- 🧭 하단 대형 방향 화살표 — 정지 중(갈림길에서 방향을 찾을 때)에만
-     표시. updateGpsDirectionState()가 회전각/색상/라벨을 함께 갱신한다. -->
+<!-- 🧭 하단 대형 방향 화살표 — 다음 갈림길이 가까워지면(showUpcomingTurnAlert)
+     미리 계산된 회전각(turnAngle)으로 좌회전/우회전을 안내한다. -->
 <div class="bottom-direction-arrow" id="bottomDirectionArrow">
   <div class="arrow-bg"></div>
   <div class="arrow-rotor" id="bottomArrowRotor">
@@ -515,7 +515,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=41')
+      navigator.serviceWorker.register('./sw.js?v=42')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -915,9 +915,8 @@
         lat: lastKnownPos ? Number(lastKnownPos.lat.toFixed(7)) : '',
         lon: lastKnownPos ? Number(lastKnownPos.lon.toFixed(7)) : '',
         isCurrentlyStopped: isCurrentlyStopped,
-        isDirectionReversed: isDirectionReversed,
         gpsMovementHeading: gpsMovementHeading !== null ? Math.round(gpsMovementHeading) : '',
-        stopTargetBearing: stopTargetBearing !== null ? Math.round(stopTargetBearing) : '',
+        lastAlertedMilestoneKey: lastAlertedMilestoneKey || '',
         arrowCssTransform: arrowCssTransform,
       });
     }
@@ -997,40 +996,17 @@
   let lastGpsMoveTime = 0;
 
   // ════════════════════════════════════════════════════════════════
-  // ⭐ 방향 안내 원칙(2026-09-13 전면 단순화): 나침반/자이로 센서를
-  // 완전히 배제하고 GPX 좌표 계산만으로 안내한다. 지도는 항상 북쪽
-  // 고정(회전 없음)이며, 내 위치 화살표는 GPS 이동 방향(gpsMovementHeading)
-  // 만 표시한다. "다음 갈림길이 몇 시 방향인가"는 stopTargetBearing(GPX
-  // 목표 지점의 절대 방위)과 gpsMovementHeading(마지막 진행 방향)을
-  // 비교해서 하단 화살표/텍스트로만 안내한다.
-  // ════════════════════════════════════════════════════════════════
-  const DIRECTION_CONFIG = {
-    SEGMENT_RATIO: 0.07,           // 이동 중 지도 재정렬 구간 길이 = 코스 전체 거리의 7%
-    // 구간 길이 최소값(m) — 짧은 코스 보호. 원래 100m였으나, 짧고 갈림길이
-    // 많은 코스(예: 전체 220m에 갈림길 4개짜리 아파트 산책로)에서는 코스
-    // 전체가 사실상 구간 1개로 묶여 갈림길에서 지도/화살표가 전혀
-    // 재정렬되지 않는 문제가 있었다. 실사용 피드백으로 30m로 낮춤 —
-    // 나중에 실제 긴 등산로에서 테스트하며 다시 늘릴 수 있다.
-    MIN_SEGMENT_LENGTH_M: 30,
-    STOP_TARGET_DISTANCE: 20,      // 정지 중 목표점까지의 거리(m) — 10/15/20/30/50 중 튜닝 예정
-    REVERSE_ENTER_THRESHOLD: 110,  // 정방향 → 역방향 전환 각도차(도)
-    REVERSE_EXIT_THRESHOLD: 70,    // 역방향 → 정방향 전환 각도차(도)
-    // 하단 큰 화살표 표시/숨김 기준(도) — 비대칭 문턱. 안 뜬 상태에서는
-    // 각도차가 SHOW(30도) 이상 벌어져야 뜨고(직선 구간에서 잠깐 멈춰도
-    // 불필요하게 안 뜨게), 뜬 상태에서는 HIDE(15도) 미만으로 좁혀져야
-    // 사라진다(경계값 근처에서 초 단위로 깜빡이지 않게). 계룡산 코스
-    // 시뮬레이션에서 단일 20도 문턱은 등산로가 완만히 굽는 구간마다
-    // 표시/숨김이 반복되는 문제가 확인됐다.
-    BOTTOM_ARROW_SHOW_THRESHOLD_DEG: 30,
-    BOTTOM_ARROW_HIDE_THRESHOLD_DEG: 15,
-  };
-
-  // targetBearing 계열 — 좌표 계산 전용, 센서 값을 절대 참조하지 않는다.
-  let segmentLengthM = 0;          // 코스 로드 시 1회 계산, 코스 전체 길이 기반 (마일스톤 없는 코스의 폴백용)
-  let currentSegmentIndex = -1;    // 현재 있는 구간 번호 (폴백용)
-  let currentSegmentTargetKey = null; // 마일스톤 기준 재정렬의 "현재 목표" 식별자 — 이게 바뀔 때만 재정렬 트리거
-  let segmentTargetBearing = null; // 현재 구간(또는 다음 마일스톤)의 방위각(이동 중 지도 회전 기준)
-  let stopTargetBearing = null;    // 정지 중 목표점 방위각(하단 화살표/텍스트 안내가 참조)
+  // ⭐ 방향 안내 원칙(2026-09-14 "미리 안내" 방식으로 전면 재설계):
+  // GPX가 경로 전체와 갈림길 위치를 이미 알고 있으므로, "내가 지금
+  // 어느 방향을 보고 있는가"는 전혀 필요 없다 — 나침반/자이로는 물론
+  // GPS 진행방향 기반의 순방향/역방향 판정, 정지/이동 상태에 따른
+  // 분기도 전부 제거했다. 대신 각 갈림길의 "진입방향→이탈방향" 회전각
+  // (turnAngle)을 코스 로드 시점에 미리 계산해두고(buildMilestones),
+  // 실시간으로는 오직 "GPS 위치 → 다음 갈림길까지 남은 거리"만 계속
+  // 계산한다. 일정 거리(TURN_ALERT_DISTANCE_M) 이내로 들어오면 미리
+  // 계산해둔 회전각을 그대로 보여준다(showUpcomingTurnAlert) — 실제
+  // 내비게이션 앱과 동일한 원리다. 지도는 여전히 북쪽 고정, 내 위치
+  // 화살표는 GPS 이동 방향(gpsMovementHeading)만 표시한다.
   // ════════════════════════════════════════════════════════════════
 
   // 최단 각도 오차 계산 (-180 ~ +180)
@@ -1074,73 +1050,6 @@
       else walkVibrationLevel = walkVibrationLevel * 0.9 + mag * 0.1; // 서서히 감쇠
     }
   });
-
-  // 노이즈로 한 번 오판(isDirectionReversed 고착)되면 비대칭 히스테리시스
-  // 때문에 스스로 못 푸는 문제가 있었다 — 정방향으로 명백히 잘 가고
-  // 있어도 70도 이내로 좁혀지는 우연이 없으면 영원히 역방향(🔴)으로
-  // 남았다. 이를 막기 위해 "지속적 반대 증거"가 쌓이면 히스테리시스를
-  // 무시하고 강제 재확정하는 카운터를 둔다 — 노이즈 1회가 아니라
-  // 연속된 여러 픽스가 같은 결론을 내야만 뒤집히므로 순간 튐에는
-  // 흔들리지 않는다.
-  const PERSISTENT_OVERRIDE_STREAK = 4; // 연속 이 횟수만큼 반대 판정이 나오면 강제 재확정
-  let directionOverrideStreak = 0;
-
-  // 두 방위각(현재 방향 vs GPX 목표 방향)을 비교해 🔵(정방향)/🔴(역방향)
-  // 판정을 UI에 반영하는 공용 헬퍼. 정지 중과 이동 중
-  // (updateMovingDirectionJudgement) 양쪽에서 동일한 판정 규칙을 쓴다.
-  //
-  // ⭐ 비대칭 히스테리시스(설계 문서): 정방향 상태에서는 각도차가
-  // REVERSE_ENTER_THRESHOLD(110도) 이상 벌어져야 비로소 역방향으로 전환되고,
-  // 역방향 상태에서는 각도차가 REVERSE_EXIT_THRESHOLD(70도) 이하로 좁혀져야
-  // 정방향으로 복귀한다. 기존의 45도/135~225도 대칭 3구간 판정은 경계값
-  // 근처(예: 89도↔91도)에서 판정이 계속 뒤바뀌는 떨림이 있었는데, 비대칭
-  // 구간을 두면 한번 정해진 상태가 쉽게 안 뒤집혀 안정적이다.
-  function updateDirectionArrowJudgement(currentBearing, targetBearingDeg) {
-    const absDiff = Math.abs(shortestAngleDiff(currentBearing, targetBearingDeg));
-
-    if (isDirectionSearching) {
-      // 최초 판정(GPS를 막 켰거나 정지 진입 직후): 히스테리시스 없이
-      // 90도를 기준으로 즉시 1회 확정한다.
-      isDirectionSearching = false;
-      isDirectionReversed = (absDiff >= 90);
-      directionOverrideStreak = 0;
-      updateGpsDirectionState();
-      return;
-    }
-
-    const nextReversed = isDirectionReversed
-      ? !(absDiff <= DIRECTION_CONFIG.REVERSE_EXIT_THRESHOLD)   // 역방향 유지, 70도 이하여야 정방향 복귀
-      : (absDiff >= DIRECTION_CONFIG.REVERSE_ENTER_THRESHOLD);  // 정방향 유지, 110도 이상이어야 역방향 진입
-
-    if (nextReversed !== isDirectionReversed) {
-      isDirectionReversed = nextReversed;
-      directionOverrideStreak = 0;
-      updateGpsDirectionState();
-      return;
-    }
-
-    // 히스테리시스 문턱을 못 넘었더라도, "90도 기준"으로는 이미 반대
-    // 결론이 연속으로 쌓이고 있는지 별도로 추적한다 — 노이즈 한 번이
-    // 아니라 지속적인 반대 증거일 때만 강제로 재확정한다.
-    const simpleOpposite = isDirectionReversed ? (absDiff < 90) : (absDiff >= 90);
-    if (simpleOpposite) {
-      directionOverrideStreak++;
-      if (directionOverrideStreak >= PERSISTENT_OVERRIDE_STREAK) {
-        isDirectionReversed = !isDirectionReversed;
-        directionOverrideStreak = 0;
-        updateGpsDirectionState();
-      }
-    } else {
-      directionOverrideStreak = 0;
-    }
-  }
-
-  // 이동 중 정/역방향 판정 — GPS 이동방향과 GPX 궤적의 다음 목적지 방향을
-  // 비교한다. watchPosition 콜백의 이동 분기에서 trailExpectedBearing을
-  // 계산한 직후 호출된다.
-  function updateMovingDirectionJudgement(gpsBearing, trailExpectedBearing) {
-    updateDirectionArrowJudgement(gpsBearing, trailExpectedBearing);
-  }
 
   // ⭐ GPS 켜짐 모드 전환 — 과거 "길찾기 회전 모드(heading-up)"였던 것을
   // 단순화: 지도는 더 이상 회전하지 않으므로 이 함수는 이제 지도를 내
@@ -1231,6 +1140,14 @@
     playBackOnTrailBeep();
   }
 
+  // 🔊 갈림길 접근 알람 — 이탈 경고(880Hz)/복귀(440Hz)와 구분되는 중간
+  // 톤(660Hz)으로 "곧 회전할 지점이 있다"를 알린다. 각 갈림길당 1회만
+  // 울리도록 showUpcomingTurnAlert에서 lastAlertedMilestoneKey로 중복을
+  // 막는다.
+  function playTurnAlertBeep() {
+    playTwoToneBeep(660);
+  }
+
   function showToastBadge(msg, durationMs) {
     let b = document.getElementById('compassNoticeToast');
     if (!b) {
@@ -1254,48 +1171,10 @@
   function initCompass() {}
   function stopCompass() {}
 
-  let isDirectionSearching = false;
-  let isDirectionReversed = false;
-
-  function updateGpsDirectionState() {
-    const qMark = document.getElementById('gpsQuestionMark');
-    const aSvg = document.getElementById('gpsArrowSvg');
-    if (!qMark || !aSvg) return;
-    
-    if (isDirectionSearching) {
-      qMark.style.display = 'block';
-      aSvg.style.display = 'none';
-    } else {
-      qMark.style.display = 'none';
-      aSvg.style.display = 'block';
-      
-      const arrowPoly = document.getElementById('gpsArrowPoly');
-      const gradStop1 = document.getElementById('gpsGradStop1');
-      const gradStop2 = document.getElementById('gpsGradStop2');
-      const gradStop3 = document.getElementById('gpsGradStop3');
-      
-      if (arrowPoly && gradStop1 && gradStop2 && gradStop3) {
-        if (isDirectionReversed) {
-          arrowPoly.setAttribute('fill', '#d32f2f');
-          gradStop1.setAttribute('stop-color', '#d32f2f');
-          gradStop2.setAttribute('stop-color', '#c62828');
-          gradStop3.setAttribute('stop-color', '#c62828');
-        } else {
-          arrowPoly.setAttribute('fill', '#0d47a1');
-          gradStop1.setAttribute('stop-color', '#1976d2');
-          gradStop2.setAttribute('stop-color', '#0288d1');
-          gradStop3.setAttribute('stop-color', '#0288d1');
-        }
-      }
-    }
-  }
-
-  // 🧭 하단 대형 방향 화살표(내비게이션 스타일) — 정지 시(갈림길에서
-  // 방향을 찾을 때)만 표시. angleDiff는 "목표 방향 - 현재 방향"이며,
-  // angleDiffToClockDirection이 이미 계산한 값을 그대로 재사용해 텍스트
-  // 안내("1시 방향")와 화살표가 항상 같은 값을 가리키도록 한다.
-  // 하단 화살표가 지금 화면에 떠 있는지 여부 — 표시/숨김 판정에 비대칭
-  // 문턱을 적용하기 위해 추적한다(아래 shouldShowBottomArrow 참고).
+  // 🧭 하단 대형 방향 화살표(내비게이션 스타일) — 다음 갈림길이
+  // TURN_ALERT_DISTANCE_M 이내로 가까워지면 표시된다(showUpcomingTurnAlert).
+  // angleDiff 자리에는 실시간 측정값이 아니라 buildMilestones가 미리
+  // 계산해둔 turnAngle(그 갈림길의 고정된 회전각)을 그대로 넘긴다.
   let isBottomArrowVisible = false;
 
   function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
@@ -1317,43 +1196,24 @@
     isBottomArrowVisible = false;
   }
 
-  // 표시/숨김을 같은 문턱(20도) 하나로 판정하면, 실제 GPX처럼 등산로가
-  // 완만하게 굽어 있는 구간에서 각도차가 문턱을 계속 넘나들어 화살표가
-  // 초 단위로 깜빡이는 문제가 있었다(계룡산 12km 코스 시뮬레이션에서
-  // 확인 — 9.77~11.97km 구간에서만 10회 이상 반복). 방향판정 히스테리시스
-  // (110도/70도)와 같은 원리로 비대칭 문턱을 적용한다: 안 뜬 상태에서는
-  // SHOW_THRESHOLD(30도) 이상 벌어져야 뜨고, 뜬 상태에서는 HIDE_THRESHOLD
-  // (15도) 미만으로 좁혀져야 사라진다 — 경계값 근처에서 계속 안 뒤집힌다.
-  function shouldShowBottomArrow(angleDiff) {
-    const absDiff = Math.abs(angleDiff);
-    return isBottomArrowVisible
-      ? absDiff >= DIRECTION_CONFIG.BOTTOM_ARROW_HIDE_THRESHOLD_DEG
-      : absDiff >= DIRECTION_CONFIG.BOTTOM_ARROW_SHOW_THRESHOLD_DEG;
-  }
-
+  // "미리 안내" 재설계 이후로는 순방향/역방향 판정 자체가 없으므로
+  // 화살표는 항상 파란색 고정, ❓(방향 탐색 중) 표시도 없다.
   function createGpsIconHtml(heading) {
     const rot = (heading !== null && !isNaN(heading)) ? heading : 0;
-    
-    const arrowFill = isDirectionReversed ? '#d32f2f' : '#0d47a1';
-    const coneColor1 = isDirectionReversed ? '#d32f2f' : '#1976d2';
-    const coneColor2 = isDirectionReversed ? '#c62828' : '#0288d1';
-    const qDisplay = isDirectionSearching ? 'block' : 'none';
-    const aDisplay = isDirectionSearching ? 'none' : 'block';
-    
+
     let innerContent = `
-      <div id="gpsQuestionMark" style="display:${qDisplay}; font-size: 28px; line-height: 1; text-align: center; margin-top: -30px; text-shadow: 0 0 5px rgba(255,255,255,0.8); filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.4));">❓</div>
-      <svg id="gpsArrowSvg" viewBox="0 0 80 80" class="gps-heading-svg" style="display:${aDisplay};">
+      <svg id="gpsArrowSvg" viewBox="0 0 80 80" class="gps-heading-svg">
         <defs>
           <radialGradient id="coneGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-            <stop id="gpsGradStop1" offset="0%" stop-color="${coneColor1}" stop-opacity="0.65"/>
-            <stop id="gpsGradStop2" offset="55%" stop-color="${coneColor2}" stop-opacity="0.25"/>
-            <stop id="gpsGradStop3" offset="100%" stop-color="${coneColor2}" stop-opacity="0"/>
+            <stop offset="0%" stop-color="#1976d2" stop-opacity="0.65"/>
+            <stop offset="55%" stop-color="#0288d1" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#0288d1" stop-opacity="0"/>
           </radialGradient>
         </defs>
         <!-- 시야각 -->
         <path d="M 40 40 L 12 2 A 44 44 0 0 1 68 2 Z" fill="url(#coneGrad)"/>
         <!-- 화살표 -->
-        <polygon id="gpsArrowPoly" points="40,3 48,23 40,19 32,23" fill="${arrowFill}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+        <polygon points="40,3 48,23 40,19 32,23" fill="#0d47a1" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
       </svg>
     `;
     
@@ -1794,7 +1654,46 @@
     }
 
     list.sort((a, b) => a.distanceM - b.distanceM);
+
+    // ⭐ 전면 재설계(2026-09-14): "미리 안내" 방식 — GPX가 경로 전체를
+    // 이미 알고 있으므로, 이 갈림길에서 "들어오는 방향"과 "나가는 방향"
+    // 이 이루는 회전각(turnAngle)을 지금(코스 로드 시점) 미리 계산해
+    // 저장해둔다. 실시간으로는 "내가 지금 보는 방향"을 나침반/GPS로
+    // 알아낼 필요가 전혀 없다 — 실제 내비게이션 앱(카카오내비 등)처럼
+    // "이 지점은 원래 좌회전/우회전/직진"이라는 사실 자체가 좌표만으로
+    // 고정되어 있기 때문이다. GPS는 "내가 이 지점에 얼마나 가까워졌나"
+    // 판정에만 쓰인다.
+    const TURN_LOOKBACK_M = 15;  // 진입 방향 계산에 쓸 "갈림길 이전 지점" 거리
+    const TURN_LOOKAHEAD_M = 15; // 이탈 방향 계산에 쓸 "갈림길 이후 지점" 거리
+    list.forEach(m => {
+      const behindDistM = Math.max(0, m.distanceM - TURN_LOOKBACK_M);
+      const aheadDistM = Math.min(totalDistM, m.distanceM + TURN_LOOKAHEAD_M);
+      const behindPt = pointAtCumulativeDistance(points, cumDistances, behindDistM);
+      const aheadPt = pointAtCumulativeDistance(points, cumDistances, aheadDistM);
+      if (behindPt && aheadPt && (behindDistM < m.distanceM) && (aheadDistM > m.distanceM)) {
+        const inBearing = calculateBearing(behindPt.lat, behindPt.lon, m.trailLat, m.trailLon);
+        const outBearing = calculateBearing(m.trailLat, m.trailLon, aheadPt.lat, aheadPt.lon);
+        m.turnAngle = shortestAngleDiff(outBearing, inBearing); // -180~180, 양수=우회전, 음수=좌회전
+        m.turnLabel = classifyTurnAngle(m.turnAngle);
+      } else {
+        // 들머리/날머리처럼 한쪽 방향이 없는 지점은 회전각 계산 대상이 아님
+        m.turnAngle = null;
+        m.turnLabel = null;
+      }
+    });
+
     return list;
+  }
+
+  // 회전각(도, 양수=우회전/음수=좌회전)을 사람이 읽는 안내 문구로 변환.
+  // 직진(30도 미만)은 별도 안내가 필요 없으므로 갈림길 알람 대상에서
+  // 자연히 제외된다(showUpcomingTurnAlert에서 turnLabel==='직진'이면
+  // 스킵).
+  function classifyTurnAngle(angle) {
+    const abs = Math.abs(angle);
+    if (abs < 30) return '직진';
+    if (angle > 0) return abs >= 120 ? '급우회전' : '우회전';
+    return abs >= 120 ? '급좌회전' : '좌회전';
   }
 
   // 현재 위치(누적거리 기준 traveledDist)를 기준으로 "다음 마일스톤"과
@@ -1863,28 +1762,9 @@
     return findPointAheadByDistance(points, distances, 0, targetDistM);
   }
 
-  // 이동 중 지도 재정렬 구간의 길이(m)를 코스 전체 거리에 비례해 계산한다.
-  // 너무 짧은 코스(예: 1km 미만)에서도 재정렬이 너무 잦지 않도록 최소값을 둔다.
-  function computeSegmentLength(totalDistanceM) {
-    return Math.max(totalDistanceM * DIRECTION_CONFIG.SEGMENT_RATIO, DIRECTION_CONFIG.MIN_SEGMENT_LENGTH_M);
-  }
-
-  // 누적 이동거리(traveledDistM)가 몇 번째 구간에 속하는지 반환한다.
-  function getSegmentIndex(traveledDistM, segLenM) {
-    if (!segLenM || segLenM <= 0) return 0;
-    return Math.floor(traveledDistM / segLenM);
-  }
-
-  // 정지 중 하단 화살표/텍스트가 가리킬 "다음 GPX 목표 지점"까지의 방위각을
-  // 계산한다. 순수 좌표 계산만 한다(센서 미사용).
-  function computeStopTargetBearing(fromLat, fromLon, nearestIdx) {
-    if (!currentPoints || nearestIdx < 0) return null;
-    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, DIRECTION_CONFIG.STOP_TARGET_DISTANCE);
-    if (!aheadPt) return null;
-    return calculateBearing(fromLat, fromLon, aheadPt.lat, aheadPt.lon);
-  }
-
-  // 상대 각도를 시계 방향(1시~12시) 및 방향 화살표로 변환 (갈림길 정지 시 방향 안내용)
+  // 상대 각도를 시계 방향(1시~12시) 및 방향 화살표로 변환 — 현재는
+  // 직접 호출부가 없지만(재설계로 turnLabel/turnAngle 방식으로 대체),
+  // 향후 "길찾기 모드"(별도 설계 예정)에서 재사용할 수 있어 남겨둔다.
   function angleDiffToClockDirection(angleDiff) {
     const norm = ((angleDiff % 360) + 360) % 360; // 0 ~ 360도 정규화
     if (norm >= 345 || norm < 15) return { clock: '12시 방향 (직진)', arrow: '⬆️' };
@@ -2132,14 +2012,7 @@
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
-
-    // 이동 중 지도 재정렬 구간 길이를 코스 전체 거리 기준으로 1회 확정한다.
-    // 코스가 바뀔 때마다 다시 계산해야 하므로 drawRoute에서 처리한다.
-    const totalCourseDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
-    segmentLengthM = computeSegmentLength(totalCourseDist);
-    currentSegmentIndex = -1;   // 새 코스이므로 구간 재정렬을 처음부터 다시 트리거
-    currentSegmentTargetKey = null;
-    segmentTargetBearing = null;
+    lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -2620,92 +2493,67 @@
       const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
       const fmtM = m => `${(m / 1000).toFixed(2)}km`;
 
-      // 지명(마일스톤) 기반 실시간 구간 및 다음 목적지 판정.
-      // ⭐ findNextMilestone()은 이동 중 지도 재정렬 로직(watchPosition
-      // 콜백)과 완전히 동일한 함수 — 텍스트 안내와 지도 회전이 항상 같은
-      // "다음 목적지"를 가리키도록 소스를 통일한다.
+      // ⭐ 전면 재설계(2026-09-14) "미리 안내" 방식: GPX가 경로 전체를
+      // 이미 알고 있으므로, "내가 지금 어느 방향을 보고 있는가"는 전혀
+      // 필요 없다. 다음 갈림길까지 거리만 계속 계산하다가, 일정 거리
+      // 이내로 가까워지면 buildMilestones()가 코스 로드 시 미리 계산해둔
+      // turnAngle/turnLabel(좌회전/우회전/직진)을 그대로 보여준다.
+      // 정지/이동 상태, 나침반, GPS heading 전부 참조하지 않는다.
       const milestoneResult = findNextMilestone(traveledDist);
       if (milestoneResult) {
         const prevM = milestoneResult.prevM;
         const nextM = milestoneResult.nextM;
         const distToNextM = Math.max(0, nextM.distanceM - traveledDist);
 
-        if (isCurrentlyStopped) {
-          // 🛑 정지 시 (갈림길에서 멈춤) → "방향 지시"
-          // ⭐ 화살표가 가리키는 것과 동일한 stopTargetBearing(watchPosition이
-          // 매 픽스마다 갱신)을 그대로 재사용한다 — 텍스트 안내와 화살표가
-          // 서로 다른 좌표 계산을 쓰면 미묘하게 불일치할 수 있어(과거
-          // 발생했던 버그), 반드시 같은 소스를 참조하도록 통일한다.
-          const targetBearingForToast = stopTargetBearing !== null
-            ? stopTargetBearing
-            : calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nextM.trailLat, nextM.trailLon);
+        showUpcomingTurnAlert(nextM, distToNextM);
 
-          let clockInfo = { clock: '진행 방향', arrow: '🧭' };
-          const guidanceHeading = getCurrentAbsHeadingForGuidance();
-          if (guidanceHeading !== null && !isNaN(guidanceHeading)) {
-            const toNextAngleDiff = shortestAngleDiff(targetBearingForToast, guidanceHeading);
-            clockInfo = angleDiffToClockDirection(toNextAngleDiff);
-            // 하단 큰 화살표 표시 기준: 정지 + 방향이 아직 안 맞을 때만
-            // 띄운다(비대칭 문턱, shouldShowBottomArrow 참고). 이미 거의
-            // 맞는 방향(12시 근처)이면 굳이 안내할 필요가 없다.
-            if (shouldShowBottomArrow(toNextAngleDiff)) {
-              showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
-            } else {
-              hideBottomDirectionArrow();
-            }
-          } else {
-            hideBottomDirectionArrow();
-          }
-
-          // 역방향(경로를 등지고 반대로 가고 있음) 상태면 카드도 화살표
-          // 색(🔴)과 맞춰 연한 빨간 배경으로 표시한다.
-          toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
-          toast.innerText = `🧭 [정지] ${nextM.name} · ${clockInfo.arrow} ${clockInfo.clock} (${fmtM(distToNextM)} 남음)`;
-          return;
-        }
-
-        // 🚶 이동 중 (속도 있음) → "구간 안내"
-        // "동학사 갈림길 → 관음봉 · 450m 남음"
-        // 하단 큰 화살표는 정지 시 방향 안내 전용이므로 이동 중엔 항상 숨긴다
-        // — 이 호출이 빠져 있으면 직전에 정지 중 띄운 화살표가 다시 걷기
-        // 시작해도 화면에 그대로 남는 버그가 있었다.
-        hideBottomDirectionArrow();
-        // 역방향(경로를 등지고 반대로 가고 있음) 상태면 카드도 화살표
-        // 색(🔴)과 맞춰 연한 빨간 배경으로 표시한다.
-        toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
+        toast.className = 'gps-toast';
         toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
         return;
       }
 
-      if (isCurrentlyStopped) {
-        // 지명이 없는 일반 GPX의 경우에도 정지 시 시계 방향 안내.
-        // ⭐ 화살표와 동일한 stopTargetBearing을 그대로 재사용한다(위 마일스톤
-        // 분기와 동일한 이유 — 텍스트와 화살표가 항상 같은 소스를 참조).
-        let clockInfo = { clock: '등산로 방향', arrow: '🧭' };
-        const guidanceHeading = getCurrentAbsHeadingForGuidance();
-        if (stopTargetBearing !== null && guidanceHeading !== null && !isNaN(guidanceHeading)) {
-          const toNextAngleDiff = shortestAngleDiff(stopTargetBearing, guidanceHeading);
-          clockInfo = angleDiffToClockDirection(toNextAngleDiff);
-          if (shouldShowBottomArrow(toNextAngleDiff)) {
-            showBottomDirectionArrow(toNextAngleDiff, clockInfo.clock, isDirectionReversed);
-          } else {
-            hideBottomDirectionArrow();
-          }
-        } else {
-          hideBottomDirectionArrow();
-        }
-        toast.className = isDirectionReversed ? 'gps-toast reversed' : 'gps-toast';
-        toast.innerText = `🧭 [정지] 등산로 ${clockInfo.arrow} ${clockInfo.clock} · 남은 ${remainingStr}`;
-        return;
-      }
-
-      hideBottomDirectionArrow(); // 이동 중(속도 있음)에는 시계 방향 안내 자체가 없으므로 숨김
+      hideBottomDirectionArrow();
       toast.className = 'gps-toast';
       toast.innerText = `🧭 위쪽으로 따라가세요 · 남은 ${remainingStr}`;
     } else {
       hideBottomDirectionArrow();
       toast.className = 'gps-toast';
       toast.innerText = `🧭 위쪽으로 따라가세요`;
+    }
+  }
+
+  // 다음 갈림길(nextM)까지 남은 거리(distToNextM)를 보고 하단 큰
+  // 화살표(좌회전/우회전/직진 아이콘) 표시 여부를 결정한다. 거리 기준
+  // 하나로만 판정하므로 GPS 오차로 인한 깜빡임 걱정이 없다 — 방향
+  // 판정 자체가 없기 때문이다. TURN_ALERT_DISTANCE_M 이내로 들어오면
+  // 뜨고, 통과하면(다음 마일스톤이 바뀌면) 자연히 사라진다.
+  const TURN_ALERT_DISTANCE_M = 60;
+  let lastAlertedMilestoneKey = null;
+
+  function showUpcomingTurnAlert(nextM, distToNextM) {
+    const key = nextM.name + '@' + nextM.distanceM;
+    // 직진 구간이거나 회전각을 계산할 수 없는 지점(들머리/날머리 등)은
+    // 안내할 게 없으므로 화살표를 띄우지 않는다.
+    if (!nextM.turnLabel || nextM.turnLabel === '직진' || distToNextM > TURN_ALERT_DISTANCE_M) {
+      hideBottomDirectionArrow();
+      if (key !== lastAlertedMilestoneKey) lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
+      return;
+    }
+
+    const arrowByLabel = {
+      '좌회전': '↖️', '급좌회전': '⬅️', '우회전': '↗️', '급우회전': '➡️',
+    };
+    const arrow = arrowByLabel[nextM.turnLabel] || '⬆️';
+    const label = `${nextM.name} · ${nextM.turnLabel} (${Math.round(distToNextM)}m 앞)`;
+    // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 화면 회전용
+    // 각도가 아니라 turnAngle(미리 계산된 절대 회전각)을 그대로 넘긴다 —
+    // 화살표 아이콘 회전 자체가 "이 지점에서 꺾이는 방향"을 고정적으로
+    // 보여주는 용도로 바뀌었으므로 내 현재 heading과 무관하다.
+    showBottomDirectionArrow(nextM.turnAngle, label, false);
+
+    if (key !== lastAlertedMilestoneKey) {
+      lastAlertedMilestoneKey = key;
+      playTurnAlertBeep();
     }
   }
 
@@ -2752,15 +2600,6 @@
         gpsFilterEngine.reset();
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
-        // 방향 상태도 함께 초기화 — 숨겨진 동안 실제로 이동했을 수 있으므로
-        // 이전 방향 판정(🔵/🔴)을 재사용하지 않고 ❓부터 다시 탐색한다.
-        isDirectionSearching = false;
-        isDirectionReversed = false;
-        stopTargetBearing = null;
-        // 구간 재정렬 인덱스는 리셋하지 않는다 — 같은 코스에서 화면만
-        // 잠깐 숨겨졌다 돌아온 것이므로 다음 픽스에서 현재 구간과 비교해
-        // 자연히 이어진다(인덱스가 -1이면 새 코스로 오인해 첫 구간부터
-        // 다시 재정렬 트리거가 걸리므로 그대로 둔다).
         startGpsTracking(); // GPS 재시작 — 내부에서 initCompass, wakeLock 등도 함께 재요청됨
       }
     }
@@ -2913,40 +2752,27 @@
     }
   }
 
+  // ⚠️ "정말 길을 모르겠다" 상황을 위한 별도 길찾기 모드는 이번 재설계
+  // 범위 밖 — 나중에 따로 설계 예정. 지금은 임시로 "가장 가까운 갈림길
+  // 안내를 강제로 다시 띄우는" 정도로만 축소해둔다(과거의 나침반/정지
+  // 강제진입 로직은 전부 제거됨 — 더 이상 그런 개념이 없다).
   function forceDirectionSearch() {
     if (watchId === null) {
       startGpsTracking(); // GPS 꺼져있으면 켜기
     }
-
-    // 강제 UI 전환을 위해 플래그 세팅
-    isCurrentlyStopped = true;
-    isDirectionSearching = true;
-    updateGpsDirectionState();
-
-    // GpsFilterEngine 내부 필드를 직접 건드리지 않고 공개 API로만 상태를 주입한다.
-    if (typeof gpsFilterEngine !== 'undefined') {
-      gpsFilterEngine.forceStopped();
-    }
-
-    // stopTargetBearing(다음 GPX 목표 지점 방향)은 watchPosition 콜백이 GPS
-    // 픽스를 받을 때마다 계산하는데, GPS를 이제 막 켜는 시점이나 아직 픽스가
-    // 한 번도 안 들어온 시점에 이 버튼을 누르면 다음 픽스가 올 때까지 판정이
-    // 안 되는 문제가 있었다 — lastKnownPos와 currentPoints가 이미 있으면
-    // 여기서 즉시 계산해 채워준다.
     if (lastKnownPos && currentPoints && currentPoints.length > 1) {
       const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
-      if (nearest.index >= 0 && nearest.point) {
-        stopTargetBearing = computeStopTargetBearing(nearest.point.lat, nearest.point.lon, nearest.index);
+      if (nearest.index >= 0) {
+        const traveledDist = cumulativeDistances[nearest.index] || 0;
+        const milestoneResult = findNextMilestone(traveledDist);
+        if (milestoneResult && milestoneResult.nextM) {
+          const distToNextM = Math.max(0, milestoneResult.nextM.distanceM - traveledDist);
+          lastAlertedMilestoneKey = null; // 강제로 다시 울리게 리셋
+          showUpcomingTurnAlert(milestoneResult.nextM, distToNextM);
+        }
       }
     }
-
-    // 🔵/🔴 판정도 GPS 좌표 기반(gpsMovementHeading, 마지막 진행 방향)으로
-    // 즉시 갱신한다 — 센서 이벤트를 기다릴 필요가 없다.
-    if (stopTargetBearing !== null && gpsMovementHeading !== null) {
-      updateDirectionArrowJudgement(gpsMovementHeading, stopTargetBearing);
-    }
-
-    showToastBadge('🧭 강제 방향 탐색 모드로 진입했습니다.');
+    showToastBadge('🧭 다음 갈림길 안내를 다시 표시했습니다.');
   }
 
   function startGpsTracking() {
@@ -2970,14 +2796,11 @@
     // 흔들리거나 지연될 수 있다.
     gpsFilterEngine.reset();
     // 방향값도 함께 초기화한다. 이걸 빠뜨리면 이전 세션에서 마지막으로
-    // 확정됐던 방향(targetBearing 계열)이 그대로 남아있어, GPS를 껐다
-    // 다시 켰을 때 안내가 엉뚱한 각도에서 시작되는 재현성 버그의 원인이
-    // 되었다.
+    // 확정됐던 방향값이 그대로 남아있어, GPS를 껐다 다시 켰을 때 안내가
+    // 엉뚱한 각도에서 시작되는 재현성 버그의 원인이 되었다.
     gpsMovementHeading = null;
     isCurrentlyStopped = false;
-    isDirectionSearching = false;
-    isDirectionReversed = false;
-    stopTargetBearing = null;
+    lastAlertedMilestoneKey = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -3032,11 +2855,8 @@
         // 흔들려 오히려 혼란을 줬다. 화면의 확대/축소 버튼으로 사용자가
         // 직접 조절한다. 나중에 별도로 다시 설계할 수 있다.
 
-        // 왕복 겹침 구간에서 순방향/역방향 세그먼트를 구분할 때 쓸 최신
-        // 이동 방향. gpsMovementHeading(전역, 아직 이번 픽스로 안 갱신됨)
-        // 대신 이번 픽스에서 막 나온 result.bearing을 우선 쓴다 — 정지
-        // 상태라 이번엔 방위각이 없으면 직전 값(gpsMovementHeading)으로
-        // 대체한다.
+        // 왕복 겹침 구간에서 올바른 트랙 세그먼트를 찾을 때(nearestPointOnTrail
+        // 내부의 방향 하드필터) 쓸 최신 이동 방향.
         latestMovementBearingForTrailMatch = (!result.isStopped && result.bearing !== null)
           ? result.bearing
           : gpsMovementHeading;
@@ -3049,80 +2869,20 @@
         const nearestPoint = nearest.point;
         const nearestIdx = nearest.index;
 
-        // 정지 시 방향 고정 로직(아래)이 최신 이탈 상태를 참조할 수 있도록
-        // 여기서 먼저 히스테리시스를 갱신한다. updateNavigationToast 안에서만
-        // 갱신하면 이 시점엔 아직 "한 픽스 전"의 낡은 값이라 정지 시 방향이
-        // 엉뚱하게 계산되는 문제가 있었다.
         updateOffTrailHysteresis(minDistanceM);
 
-        // 정지 상태가 아니고, 엔진이 유효한 방위각을 계산했을 때만
-        // 화면 회전에 반영한다. (엔진 내부에서 이미 문턱 미만 변화는
-        // 걸러졌으므로 여기서는 추가 필터링이 필요 없다.)
+        // ⭐ 전면 재설계(2026-09-14): GPX가 경로 전체를 이미 알고 있으므로
+        // "내가 지금 어느 방향을 보는가"는 더 이상 필요 없다. 정지/이동
+        // 여부와 무관하게 GPS 이동방향(result.bearing)이 나올 때만 내 위치
+        // 마커 화살표를 갱신하고, 갈림길 안내(다음 갈림길까지 거리 +
+        // 미리 계산된 회전각)는 updateNavigationToast가 전담한다.
         if (!result.isStopped && result.bearing !== null) {
-          // 이동 재개
-          stopEnteredAt = null;
-          stopTargetBearing = null;
-
-          if (isDirectionSearching || isDirectionReversed) {
-            isDirectionSearching = false;
-            isDirectionReversed = false;
-            updateGpsDirectionState();
-          }
-
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
-
           // 내 위치 마커의 화살표는 GPS 진행 방향(좌표 기반)으로만 회전한다
           // — 지도는 회전하지 않으므로(북쪽 고정) 부모/자식 좌표계 보정이
           // 필요 없이 단순히 이 각도 그대로 걸면 된다.
           renderGpsArrow(result.bearing);
-
-          // ⭐ 순방향/역방향 판정 — GPS 이동방향(result.bearing, 좌표 기반,
-          // heading 필드 미사용)과 GPX 궤적의 20m 앞 지점 방향을 비교해
-          // 비대칭 히스테리시스(110도/70도)로 🔵/🔴를 갱신한다.
-          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1) {
-            const aheadForDeviation = findPointAheadByDistance(currentPoints, cumulativeDistances, nearestIdx, 20);
-            if (aheadForDeviation) {
-              const trailExpectedBearing = calculateBearing(lat, lon, aheadForDeviation.lat, aheadForDeviation.lon);
-              updateMovingDirectionJudgement(result.bearing, trailExpectedBearing);
-            }
-          }
-
-          // 지도가 더 이상 회전하지 않으므로(북쪽 고정) 구간별 지도 재정렬
-          // 로직은 필요 없다 — 갈림길 방향 안내는 하단 화살표/텍스트가
-          // findNextMilestone() + gpsMovementHeading만으로 전담한다.
-        } else if (result.isStopped) {
-          // 멈추면 stopTargetBearing(다음 GPX 목표 지점 방향)을 갱신해둔다 —
-          // 하단 큰 화살표/텍스트 안내(updateNavigationToast)가 이 값과
-          // gpsMovementHeading(마지막 진행 방향, 정지해도 그대로 유지됨)을
-          // 비교해 "몇 시 방향"을 계산하는 유일한 용도로 쓰인다.
-          //
-          // ⚠️ 이탈 상태에서도 "가장 가까운 지점으로 직선 복귀" 방향을
-          // 쓰면 안 된다 — 그 직선상에 절벽·계곡 등 위험 지형이 있을 수
-          // 있다. 실제로 안전한 길은 GPX가 그려놓은 경로 자체이므로,
-          // 이탈 여부와 무관하게 항상 "궤적을 따라 20m 앞" 진행 방향만
-          // 가리킨다. 이탈했다는 사실 자체는 별도 텍스트/경고음으로
-          // 안내한다(updateNavigationToast).
-          //
-          // 방향 계산의 시작점은 "내 실제 위치(lat, lon)"가 아니라
-          // "궤적 위 가장 가까운 지점(nearestPoint)"이어야 한다. 이탈
-          // 거리가 클수록(예: 89m) 내 실제 위치를 시작점으로 쓰면 방향에
-          // "궤적으로 복귀하는 성분"이 섞여 들어가 엉뚱한 대각선 방향이
-          // 나온다 — nearestPoint를 시작점으로 하면 순수하게 "궤적을
-          // 따라가는 방향"만 계산된다.
-          if (nearestIdx >= 0 && currentPoints && currentPoints.length > 1 && nearestPoint) {
-            // stopTargetBearing(다음 GPX 목표 지점의 절대 방위)을 매 픽스마다
-            // 갱신한다 — 정지 중에도 GPS 위치가 미세하게 계속 들어오므로
-            // 목표점이 조금씩 바뀔 수 있다.
-            stopTargetBearing = computeStopTargetBearing(nearestPoint.lat, nearestPoint.lon, nearestIdx);
-
-            // 센서가 없으므로 정지 진입 즉시(탐색 대기 없이) GPS 좌표만으로
-            // 🔵/🔴 판정을 바로 확정한다 — gpsMovementHeading은 이미 알고
-            // 있는 값이라 기다릴 이유가 없다.
-            if (stopTargetBearing !== null && gpsMovementHeading !== null) {
-              updateDirectionArrowJudgement(gpsMovementHeading, stopTargetBearing);
-            }
-          }
         }
 
         // 마커 생성 또는 이동
