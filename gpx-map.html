@@ -126,6 +126,16 @@
       <div id="poi-status" style="font-size:11.5px; color:#718096; margin-top:8px; line-height:1.4;">지도에서 지명을 드래그해 이동하거나 ✕로 삭제할 수 있습니다.</div>
         </fieldset>
 
+    <fieldset id="junction-collect-fieldset">
+      <legend>🔀 갈림길 데이터 보완</legend>
+      <div style="font-size:11px; color:#718096; margin-bottom:8px; line-height:1.4;">100대명산 목록에 없는 산은 갈림길이 자동으로 안 뜹니다. 산 이름을 입력하고 수집하면 mountain_junctions.js에 추가됩니다.</div>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <input type="text" id="input-junction-mountain" placeholder="예: 보해산" style="flex:1;">
+        <button class="btn" id="btn-collect-junctions" type="button" style="font-size:12.5px; font-weight:700; white-space:nowrap; background:#2b6cb0; border-color:#2b6cb0; color:#ffffff;">🔍 수집</button>
+      </div>
+      <div id="junction-collect-status" style="font-size:11.5px; color:#718096; line-height:1.4;"></div>
+    </fieldset>
+
     <fieldset id="course-fieldset">
       <legend>코스 요약</legend>
       <button class="btn" id="btn-generate-course" type="button" style="width:100%; margin-bottom:8px; font-weight:700; background:#edf2f7; border-color:#cbd5e0; color:#2d3748;">코스 텍스트 자동 생성</button>
@@ -2114,6 +2124,168 @@ restoreGpxDraftIfAny();
       }
       const errJson = await putRes.json().catch(() => ({}));
       throw new Error(errJson.message || `HTTP ${putRes.status}`);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // 🔀 갈림길 데이터 보완 — "산 이름 입력 → 수집 버튼" 한 번으로,
+  // 처음 mountain_junctions.js를 만들 때 사람이 손으로 했던 절차
+  // (Nominatim 좌표조회 → Overpass 등산로조회 → 내부지점 필터로 진짜
+  // 교차점만 추출)를 그대로 자동 실행한다. 100대명산 목록에 없는 산
+  // (보해산 사례)이 또 나올 때마다 새로 코드를 짜지 않고 이 버튼으로
+  // 바로 보완할 수 있게 하는 것이 목적.
+  // ════════════════════════════════════════════════════════════════
+
+  function toRadJ(d) { return d * Math.PI / 180; }
+
+  // Nominatim으로 산 이름의 좌표를 찾는다. natural=peak(봉우리 지형지물)
+  // 결과를 우선하고, 없으면 첫 결과로 폴백한다. 동명이산(가야산(경남)
+  // 등)은 검색어에 지역명을 덧붙여 사용자가 직접 구분해야 한다.
+  async function geocodeMountain(name) {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(name)}&countrycodes=kr&format=json&limit=5`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
+    if (!res.ok) throw new Error(`Nominatim 조회 실패 (HTTP ${res.status})`);
+    const results = await res.json();
+    if (!results || results.length === 0) throw new Error(`"${name}" 검색 결과가 없습니다. 산 이름 뒤에 지역명을 붙여보세요(예: "보해산 거창").`);
+    const peak = results.find(r => r.type === 'peak' || r.class === 'natural');
+    const picked = peak || results[0];
+    return { lat: parseFloat(picked.lat), lon: parseFloat(picked.lon), displayName: picked.display_name };
+  }
+
+  // 좌표 중심 반경(km)만큼의 bbox를 계산한다.
+  function computeBbox(lat, lon, radiusKm) {
+    const dLat = radiusKm / 111;
+    const dLon = radiusKm / (111 * Math.cos(toRadJ(lat)));
+    return { south: lat - dLat, west: lon - dLon, north: lat + dLat, east: lon + dLon };
+  }
+
+  // Overpass로 등산로(highway=path) way들을 가져온다. 메인 서버가
+  // 자주 504로 실패하므로 미러 서버로 1회 재시도한다.
+  async function fetchHikingPaths(bbox) {
+    const query = `[out:json][timeout:60];(way["highway"="path"](${bbox.south},${bbox.west},${bbox.north},${bbox.east}););out geom;`;
+    const endpoints = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+    let lastErr = null;
+    for (const endpoint of endpoints) {
+      try {
+        const res = await fetch(endpoint, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data.elements || [];
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw new Error('Overpass 서버 조회 실패(서버 혼잡, 잠시 후 다시 시도): ' + (lastErr && lastErr.message));
+  }
+
+  // way들이 실제로 교차하는 지점(갈림길)만 추출한다 — 두 way가 만나는
+  // 좌표에서, 적어도 한쪽 way가 그 지점을 "내부 지점"(시작/끝점이 아님)
+  // 으로 지나가야 진짜 교차점으로 인정한다. 두 way가 전부 끝점에서만
+  // 만나면 "같은 길이 데이터상 두 조각으로 쪼개진 이음매"일 뿐이므로
+  // 제외한다(mountain_junctions.js 원본 제작 때 검증된 필터 — 종점
+  // 노이즈만으로도 39~46%가 걸러졌었다).
+  function extractJunctions(ways) {
+    const coordWays = new Map();
+    ways.forEach(way => {
+      const geom = way.geometry || [];
+      geom.forEach((pt, idx) => {
+        if (!pt || pt.lat === undefined || pt.lon === undefined) return;
+        const isEndpoint = (idx === 0 || idx === geom.length - 1);
+        const key = pt.lat.toFixed(6) + ',' + pt.lon.toFixed(6);
+        if (!coordWays.has(key)) coordWays.set(key, []);
+        coordWays.get(key).push({ wayId: way.id, isEndpoint, lat: pt.lat, lon: pt.lon });
+      });
+    });
+    const junctions = [];
+    coordWays.forEach(entries => {
+      const wayIds = new Set(entries.map(e => e.wayId));
+      if (wayIds.size < 2) return;
+      if (!entries.some(e => !e.isEndpoint)) return;
+      junctions.push({ lat: entries[0].lat, lon: entries[0].lon });
+    });
+    return junctions;
+  }
+
+  // 전체 과정을 실행해 mountain_junctions.js를 갱신한다.
+  async function collectMountainJunctions(mountainName) {
+    const statusEl = document.getElementById('junction-collect-status');
+    const btn = document.getElementById('btn-collect-junctions');
+    const setStatus = (msg, isError = false) => {
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = isError ? '#c53030' : '#718096'; }
+    };
+
+    if (!mountainName || !mountainName.trim()) { setStatus('산 이름을 입력해주세요.', true); return; }
+    mountainName = mountainName.trim();
+
+    const existing = (window.MountainJunctions || []).filter(j => j.mountain === mountainName);
+    if (existing.length > 0) {
+      if (!confirm(`"${mountainName}"은 이미 ${existing.length}개 갈림길이 등록되어 있습니다. 다시 수집해서 추가하시겠습니까?\n(기존 항목은 남고 새로 찾은 지점이 더해집니다 — 완전히 동일한 좌표는 자동으로 중복 제외됩니다)`)) {
+        return;
+      }
+    }
+
+    if (btn) btn.disabled = true;
+    try {
+      setStatus(`"${mountainName}" 좌표 조회 중...`);
+      const geo = await geocodeMountain(mountainName);
+      setStatus(`좌표 확인: ${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)} — 주변 등산로 조회 중... (수십 초 걸릴 수 있습니다)`);
+
+      const bbox = computeBbox(geo.lat, geo.lon, 4); // 반경 4km
+      const ways = await fetchHikingPaths(bbox);
+      setStatus(`등산로 ${ways.length}개 구간 발견 — 갈림길 추출 중...`);
+
+      const junctions = extractJunctions(ways);
+      if (junctions.length === 0) {
+        setStatus(`"${mountainName}" 주변에서 갈림길을 찾지 못했습니다. OSM에 등산로 데이터가 부족한 지역일 수 있습니다.`, true);
+        return;
+      }
+
+      // 완전히 동일한 좌표(소수점 6자리)는 중복 제외
+      const existingKeys = new Set((window.MountainJunctions || []).map(j => j.lat.toFixed(6) + ',' + j.lon.toFixed(6)));
+      const newOnes = junctions
+        .filter(j => !existingKeys.has(j.lat.toFixed(6) + ',' + j.lon.toFixed(6)))
+        .map(j => ({ mountain: mountainName, lat: j.lat, lon: j.lon }));
+
+      if (newOnes.length === 0) {
+        setStatus(`찾은 ${junctions.length}개가 이미 전부 등록되어 있습니다(중복 없음).`);
+        return;
+      }
+
+      const merged = (window.MountainJunctions || []).concat(newOnes);
+
+      // 1. 현재 세션에서 즉시 반영 — 지금 열려있는 GPX에도 바로 적용
+      window.MountainJunctions = merged;
+
+      // 2. GitHub에 커밋해 영구 반영
+      let token = localStorage.getItem('gh_gaja_upload_token') || localStorage.getItem(GH_TOKEN_KEY) || (window.__DEFAULT_GH_TOKEN || '');
+      if (!token) {
+        token = prompt('mountain_junctions.js를 GitHub에 저장하려면 Personal Access Token이 필요합니다(repo 쓰기 권한):');
+        if (token) localStorage.setItem(GH_TOKEN_KEY, token);
+      }
+      if (token) {
+        setStatus(`갈림길 ${newOnes.length}개 발견 — GitHub에 저장 중...`);
+        const content = 'window.MountainJunctions = ' + JSON.stringify(merged) + ';\n';
+        await uploadToGitHub(token, 'mountain_junctions.js', content, `feat: mountain_junctions.js에 ${mountainName} 갈림길 ${newOnes.length}개 추가`);
+        setStatus(`✅ "${mountainName}" 갈림길 ${newOnes.length}개 추가 완료(GitHub 저장됨, 전체 ${merged.length}개). 이 GPX에는 이미 반영됐고, 재로드하면 자동 표시됩니다.`);
+      } else {
+        setStatus(`갈림길 ${newOnes.length}개를 이번 세션에만 반영했습니다(GitHub 미저장 — 토큰 없음). 새로고침하면 사라집니다.`, true);
+      }
+    } catch (err) {
+      setStatus('오류: ' + err.message, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  {
+    // 이 <script>는 </body> 바로 앞(문서 최하단)에 있어 실행 시점에는
+    // 이미 DOM 파싱이 끝나 있다 — 이 파일의 다른 버튼들(예: btn-save-jpg)과
+    // 동일하게 DOMContentLoaded 래퍼 없이 최상위에서 바로 등록한다.
+    const junctionBtn = document.getElementById('btn-collect-junctions');
+    const junctionInput = document.getElementById('input-junction-mountain');
+    if (junctionBtn && junctionInput) {
+      junctionBtn.addEventListener('click', () => collectMountainJunctions(junctionInput.value));
+      junctionInput.addEventListener('keydown', e => { if (e.key === 'Enter') collectMountainJunctions(junctionInput.value); });
     }
   }
 
