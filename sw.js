@@ -1,5 +1,5 @@
-// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v27)
-const CACHE_NAME = 'gaja-trail-cache-v27';
+// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v28)
+const CACHE_NAME = 'gaja-trail-cache-v28';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',
@@ -38,18 +38,19 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   const url = req.url;
 
-  // 1. track_viewer.html 등 웹페이지 문서는 "Network-First"
-  // 온라인이면 항상 최신 코드를 즉시 받아오고, 인터넷이 안 되는 산속(오프라인)일 때만 캐시 사용!
+  // 1. track_viewer.html 등 웹페이지 문서는 "Network-Only, 오프라인일 때만 캐시 폴백".
+  // ⚠️ 예전엔 매 요청마다 성공 응답을 캐시에 덮어썼는데(Network-First),
+  // 이러면 "버전을 확인해 캐시를 지우는 코드" 자체가 옛날 캐시된 HTML
+  // 안에 갇혀 있다가, 코드를 아무리 고쳐도 그 옛날 버전 확인 로직이
+  // 계속 실행되며 스스로는 절대 새 버전을 인식 못 하는 모순이 있었다
+  // (실제로 site data를 완전히 지워야만 갱신되는 문제로 나타났다).
+  // 이제 HTML은 절대 캐시에 새로 저장하지 않는다 — 온라인이면 무조건
+  // 네트워크에서 받아오고, fetch 자체가 실패(진짜 오프라인)할 때만
+  // install 시점에 미리 저장해둔 스냅샷(CORE_ASSETS)을 최후 수단으로 쓴다.
   if (req.mode === 'navigate' || url.includes('track_viewer.html') || url.endsWith('/gaja/')) {
     event.respondWith(
-      fetch(req, { cache: 'no-cache' }).then(networkResponse => {
-        if (networkResponse && networkResponse.status === 200) {
-          const clone = networkResponse.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-        }
-        return networkResponse;
-      }).catch(() => {
-        return caches.match(req).then(cached => cached || caches.match('./track_viewer.html'));
+      fetch(req, { cache: 'no-cache' }).catch(() => {
+        return caches.match('./track_viewer.html');
       })
     );
     return;
