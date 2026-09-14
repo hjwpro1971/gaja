@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_wayfind_ring_overlay';
+      const APP_BUILD = 'v20260915_smooth_rotation_turn_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v48').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v49').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -136,8 +136,11 @@
       top: 50% !important;
       left: 50% !important;
       transform: translate(-50%, -50%) rotate(0deg);
-      /* transition 없음 — 회전은 애니메이션/보간 없이 즉시 반영(이
-         프로젝트 관례: 디버깅 단순화를 위해 처음엔 즉시 반영으로 구현) */
+      /* 구간 회전은 매 GPS 픽스가 아니라 구간이 바뀔 때만 드물게
+         스냅 전환되므로(currentRotationSegmentKey 비교), 짧은
+         transition을 걸어도 예전에 문제였던 "매 프레임 떨림"이
+         재발하지 않는다 — 오히려 회전이 부드럽게 이어져 자연스럽다. */
+      transition: transform 0.5s ease-out;
       will-change: transform;
       backface-visibility: hidden;
     }
@@ -502,7 +505,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v48)
+      📲 바로가기 (v49)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -603,7 +606,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=48')
+      navigator.serviceWorker.register('./sw.js?v=49')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1897,6 +1900,14 @@
     // 판정에만 쓰인다.
     const TURN_LOOKBACK_M = 15;  // 진입 방향 계산에 쓸 "갈림길 이전 지점" 거리
     const TURN_LOOKAHEAD_M = 15; // 이탈 방향 계산에 쓸 "갈림길 이후 지점" 거리
+    // 짧은 코스에서는 갈림길이 들머리/날머리에서 15m 이내로 가까운 경우가
+    // 흔한데, 예전엔 이럴 때 회전각 계산을 통째로 포기(null)해 실제
+    // 갈림길인데도 안내가 전혀 안 뜨는 결함이 있었다. behindDistM/
+    // aheadDistM을 코스 경계(0~totalDistM) 안에서 가능한 만큼만이라도
+    // 확보되면 계산을 시도하도록 완화한다 — lookback/lookahead 거리가
+    // 15m보다 짧아져도(예: 갈림길이 들머리에서 8m 지점이면 8m만 사용)
+    // 방향 자체는 여전히 유효하게 구할 수 있다. 진짜로 방향을 구할 수
+    // 없는 경우(들머리/날머리 그 자체, 즉 behind/ahead 거리가 0)만 null.
     list.forEach(m => {
       const behindDistM = Math.max(0, m.distanceM - TURN_LOOKBACK_M);
       const aheadDistM = Math.min(totalDistM, m.distanceM + TURN_LOOKAHEAD_M);
@@ -1908,7 +1919,8 @@
         m.turnAngle = shortestAngleDiff(outBearing, inBearing); // -180~180, 양수=우회전, 음수=좌회전
         m.turnLabel = classifyTurnAngle(m.turnAngle);
       } else {
-        // 들머리/날머리처럼 한쪽 방향이 없는 지점은 회전각 계산 대상이 아님
+        // 들머리/날머리 그 자체(behind==distanceM 또는 ahead==distanceM,
+        // 즉 코스 맨 끝이라 진입/이탈 방향 중 하나가 아예 없음)만 계산 불가.
         m.turnAngle = null;
         m.turnLabel = null;
       }
@@ -1918,14 +1930,16 @@
   }
 
   // 회전각(도, 양수=우회전/음수=좌회전)을 사람이 읽는 안내 문구로 변환.
-  // 직진(30도 미만)은 별도 안내가 필요 없으므로 갈림길 알람 대상에서
+  // 직진(5도 미만)만 별도 안내가 필요 없으므로 갈림길 알람 대상에서
   // 자연히 제외된다(showUpcomingTurnAlert에서 turnLabel==='직진'이면
-  // 스킵).
+  // 스킵) — 예전엔 30도 문턱이라 완만하게 벌어지는 갈림길(Y자형 등)이
+  // "직진"으로 분류돼 조용히 넘어갔는데, 실제로는 반대쪽 갈래로 잘못
+  // 들어서기 쉬운 지점이라 안내가 필요했다.
   function classifyTurnAngle(angle) {
     const abs = Math.abs(angle);
-    if (abs < 30) return '직진';
-    if (angle > 0) return abs >= 120 ? '급우회전' : '우회전';
-    return abs >= 120 ? '급좌회전' : '좌회전';
+    if (abs < 5) return '직진';
+    if (angle > 0) return abs >= 120 ? '급우회전' : (abs >= 30 ? '우회전' : '약간우회전');
+    return abs >= 120 ? '급좌회전' : (abs >= 30 ? '좌회전' : '약간좌회전');
   }
 
   // 현재 위치(누적거리 기준 traveledDist)를 기준으로 "다음 마일스톤"과
