@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_smooth_rotation_turn_fix';
+      const APP_BUILD = 'v20260915_auto_stop_at_arrival';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v49').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v50').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -505,7 +505,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v49)
+      📲 바로가기 (v50)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -606,7 +606,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=49')
+      navigator.serviceWorker.register('./sw.js?v=50')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2906,6 +2906,10 @@
     return gpsMovementHeading;
   }
 
+  // 🏁 날머리 도착 자동 GPS 종료 — updateNavigationToast에서 사용.
+  const ARRIVAL_DISTANCE_M = 20;       // 날머리까지 이 거리 이내면 "도착"
+  const ARRIVAL_MIN_TRAVELED_M = 50;   // 원점회귀 코스 출발 직후 오탐 방지용 최소 이동거리
+
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
@@ -2972,6 +2976,15 @@
 
         toast.className = 'gps-toast';
         toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
+
+        // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
+        // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
+        // ARRIVAL_MIN_TRAVELED_M 이상 실제로 이동한 뒤에만 도착 판정을
+        // 한다. GPS 오차(보통 ±10~15m)를 감안해 20m 이내를 "도착"으로 본다.
+        if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
+          showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
+          stopGpsTracking();
+        }
         return;
       }
 
