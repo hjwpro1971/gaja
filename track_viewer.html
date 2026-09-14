@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_collapsible_top_header';
+      const APP_BUILD = 'v20260915_header_overflow_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v61').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v62').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -575,14 +575,14 @@
 <div class="top-header" id="topHeader">
   <button type="button" class="top-header-toggle-btn" id="topHeaderToggleBtn" onclick="toggleTopHeader()" title="코스 정보 펼치기">☰</button>
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
-    <button type="button" onclick="toggleTopHeader()" title="접기" style="flex-shrink:0; background:none; border:none; font-size:18px; color:#1b5e20; cursor:pointer; padding:0 2px;">☰</button>
-    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v61)
+    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; cursor:pointer;" onclick="toggleTopHeader()">🚩 가자go 등산지도</h1>
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v61)" style="flex-shrink: 0;">
+      📲 바로가기
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
     </button>
+    <button type="button" onclick="toggleTopHeader()" title="접기" style="flex-shrink:0; background:none; border:none; font-size:16px; color:#1b5e20; cursor:pointer; padding:0 4px;">✕</button>
   </div>
 </div>
 
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=61')
+      navigator.serviceWorker.register('./sw.js?v=62')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
