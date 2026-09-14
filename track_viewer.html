@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_ui_layout_fixes';
+      const APP_BUILD = 'v20260915_collapsible_top_header';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v60').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v61').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -160,6 +160,18 @@
       font-size: 16px; font-weight: 800; color: #1b5e20;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    /* 상단 코스명 바 접기/펼치기 — 평소엔 작은 햄버거 버튼만 남겨
+       화면을 넓게 쓰고, 누르면 코스명+버튼들이 다시 펼쳐진다. */
+    .top-header.collapsed .title-box { display: none; }
+    .top-header-toggle-btn {
+      pointer-events: auto; flex-shrink: 0;
+      width: 40px; height: 40px; border-radius: 12px;
+      background: rgba(255, 255, 255, 0.96); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      border: 1px solid #c8e6c9; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      font-size: 18px; color: #1b5e20; cursor: pointer;
+      display: none; align-items: center; justify-content: center;
+    }
+    .top-header.collapsed .top-header-toggle-btn { display: flex; }
     .btn-file-open {
       background: #2e7d32; color: #ffffff; font-size: 12px; font-weight: 700;
       padding: 6px 12px; border-radius: 10px; cursor: pointer; border: none;
@@ -173,6 +185,12 @@
          않게 한다. */
       position: absolute; right: 14px; top: 128px; z-index: 1000;
       display: flex; flex-direction: column; gap: 10px;
+      transition: top 0.2s ease;
+    }
+    /* 상단 코스명 바가 접히면 토스트도 함께 위로 당겨지므로, 겹침
+       걱정 없이 fab-col도 다시 위로 당겨 지도 공간을 더 확보한다. */
+    .top-header.collapsed ~ .fab-col {
+      top: 96px;
     }
     .fab-btn {
       width: 46px; height: 46px; border-radius: 50%; background: #ffffff;
@@ -196,6 +214,10 @@
       box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
       display: none; flex-direction: column; gap: 6px; min-width: 150px;
     }
+    /* 상단 바 접힘 상태에서 fab-col이 위로 당겨진 만큼(32px) 함께 조정 */
+    .top-header.collapsed ~ .layer-menu {
+      top: 206px;
+    }
     .layer-item {
       padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
       border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
@@ -209,10 +231,16 @@
          넉넉히 띄워, 텍스트 오른쪽 끝이 나침반 버튼에 가려 안 보이던
          문제를 해결한다. */
       position: absolute; top: 68px; left: 12px; right: 72px; z-index: 999;
-      background: #e8f5e9; backdrop-filter: blur(8px);
+      background: #e8f5e9; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
       border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 2px solid #2e7d32;
       padding: 10px 18px; font-size: 17px; font-weight: 700; color: #1b5e20;
       line-height: 1.4; text-align: center; white-space: normal; display: none; pointer-events: none;
+      transition: top 0.2s ease, right 0.2s ease;
+    }
+    /* 상단 코스명 바가 접혀 작은 햄버거 버튼(40px)만 남으면, 토스트를
+       더 위/더 넓게 당겨 지도 공간을 그만큼 더 확보한다. */
+    .top-header.collapsed ~ .gps-toast {
+      top: 60px; right: 12px;
     }
     .gps-toast.warning {
       background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c;
@@ -541,12 +569,16 @@
   <div class="sim-scrub-handle" id="simScrubHandle">⛰️</div>
 </div>
 
-<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) -->
-<div class="top-header">
+<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) — 평소엔 작은
+     햄버거 버튼으로 접혀 있다가, 누르면 코스명/버튼들이 펼쳐진다.
+     지도 화면을 더 넓게 쓰기 위함. -->
+<div class="top-header" id="topHeader">
+  <button type="button" class="top-header-toggle-btn" id="topHeaderToggleBtn" onclick="toggleTopHeader()" title="코스 정보 펼치기">☰</button>
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+    <button type="button" onclick="toggleTopHeader()" title="접기" style="flex-shrink:0; background:none; border:none; font-size:18px; color:#1b5e20; cursor:pointer; padding:0 2px;">☰</button>
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v60)
+      📲 바로가기 (v61)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -648,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=60')
+      navigator.serviceWorker.register('./sw.js?v=61')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1357,6 +1389,26 @@
       setTimeout(() => { b.style.display = 'none'; }, 400);
     }, durationMs || 3200);
   }
+
+  // 상단 코스명 바 접기/펼치기 — 평소엔 접어서 지도를 넓게 쓰고,
+  // 필요할 때(코스 재선택 등)만 펼친다. localStorage에 상태를 저장해
+  // 다음 방문에도 마지막으로 선택한 상태를 기억한다.
+  const TOP_HEADER_COLLAPSED_KEY = 'gajago_top_header_collapsed';
+  function toggleTopHeader() {
+    const header = document.getElementById('topHeader');
+    if (!header) return;
+    const collapsed = header.classList.toggle('collapsed');
+    try { localStorage.setItem(TOP_HEADER_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) {}
+  }
+  window.toggleTopHeader = toggleTopHeader;
+  (function restoreTopHeaderState() {
+    try {
+      if (localStorage.getItem(TOP_HEADER_COLLAPSED_KEY) === '1') {
+        const header = document.getElementById('topHeader');
+        if (header) header.classList.add('collapsed');
+      }
+    } catch (e) {}
+  })();
 
   // 나침반/자이로 센서를 더 이상 쓰지 않으므로 initCompass/stopCompass는
   // no-op으로 남겨둔다 — 호출부를 일일이 지우는 대신 안전하게 유지.
