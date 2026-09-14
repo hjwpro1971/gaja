@@ -1,5 +1,5 @@
-// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v65)
-const CACHE_NAME = 'gaja-trail-cache-v65';
+// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v66)
+const CACHE_NAME = 'gaja-trail-cache-v66';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',

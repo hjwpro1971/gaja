@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_leaflet_offset_redesign';
+      const APP_BUILD = 'v20260916_fix_map_animation_conflict';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v65').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v66').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -592,7 +592,7 @@
   <button type="button" class="top-header-toggle-btn" id="topHeaderToggleBtn" onclick="toggleTopHeader()" title="코스 정보 펼치기">☰</button>
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; cursor:pointer;" onclick="toggleTopHeader()">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v65)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v66)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -699,7 +699,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=65')
+      navigator.serviceWorker.register('./sw.js?v=66')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2227,8 +2227,18 @@
   // 미터-픽셀 변환을 직접 계산할 필요가 없다.
   const MAP_VIEW_OFFSET_RATIO = 0.35; // 화면 세로 절반 대비, 얼마나 아래로 밀지
   function applyMapViewWithOffset(lat, lon, zoom, viewOpts) {
-    map.setView([lat, lon], zoom, viewOpts);
-    if (!isSegmentRotationMode) return;
+    if (!isSegmentRotationMode) {
+      map.setView([lat, lon], zoom, viewOpts);
+      return;
+    }
+    // ⚠️ setView(애니메이션) 직후 panBy를 호출하면 두 애니메이션이
+    // 겹쳐 간섭한다 — 특히 250ms 인터벌(시뮬레이션)로 반복 호출되면
+    // 이전 pan 애니메이션이 끝나기도 전에 다음 것이 덮어써지며 지도가
+    // 통제 불능으로 계속 움직이는 심각한 버그가 있었다(실기기 재현
+    // 확인). 그래서 애니메이션을 완전히 끄고 setView와 panBy를
+    // 매번 "즉시" 적용한다 — 구간 전환처럼 드문 이벤트에서는 스냅이
+    // 더 명확한 신호이기도 하다(이 파일의 다른 즉시-반영 원칙과 동일).
+    map.setView([lat, lon], zoom, { animate: false });
     const size = map.getSize(); // Leaflet이 실제로 인식하는 컨테이너 픽셀 크기
     const offsetPx = (size.y / 2) * MAP_VIEW_OFFSET_RATIO;
     // 내 위치가 화면 아래쪽에 남으려면 지도 카메라(뷰 중심)를 화면
@@ -2237,7 +2247,7 @@
     // (dy=+offsetPx)과 동일한 입력을 주면 카메라가 위로 이동하는
     // 결과가 나온다(순수 계산으로 검증: scratchpad/verify_panby_offset.js).
     const vec = rotateScreenVector(0, offsetPx, mapRotationDeg);
-    map.panBy([-vec.x, -vec.y], { animate: !!(viewOpts && viewOpts.animate) });
+    map.panBy([-vec.x, -vec.y], { animate: false });
   }
 
   // 지도(#map)를 bearingDeg가 화면 위쪽을 향하도록 CSS 회전시킨다.
