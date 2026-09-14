@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_auto_stop_at_arrival';
+      const APP_BUILD = 'v20260915_fix_headingup_blank_map';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v50').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v51').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -505,7 +505,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v50)
+      📲 바로가기 (v51)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -606,7 +606,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=50')
+      navigator.serviceWorker.register('./sw.js?v=51')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1191,6 +1191,13 @@
       isSegmentRotationMode = true;
       currentRotationSegmentKey = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
       if (mapEl) mapEl.classList.add('heading-up');
+      // heading-up 클래스가 #map의 width/height를 100% -> 120vh로 급격히
+      // 바꾸는데, Leaflet은 컨테이너 크기 변화를 자동 감지하지 못해
+      // 내부 타일 그리드가 옛 크기 기준으로 남는다 — 지도 절반이 빈
+      // 회색으로 보이는 원인. invalidateSize()로 강제 재계산시킨다.
+      // CSS transition(0.5s)이 끝난 뒤 최종 크기가 확정되므로 살짝
+      // 지연 후 호출한다.
+      setTimeout(() => map.invalidateSize({ animate: false }), 520);
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
@@ -1199,6 +1206,7 @@
         mapEl.classList.remove('heading-up');
         mapEl.style.transform = '';
       }
+      setTimeout(() => map.invalidateSize({ animate: false }), 520);
     }
   }
 
@@ -3147,6 +3155,7 @@
       currentRotationSegmentKey = null;
       mapRotationDeg = 0;
       if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
+      setTimeout(() => map.invalidateSize({ animate: false }), 520);
       return;
     }
 
@@ -3166,6 +3175,10 @@
       isSegmentRotationMode = true;
       currentRotationSegmentKey = null;
       if (mapEl) mapEl.classList.add('heading-up');
+      // #map 크기가 100% -> 120vh로 바뀌는 걸 Leaflet이 자동 감지하지
+      // 못해 지도 절반이 빈 회색으로 보이는 문제 — invalidateSize로
+      // 강제 재계산(실기기 시뮬레이션에서 실측 확인된 버그).
+      setTimeout(() => map.invalidateSize({ animate: false }), 520);
     }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
     
