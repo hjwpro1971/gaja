@@ -8,6 +8,7 @@ const CORE_ASSETS = [
   './icon-512.png',
   './favicon.png',
   './track_viewer.html',
+  './track_viewer2.html',
   './gpx-map.html'
 ];
 
@@ -59,10 +60,14 @@ self.addEventListener('fetch', event => {
   // 이제 HTML은 절대 캐시에 새로 저장하지 않는다 — 온라인이면 무조건
   // 네트워크에서 받아오고, fetch 자체가 실패(진짜 오프라인)할 때만
   // install 시점에 미리 저장해둔 스냅샷(CORE_ASSETS)을 최후 수단으로 쓴다.
-  if (req.mode === 'navigate' || url.includes('track_viewer.html') || url.endsWith('/gaja/')) {
+  if (req.mode === 'navigate' || url.includes('track_viewer.html') || url.includes('track_viewer2.html') || url.endsWith('/gaja/')) {
+    // 오프라인 폴백 대상은 요청한 파일 그대로 골라야 한다 — 무조건
+    // track_viewer.html로 폴백하면 track_viewer2.html을 오프라인 상태에서
+    // 열었을 때 엉뚱하게 구버전 파일 내용이 뜨는 문제가 있었다.
+    const fallbackFile = url.includes('track_viewer2.html') ? './track_viewer2.html' : './track_viewer.html';
     event.respondWith(
       fetch(req, { cache: 'no-cache' }).catch(() => {
-        return caches.match('./track_viewer.html');
+        return caches.match(fallbackFile);
       })
     );
     return;
