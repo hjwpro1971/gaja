@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260914_wayfind_dial_mode';
+      const APP_BUILD = 'v20260915_segment_headingup_main';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v46').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v47').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -118,6 +118,28 @@
       width: 100%; height: 100%;
       position: absolute; top: 0; left: 0;
       transform-origin: center center;
+    }
+    /* 🧭 구간(갈림길↔갈림길) heading-up 지도 회전 — 과거 커밋 4305106에서
+       나침반/자이로 기반 회전을 전면 제거했던 적이 있는데, 그건 센서
+       오차가 근본 원인이었다. 이번엔 GPS 좌표 기반 구간 진행방향만
+       쓰고 센서를 전혀 안 쓰므로 그 문제가 없다 — 그 시절 이미 검증된
+       CSS 레이어 구조만 그대로 이식한다.
+       중심을 top/left/margin(%)으로 잡으면 가로세로 여백 비율이 달라져
+       회전 중 좌우로 쏠려 보이는 문제가 있었다. 대신 세로 기준(vh)으로
+       충분히 큰 정사각형을 만들고, transform: translate(-50%, -50%)로
+       "요소 자기 자신 크기의 절반"만큼 당겨 화면 비율과 무관하게 항상
+       뷰포트 정중앙에 고정한다. 120vh는 회전 중 모서리가 안 잘리면서도
+       렌더링 부담(프레임드롭)을 줄이도록 이미 실측 검증된 값이다. */
+    #map.heading-up {
+      width: 120vh !important;
+      height: 120vh !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) rotate(0deg);
+      /* transition 없음 — 회전은 애니메이션/보간 없이 즉시 반영(이
+         프로젝트 관례: 디버깅 단순화를 위해 처음엔 즉시 반영으로 구현) */
+      will-change: transform;
+      backface-visibility: hidden;
     }
     /* 상단 헤더 바 */
     .top-header {
@@ -487,7 +509,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v46)
+      📲 바로가기 (v47)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -615,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=46')
+      navigator.serviceWorker.register('./sw.js?v=47')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1095,6 +1117,15 @@
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
 
+  // 🧭 구간(갈림길↔갈림길) heading-up 지도 회전 — track_viewer.html과
+  // 달리 이 실험판(track_viewer2.html)만의 기능. isHeadingUp(GPS 켜짐
+  // 시 센터링)이 켜질 때 함께 켜지며, 나침반/자이로는 쓰지 않고 GPX
+  // 좌표만으로 현재 구간(findNextMilestone의 prevM→nextM)의 진행방향을
+  // 계산해 그 방향이 화면 위쪽을 향하도록 지도를 회전시킨다.
+  let isSegmentRotationMode = false; // 이 기능 자체의 on/off (isHeadingUp의 하위 상태)
+  let mapRotationDeg = 0;            // 지도에 실제로 건 회전각(도) — #map은 rotate(-mapRotationDeg)로 적용됨. 이 값이 전체 부호 기준.
+  let currentRotationSegmentKey = null; // "지금 회전 기준으로 삼은 구간"을 식별 — 이 키가 바뀔 때만 재회전(매 픽스 재계산 안 함)
+
   // 🔋 배터리 절전 모드 — 오래 정지(휴식/식사 등)하면 GPS 수신을 잠시
   // 멈춘다. "다시 움직이기 시작했다"를 감지할 두 가지 독립 수단을
   // 두는 하이브리드 설계(사용자 제안): (1) 가속도 센서로 걷는 진동이
@@ -1178,10 +1209,25 @@
   // 위치로 센터링하는 역할만 한다(나침반 초기화도 하지 않음).
   function setHeadingUpMode(enable, isQuiet = false) {
     isHeadingUp = enable;
+    const mapEl = document.getElementById('map');
     if (enable && lastKnownPos) {
       map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
       if (!isQuiet) {
         showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
+      }
+      // 🧭 구간 heading-up도 함께 켠다 — 1차 구현은 별도 토글 버튼을
+      // 두지 않고 GPS 켜짐 버튼 하나로 "센터링+화살표+구간회전"이
+      // 모두 켜지도록 완전히 연동한다.
+      isSegmentRotationMode = true;
+      currentRotationSegmentKey = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
+      if (mapEl) mapEl.classList.add('heading-up');
+    } else if (!enable) {
+      isSegmentRotationMode = false;
+      currentRotationSegmentKey = null;
+      mapRotationDeg = 0;
+      if (mapEl) {
+        mapEl.classList.remove('heading-up');
+        mapEl.style.transform = '';
       }
     }
   }
@@ -1368,7 +1414,7 @@
       zoom: 14,
       zoomControl: false,
       maxZoom: 19,
-      dragging: true
+      dragging: false
     });
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -1392,30 +1438,73 @@
     });
 
     // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
-    // 있게 한다. 지도가 더 이상 회전하지 않으므로(북쪽 고정), 화면 좌표와
-    // 지도 좌표가 항상 일치한다 — Leaflet 기본 드래그(dragging: true)를
-    // 그대로 쓰면 되고, 회전각 역보정을 위한 수동 드래그 구현이 필요 없다.
+    // 있게 한다. 🧭 구간 heading-up이 켜지면 #map이 CSS로 회전되어 있어
+    // Leaflet 기본 드래그(화면 좌표=지도 좌표 전제)를 쓰면 손가락 이동
+    // 방향과 실제 지도 이동 방향이 어긋난다. 그래서 항상(회전 여부와
+    // 무관하게) Leaflet dragging을 끄고, 화면 이동량을 mapRotationDeg만큼
+    // 역회전시켜 map.panBy로 직접 넘기는 수동 드래그를 쓴다 — 과거
+    // 구현(커밋 4305106 이전, git show 4305106~1:track_viewer.html)에서
+    // 이미 부호까지 검증된 코드를 그대로 이식했다.
     //
-    // 개선 2: 손을 떼는 즉시(dragend) 내 위치로 강제 복귀시키면 다른 지역을
+    // 회전 부호는 한 곳(applySegmentRotation)에서만 결정한다: #map은
+    // 항상 rotate(-mapRotationDeg)로 적용되므로, 화면이 실제로 돌아간
+    // 각도는 -mapRotationDeg다. 화면 이동량을 지도 좌표계로 되돌리려면
+    // 그 회전을 "역"으로 취소해야 하므로 +mapRotationDeg만큼 회전시키면
+    // 된다(반전 후 다시 반전하는 이중 계산을 피해 이 한 곳에서만 부호를
+    // 결정한다 — moveManualMapDrag가 mapRotationDeg를 그대로 참조만 함).
+    //
+    // 개선 2: 손을 떼는 즉시 내 위치로 강제 복귀시키면 다른 지역을
     // 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와 "드래그가 안 되는
     // 것"처럼 느껴진다. 손을 뗀 뒤에도 일정 시간(7초)은 그 자리에 머물게
-    // 두고, 그 시간이 지나야 자동으로 내 위치로 복귀한다. 유예 시간 중
-    // 다시 드래그하면 타이머를 리셋해 계속 둘러보고 싶어하는 경우를 배려한다.
+    // 두고, 그 시간이 지나야 자동으로 내 위치(+회전)로 복귀한다.
     const DRAG_RETURN_DELAY_MS = 7000;
     let dragReturnTimer = null;
+    let manualDragActive = false;
+    let manualDragLastX = 0;
+    let manualDragLastY = 0;
 
-    map.dragging.enable();
+    function rotateDragDelta(dx, dy, angleDeg) {
+      const rad = angleDeg * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      // 브라우저 화면 좌표계는 Y축이 아래를 향하므로, 표준 2D 회전 행렬과
+      // sin 부호가 반대로 적용되어야 직관적인 손가락 방향(pan)과 일치한다.
+      return {
+        x: dx * cos + dy * sin,
+        y: -dx * sin + dy * cos
+      };
+    }
 
-    map.on('dragstart', () => {
+    function startManualMapDrag(clientX, clientY) {
+      manualDragActive = true;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+
       isMapBeingDragged = true;
       isMapDragReturnPending = false;
       if (dragReturnTimer) {
         clearTimeout(dragReturnTimer);
         dragReturnTimer = null;
       }
-    });
+    }
 
-    map.on('dragend', () => {
+    function moveManualMapDrag(clientX, clientY) {
+      if (!manualDragActive) return;
+
+      const dx = clientX - manualDragLastX;
+      const dy = clientY - manualDragLastY;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+      if (dx === 0 && dy === 0) return;
+
+      const corrected = rotateDragDelta(dx, dy, mapRotationDeg);
+      map.panBy([-corrected.x, -corrected.y], { animate: false });
+    }
+
+    function endManualMapDrag() {
+      if (!manualDragActive) return;
+      manualDragActive = false;
+
       isMapBeingDragged = false;
       isMapDragReturnPending = true;
       if (dragReturnTimer) clearTimeout(dragReturnTimer);
@@ -1424,9 +1513,41 @@
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          // 동결 중 쌓였을 수 있는 최신 회전각을 즉시 재적용 — 드래그
+          // 복귀 시 위치는 맞는데 회전만 옛 값으로 남는 것을 방지.
+          if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
         }
       }, DRAG_RETURN_DELAY_MS);
+    }
+
+    const mapContainerEl = map.getContainer();
+
+    mapContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startManualMapDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    mapContainerEl.addEventListener('touchmove', (e) => {
+      if (!manualDragActive || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      moveManualMapDrag(touch.clientX, touch.clientY);
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
+    mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
+
+    // 데스크톱 테스트용 마우스 드래그 (스마트폰 앱이라 실사용 빈도는 낮지만 개발 확인용으로 유지)
+    mapContainerEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      startManualMapDrag(e.clientX, e.clientY);
     });
+    document.addEventListener('mousemove', (e) => {
+      if (!manualDragActive) return;
+      moveManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', endManualMapDrag);
 
     // 기본 레이어: 네이버 등고선 지형도 (산길샘 스타일)
     switchLayer('terrain');
@@ -1882,6 +2003,34 @@
   // 구간 시작/끝 좌표를 구할 때 쓴다.
   function pointAtCumulativeDistance(points, distances, targetDistM) {
     return findPointAheadByDistance(points, distances, 0, targetDistM);
+  }
+
+  // 🧭 구간(prevM→nextM) 진행방향 계산 — GPX 좌표만 사용, 센서 없음.
+  // trailLat/trailLon은 buildMilestones가 이미 트랙에 매칭해둔 좌표라
+  // 원본 웨이포인트 좌표(예: 전망대처럼 트랙에서 벗어난 지점)의 왜곡이 없다.
+  // 두 마일스톤이 너무 가까우면(30m 미만) 직선 방향이 GPS 오차에 취약해
+  // 흔들릴 수 있으므로, nextM 지점에서 15m 더 앞선 지점을 대신 쓴다.
+  function computeSegmentHeading(prevM, nextM) {
+    if (!prevM || !nextM) return null;
+    const segLen = nextM.distanceM - prevM.distanceM;
+    if (segLen < 30) {
+      const ahead = pointAtCumulativeDistance(currentPoints, cumulativeDistances, nextM.distanceM + 15);
+      if (ahead) return calculateBearing(prevM.trailLat, prevM.trailLon, ahead.lat, ahead.lon);
+    }
+    return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
+  }
+
+  // 지도(#map)를 bearingDeg가 화면 위쪽을 향하도록 CSS 회전시킨다.
+  // 부호는 이 함수 한 곳에서만 결정한다 — #map은 항상 rotate(-mapRotationDeg)로
+  // 걸리고, 드래그 보정(rotateDragDelta)과 내 위치 화살표 보정
+  // (handleGpsPositionUpdate 내부)은 이 mapRotationDeg 값을 참조만 할 뿐
+  // 부호를 다시 결정하지 않는다("반전 후 다시 반전"하는 이중 계산을 피하기
+  // 위해 과거 구현(커밋 4305106 이전)이 명시했던 원칙을 그대로 따른다).
+  function applySegmentRotation(bearingDeg) {
+    const mapEl = document.getElementById('map');
+    if (!mapEl || bearingDeg === null || isNaN(bearingDeg)) return;
+    mapEl.style.transform = `translate(-50%, -50%) rotate(${-bearingDeg}deg)`;
+    mapRotationDeg = bearingDeg;
   }
 
   // 상대 각도를 시계 방향(1시~12시) 및 방향 화살표로 변환 — 현재는
@@ -2867,6 +3016,17 @@
         const nextM = milestoneResult.nextM;
         const distToNextM = Math.max(0, nextM.distanceM - traveledDist);
 
+        // 🧭 구간 heading-up: 현재 구간(prevM→nextM)이 이전과 달라졌을
+        // 때만 지도를 스냅 회전시킨다 — 매 GPS 픽스마다 재계산하지 않음.
+        if (isSegmentRotationMode) {
+          const segKey = prevM.name + '@' + prevM.distanceM + '->' + nextM.name + '@' + nextM.distanceM;
+          if (segKey !== currentRotationSegmentKey) {
+            currentRotationSegmentKey = segKey;
+            const heading = computeSegmentHeading(prevM, nextM);
+            if (heading !== null) applySegmentRotation(heading);
+          }
+        }
+
         showUpcomingTurnAlert(nextM, distToNextM);
 
         toast.className = 'gps-toast';
@@ -3300,9 +3460,19 @@
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
           lastGpsMoveTime = Date.now();
-          // 내 위치 마커의 화살표는 GPS 진행 방향(좌표 기반)으로만 회전한다
-          // — 지도는 회전하지 않으므로(북쪽 고정) 부모/자식 좌표계 보정이
-          // 필요 없이 단순히 이 각도 그대로 걸면 된다.
+          // 내 위치 마커(userGpsMarker)는 Leaflet 마커라 #map의 자식
+          // 레이어 안에 있다 — 구간 heading-up이 켜져 #map이
+          // rotate(-mapRotationDeg)만큼 이미 돌아가 있으면, 화살표도
+          // 그 회전을 부모로부터 그대로 물려받는다(자식 DOM 회전은 부모
+          // 회전에 "더해지는" 방식으로 합산된다).
+          // 화면상 최종 회전 = 부모(-mapRotationDeg) + 자식(적용할 값).
+          // 우리가 원하는 최종 화면 회전은 절대방위 gpsMovementHeading이
+          // "지도가 mapRotationDeg만큼 회전한 만큼" 어긋나 보이는 것이므로
+          // (gpsMovementHeading - mapRotationDeg)이고, 이를 만족하는
+          // 자식 회전값을 역산하면 정확히 gpsMovementHeading 그 자체가
+          // 나온다(부모의 -mapRotationDeg와 상쇄됨) — 즉 renderGpsArrow에
+          // 넘길 값은 회전 모드 여부와 무관하게 항상 result.bearing으로
+          // 동일하다. 순수 계산으로 검증 완료(scratchpad/verify_headingup_rotation.js).
           renderGpsArrow(result.bearing);
         }
 
