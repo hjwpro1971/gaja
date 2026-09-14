@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>산길샘 방식 GPX 길찾기 테스트</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""/>
+
+<style>
+    * { box-sizing: border-box; }
+
+    html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: Arial, "Noto Sans KR", sans-serif;
+        background: #fff;
+    }
+
+    #app {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* 지도 회전용 바깥 영역 */
+    #mapViewport {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: #ddd;
+    }
+
+    /*
+      Leaflet 지도 전체를 회전시킨다.
+      일반 이동: 0도 = 정북
+      길찾기: 진행방향이 화면 위쪽이 되도록 -heading
+    */
+    #mapRotator {
+        position: absolute;
+        width: 140%;
+        height: 140%;
+        left: -20%;
+        top: -20%;
+        transform-origin: center center;
+        transition: transform 0.35s ease-out;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* 상단 상태 */
+    #statusBar {
+        position: absolute;
+        z-index: 2000;
+        left: 12px;
+        right: 12px;
+        top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+    }
+
+    #modeBadge {
+        background: rgba(255,255,255,.94);
+        border-radius: 18px;
+        padding: 8px 13px;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    }
+
+    #headingBadge {
+        background: rgba(255,255,255,.94);
+        border-radius: 18px;
+        padding: 8px 13px;
+        font-size: 13px;
+        box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    }
+
+    /* 북쪽 표시 */
+    #north {
+        position: absolute;
+        z-index: 1500;
+        top: 76px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.92);
+        box-shadow: 0 2px 9px rgba(0,0,0,.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        color: #222;
+        pointer-events: none;
+    }
+
+    /* 현재 위치 */
+    #locationMarker {
+        position: absolute;
+        z-index: 1600;
+        left: 50%;
+        top: 50%;
+        width: 30px;
+        height: 30px;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+    }
+
+    #locationMarker .dot {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        left: 6px;
+        top: 6px;
+        background: #247b35;
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 1px 5px rgba(0,0,0,.35);
+    }
+
+    /* 방향 화살표 */
+    #arrow {
+        position: absolute;
+        z-index: 1700;
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        border-left: 15px solid transparent;
+        border-right: 15px solid transparent;
+        border-bottom: 42px solid #247b35;
+        transform-origin: 50% 78%;
+        transform: translate(-50%, -78%) rotate(0deg);
+        filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
+        pointer-events: none;
+        display: none;
+    }
+
+    /* 하단 패널 */
+    #bottomPanel {
+        position: absolute;
+        z-index: 2200;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        background: rgba(255,255,255,.96);
+        border-radius: 18px;
+        padding: 12px;
+        box-shadow: 0 3px 18px rgba(0,0,0,.22);
+    }
+
+    .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .row:last-child { margin-bottom: 0; }
+
+    button, .fileLabel {
+        flex: 1;
+        min-height: 46px;
+        border: 0;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+        background: #2d7d36;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+    }
+
+    button.secondary, .fileLabel.secondary {
+        background: #eef5ea;
+        color: #286d31;
+        border: 1px solid #c8dfc5;
+    }
+
+    button.danger {
+        background: #b73737;
+    }
+
+    button:disabled {
+        opacity: .45;
+        cursor: default;
+    }
+
+    #gpxFile {
+        display: none;
+    }
+
+    #info {
+        font-size: 12px;
+        color: #555;
+        line-height: 1.5;
+        margin-bottom: 9px;
+        text-align: center;
+    }
+
+    /* 방향 설정 모달 */
+    #directionModal {
+        position: absolute;
+        z-index: 5000;
+        inset: 0;
+        background: rgba(0,0,0,.48);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    #directionCard {
+        width: min(420px, 100%);
+        background: white;
+        border-radius: 28px;
+        padding: 25px 20px 20px;
+        text-align: center;
+        box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    }
+
+    #directionCard h2 {
+        margin: 4px 0 9px;
+        color: #286d31;
+    }
+
+    #directionCard p {
+        color: #555;
+        line-height: 1.55;
+        font-size: 14px;
+        margin: 0 0 16px;
+    }
+
+    #dial {
+        position: relative;
+        width: 260px;
+        height: 260px;
+        margin: 0 auto 17px;
+        border-radius: 50%;
+        background: #f1f7ed;
+        border: 3px solid #cce4c8;
+        touch-action: none;
+        user-select: none;
+    }
+
+    #dial::before {
+        content: "";
+        position: absolute;
+        inset: 22px;
+        border: 1px dashed #b8d5b4;
+        border-radius: 50%;
+    }
+
+    #dialArrow {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 0;
+        height: 0;
+        border-left: 16px solid transparent;
+        border-right: 16px solid transparent;
+        border-bottom: 105px solid #2d7d36;
+        transform-origin: 50% 82%;
+        transform: translate(-50%, -82%) rotate(0deg);
+        filter: drop-shadow(0 2px 3px rgba(0,0,0,.2));
+    }
+
+    #dialCenter {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 18px;
+        height: 18px;
+        transform: translate(-50%, -50%);
+        border: 3px solid white;
+        background: #2d7d36;
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px #2d7d36;
+    }
+
+    .dirLabel {
+        position: absolute;
+        font-weight: 900;
+        color: #555;
+    }
+
+    .dirN { top: 7px; left: 50%; transform: translateX(-50%); }
+    .dirE { right: 8px; top: 50%; transform: translateY(-50%); }
+    .dirS { bottom: 7px; left: 50%; transform: translateX(-50%); }
+    .dirW { left: 8px; top: 50%; transform: translateY(-50%); }
+
+    #confirmedHeading {
+        font-size: 18px;
+        font-weight: 900;
+        margin-bottom: 12px;
+    }
+
+    /* Leaflet 컨트롤 */
+    .leaflet-control-zoom {
+        margin-top: 125px !important;
+    }
+</style>
+</head>
+
+<body>
+<div id="app">
+
+    <div id="mapViewport">
+        <div id="mapRotator">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div id="statusBar">
+        <div id="modeBadge">일반 이동 · 정북</div>
+        <div id="headingBadge">방향 --°</div>
+    </div>
+
+    <div id="north">N</div>
+
+    <div id="locationMarker">
+        <div class="dot"></div>
+    </div>
+
+    <div id="arrow"></div>
+
+    <div id="bottomPanel">
+        <div id="info">
+            GPX를 불러오면 산길이 표시됩니다. 현재는 GPS 테스트도 가능합니다.
+        </div>
+
+        <div class="row">
+            <label class="fileLabel" for="gpxFile">GPX 불러오기</label>
+            <button id="gpsBtn">내 위치 시작</button>
+        </div>
+
+        <div class="row">
+            <button id="directionBtn" class="secondary">길찾기 방향 설정</button>
+            <button id="normalBtn" class="secondary">정북으로 복귀</button>
+        </div>
+
+        <div class="row">
+            <button id="navBtn" disabled>길찾기 모드 시작</button>
+            <button id="stopGpsBtn" class="danger">GPS 중지</button>
+        </div>
+
+        <input id="gpxFile" type="file" accept=".gpx,application/gpx+xml,text/xml">
+    </div>
+
+    <!-- 방향 설정 -->
+    <div id="directionModal">
+        <div id="directionCard">
+            <h2>길찾기 방향</h2>
+            <p>
+                실제 산길을 바라본 상태에서<br>
+                아래 다이얼을 손가락으로 돌려<br>
+                <b>내가 보는 산길 방향</b>을 맞추세요.
+            </p>
+
+            <div id="dial">
+                <span class="dirLabel dirN">N</span>
+                <span class="dirLabel dirE">E</span>
+                <span class="dirLabel dirS">S</span>
+                <span class="dirLabel dirW">W</span>
+                <div id="dialArrow"></div>
+                <div id="dialCenter"></div>
+            </div>
+
+            <div id="confirmedHeading">방향 0° · 북쪽</div>
+
+            <div class="row">
+                <button id="compassBtn" class="secondary">나침반으로 맞추기</button>
+            </div>
+
+            <div class="row">
+                <button id="confirmDirectionBtn">이 방향으로 확정</button>
+                <button id="closeDirectionBtn" class="secondary">취소</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
+<script>
+/* =========================================================
+   산길샘 방식 GPX 길찾기 테스트
+
+   NORMAL:
+       지도 = 정북 고정
+
+   SETTING:
+       지도 = 정북
+       사용자가 산길을 보는 방향을 수동/나침반으로 설정
+
+   NAVIGATION:
+       지도 = 현재 가는 방향이 화면 위쪽
+       즉 지도 회전값 = -heading
+
+   GPX:
+       나중에 GPX 파일을 불러오면 자동으로 경로 표시
+   ========================================================= */
+
+const MODE = {
+    NORMAL: "normal",
+    SETTING: "setting",
+    NAVIGATION: "navigation"
+};
+
+let mode = MODE.NORMAL;
+
+let map;
+let gpxLayer = null;
+let routePoints = [];
+let routeLatLngs = [];
+
+let currentLatLng = null;
+let previousLatLng = null;
+
+let routeIndex = 0;
+let currentRouteHeading = null;
+let movementHeading = null;
+let confirmedHeading = 0;
+let mapRotation = 0;
+
+let gpsWatchId = null;
+let compassHandler = null;
+let compassEnabled = false;
+
+
+/* -----------------------------
+   지도 초기화
+----------------------------- */
+
+map = L.map("map", {
+    zoomControl: true,
+    attributionControl: true
+}).setView([36.3504, 127.3845], 13);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+
+/* -----------------------------
+   UI
+----------------------------- */
+
+const modeBadge = document.getElementById("modeBadge");
+const headingBadge = document.getElementById("headingBadge");
+const info = document.getElementById("info");
+const arrow = document.getElementById("arrow");
+
+function normalizeHeading(deg) {
+    deg = Number(deg);
+    if (!Number.isFinite(deg)) return 0;
+    deg %= 360;
+    if (deg < 0) deg += 360;
+    return deg;
+}
+
+function shortestAngle(from, to) {
+    return ((to - from + 540) % 360) - 180;
+}
+
+function smoothHeading(current, target, factor = 0.18) {
+    const diff = shortestAngle(current, target);
+    return normalizeHeading(current + diff * factor);
+}
+
+function headingText(h) {
+    h = normalizeHeading(h);
+
+    let name;
+    if (h < 22.5 || h >= 337.5) name = "북";
+    else if (h < 67.5) name = "북동";
+    else if (h < 112.5) name = "동";
+    else if (h < 157.5) name = "남동";
+    else if (h < 202.5) name = "남";
+    else if (h < 247.5) name = "남서";
+    else if (h < 292.5) name = "서";
+    else name = "북서";
+
+    return `${Math.round(h)}° · ${name}`;
+}
+
+
+/* -----------------------------
+   지도 회전
+
+   정상 모드 = 반드시 0°
+   길찾기 = 진행방향이 위쪽
+----------------------------- */
+
+function setMapRotation(rotation, animate = true) {
+    mapRotation = rotation;
+
+    const rotator = document.getElementById("mapRotator");
+
+    if (!animate) {
+        rotator.style.transition = "none";
+    } else {
+        rotator.style.transition = "transform 0.35s ease-out";
+    }
+
+    rotator.style.transform =
+        `rotate(${rotation}deg)`;
+
+    if (!animate) {
+        requestAnimationFrame(() => {
+            rotator.style.transition = "transform 0.35s ease-out";
+        });
+    }
+}
+
+
+/* -----------------------------
+   일반 이동 모드
+
+   지도는 무조건 정북
+----------------------------- */
+
+function enterNormalMode() {
+    mode = MODE.NORMAL;
+
+    setMapRotation(0);
+
+    modeBadge.textContent = "일반 이동 · 정북";
+
+    updateArrow();
+
+    info.textContent =
+        routePoints.length
+        ? "일반 이동 모드: 지도는 정북으로 고정됩니다."
+        : "GPX를 불러오면 산길이 표시됩니다.";
+}
+
+
+/* -----------------------------
+   방향 설정
+----------------------------- */
+
+const directionModal = document.getElementById("directionModal");
+const dial = document.getElementById("dial");
+const dialArrow = document.getElementById("dialArrow");
+const confirmedHeadingText = document.getElementById("confirmedHeading");
+
+function openDirectionSetting() {
+    mode = MODE.SETTING;
+
+    // 방향 설정 중에도 지도는 정북
+    setMapRotation(0);
+
+    directionModal.style.display = "flex";
+
+    setDialHeading(confirmedHeading);
+
+    modeBadge.textContent = "방향 설정 · 정북";
+    info.textContent = "실제 산길을 바라보고 방향을 맞춘 뒤 확정하세요.";
+}
+
+function closeDirectionSetting() {
+    directionModal.style.display = "none";
+
+    if (mode === MODE.SETTING) {
+        enterNormalMode();
+    }
+}
+
+function setDialHeading(heading) {
+    confirmedHeading = normalizeHeading(heading);
+
+    dialArrow.style.transform =
+        `translate(-50%, -82%) rotate(${confirmedHeading}deg)`;
+
+    confirmedHeadingText.textContent =
+        "방향 " + headingText(confirmedHeading);
+}
+
+
+/* -----------------------------
+   다이얼 손가락 회전
+----------------------------- */
+
+let dialDragging = false;
+
+function pointerAngle(e) {
+    const rect = dial.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    const x = e.clientX - cx;
+    const y = e.clientY - cy;
+
+    // 위쪽 = 0°, 시계방향 증가
+    let deg = Math.atan2(x, -y) * 180 / Math.PI;
+    if (deg < 0) deg += 360;
+
+    return deg;
+}
+
+dial.addEventListener("pointerdown", e => {
+    dialDragging = true;
+    dial.setPointerCapture(e.pointerId);
+    setDialHeading(pointerAngle(e));
+});
+
+dial.addEventListener("pointermove", e => {
+    if (!dialDragging) return;
+    setDialHeading(pointerAngle(e));
+});
+
+dial.addEventListener("pointerup", e => {
+    dialDragging = false;
+});
+
+dial.addEventListener("pointercancel", () => {
+    dialDragging = false;
+});
+
+
+/* -----------------------------
+   나침반
+
+   iOS/Android 브라우저에서 지원되면 사용.
+   실패하면 수동 다이얼을 계속 사용할 수 있다.
+----------------------------- */
+
+async function enableCompass() {
+    try {
+        if (typeof DeviceOrientationEvent !== "undefined" &&
+            typeof DeviceOrientationEvent.requestPermission === "function") {
+
+            const permission =
+                await DeviceOrientationEvent.requestPermission();
+
+            if (permission !== "granted") {
+                alert("나침반 권한이 허용되지 않았습니다. 손으로 돌려서 맞추기를 사용하세요.");
+                return;
+            }
+        }
+
+        compassHandler = e => {
+            let heading = null;
+
+            // iOS
+            if (typeof e.webkitCompassHeading === "number") {
+                heading = e.webkitCompassHeading;
+            }
+            // Android 일부 브라우저
+            else if (typeof e.alpha === "number") {
+                heading = 360 - e.alpha;
+            }
+
+            if (heading != null && Number.isFinite(heading)) {
+                compassEnabled = true;
+                setDialHeading(heading);
+            }
+        };
+
+        window.addEventListener("deviceorientationabsolute", compassHandler, true);
+        window.addEventListener("deviceorientation", compassHandler, true);
+
+        alert("나침반을 활성화했습니다.\n주변 금속/자석 간섭이 있으면 손으로 돌려서 맞추기를 사용하세요.");
+
+    } catch (err) {
+        console.warn(err);
+        alert("이 브라우저에서 나침반을 사용할 수 없습니다.\n손으로 돌려서 맞추기를 사용하세요.");
+    }
+}
+
+
+/* -----------------------------
+   방향 확정
+
+   이 순간부터 길찾기 모드
+----------------------------- */
+
+function confirmDirection() {
+    confirmedHeading = normalizeHeading(confirmedHeading);
+
+    directionModal.style.display = "none";
+
+    mode = MODE.NAVIGATION;
+
+    // 확정된 방향을 초기 진행방향으로 사용
+    if (movementHeading == null) {
+        movementHeading = confirmedHeading;
+    }
+
+    modeBadge.textContent = "길찾기 모드 · 진행방향 위쪽";
+
+    updateNavigation();
+}
+
+
+/* -----------------------------
+   길찾기 모드
+
+   GPS 이동방향 또는 GPX 목표방향을 사용한다.
+
+   우선순위:
+   1. 실제 GPS 이동방향
+   2. GPX 현재 위치 → 앞쪽 목표점 방향
+   3. 방향 설정값
+----------------------------- */
+
+function updateNavigation() {
+
+    if (mode !== MODE.NAVIGATION) return;
+
+    let targetHeading = null;
+
+    if (movementHeading != null) {
+        targetHeading = movementHeading;
+    } else if (currentRouteHeading != null) {
+        targetHeading = currentRouteHeading;
+    } else {
+        targetHeading = confirmedHeading;
+    }
+
+    mapRotation = smoothHeading(
+        normalizeHeading(mapRotation),
+        normalizeHeading(-targetHeading),
+        0.16
+    );
+
+    // 0~360 경계에서 -값이 생길 수 있으므로 별도 CSS용 값 사용
+    const cssRotation = -targetHeading;
+
+    document.getElementById("mapRotator").style.transform =
+        `rotate(${cssRotation}deg)`;
+
+    headingBadge.textContent =
+        "진행 " + headingText(targetHeading);
+
+    updateArrow();
+}
+
+
+/* -----------------------------
+   화살표
+
+   지도와 함께 회전하는 구조에서
+   화면상 방향을 별도로 보정한다.
+
+   일반 모드:
+       북쪽 기준 heading
+
+   길찾기:
+       지도도 -heading 회전하므로
+       화살표는 화면 위쪽(0°)을 향한다.
+----------------------------- */
+
+function updateArrow() {
+
+    let heading = currentRouteHeading;
+
+    if (movementHeading != null) {
+        heading = movementHeading;
+    }
+
+    if (heading == null) {
+        arrow.style.display = "none";
+        headingBadge.textContent = "방향 --°";
+        return;
+    }
+
+    arrow.style.display = "block";
+
+    if (mode === MODE.NAVIGATION) {
+        // 지도 회전에 맞춰 현재 진행방향을 화면 위쪽으로
+        arrow.style.transform =
+            "translate(-50%, -78%) rotate(0deg)";
+    } else {
+        // 정북 지도에서는 실제 방향을 그대로 표시
+        arrow.style.transform =
+            `translate(-50%, -78%) rotate(${heading}deg)`;
+    }
+
+    headingBadge.textContent =
+        "방향 " + headingText(heading);
+}
+
+
+/* -----------------------------
+   GPX 처리
+----------------------------- */
+
+document.getElementById("gpxFile").addEventListener("change", e => {
+
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+        try {
+            loadGPX(reader.result, file.name);
+        } catch (err) {
+            console.error(err);
+            alert("GPX 파일을 읽지 못했습니다.");
+        }
+    };
+
+    reader.readAsText(file);
+});
+
+function loadGPX(xmlText, fileName) {
+
+    const xml = new DOMParser().parseFromString(
+        xmlText,
+        "application/xml"
+    );
+
+    const trkpts = [
+        ...xml.querySelectorAll("trkpt")
+    ];
+
+    const rtepts = [
+        ...xml.querySelectorAll("rtept")
+    ];
+
+    const pts = trkpts.length ? trkpts : rtepts;
+
+    if (!pts.length) {
+        throw new Error("GPX track point가 없습니다.");
+    }
+
+    routePoints = pts.map(p => ({
+        lat: parseFloat(p.getAttribute("lat")),
+        lon: parseFloat(p.getAttribute("lon")),
+        ele: parseFloat(
+            p.querySelector("ele")?.textContent || "0"
+        )
+    })).filter(p =>
+        Number.isFinite(p.lat) &&
+        Number.isFinite(p.lon)
+    );
+
+    routeLatLngs = routePoints.map(p => [
+        p.lat,
+        p.lon
+    ]);
+
+    if (gpxLayer) {
+        map.removeLayer(gpxLayer);
+    }
+
+    gpxLayer = L.polyline(
+        routeLatLngs,
+        {
+            weight: 5,
+            opacity: .9
+        }
+    ).addTo(map);
+
+    map.fitBounds(gpxLayer.getBounds(), {
+        padding: [70, 70]
+    });
+
+    routeIndex = 0;
+
+    info.textContent =
+        `${fileName} · ${routePoints.length.toLocaleString()}개 포인트`;
+
+    // GPX 전체 방향 계산
+    currentRouteHeading =
+        calculateBearingBetweenPoints(
+            routePoints[0],
+            routePoints[Math.min(10, routePoints.length - 1)]
+        );
+
+    updateArrow();
+}
+
+
+/* -----------------------------
+   현재 위치에서 GPX 앞쪽 목표점 찾기
+
+   약 10m~30m 앞의 포인트를 목표로 잡는다.
+----------------------------- */
+
+function updateRouteHeading(lat, lon) {
+
+    if (!routePoints.length) return;
+
+    let nearestIndex = 0;
+    let nearestDistance = Infinity;
+
+    // 전체 검색
+    for (let i = 0; i < routePoints.length; i++) {
+
+        const p = routePoints[i];
+
+        const d = distanceMeters(
+            lat,
+            lon,
+            p.lat,
+            p.lon
+        );
+
+        if (d < nearestDistance) {
+            nearestDistance = d;
+            nearestIndex = i;
+        }
+    }
+
+    routeIndex = nearestIndex;
+
+    // 약 10~30m 앞을 찾는다.
+    let targetIndex = nearestIndex;
+
+    for (
+        let i = nearestIndex;
+        i < routePoints.length;
+        i++
+    ) {
+        const d = distanceMeters(
+            lat,
+            lon,
+            routePoints[i].lat,
+            routePoints[i].lon
+        );
+
+        if (d >= 10) {
+            targetIndex = i;
+            break;
+        }
+    }
+
+    if (targetIndex === nearestIndex &&
+        nearestIndex < routePoints.length - 1) {
+        targetIndex++;
+    }
+
+    const target = routePoints[targetIndex];
+
+    if (target) {
+        currentRouteHeading =
+            calculateBearing(
+                {lat, lon},
+                target
+            );
+    }
+}
+
+
+/* -----------------------------
+   GPS
+
+   실제 이동방향은 3m 이상 이동했을 때만 갱신.
+   산에서 저속으로 걷는 경우에도 단순히
+   speed < 0.5 같은 조건만으로 정지 판정하지 않는다.
+----------------------------- */
+
+document.getElementById("gpsBtn").addEventListener("click", startGPS);
+
+function startGPS() {
+
+    if (!window.isSecureContext) {
+        alert(
+            "GPS는 보안 연결(HTTPS)에서 사용해야 합니다.\\n\\n" +
+            "GitHub Pages처럼 https:// 주소로 실행하세요.\\n" +
+            "휴대폰에서 HTML 파일을 직접 열면 GPS가 차단될 수 있습니다."
+        );
+        info.textContent = "GPS 오류: HTTPS 환경이 아닙니다.";
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        alert("이 브라우저에서 GPS 기능을 사용할 수 없습니다.");
+        info.textContent = "GPS 오류: Geolocation 미지원";
+        return;
+    }
+
+    if (gpsWatchId != null) return;
+
+    info.textContent =
+        "GPS 위치를 찾는 중입니다...\\n" +
+        "실외에서 잠시 기다려 주세요.";
+
+    // 먼저 1회 위치를 받아 GPS 권한/수신 상태를 확인한다.
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            handleGPS(position);
+
+            // 1회 수신 성공 후 지속 위치 추적
+            gpsWatchId = navigator.geolocation.watchPosition(
+                handleGPS,
+                handleGPSError,
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 3000,
+                    timeout: 30000
+                }
+            );
+
+            info.textContent =
+                "GPS 정상 수신 · 지속 추적 중";
+        },
+        handleGPSError,
+        {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 30000
+        }
+    );
+}
+
+function stopGPS() {
+
+    if (gpsWatchId != null) {
+        navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+    }
+
+    previousLatLng = null;
+    window._gpsCenteredOnce = false;
+
+    info.textContent =
+        "GPS가 중지되었습니다.";
+}
+
+document.getElementById("stopGpsBtn")
+    .addEventListener("click", stopGPS);
+
+function handleGPS(position) {
+
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+
+    currentLatLng = L.latLng(lat, lon);
+
+    /*
+      실제 이동거리 기반 heading.
+      속도 하나만으로 정지 판정을 하지 않는다.
+    */
+    if (previousLatLng) {
+
+        const distance =
+            map.distance(
+                previousLatLng,
+                currentLatLng
+            );
+
+        if (distance >= 3) {
+
+            const newHeading =
+                calculateBearing(
+                    previousLatLng.lat,
+                    previousLatLng.lng,
+                    currentLatLng.lat,
+                    currentLatLng.lng
+                );
+
+            if (movementHeading == null) {
+                movementHeading = newHeading;
+            } else {
+                movementHeading =
+                    smoothHeading(
+                        movementHeading,
+                        newHeading,
+                        0.25
+                    );
+            }
+
+            previousLatLng = currentLatLng;
+        }
+    } else {
+        previousLatLng = currentLatLng;
+    }
+
+    updateRouteHeading(lat, lon);
+
+    /*
+      일반 이동:
+          지도 정북
+
+      길찾기:
+          진행방향으로 지도 회전
+    */
+    if (mode === MODE.NAVIGATION) {
+        updateNavigation();
+    } else {
+        setMapRotation(0);
+        updateArrow();
+    }
+
+    /*
+      현재 위치를 지도 중앙으로 유지.
+      길찾기 모드에서는 화면 중심이 현재 위치.
+    */
+    if (mode === MODE.NAVIGATION) {
+        map.setView(
+            currentLatLng,
+            Math.max(map.getZoom(), 16),
+            { animate: false }
+        );
+    } else {
+        // 처음 GPS를 받으면 한 번만 이동
+        if (!window._gpsCenteredOnce) {
+            map.setView(
+                currentLatLng,
+                Math.max(map.getZoom(), 15),
+                { animate: true }
+            );
+            window._gpsCenteredOnce = true;
+        }
+    }
+
+    info.textContent =
+        `GPS ${lat.toFixed(5)}, ${lon.toFixed(5)}` +
+        (currentRouteHeading != null
+            ? ` · GPX ${Math.round(currentRouteHeading)}°`
+            : "");
+}
+
+function handleGPSError(error) {
+    console.warn("GPS error", error);
+
+    let detail = "";
+    let action = "";
+
+    switch (error.code) {
+        case 1:
+            detail = "위치 권한이 거부되었습니다.";
+            action = "휴대폰 설정에서 브라우저의 위치 권한을 허용하세요.";
+            break;
+
+        case 2:
+            detail = "현재 위치를 확인할 수 없습니다.";
+            action = "실외로 이동하고 Wi-Fi/모바일 데이터를 켠 뒤 다시 시도하세요.";
+            break;
+
+        case 3:
+            detail = "GPS 수신 시간이 초과되었습니다.";
+            action = "산에서 하늘이 잘 보이는 곳에서 10~30초 기다려 주세요.";
+            break;
+
+        default:
+            detail = error.message || "알 수 없는 GPS 오류";
+            action = "GPS를 다시 시작해 주세요.";
+    }
+
+    info.textContent =
+        "GPS 오류: " + detail + " " + action;
+
+    alert(
+        "GPS 오류\\n\\n" +
+        detail + "\\n" +
+        action
+    );
+}
+
+
+/* -----------------------------
+   거리 / 방위 계산
+----------------------------- */
+
+function distanceMeters(lat1, lon1, lat2, lon2) {
+
+    const R = 6371000;
+
+    const p1 = lat1 * Math.PI / 180;
+    const p2 = lat2 * Math.PI / 180;
+
+    const dp =
+        (lat2 - lat1) * Math.PI / 180;
+
+    const dl =
+        (lon2 - lon1) * Math.PI / 180;
+
+    const a =
+        Math.sin(dp / 2) ** 2 +
+        Math.cos(p1) *
+        Math.cos(p2) *
+        Math.sin(dl / 2) ** 2;
+
+    return 2 * R *
+        Math.atan2(
+            Math.sqrt(a),
+            Math.sqrt(1 - a)
+        );
+}
+
+function calculateBearingBetweenPoints(a, b) {
+
+    const φ1 = a.lat * Math.PI / 180;
+    const φ2 = b.lat * Math.PI / 180;
+
+    const Δλ =
+        (b.lon - a.lon) * Math.PI / 180;
+
+    const y =
+        Math.sin(Δλ) * Math.cos(φ2);
+
+    const x =
+        Math.cos(φ1) * Math.sin(φ2) -
+        Math.sin(φ1) *
+        Math.cos(φ2) *
+        Math.cos(Δλ);
+
+    return normalizeHeading(
+        Math.atan2(y, x) * 180 / Math.PI
+    );
+}
+
+function calculateBearing(a, b) {
+    return calculateBearingBetweenPoints(a, b);
+}
+
+
+/* -----------------------------
+   버튼
+----------------------------- */
+
+document.getElementById("directionBtn")
+    .addEventListener("click", openDirectionSetting);
+
+document.getElementById("closeDirectionBtn")
+    .addEventListener("click", closeDirectionSetting);
+
+document.getElementById("confirmDirectionBtn")
+    .addEventListener("click", confirmDirection);
+
+document.getElementById("compassBtn")
+    .addEventListener("click", enableCompass);
+
+document.getElementById("normalBtn")
+    .addEventListener("click", () => {
+        enterNormalMode();
+    });
+
+document.getElementById("navBtn")
+    .addEventListener("click", () => {
+
+        if (routePoints.length) {
+            mode = MODE.NAVIGATION;
+
+            if (movementHeading == null) {
+                movementHeading =
+                    currentRouteHeading ??
+                    confirmedHeading;
+            }
+
+            updateNavigation();
+        } else {
+            alert("먼저 GPX를 불러오세요.");
+        }
+    });
+
+
+/* -----------------------------
+   GPX가 없어도 길찾기 테스트 가능
+----------------------------- */
+
+function createDemoRoute() {
+
+    const center = map.getCenter();
+
+    routePoints = [];
+
+    for (let i = 0; i < 80; i++) {
+
+        const t = i / 79;
+
+        routePoints.push({
+            lat:
+                center.lat +
+                t * 0.025,
+
+            lon:
+                center.lng +
+                Math.sin(t * Math.PI * 2) * 0.012 +
+                t * 0.008,
+
+            ele: 0
+        });
+    }
+
+    routeLatLngs =
+        routePoints.map(p => [p.lat, p.lon]);
+
+    if (gpxLayer) {
+        map.removeLayer(gpxLayer);
+    }
+
+    gpxLayer = L.polyline(
+        routeLatLngs,
+        {
+            weight: 5,
+            opacity: .9
+        }
+    ).addTo(map);
+
+    map.fitBounds(
+        gpxLayer.getBounds(),
+        { padding: [80, 80] }
+    );
+
+    currentRouteHeading =
+        calculateBearingBetweenPoints(
+            routePoints[0],
+            routePoints[10]
+        );
+
+    info.textContent =
+        "데모 GPX 경로 · 실제 GPX를 불러오면 교체됩니다.";
+
+    updateArrow();
+}
+
+
+/* 초기 상태 */
+enterNormalMode();
+
+// 화면 크기 변경
+window.addEventListener("resize", () => {
+    map.invalidateSize();
+});
+</script>
+
+</body>
+</html>
