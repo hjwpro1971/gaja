@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_scrub_bar_horizontal';
+      const APP_BUILD = 'v20260915_sim_direction_arrow';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v57').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v58').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -535,7 +535,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v57)
+      📲 바로가기 (v58)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -637,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=57')
+      navigator.serviceWorker.register('./sw.js?v=58')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3340,17 +3340,26 @@
     const lat = pt.lat;
     const lon = pt.lon;
 
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
+    if (aheadPt) {
+      gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
+    }
+
+    // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
+    // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
+    // 보인다"는 문제가 있었다.
     if (!simMarker) {
       const icon = L.divIcon({
         className: 'custom-gps-icon',
-        html: `<div style="width:20px; height:20px; background:#e65100; border:3px solid white; border-radius:50%; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 13]
+        html: createGpsIconHtml(gpsMovementHeading),
+        iconSize: [80, 80],
+        iconAnchor: [40, 40]
       });
       simMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
     } else {
       simMarker.setLatLng([lat, lon]);
     }
+    if (gpsMovementHeading !== null) renderGpsArrow(gpsMovementHeading);
 
     const currentZoom = Math.max(map.getZoom(), 15);
     const center = computeMapCenterForOffset(lat, lon, currentZoom);
@@ -3359,11 +3368,6 @@
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
     isOffTrailState = false;
-
-    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
-    if (aheadPt) {
-      gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
-    }
 
     updateNavigationToast(5, 0, idx, pt);
   }
