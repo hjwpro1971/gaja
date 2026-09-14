@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260916_fix_map_animation_conflict';
+      const APP_BUILD = 'v20260917_fix_offset_timing_remove_collapse';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v66').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v67').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -176,18 +176,6 @@
       .title-box { padding: 10px 8px; gap: 4px; }
       .title-box h1 { min-width: 0; }
     }
-    /* 상단 코스명 바 접기/펼치기 — 평소엔 작은 햄버거 버튼만 남겨
-       화면을 넓게 쓰고, 누르면 코스명+버튼들이 다시 펼쳐진다. */
-    .top-header.collapsed .title-box { display: none; }
-    .top-header-toggle-btn {
-      pointer-events: auto; flex-shrink: 0;
-      width: 40px; height: 40px; border-radius: 12px;
-      background: rgba(255, 255, 255, 0.96); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-      border: 1px solid #c8e6c9; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-      font-size: 18px; color: #1b5e20; cursor: pointer;
-      display: none; align-items: center; justify-content: center;
-    }
-    .top-header.collapsed .top-header-toggle-btn { display: flex; }
     .btn-file-open {
       background: #2e7d32; color: #ffffff; font-size: 12px; font-weight: 700;
       padding: 6px 12px; border-radius: 10px; cursor: pointer; border: none;
@@ -202,11 +190,6 @@
       position: absolute; right: 14px; top: 128px; z-index: 1000;
       display: flex; flex-direction: column; gap: 10px;
       transition: top 0.2s ease;
-    }
-    /* 상단 코스명 바가 접히면 토스트도 함께 위로 당겨지므로, 겹침
-       걱정 없이 fab-col도 다시 위로 당겨 지도 공간을 더 확보한다. */
-    .top-header.collapsed ~ .fab-col {
-      top: 96px;
     }
     .fab-btn {
       width: 46px; height: 46px; border-radius: 50%; background: #ffffff;
@@ -230,10 +213,6 @@
       box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
       display: none; flex-direction: column; gap: 6px; min-width: 150px;
     }
-    /* 상단 바 접힘 상태에서 fab-col이 위로 당겨진 만큼(32px) 함께 조정 */
-    .top-header.collapsed ~ .layer-menu {
-      top: 206px;
-    }
     .layer-item {
       padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
       border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
@@ -252,11 +231,6 @@
       padding: 10px 18px; font-size: 17px; font-weight: 700; color: #1b5e20;
       line-height: 1.4; text-align: center; white-space: normal; display: none; pointer-events: none;
       transition: top 0.2s ease, right 0.2s ease;
-    }
-    /* 상단 코스명 바가 접혀 작은 햄버거 버튼(40px)만 남으면, 토스트를
-       더 위/더 넓게 당겨 지도 공간을 그만큼 더 확보한다. */
-    .top-header.collapsed ~ .gps-toast {
-      top: 60px; right: 12px;
     }
     .gps-toast.warning {
       background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c;
@@ -585,20 +559,16 @@
   <div class="sim-scrub-handle" id="simScrubHandle">⛰️</div>
 </div>
 
-<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) — 평소엔 작은
-     햄버거 버튼으로 접혀 있다가, 누르면 코스명/버튼들이 펼쳐진다.
-     지도 화면을 더 넓게 쓰기 위함. -->
+<!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) — 항상 표시 -->
 <div class="top-header" id="topHeader">
-  <button type="button" class="top-header-toggle-btn" id="topHeaderToggleBtn" onclick="toggleTopHeader()" title="코스 정보 펼치기">☰</button>
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
-    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; cursor:pointer;" onclick="toggleTopHeader()">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v66)" style="flex-shrink: 0;">
+    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v67)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋<span class="btn-text"> 내 코스</span>
     </button>
-    <button type="button" onclick="toggleTopHeader()" title="접기" style="flex-shrink:0; background:none; border:none; font-size:16px; color:#1b5e20; cursor:pointer; padding:0 4px;">✕</button>
   </div>
 </div>
 
@@ -699,7 +669,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=66')
+      navigator.serviceWorker.register('./sw.js?v=67')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1274,10 +1244,6 @@
     isHeadingUp = enable;
     const mapEl = document.getElementById('map');
     if (enable && lastKnownPos) {
-      {
-        const z = Math.max(map.getZoom(), 16);
-        applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: false });
-      }
       if (!isQuiet) {
         showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
       }
@@ -1287,13 +1253,24 @@
       isSegmentRotationMode = true;
       currentRotationSegmentKey = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
       if (mapEl) mapEl.classList.add('heading-up');
+      // ⚠️ applyMapViewWithOffset(오프셋 적용)을 heading-up 클래스 추가와
+      // 같은 틱에서 바로 호출하면, isSegmentRotationMode는 true지만 아직
+      // Leaflet이 새 컨테이너 크기(120vh)를 모르는 상태(map.getSize()가
+      // 구 크기 반환)라 오프셋이 어긋난 위치에 적용된다 — 실기기에서
+      // "내 위치 화살표가 화면 중앙 근처에 남는" 형태로 재현됐다.
       // heading-up 클래스가 #map의 width/height를 100% -> 120vh로 급격히
       // 바꾸는데, Leaflet은 컨테이너 크기 변화를 자동 감지하지 못해
-      // 내부 타일 그리드가 옛 크기 기준으로 남는다 — 지도 절반이 빈
-      // 회색으로 보이는 원인. invalidateSize()로 강제 재계산시킨다.
-      // CSS transition(0.5s)이 끝난 뒤 최종 크기가 확정되므로 살짝
-      // 지연 후 호출한다.
-      setTimeout(() => map.invalidateSize({ animate: false }), 520);
+      // 내부 타일 그리드가 옛 크기 기준으로 남는 문제도 있어
+      // invalidateSize()로 강제 재계산시켜야 한다. CSS transition(0.5s)이
+      // 끝난 뒤 최종 크기가 확정되므로 살짝 지연 후 호출하고, 그 콜백
+      // 안에서 오프셋 적용까지 함께 수행해 순서를 보장한다.
+      setTimeout(() => {
+        map.invalidateSize({ animate: false });
+        if (isSegmentRotationMode && lastKnownPos) {
+          const z = Math.max(map.getZoom(), 16);
+          applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: false });
+        }
+      }, 520);
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
@@ -1407,26 +1384,6 @@
       setTimeout(() => { b.style.display = 'none'; }, 400);
     }, durationMs || 3200);
   }
-
-  // 상단 코스명 바 접기/펼치기 — 평소엔 접어서 지도를 넓게 쓰고,
-  // 필요할 때(코스 재선택 등)만 펼친다. localStorage에 상태를 저장해
-  // 다음 방문에도 마지막으로 선택한 상태를 기억한다.
-  const TOP_HEADER_COLLAPSED_KEY = 'gajago_top_header_collapsed';
-  function toggleTopHeader() {
-    const header = document.getElementById('topHeader');
-    if (!header) return;
-    const collapsed = header.classList.toggle('collapsed');
-    try { localStorage.setItem(TOP_HEADER_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) {}
-  }
-  window.toggleTopHeader = toggleTopHeader;
-  (function restoreTopHeaderState() {
-    try {
-      if (localStorage.getItem(TOP_HEADER_COLLAPSED_KEY) === '1') {
-        const header = document.getElementById('topHeader');
-        if (header) header.classList.add('collapsed');
-      }
-    } catch (e) {}
-  })();
 
   // 나침반/자이로 센서를 더 이상 쓰지 않으므로 initCompass/stopCompass는
   // no-op으로 남겨둔다 — 호출부를 일일이 지우는 대신 안전하게 유지.
@@ -3598,13 +3555,9 @@
       isSegmentRotationMode = true;
       currentRotationSegmentKey = null;
       if (mapEl) mapEl.classList.add('heading-up');
-      // #map 크기가 100% -> 120vh로 바뀌는 걸 Leaflet이 자동 감지하지
-      // 못해 지도 절반이 빈 회색으로 보이는 문제 — invalidateSize로
-      // 강제 재계산(실기기 시뮬레이션에서 실측 확인된 버그).
-      setTimeout(() => map.invalidateSize({ animate: false }), 520);
     }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
-    
+
     const toast = document.getElementById('gpsToast');
     toast.style.display = 'block';
     toast.className = 'gps-toast';
@@ -3614,8 +3567,18 @@
     initSimScrubEvents();
     updateSimScrubHandle();
 
-    // 더 부드러운 이동을 위해 250ms 단위 갱신 (초당 4프레임)
-    startSimInterval();
+    // ⚠️ #map 크기가 100% -> 120vh로 바뀌는 걸 Leaflet이 자동 감지하지
+    // 못해 지도 절반이 빈 회색으로 보이는 문제 — invalidateSize로 강제
+    // 재계산해야 한다(실기기 시뮬레이션에서 실측 확인된 버그). 이 크기
+    // 확정 전에 250ms 인터벌이 먼저 돌아 applyMapViewWithOffset이
+    // map.getSize()로 옛 크기(100%)를 읽어버리면, 내 위치 화살표가
+    // 화면 정중앙 근처(오프셋이 어긋난 위치)에 남는 문제가 있었다.
+    // invalidateSize 완료를 기다린 뒤에만 시뮬레이션 인터벌을 시작한다.
+    setTimeout(() => {
+      map.invalidateSize({ animate: false });
+      // 더 부드러운 이동을 위해 250ms 단위 갱신 (초당 4프레임)
+      startSimInterval();
+    }, 520);
   }
 
   // 250ms 인터벌로 시뮬레이션 프레임을 진행시키는 공용 로직 — 최초
