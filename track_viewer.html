@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260917_fix_offset_timing_remove_collapse';
+      const APP_BUILD = 'v20260918_segment_center_simplify';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v67').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v68').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -563,7 +563,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v67)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v68)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -669,7 +669,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=67')
+      navigator.serviceWorker.register('./sw.js?v=68')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1158,6 +1158,7 @@
   let isSegmentRotationMode = false; // 이 기능 자체의 on/off (isHeadingUp의 하위 상태)
   let mapRotationDeg = 0;            // 지도에 실제로 건 회전각(도) — #map은 rotate(-mapRotationDeg)로 적용됨. 이 값이 전체 부호 기준.
   let currentRotationSegmentKey = null; // "지금 회전 기준으로 삼은 구간"을 식별 — 이 키가 바뀔 때만 재회전(매 픽스 재계산 안 함)
+  let currentSegmentStartLatLon = null; // 현재 구간의 시작점(prevM) 좌표 — {lat, lon}. 지도 중심을 여기 고정한다(내 위치가 아님).
 
   // 🔋 배터리 절전 모드 — 오래 정지(휴식/식사 등)하면 GPS 수신을 잠시
   // 멈춘다. "다시 움직이기 시작했다"를 감지할 두 가지 독립 수단을
@@ -1274,6 +1275,7 @@
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
+      currentSegmentStartLatLon = null;
       mapRotationDeg = 0;
       if (mapEl) {
         mapEl.classList.remove('heading-up');
@@ -2157,54 +2159,26 @@
     return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
   }
 
-  // 화면 벡터(dx, dy — 화면 기준, Y축 아래방향)를 지도가 걸어둔 회전
-  // (mapRotationDeg)만큼 되돌려, 실제 화면에 적용했을 때 원하는 방향
-  // (예: "항상 화면 아래쪽")으로 이동하는 픽셀 벡터를 구한다.
-  // #map은 rotate(-mapRotationDeg)로 걸려 있으므로, 화면상 "원하는
-  // 방향"을 얻으려면 그 벡터를 +mapRotationDeg만큼 역회전시켜 Leaflet
-  // panBy에 넘겨야 한다 — 드래그 보정(moveManualMapDrag)과 동일한
-  // 원리·부호를 그대로 재사용한다.
-  function rotateScreenVector(dx, dy, angleDeg) {
-    const rad = angleDeg * Math.PI / 180;
-    const cos = Math.cos(rad), sin = Math.sin(rad);
-    return { x: dx * cos + dy * sin, y: -dx * sin + dy * cos };
-  }
-
-  // 🧭 구간회전 모드에서 "내 위치는 화면 하단(30~40% 지점)에 고정되고,
-  // 그 위쪽(화면 대부분)에 앞으로 가야 할 경로가 넓게 보이는" 실제
-  // 내비게이션 앱 표준 배치를 만든다.
-  //
-  // 예전엔 Web Mercator 근사식으로 미터 단위 오프셋을 계산해 위경도
-  // 좌표 자체를 이동시켰는데, 이 계산이 실제 Leaflet 컨테이너 크기
-  // (#map은 120vh 정사각형이라 뷰포트와 크기가 다름)와 어긋나 구간
-  // 시작점이 예측 불가능한 위치로 튀는 문제가 반복됐다. 대신 Leaflet
-  // 자체 API로 단순화한다: 1) 내 위치를 지도 중심에 정확히 맞추고
-  // (setView), 2) 화면 픽셀 단위로 "화면 아래쪽"만큼 지도를 panBy로
-  // 밀어낸다 — Leaflet이 줌/컨테이너 크기를 이미 다 알고 있으므로
-  // 미터-픽셀 변환을 직접 계산할 필요가 없다.
-  const MAP_VIEW_OFFSET_RATIO = 0.35; // 화면 세로 절반 대비, 얼마나 아래로 밀지
+  // 🧭 구간회전 모드의 지도 중심 배치 — 사용자 제안(v68)으로 전면
+  // 단순화했다: "내 위치를 중심에 놓고 픽셀 오프셋만큼 지도를 밀어내는"
+  // 이전 방식(panBy 오프셋 계산)은 Leaflet 컨테이너 크기(#map이 120vh
+  // 정사각형이라 뷰포트와 다름)가 확정되는 타이밍에 계속 발목이
+  // 잡혔다(v64~v67에서 반복 재현). 대신 "화면 정중앙 = 현재 구간의
+  // 시작점(currentSegmentStartLatLon)"으로 고정하고, 그 기준으로 진행
+  // 방향이 화면 위쪽을 향하도록 회전만 건다 — 내 위치는 오프셋 계산
+  // 없이 순수 GPS 좌표 그대로 별도 마커(userGpsMarker/simMarker)로
+  // 찍히므로, 중심과 회전축이 항상 일치해 오프셋 타이밍 버그 자체가
+  // 구조적으로 없어진다.
   function applyMapViewWithOffset(lat, lon, zoom, viewOpts) {
-    if (!isSegmentRotationMode) {
-      map.setView([lat, lon], zoom, viewOpts);
-      return;
-    }
-    // ⚠️ setView(애니메이션) 직후 panBy를 호출하면 두 애니메이션이
-    // 겹쳐 간섭한다 — 특히 250ms 인터벌(시뮬레이션)로 반복 호출되면
-    // 이전 pan 애니메이션이 끝나기도 전에 다음 것이 덮어써지며 지도가
-    // 통제 불능으로 계속 움직이는 심각한 버그가 있었다(실기기 재현
-    // 확인). 그래서 애니메이션을 완전히 끄고 setView와 panBy를
-    // 매번 "즉시" 적용한다 — 구간 전환처럼 드문 이벤트에서는 스냅이
-    // 더 명확한 신호이기도 하다(이 파일의 다른 즉시-반영 원칙과 동일).
-    map.setView([lat, lon], zoom, { animate: false });
-    const size = map.getSize(); // Leaflet이 실제로 인식하는 컨테이너 픽셀 크기
-    const offsetPx = (size.y / 2) * MAP_VIEW_OFFSET_RATIO;
-    // 내 위치가 화면 아래쪽에 남으려면 지도 카메라(뷰 중심)를 화면
-    // 기준 "위쪽"으로 옮겨야 한다. 드래그 로직(moveManualMapDrag)의
-    // 부호 체계를 그대로 따르면 — "손가락을 화면 아래로 끄는 것"
-    // (dy=+offsetPx)과 동일한 입력을 주면 카메라가 위로 이동하는
-    // 결과가 나온다(순수 계산으로 검증: scratchpad/verify_panby_offset.js).
-    const vec = rotateScreenVector(0, offsetPx, mapRotationDeg);
-    map.panBy([-vec.x, -vec.y], { animate: false });
+    const isSegCenter = isSegmentRotationMode && currentSegmentStartLatLon;
+    const center = isSegCenter ? currentSegmentStartLatLon : { lat, lon };
+    // 구간회전 모드에서는 setView를 항상 즉시(animate:false) 반영한다 —
+    // 시뮬레이션이 250ms 인터벌로 이 함수를 반복 호출하는데, 이전
+    // setView 애니메이션이 채 끝나기도 전에 다음 setView가 덮어써지면
+    // 지도가 계속 흔들리며 움직이는 문제가 있었다(v65->v66에서 겪었던
+    // setView/panBy 충돌과 같은 계열의 애니메이션 중첩 버그 — panBy는
+    // 이제 안 쓰지만 setView끼리도 안전하게 항상 즉시 반영으로 통일).
+    map.setView([center.lat, center.lon], zoom, isSegCenter ? { animate: false } : viewOpts);
   }
 
   // 지도(#map)를 bearingDeg가 화면 위쪽을 향하도록 CSS 회전시킨다.
@@ -3197,6 +3171,14 @@
           ? Math.max(0, traveledDist - nextM.distanceM)
           : Math.max(0, nextM.distanceM - traveledDist);
 
+        // 🧭 구간 시작점을 화면 정중앙에 고정하는 방식(사용자 제안,
+        // v68)의 기준 좌표 — 매 픽스마다 갱신해 applyMapViewWithOffset이
+        // 이 좌표로 setView하도록 한다. 내 위치(lastKnownPos)는 화면
+        // 중앙에 놓지 않고, 별도 GPS 마커로만 그 근처에 표시된다.
+        currentSegmentStartLatLon = isReversingOnTrail
+          ? { lat: nextM.trailLat, lon: nextM.trailLon }
+          : { lat: prevM.trailLat, lon: prevM.trailLon };
+
         // 🧭 구간 heading-up: 현재 구간(prevM→nextM)이 이전과 달라졌을
         // 때만 지도를 스냅 회전시킨다 — 매 GPS 픽스마다 재계산하지 않음.
         if (isSegmentRotationMode) {
@@ -3524,6 +3506,7 @@
       const mapEl = document.getElementById('map');
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
+      currentSegmentStartLatLon = null;
       mapRotationDeg = 0;
       if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
       setTimeout(() => map.invalidateSize({ animate: false }), 520);
@@ -3835,11 +3818,9 @@
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
         // 호출해야 한다 — 구간이 바뀌는 프레임에 이 함수 내부에서
-        // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로
-        // 갱신하는데, 순서가 반대이면 아래 applyMapViewWithOffset이
-        // 아직 옛 mapRotationDeg(한 프레임 지연된 값)로 오프셋을 계산해
-        // 지도 회전과 중심 오프셋 방향이 어긋나 구간 시작점이 화면
-        // 엉뚱한 곳으로 튀는 버그가 있었다.
+        // currentSegmentStartLatLon(구간 시작점 좌표)과 mapRotationDeg를
+        // 함께 갱신하는데, 순서가 반대이면 아래 applyMapViewWithOffset이
+        // 옛 값(한 프레임 지연)을 써서 지도 중심과 회전 방향이 어긋난다.
         updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
 
         // 마커 생성 또는 이동
@@ -3865,14 +3846,13 @@
             const z = Math.max(map.getZoom(), 16);
             applyMapViewWithOffset(lat, lon, z, { animate: true });
           } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
-            // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정.
-            // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중이거나
+            // 구간회전 모드에서는 지도 중심이 항상 현재 구간 시작점에
+            // 고정된다(applyMapViewWithOffset 내부에서 처리). 단, 사용자가
+            // 손가락으로 드래그해 다른 구간을 둘러보는 중이거나
             // (isMapBeingDragged) 손을 뗀 뒤 자동 복귀 유예 시간 중에는
             // (isMapDragReturnPending) GPS 픽스(약 1초 간격)가 화면을 곧바로
             // 원위치로 튕겨버리는 것을 막는다 — 유예 시간이 지나면
             // dragend 핸들러의 타이머가 알아서 복귀시킨다.
-            // 🧭 구간 시작점이 화면 하단에, 내 위치가 화면 정중앙에 오도록
-            // applyMapViewWithOffset으로 지도 중심을 살짝 뒤로 오프셋.
             const z = map.getZoom();
             applyMapViewWithOffset(lat, lon, z, { animate: false });
           }
