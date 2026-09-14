@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_scrub_bar_widen';
+      const APP_BUILD = 'v20260922_badge_counter_rotate';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v71').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v72').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -574,7 +574,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v71)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v72)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=71')
+      navigator.serviceWorker.register('./sw.js?v=72')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1124,6 +1124,7 @@
   let currentLayer = null;
   let polyline = null;
   let markers = [];
+  let routeBadgeEls = []; // 갈림길/봉우리 라벨 마커들 — 구간회전 시 텍스트를 화면 기준 수평으로 유지하기 위해 회전 갱신 대상으로 별도 보관
   let currentPoints = [];
   let userGpsMarker = null;
   let watchId = null;
@@ -1279,6 +1280,8 @@
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
       mapRotationDeg = 0;
+      appliedMapRotationDeg = 0;
+      updateRouteBadgeRotation();
       if (mapEl) {
         mapEl.classList.remove('heading-up');
         mapEl.style.transform = '';
@@ -2202,6 +2205,25 @@
     appliedMapRotationDeg += delta; // 이전 CSS값 기준 최단 경로만큼만 누적
     mapEl.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
     mapRotationDeg = bearingDeg;
+    // 갈림길/봉우리 라벨은 #map의 자식이라 부모 회전을 그대로 물려받는다.
+    // 라벨 DOM에 +appliedMapRotationDeg만큼 반대로 역회전을 걸어 최종
+    // 화면 회전을 0으로 상쇄시켜, 지도가 회전해도 라벨 텍스트는 항상
+    // 화면 기준 수평으로 보이게 한다(밀집 구간에서 라벨이 비스듬히
+    // 돌아가며 서로 겹쳐 안 보이던 문제의 수정).
+    updateRouteBadgeRotation();
+  }
+
+  // routeBadgeEls의 모든 라벨 DOM에 현재 appliedMapRotationDeg만큼
+  // 역회전을 다시 적용한다 — applySegmentRotation이 회전할 때, 그리고
+  // 구간회전 모드가 꺼져 지도가 북쪽 고정(0도)으로 복귀할 때 둘 다
+  // 호출해 라벨이 항상 실제 지도 회전과 정확히 반대값을 유지하게 한다.
+  function updateRouteBadgeRotation() {
+    routeBadgeEls.forEach(marker => {
+      const el = marker.getElement && marker.getElement();
+      if (!el) return;
+      const badge = el.querySelector('.route-badge');
+      if (badge) badge.style.transform = `rotate(${appliedMapRotationDeg}deg)`;
+    });
   }
 
   // 상대 각도를 시계 방향(1시~12시) 및 방향 화살표로 변환 — 현재는
@@ -2637,6 +2659,7 @@
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
     markers = [];
+    routeBadgeEls = []; // 이전 코스의 배지 마커 참조도 함께 비움(markers와 같은 객체들이지만 회전 갱신용으로 별도 보관)
 
     const latlngs = points.map(p => [p.lat, p.lon]);
 
@@ -2649,13 +2672,23 @@
 
     fitRoute();
 
+    // 갈림길/봉우리 등 라벨(divIcon)은 지도(#map)의 자식 레이어에 그려지므로
+    // 구간회전(heading-up)이 걸리면 부모 회전을 그대로 물려받아 텍스트가
+    // 비스듬히 돌아간다 — 밀집 구간(갈림길이 몇 미터 간격으로 몰린 곳)에서
+    // 라벨이 서로 겹쳐 알아볼 수 없는 상태로 보이던 원인 중 하나(사용자
+    // 실기기 재현). 라벨 DOM에 지도 회전과 반대(+appliedMapRotationDeg)로
+    // 미리 역회전을 걸어두면 최종 화면 회전이 0으로 상쇄돼 항상 화면
+    // 기준 수평으로 보인다 — applySegmentRotation이 회전할 때마다 아래
+    // routeBadgeEls에 등록된 모든 라벨에 이 보정을 다시 걸어준다.
     const makeBadge = (lat, lon, title, bg) => {
       const icon = L.divIcon({
         className: 'custom-badge-icon',
-        html: `<div class="route-badge" style="background:${bg};">${title}</div>`,
+        html: `<div class="route-badge" style="background:${bg}; transform: rotate(${appliedMapRotationDeg}deg);">${title}</div>`,
         iconAnchor: [30, 12]
       });
-      return L.marker([lat, lon], { icon }).addTo(map);
+      const marker = L.marker([lat, lon], { icon }).addTo(map);
+      routeBadgeEls.push(marker);
+      return marker;
     };
 
     currentMilestones = buildMilestones(points, points.waypoints, cumulativeDistances);
@@ -3500,6 +3533,8 @@
       isSegmentRotationMode = false;
       currentRotationSegmentKey = null;
       mapRotationDeg = 0;
+      appliedMapRotationDeg = 0;
+      updateRouteBadgeRotation();
       if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
       setTimeout(() => map.invalidateSize({ animate: false }), 520);
       return;
