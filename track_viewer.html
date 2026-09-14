@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_responsive_header';
+      const APP_BUILD = 'v20260915_sim_pause_order_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v63').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v64').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -587,7 +587,7 @@
   <button type="button" class="top-header-toggle-btn" id="topHeaderToggleBtn" onclick="toggleTopHeader()" title="코스 정보 펼치기">☰</button>
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; cursor:pointer;" onclick="toggleTopHeader()">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v63)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v64)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -607,7 +607,10 @@
     <button class="sim-speed-btn active" id="simSpeed1x" onclick="setSimSpeed(1, event)">1x</button>
     <button class="sim-speed-btn" onclick="setSimSpeed(0.5, event)">0.5x</button>
   </div>
-  <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
+  <div style="display: flex; flex-direction: row; gap: 8px;">
+    <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
+    <button class="fab-btn" id="simPauseBtn" onclick="toggleSimulationPause()" title="일시정지" style="background: rgba(255,255,255,0.9); display: none;">⏸️</button>
+  </div>
 </div>
 
 <!-- 우측 플로팅 버튼 -->
@@ -691,7 +694,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=63')
+      navigator.serviceWorker.register('./sw.js?v=64')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3435,15 +3438,21 @@
     }
     if (gpsMovementHeading !== null) renderGpsArrow(gpsMovementHeading);
 
-    const currentZoom = Math.max(map.getZoom(), 15);
-    const center = computeMapCenterForOffset(lat, lon, currentZoom);
-    map.setView([center.lat, center.lon], currentZoom, mapViewOpts);
-
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
     isOffTrailState = false;
 
+    // ⚠️ updateNavigationToast를 map.setView보다 먼저 호출해야 한다 —
+    // 구간이 바뀌는 프레임에 updateNavigationToast 내부에서
+    // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로 갱신하는데,
+    // 순서가 반대이면 computeMapCenterForOffset이 아직 옛 mapRotationDeg
+    // (한 프레임 지연된 값)로 오프셋을 계산해 지도 회전과 중심 오프셋
+    // 방향이 어긋나 구간 시작점이 화면 엉뚱한 곳으로 튀는 버그가 있었다.
     updateNavigationToast(5, 0, idx, pt);
+
+    const currentZoom = Math.max(map.getZoom(), 15);
+    const center = computeMapCenterForOffset(lat, lon, currentZoom);
+    map.setView([center.lat, center.lon], currentZoom, mapViewOpts);
   }
 
   // --- 🎬 구간 탐색(스크럽) 바 ---
@@ -3510,19 +3519,29 @@
     window.addEventListener('mouseup', handleSimScrubEnd);
   }
 
+  // 재생 중 "일시정지"인지 여부 — simInterval이 null이어도 이 값이
+  // true면 "재생을 잠시 멈춘 것"이고, toggleSimulation()의 종료 처리
+  // (마커 제거, 구간회전 해제 등)는 아직 실행하지 않은 상태다.
+  let isSimPaused = false;
+
   function toggleSimulation() {
     if (!currentPoints || currentPoints.length < 2) {
       alert('먼저 등산로 코스를 불러와주세요.');
       return;
     }
     const btn = document.getElementById('simBtn');
+    const pauseBtn = document.getElementById('simPauseBtn');
     const speedOpts = document.getElementById('simSpeedOptions');
-    
-    if (simInterval) {
-      clearInterval(simInterval);
+
+    // 재생 중이거나(simInterval) 일시정지 중(isSimPaused)이면 완전 종료.
+    if (simInterval || isSimPaused) {
+      if (simInterval) clearInterval(simInterval);
       simInterval = null;
+      isSimPaused = false;
       btn.innerText = '▶️';
       btn.classList.remove('active');
+      pauseBtn.style.display = 'none';
+      pauseBtn.innerText = '⏸️';
       speedOpts.style.display = 'none';
       if (simMarker) {
         map.removeLayer(simMarker);
@@ -3549,6 +3568,7 @@
 
     btn.innerText = '⏸️';
     btn.classList.add('active');
+    pauseBtn.style.display = 'flex';
     speedOpts.style.display = 'flex';
     simIndex = 0;
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
@@ -3583,6 +3603,13 @@
     updateSimScrubHandle();
 
     // 더 부드러운 이동을 위해 250ms 단위 갱신 (초당 4프레임)
+    startSimInterval();
+  }
+
+  // 250ms 인터벌로 시뮬레이션 프레임을 진행시키는 공용 로직 — 최초
+  // 재생 시작(toggleSimulation)과 일시정지 후 재개(toggleSimulationPause)
+  // 양쪽에서 동일하게 재사용한다.
+  function startSimInterval() {
     simInterval = setInterval(() => {
       if (!currentPoints || simIndex >= currentPoints.length) {
         toggleSimulation();
@@ -3616,9 +3643,36 @@
     }, 250);
   }
 
+  // 시뮬레이션 재생 중 "일시정지 ↔ 재개" 토글 — toggleSimulation()의
+  // 시작/완전종료와는 별개 상태다. 일시정지 중에는 simInterval을 완전히
+  // 지워 CPU를 아끼되, isSimPaused=true로 남겨 마커/구간회전 등은
+  // 그대로 유지한다. 재개 시 같은 simIndex부터 startSimInterval()로
+  // 인터벌만 다시 건다.
+  function toggleSimulationPause() {
+    if (!isSimPaused && !simInterval) return; // 재생 중도 일시정지 중도 아니면 무시
+    const pauseBtn = document.getElementById('simPauseBtn');
+
+    if (simInterval) {
+      // 재생 중 -> 일시정지
+      clearInterval(simInterval);
+      simInterval = null;
+      isSimPaused = true;
+      if (pauseBtn) pauseBtn.innerText = '▶️';
+      showToastBadge('⏸️ 일시정지했습니다.');
+      return;
+    }
+
+    // 일시정지 중 -> 재개
+    isSimPaused = false;
+    if (pauseBtn) pauseBtn.innerText = '⏸️';
+    showToastBadge('▶️ 이어서 재생합니다.');
+    startSimInterval();
+  }
+  window.toggleSimulationPause = toggleSimulationPause;
+
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
-    if (simInterval !== null) toggleSimulation(); // 시뮬레이션 중이면 끄기
+    if (simInterval !== null || isSimPaused) toggleSimulation(); // 시뮬레이션 중(재생/일시정지)이면 끄기
     // 🔋 절전 모드 중엔 watchId가 null이라도 "GPS가 완전히 꺼진 것"이
     // 아니다 — 사용자가 버튼을 누르면 절전을 해제하고 즉시 재개한다
     // (startGpsTracking처럼 화면을 통째로 새로 초기화하지 않는다).
@@ -3804,6 +3858,15 @@
           renderGpsArrow(result.bearing);
         }
 
+        // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
+        // 호출해야 한다 — 구간이 바뀌는 프레임에 이 함수 내부에서
+        // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로
+        // 갱신하는데, 순서가 반대이면 아래 computeMapCenterForOffset이
+        // 아직 옛 mapRotationDeg(한 프레임 지연된 값)로 오프셋을 계산해
+        // 지도 회전과 중심 오프셋 방향이 어긋나 구간 시작점이 화면
+        // 엉뚱한 곳으로 튀는 버그가 있었다.
+        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
           const gpsIcon = L.divIcon({
@@ -3861,8 +3924,6 @@
           map.removeLayer(guideLine);
           guideLine = null;
         }
-
-    updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
   }
 
   function handleGpsError() {
