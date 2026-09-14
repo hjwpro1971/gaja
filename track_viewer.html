@@ -3186,6 +3186,13 @@
       const toast = document.getElementById('gpsToast');
       toast.style.display = 'none';
       showToastBadge('🛑 따라가기 미리보기 모드를 종료했습니다.');
+      // 🧭 구간회전도 시뮬레이션과 함께 종료 — 실제 GPS 켜짐 상태가
+      // 아니므로 지도를 북쪽 고정으로 되돌린다.
+      const mapEl = document.getElementById('map');
+      isSegmentRotationMode = false;
+      currentRotationSegmentKey = null;
+      mapRotationDeg = 0;
+      if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
       return;
     }
 
@@ -3195,6 +3202,17 @@
     btn.classList.add('active');
     speedOpts.style.display = 'flex';
     simIndex = 0;
+
+    // 🧭 구간회전 미리보기 — 실제 GPS를 켜지 않아도 시뮬레이션 중에는
+    // 구간 heading-up이 동작해야 배포 전 동작을 확인할 수 있다. 원래
+    // isHeadingUp(GPS 켜짐 버튼)에만 연동돼 있었는데, toggleSimulation은
+    // 그 버튼을 거치지 않아 이 상태가 켜지지 않던 문제를 수정.
+    {
+      const mapEl = document.getElementById('map');
+      isSegmentRotationMode = true;
+      currentRotationSegmentKey = null;
+      if (mapEl) mapEl.classList.add('heading-up');
+    }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
     
     const toast = document.getElementById('gpsToast');
