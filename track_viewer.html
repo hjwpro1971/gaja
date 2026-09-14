@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_roundtrip_milestones';
+      const APP_BUILD = 'v20260915_map_center_offset';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v53').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v54').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -535,7 +535,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v53)
+      📲 바로가기 (v54)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -637,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=53')
+      navigator.serviceWorker.register('./sw.js?v=54')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1212,7 +1212,11 @@
     isHeadingUp = enable;
     const mapEl = document.getElementById('map');
     if (enable && lastKnownPos) {
-      map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 16), { animate: false });
+      {
+        const z = Math.max(map.getZoom(), 16);
+        const center = computeMapCenterForOffset(lastKnownPos.lat, lastKnownPos.lon, z);
+        map.setView([center.lat, center.lon], z, { animate: false });
+      }
       if (!isQuiet) {
         showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
       }
@@ -1468,7 +1472,9 @@
         dragReturnTimer = null;
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
-          map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          const z = map.getZoom();
+          const center = computeMapCenterForOffset(lastKnownPos.lat, lastKnownPos.lon, z);
+          map.setView([center.lat, center.lon], z, { animate: true });
           if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
         }
       }, DRAG_RETURN_DELAY_MS);
@@ -1543,7 +1549,9 @@
         dragReturnTimer = null;
         isMapDragReturnPending = false;
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
-          map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          const z = map.getZoom();
+          const center = computeMapCenterForOffset(lastKnownPos.lat, lastKnownPos.lon, z);
+          map.setView([center.lat, center.lon], z, { animate: true });
           // 동결 중 쌓였을 수 있는 최신 회전각을 즉시 재적용 — 드래그
           // 복귀 시 위치는 맞는데 회전만 옛 값으로 남는 것을 방지.
           if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
@@ -2111,6 +2119,47 @@
       if (ahead) return calculateBearing(prevM.trailLat, prevM.trailLon, ahead.lat, ahead.lon);
     }
     return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
+  }
+
+  // 출발 좌표(lat, lon)에서 방위각(bearingDeg)으로 distanceM미터 이동한
+  // 지점의 좌표를 구한다 — calculateBearing의 역연산. 지도 중심을 내
+  // 위치에서 살짝 뒤로 오프셋시킬 때 사용한다.
+  function destinationPoint(lat, lon, bearingDeg, distanceM) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+    const brng = toRad(bearingDeg);
+    const lat1 = toRad(lat), lon1 = toRad(lon);
+    const angDist = distanceM / R;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(angDist) + Math.cos(lat1) * Math.sin(angDist) * Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(
+      Math.sin(brng) * Math.sin(angDist) * Math.cos(lat1),
+      Math.cos(angDist) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return { lat: toDeg(lat2), lon: ((toDeg(lon2) + 540) % 360) - 180 };
+  }
+
+  // 🧭 구간회전 모드에서 "내 위치는 화면 정중앙, 구간 시작점(뒤쪽)은
+  // 화면 하단"이 동시에 보이도록, 지도 중심을 내 위치 그대로가 아니라
+  // 내 위치에서 진행방향 반대(뒤쪽)로 살짝 오프셋한 지점으로 잡는다.
+  // 지도가 mapRotationDeg를 화면 위쪽으로 향하도록 이미 회전되어
+  // 있으므로, 화면상 "아래쪽(뒤쪽)"은 실제 좌표계에서 mapRotationDeg+180
+  // 방향이다 — 그 방향으로 이동한 지점을 지도 중심으로 삼으면, 내
+  // 위치는 상대적으로 화면 중앙보다 위(=화면 전체로 보면 정중앙)에
+  // 오면서 하단 공간이 넓어져 구간 시작점이 보이게 된다.
+  // OFFSET_RATIO는 "현재 줌에서 화면 세로 절반 거리 대비 오프셋 비율" —
+  // 0.35면 내 위치가 화면 세로 중앙에서 하단 쪽으로도 치우치지 않고,
+  // 화면 하단 쪽 여백이 충분히 확보되어 시작점이 보이는 값으로 실측
+  // 튜닝했다.
+  const MAP_CENTER_OFFSET_RATIO = 0.35;
+  function computeMapCenterForOffset(lat, lon, zoom) {
+    if (!isSegmentRotationMode) return { lat, lon };
+    // 줌 레벨에서 화면 세로 절반(픽셀)에 해당하는 지상거리(미터)를
+    // 추정 — Web Mercator 근사식: 미터/픽셀 = 156543.03392 * cos(lat) / 2^zoom.
+    const metersPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
+    const screenHalfHeightPx = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight / 2 : 400;
+    const offsetM = screenHalfHeightPx * metersPerPixel * MAP_CENTER_OFFSET_RATIO;
+    const backwardBearing = (mapRotationDeg + 180) % 360;
+    return destinationPoint(lat, lon, backwardBearing, offsetM);
   }
 
   // 지도(#map)를 bearingDeg가 화면 위쪽을 향하도록 CSS 회전시킨다.
@@ -3293,8 +3342,9 @@
       simMarker.setLatLng([lat, lon]);
     }
 
-    const currentZoom = map.getZoom();
-    map.setView([lat, lon], Math.max(currentZoom, 15), mapViewOpts);
+    const currentZoom = Math.max(map.getZoom(), 15);
+    const center = computeMapCenterForOffset(lat, lon, currentZoom);
+    map.setView([center.lat, center.lon], currentZoom, mapViewOpts);
 
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
@@ -3669,7 +3719,11 @@
             iconAnchor: [40, 40]
           });
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
-          map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+          {
+            const z = Math.max(map.getZoom(), 16);
+            const center = computeMapCenterForOffset(lat, lon, z);
+            map.setView([center.lat, center.lon], z, { animate: true });
+          }
           // 내 위치를 켜는 순간부터 GPS 켜짐 모드(자동 센터링)와 방향 화살표를 함께 시작한다.
           if (!isHeadingUp) {
             setHeadingUpMode(true, true);
@@ -3677,7 +3731,9 @@
         } else {
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {
-            map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+            const z = Math.max(map.getZoom(), 16);
+            const center = computeMapCenterForOffset(lat, lon, z);
+            map.setView([center.lat, center.lon], z, { animate: true });
           } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
             // 길찾기 회전 모드에서는 내 위치가 항상 지도 화면 중심에 고정.
             // 단, 사용자가 손가락으로 드래그해 다른 구간을 둘러보는 중이거나
@@ -3685,7 +3741,11 @@
             // (isMapDragReturnPending) GPS 픽스(약 1초 간격)가 화면을 곧바로
             // 원위치로 튕겨버리는 것을 막는다 — 유예 시간이 지나면
             // dragend 핸들러의 타이머가 알아서 복귀시킨다.
-            map.setView([lat, lon], map.getZoom(), { animate: false });
+            // 🧭 구간 시작점이 화면 하단에, 내 위치가 화면 정중앙에 오도록
+            // computeMapCenterForOffset으로 지도 중심을 살짝 뒤로 오프셋.
+            const z = map.getZoom();
+            const center = computeMapCenterForOffset(lat, lon, z);
+            map.setView([center.lat, center.lon], z, { animate: false });
           }
         }
         isFirstFix = false;
