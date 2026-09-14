@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_shortest_path_rotation';
+      const APP_BUILD = 'v20260915_scrub_bar_horizontal';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v56').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v57').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -290,25 +290,25 @@
     .sim-speed-btn.active {
       background: #e65100; color: #fff; border-color: #e65100;
     }
-    /* 🎬 시뮬레이션 구간 탐색(스크럽) 바 — 화면 오른쪽 세로 트랙을
-       손가락으로 위아래 드래그하면 시뮬레이션 위치가 코스 전체 구간을
-       따라 즉시 앞뒤로 이동한다(빨리감기/되감기). 시뮬레이션이 켜져
-       있을 때만 나타난다. */
+    /* 🎬 시뮬레이션 구간 탐색(스크럽) 바 — 화면 하단 가로 트랙을
+       손가락으로 좌우 드래그하면 시뮬레이션 위치가 코스 전체 구간을
+       따라 즉시 앞뒤로 이동한다(빨리감기/되감기). 왼쪽=들머리(0%),
+       오른쪽=날머리(100%). 시뮬레이션이 켜져 있을 때만 나타난다. */
     .sim-scrub-track {
-      position: absolute; top: 90px; bottom: 140px; right: 8px; width: 34px;
+      position: absolute; left: 100px; right: 16px; bottom: 24px; height: 34px;
       z-index: 9999; display: none;
       background: rgba(255,255,255,0.55); border-radius: 17px;
       touch-action: none; -webkit-user-select: none; user-select: none;
     }
     .sim-scrub-track.active { display: block; }
     .sim-scrub-fill {
-      position: absolute; left: 4px; right: 4px; bottom: 4px;
-      width: auto; background: rgba(230,81,0,0.35); border-radius: 13px;
+      position: absolute; top: 4px; bottom: 4px; left: 4px;
+      height: auto; background: rgba(230,81,0,0.35); border-radius: 13px;
       pointer-events: none;
     }
     .sim-scrub-handle {
-      position: absolute; left: 3px; width: 28px; height: 28px;
-      margin-top: -14px; border-radius: 50%; background: #e65100;
+      position: absolute; top: 3px; width: 28px; height: 28px;
+      margin-left: -14px; border-radius: 50%; background: #e65100;
       border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; pointer-events: none;
@@ -535,7 +535,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v56)
+      📲 바로가기 (v57)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -637,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=56')
+      navigator.serviceWorker.register('./sw.js?v=57')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3376,17 +3376,17 @@
     const fill = document.getElementById('simScrubFill');
     if (!handle || !fill || !currentPoints || currentPoints.length < 2) return;
     const progress = simIndex / (currentPoints.length - 1); // 0(들머리) ~ 1(날머리)
-    // 트랙 세로축: 위쪽=들머리(0%), 아래쪽=날머리(100%) — 손가락으로
-    // "아래로 내릴수록 코스 뒷부분"이라는 직관과 맞춘다.
-    handle.style.top = `${progress * 100}%`;
-    fill.style.height = `${progress * 100}%`;
+    // 트랙 가로축: 왼쪽=들머리(0%), 오른쪽=날머리(100%) — 손가락으로
+    // "오른쪽으로 밀수록 코스 뒷부분"이라는 직관과 맞춘다.
+    handle.style.left = `${progress * 100}%`;
+    fill.style.width = `${progress * 100}%`;
   }
 
-  function simScrubIndexFromClientY(clientY) {
+  function simScrubIndexFromClientX(clientX) {
     const track = document.getElementById('simScrubTrack');
     if (!track || !currentPoints || currentPoints.length < 2) return null;
     const rect = track.getBoundingClientRect();
-    let progress = (clientY - rect.top) / rect.height;
+    let progress = (clientX - rect.left) / rect.width;
     progress = Math.max(0, Math.min(1, progress));
     return Math.round(progress * (currentPoints.length - 1));
   }
@@ -3395,7 +3395,7 @@
     if (!simInterval) return; // 시뮬레이션이 켜져 있을 때만 동작
     simScrubDragging = true;
     const point = evt.touches ? evt.touches[0] : evt;
-    const idx = simScrubIndexFromClientY(point.clientY);
+    const idx = simScrubIndexFromClientX(point.clientX);
     if (idx !== null) {
       simIndex = idx;
       renderSimFrame(simIndex, { animate: false });
@@ -3407,7 +3407,7 @@
   function handleSimScrubMove(evt) {
     if (!simScrubDragging) return;
     const point = evt.touches ? evt.touches[0] : evt;
-    const idx = simScrubIndexFromClientY(point.clientY);
+    const idx = simScrubIndexFromClientX(point.clientX);
     if (idx !== null) {
       simIndex = idx;
       renderSimFrame(simIndex, { animate: false });
