@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_fix_headingup_blank_map';
+      const APP_BUILD = 'v20260915_sim_scrub_bar';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v51').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v52').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -290,6 +290,29 @@
     .sim-speed-btn.active {
       background: #e65100; color: #fff; border-color: #e65100;
     }
+    /* 🎬 시뮬레이션 구간 탐색(스크럽) 바 — 화면 오른쪽 세로 트랙을
+       손가락으로 위아래 드래그하면 시뮬레이션 위치가 코스 전체 구간을
+       따라 즉시 앞뒤로 이동한다(빨리감기/되감기). 시뮬레이션이 켜져
+       있을 때만 나타난다. */
+    .sim-scrub-track {
+      position: absolute; top: 90px; bottom: 140px; right: 8px; width: 34px;
+      z-index: 9999; display: none;
+      background: rgba(255,255,255,0.55); border-radius: 17px;
+      touch-action: none; -webkit-user-select: none; user-select: none;
+    }
+    .sim-scrub-track.active { display: block; }
+    .sim-scrub-fill {
+      position: absolute; left: 4px; right: 4px; bottom: 4px;
+      width: auto; background: rgba(230,81,0,0.35); border-radius: 13px;
+      pointer-events: none;
+    }
+    .sim-scrub-handle {
+      position: absolute; left: 3px; width: 28px; height: 28px;
+      margin-top: -14px; border-radius: 50%; background: #e65100;
+      border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; pointer-events: none;
+    }
     .gps-heading-wrapper {
       position: absolute;
       width: 80px;
@@ -500,12 +523,19 @@
   <div id="map"></div>
 </div>
 
+<!-- 🎬 시뮬레이션 구간 탐색(스크럽) 바 — 손가락으로 위아래 드래그하면
+     시뮬레이션 위치가 즉시 앞뒤로 이동한다. -->
+<div class="sim-scrub-track" id="simScrubTrack">
+  <div class="sim-scrub-fill" id="simScrubFill"></div>
+  <div class="sim-scrub-handle" id="simScrubHandle">⛰️</div>
+</div>
+
 <!-- 상단 헤더 (모바일 전용: 산 이름 중앙 시원하게 표시) -->
 <div class="top-header">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v51)
+      📲 바로가기 (v52)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -521,6 +551,7 @@
     <button class="sim-speed-btn" onclick="setSimSpeed(3, event)">3x</button>
     <button class="sim-speed-btn" onclick="setSimSpeed(2, event)">2x</button>
     <button class="sim-speed-btn active" id="simSpeed1x" onclick="setSimSpeed(1, event)">1x</button>
+    <button class="sim-speed-btn" onclick="setSimSpeed(0.5, event)">0.5x</button>
   </div>
   <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
 </div>
@@ -606,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=51')
+      navigator.serviceWorker.register('./sw.js?v=52')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3127,6 +3158,107 @@
     }
   }
 
+  // 시뮬레이션의 한 프레임(idx 위치)을 화면에 반영한다 — 자동재생
+  // 인터벌과 스크럽 바 드래그 양쪽에서 공통으로 쓰는 렌더 함수.
+  // mapViewOpts로 자동재생은 부드럽게(animate:true), 스크럽 드래그는
+  // 즉시(animate:false) 반영하도록 구분한다.
+  function renderSimFrame(idx, mapViewOpts) {
+    if (!currentPoints || idx < 0 || idx >= currentPoints.length) return;
+    const pt = currentPoints[idx];
+    const lat = pt.lat;
+    const lon = pt.lon;
+
+    if (!simMarker) {
+      const icon = L.divIcon({
+        className: 'custom-gps-icon',
+        html: `<div style="width:20px; height:20px; background:#e65100; border:3px solid white; border-radius:50%; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
+      });
+      simMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
+    } else {
+      simMarker.setLatLng([lat, lon]);
+    }
+
+    const currentZoom = map.getZoom();
+    map.setView([lat, lon], Math.max(currentZoom, 15), mapViewOpts);
+
+    lastKnownPos = { lat, lon };
+    isCurrentlyStopped = false;
+    isOffTrailState = false;
+
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
+    if (aheadPt) {
+      gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
+    }
+
+    updateNavigationToast(5, 0, idx, pt);
+  }
+
+  // --- 🎬 구간 탐색(스크럽) 바 ---
+  let simScrubDragging = false;
+
+  function updateSimScrubHandle() {
+    const handle = document.getElementById('simScrubHandle');
+    const fill = document.getElementById('simScrubFill');
+    if (!handle || !fill || !currentPoints || currentPoints.length < 2) return;
+    const progress = simIndex / (currentPoints.length - 1); // 0(들머리) ~ 1(날머리)
+    // 트랙 세로축: 위쪽=들머리(0%), 아래쪽=날머리(100%) — 손가락으로
+    // "아래로 내릴수록 코스 뒷부분"이라는 직관과 맞춘다.
+    handle.style.top = `${progress * 100}%`;
+    fill.style.height = `${progress * 100}%`;
+  }
+
+  function simScrubIndexFromClientY(clientY) {
+    const track = document.getElementById('simScrubTrack');
+    if (!track || !currentPoints || currentPoints.length < 2) return null;
+    const rect = track.getBoundingClientRect();
+    let progress = (clientY - rect.top) / rect.height;
+    progress = Math.max(0, Math.min(1, progress));
+    return Math.round(progress * (currentPoints.length - 1));
+  }
+
+  function handleSimScrubStart(evt) {
+    if (!simInterval) return; // 시뮬레이션이 켜져 있을 때만 동작
+    simScrubDragging = true;
+    const point = evt.touches ? evt.touches[0] : evt;
+    const idx = simScrubIndexFromClientY(point.clientY);
+    if (idx !== null) {
+      simIndex = idx;
+      renderSimFrame(simIndex, { animate: false });
+      updateSimScrubHandle();
+    }
+    evt.preventDefault();
+  }
+
+  function handleSimScrubMove(evt) {
+    if (!simScrubDragging) return;
+    const point = evt.touches ? evt.touches[0] : evt;
+    const idx = simScrubIndexFromClientY(point.clientY);
+    if (idx !== null) {
+      simIndex = idx;
+      renderSimFrame(simIndex, { animate: false });
+      updateSimScrubHandle();
+    }
+    evt.preventDefault();
+  }
+
+  function handleSimScrubEnd() {
+    simScrubDragging = false;
+  }
+
+  function initSimScrubEvents() {
+    const track = document.getElementById('simScrubTrack');
+    if (!track || track._simScrubBound) return;
+    track._simScrubBound = true;
+    track.addEventListener('touchstart', handleSimScrubStart, { passive: false });
+    window.addEventListener('touchmove', handleSimScrubMove, { passive: false });
+    window.addEventListener('touchend', handleSimScrubEnd);
+    track.addEventListener('mousedown', handleSimScrubStart);
+    window.addEventListener('mousemove', handleSimScrubMove);
+    window.addEventListener('mouseup', handleSimScrubEnd);
+  }
+
   function toggleSimulation() {
     if (!currentPoints || currentPoints.length < 2) {
       alert('먼저 등산로 코스를 불러와주세요.');
@@ -3148,6 +3280,8 @@
       const toast = document.getElementById('gpsToast');
       toast.style.display = 'none';
       showToastBadge('🛑 따라가기 미리보기 모드를 종료했습니다.');
+      const scrubTrack = document.getElementById('simScrubTrack');
+      if (scrubTrack) scrubTrack.classList.remove('active');
       // 🧭 구간회전도 시뮬레이션과 함께 종료 — 실제 GPS 켜짐 상태가
       // 아니므로 지도를 북쪽 고정으로 되돌린다.
       const mapEl = document.getElementById('map');
@@ -3186,53 +3320,30 @@
     toast.style.display = 'block';
     toast.className = 'gps-toast';
 
+    const scrubTrack = document.getElementById('simScrubTrack');
+    if (scrubTrack) scrubTrack.classList.add('active');
+    initSimScrubEvents();
+    updateSimScrubHandle();
+
     // 더 부드러운 이동을 위해 250ms 단위 갱신 (초당 4프레임)
     simInterval = setInterval(() => {
       if (!currentPoints || simIndex >= currentPoints.length) {
         toggleSimulation();
         return;
       }
-      const pt = currentPoints[simIndex];
-      const lat = pt.lat;
-      const lon = pt.lon;
-      
-      // 마커 이동 (단순 렌더링)
-      if (!simMarker) {
-        const icon = L.divIcon({
-          className: 'custom-gps-icon',
-          html: `<div style="width:20px; height:20px; background:#e65100; border:3px solid white; border-radius:50%; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
-          iconSize: [26, 26],
-          iconAnchor: [13, 13]
-        });
-        simMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
-      } else {
-        simMarker.setLatLng([lat, lon]);
-      }
-      
-      const currentZoom = map.getZoom();
-      map.setView([lat, lon], Math.max(currentZoom, 15), { animate: true, duration: 0.25 });
+      renderSimFrame(simIndex, { animate: true, duration: 0.25 });
+      updateSimScrubHandle();
 
-      // 거리에 따른 토스트 안내 (가짜 위치 정보 주입)
-      lastKnownPos = { lat, lon };
-      isCurrentlyStopped = false; 
-      isOffTrailState = false;
-      
-      // 시뮬레이션 중 방향 안내가 정방향으로 나오도록 gpsMovementHeading 강제 주입
-      const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, simIndex, 20);
-      if (aheadPt) {
-        gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
-      }
-
-      updateNavigationToast(5, 0, simIndex, pt);
-      
       // 속도 조절 (250ms당 이동 거리 기준)
+      // 0.5x: 초당 8m (0.25초당 2m) - 세밀하게 살펴볼 때
       // 1x: 초당 16m (0.25초당 4m) - 편안한 시야
       // 2x: 초당 40m (0.25초당 10m)
       // 3x: 초당 80m (0.25초당 20m)
       // 4x: 초당 160m (0.25초당 40m)
       // 5x: 초당 320m (0.25초당 80m)
       let stepDistanceM = 4;
-      if (simSpeed === 2) stepDistanceM = 10;
+      if (simSpeed === 0.5) stepDistanceM = 2;
+      else if (simSpeed === 2) stepDistanceM = 10;
       else if (simSpeed === 3) stepDistanceM = 20;
       else if (simSpeed === 4) stepDistanceM = 40;
       else if (simSpeed === 5) stepDistanceM = 80;
