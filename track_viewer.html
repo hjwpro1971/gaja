@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_map_offset_forward';
+      const APP_BUILD = 'v20260915_shortest_path_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v55').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v56').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -535,7 +535,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v55)
+      📲 바로가기 (v56)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -637,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=55')
+      navigator.serviceWorker.register('./sw.js?v=56')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2169,10 +2169,19 @@
   // (handleGpsPositionUpdate 내부)은 이 mapRotationDeg 값을 참조만 할 뿐
   // 부호를 다시 결정하지 않는다("반전 후 다시 반전"하는 이중 계산을 피하기
   // 위해 과거 구현(커밋 4305106 이전)이 명시했던 원칙을 그대로 따른다).
+  // CSS의 rotate()는 "최단 경로"라는 개념이 없다 — 이전 값이 -10deg이고
+  // 새 값이 -350deg면, 실제로는 반대방향으로 20도만 돌면 되는데도
+  // 브라우저는 산술적으로 340도를 그대로 돌아버린다(구간이 바뀔 때마다
+  // 거의 한 바퀴씩 회전하는 것처럼 보였던 원인). CSS에 대입하는 각도
+  // 자체를 "누적값"으로 관리해, 매번 이전 각도에서 최단 경로(-180~180
+  // 범위 내 차이)만큼만 더해지도록 한다.
+  let appliedMapRotationDeg = 0; // CSS에 실제로 대입해온 누적 회전값(360도 넘게 쌓일 수 있음)
   function applySegmentRotation(bearingDeg) {
     const mapEl = document.getElementById('map');
     if (!mapEl || bearingDeg === null || isNaN(bearingDeg)) return;
-    mapEl.style.transform = `translate(-50%, -50%) rotate(${-bearingDeg}deg)`;
+    const delta = shortestAngleDiff(bearingDeg, mapRotationDeg);
+    appliedMapRotationDeg += delta; // 이전 CSS값 기준 최단 경로만큼만 누적
+    mapEl.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
     mapRotationDeg = bearingDeg;
   }
 
