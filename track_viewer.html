@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_toast_font_bigger';
+      const APP_BUILD = 'v20260915_ui_layout_fixes';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v59').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v60').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -168,7 +168,10 @@
 
     /* 우측 플로팅 버튼 컬럼 */
     .fab-col {
-      position: absolute; right: 14px; top: 75px; z-index: 1000;
+      /* top을 75px -> 128px로 내려, 상단 갈림길 안내 토스트(.gps-toast,
+         두 줄일 때 세로로 길어짐)와 첫 버튼(나침반/길찾기)이 겹치지
+         않게 한다. */
+      position: absolute; right: 14px; top: 128px; z-index: 1000;
       display: flex; flex-direction: column; gap: 10px;
     }
     .fab-btn {
@@ -186,7 +189,9 @@
 
     /* 레이어 선택 팝업 */
     .layer-menu {
-      position: absolute; right: 68px; top: 185px; z-index: 1000;
+      /* fab-col이 top:75px -> 128px로 내려간 만큼(53px) 함께 조정 —
+         지도변경(🗺️) 버튼 바로 아래에 뜨도록 유지. */
+      position: absolute; right: 68px; top: 238px; z-index: 1000;
       background: #ffffff; border-radius: 12px; padding: 8px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
       display: none; flex-direction: column; gap: 6px; min-width: 150px;
@@ -200,7 +205,10 @@
 
     /* GPS 상태 안내 토스트 — 화면 상단 코스 정보 바(.top-header) 바로 밑에 표시 */
     .gps-toast {
-      position: absolute; top: 68px; left: 12px; right: 12px; z-index: 999;
+      /* right를 fab-col(오른쪽 세로 버튼열, 46px 버튼+14px 여백) 폭만큼
+         넉넉히 띄워, 텍스트 오른쪽 끝이 나침반 버튼에 가려 안 보이던
+         문제를 해결한다. */
+      position: absolute; top: 68px; left: 12px; right: 72px; z-index: 999;
       background: #e8f5e9; backdrop-filter: blur(8px);
       border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 2px solid #2e7d32;
       padding: 10px 18px; font-size: 17px; font-weight: 700; color: #1b5e20;
@@ -295,23 +303,26 @@
        따라 즉시 앞뒤로 이동한다(빨리감기/되감기). 왼쪽=들머리(0%),
        오른쪽=날머리(100%). 시뮬레이션이 켜져 있을 때만 나타난다. */
     .sim-scrub-track {
-      position: absolute; left: 100px; right: 16px; bottom: 24px; height: 34px;
+      /* 시뮬레이션 ▶️/⏸️ 버튼(왼쪽 하단, left:16px, 지름 46px) 바로
+         오른쪽부터 시작해 같은 높이(bottom:16px)에 나란히 배치 —
+         전체를 화면 최하단으로 내린다. */
+      position: absolute; left: 76px; right: 16px; bottom: 16px; height: 46px;
       z-index: 9999; display: none;
-      background: rgba(255,255,255,0.55); border-radius: 17px;
+      background: rgba(255,255,255,0.55); border-radius: 23px;
       touch-action: none; -webkit-user-select: none; user-select: none;
     }
     .sim-scrub-track.active { display: block; }
     .sim-scrub-fill {
-      position: absolute; top: 4px; bottom: 4px; left: 4px;
-      height: auto; background: rgba(230,81,0,0.35); border-radius: 13px;
+      position: absolute; top: 6px; bottom: 6px; left: 6px;
+      height: auto; background: rgba(230,81,0,0.35); border-radius: 17px;
       pointer-events: none;
     }
     .sim-scrub-handle {
-      position: absolute; top: 3px; width: 28px; height: 28px;
-      margin-left: -14px; border-radius: 50%; background: #e65100;
+      position: absolute; top: 5px; width: 36px; height: 36px;
+      margin-left: -18px; border-radius: 50%; background: #e65100;
       border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; pointer-events: none;
+      font-size: 15px; pointer-events: none;
     }
     .gps-heading-wrapper {
       position: absolute;
@@ -535,7 +546,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v59)
+      📲 바로가기 (v60)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -543,8 +554,8 @@
   </div>
 </div>
 
-<!-- 좌측 하단 시뮬레이션(따라가기) 컨트롤 패널 -->
-<div class="sim-control-panel" style="position: absolute; left: 16px; bottom: 80px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+<!-- 좌측 하단 시뮬레이션(따라가기) 컨트롤 패널 — 화면 최하단으로 이동 -->
+<div class="sim-control-panel" style="position: absolute; left: 16px; bottom: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center;">
   <div id="simSpeedOptions" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 4px;">
     <button class="sim-speed-btn" onclick="setSimSpeed(5, event)">5x</button>
     <button class="sim-speed-btn" onclick="setSimSpeed(4, event)">4x</button>
@@ -637,7 +648,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=59')
+      navigator.serviceWorker.register('./sw.js?v=60')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3454,6 +3465,7 @@
         map.removeLayer(simMarker);
         simMarker = null;
       }
+      showHeadingArrow = false;
       const toast = document.getElementById('gpsToast');
       toast.style.display = 'none';
       showToastBadge('🛑 따라가기 미리보기 모드를 종료했습니다.');
@@ -3476,6 +3488,11 @@
     btn.classList.add('active');
     speedOpts.style.display = 'flex';
     simIndex = 0;
+    // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
+    // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
+    // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
+    // 근본 원인이었다.
+    showHeadingArrow = true;
 
     // 🧭 구간회전 미리보기 — 실제 GPS를 켜지 않아도 시뮬레이션 중에는
     // 구간 heading-up이 동작해야 배포 전 동작을 확인할 수 있다. 원래
