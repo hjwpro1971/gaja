@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260915_sim_scrub_bar';
+      const APP_BUILD = 'v20260915_roundtrip_milestones';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v52').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v53').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -535,7 +535,7 @@
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
     <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가" style="flex-shrink: 0;">
-      📲 바로가기 (v52)
+      📲 바로가기 (v53)
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
       📋 내 코스
@@ -637,7 +637,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=52')
+      navigator.serviceWorker.register('./sw.js?v=53')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1820,28 +1820,57 @@
         if (seen.has(coordKey)) return;
         seen.add(coordKey);
 
-        let minD = Infinity;
-        let nearestIdx = 0;
-        
-        // GPX 점들의 간격이 넓은 직선 구간에서도 웨이포인트가 선(경로) 위에 있다면
-        // 누락되지 않도록, 점과 점 사이의 '선분'과의 최단거리를 구한다.
+        // ↩️ 왕복(원점회귀) 코스는 GPX 트랙이 올라가는 구간과 내려오는
+        // 구간을 별도 좌표열로 기록한다(nearestPointOnTrail의 방향
+        // 하드필터가 전제하는 구조) — 즉 같은 갈림길이라도 트랙상으로는
+        // "가까운 세그먼트가 두 곳"이다. 예전엔 전체 트랙에서 최단거리
+        // 하나만 찾아 매칭했기 때문에, 실제로 그 갈림길을 반대 방향으로
+        // 지날 때는 매칭된 세그먼트가 멀어 안내가 아예 안 나왔다.
+        // WAYPOINT_MATCH_RADIUS_M 이내에 있는 모든 근접 세그먼트를 찾고
+        // (같은 왕복 왕/복 구간이 서로 어느 정도 떨어져 있다는 전제로
+        // ROUNDTRIP_CLUSTER_GAP_M 이상 차이나는 것끼리 별도 클러스터로
+        // 묶어), 클러스터마다 마일스톤을 하나씩 만든다 — 올라갈 때도
+        // 내려갈 때도 똑같이 안내 대상이 된다.
+        const WAYPOINT_MATCH_RADIUS_M = 30;
+        const ROUNDTRIP_CLUSTER_GAP_M = 50; // 이 거리(코스 진행거리 기준) 이상 떨어지면 별개 왕복 구간으로 간주
+
+        let globalMinD = Infinity;
         for (let i = 0; i < points.length - 1; i++) {
           const a = points[i];
           const b = points[i + 1];
           const d = pointToSegmentMeters(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
-          if (d < minD) {
-            minD = d;
-            nearestIdx = i; // 선분의 시작점 인덱스 매핑
-          }
+          if (d < globalMinD) globalMinD = d;
         }
-        
         // 경로 선(트랙)에서 너무 멀리 떨어져 있는 지명은
         // 사용자가 경로를 우회했거나 가지 않는 곳이므로 안내에서 제외 (100m 기준)
-        if (minD > 100 && !n.includes('들머리') && !n.includes('날머리')) {
+        if (globalMinD > 100 && !n.includes('들머리') && !n.includes('날머리')) {
           return;
         }
 
-        const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] : 0;
+        // 후보 세그먼트 수집: globalMinD 대비 WAYPOINT_MATCH_RADIUS_M 이내로
+        // 근접한 모든 세그먼트(왕복이면 양쪽 다 여기 걸림).
+        const matchThreshold = Math.max(globalMinD, WAYPOINT_MATCH_RADIUS_M);
+        const candidates = [];
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const d = pointToSegmentMeters(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
+          if (d <= matchThreshold) candidates.push({ idx: i, dist: d });
+        }
+        // 코스 진행거리(cumDistances) 기준으로 정렬 후, ROUNDTRIP_CLUSTER_GAP_M
+        // 이상 떨어진 지점끼리 별도 클러스터로 나눈다.
+        candidates.sort((c1, c2) => (cumDistances[c1.idx] || 0) - (cumDistances[c2.idx] || 0));
+        const clusters = [];
+        candidates.forEach(c => {
+          const cDist = cumDistances[c.idx] || 0;
+          const lastCluster = clusters[clusters.length - 1];
+          if (lastCluster && (cDist - lastCluster.lastDist) <= ROUNDTRIP_CLUSTER_GAP_M) {
+            lastCluster.lastDist = cDist;
+            if (c.dist < lastCluster.best.dist) lastCluster.best = c;
+          } else {
+            clusters.push({ best: c, lastDist: cDist });
+          }
+        });
 
         let icon = '📍';
         let color = '#2e7d32';
@@ -1865,39 +1894,49 @@
         // 직선 방향을 계산했을 때 실제 등산로 진행 방향과 다른 방향을
         // 가리킬 수 있다. name/거리 표시용 lat/lon은 원본을 유지하되,
         // 방향 계산 전용 필드를 별도로 둔다.
-        const trailPt = points[nearestIdx];
-        list.push({
-          name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
-          trailLat: trailPt.lat, trailLon: trailPt.lon,
+        clusters.forEach(cluster => {
+          const nearestIdx = cluster.best.idx;
+          const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] : 0;
+          const trailPt = points[nearestIdx];
+          list.push({
+            name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
+            trailLat: trailPt.lat, trailLon: trailPt.lon,
+          });
         });
       });
     }
 
     const hasAnyWaypoint = waypoints && waypoints.length > 0;
 
-    // 최고지점(정상) 자동 감지 (웨이포인트가 아예 없는 일반 GPX 대비)
-    if (!hasAnyWaypoint) {
-      const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
-      if (!hasPeak) {
-        const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
-        if (withEle.length > 0) {
-          const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
-          const peakIdx = points.indexOf(peak);
-          const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
-          list.push({
-            name: `정상 (${Math.round(peak.ele)}m)`,
-            lat: peak.lat,
-            lon: peak.lon,
-            ele: peak.ele,
-            distanceM: peakDistM,
-            icon: '⛰️',
-            color: '#e65100',
-            trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
-            trailLon: peak.lon,
-          });
-        }
+    // 최고지점(정상) 자동 감지 — 예전엔 웨이포인트가 아예 없는 GPX에서만
+    // 동작했는데, 웨이포인트는 있지만(예: 들머리/갈림길만 찍혀있고)
+    // "정상"이 빠진 왕복 코스가 실제로 있었다. 왕복 코스에서 정상은
+    // U턴 지점이라 turnAngle이 180도(급회전)로 계산되어야 "여기서
+    // 되돌아가세요" 화살표가 뜨는데, 마일스톤 자체가 없으면 애초에
+    // turnAngle 계산 대상에서 빠진다 — 웨이포인트 유무와 무관하게
+    // "정상" 계열 이름이 하나도 없으면 항상 자동 보완한다.
+    const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
+    if (!hasPeak) {
+      const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
+      if (withEle.length > 0) {
+        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+        const peakIdx = points.indexOf(peak);
+        const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
+        list.push({
+          name: `정상 (${Math.round(peak.ele)}m)`,
+          lat: peak.lat,
+          lon: peak.lon,
+          ele: peak.ele,
+          distanceM: peakDistM,
+          icon: '⛰️',
+          color: '#e65100',
+          trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
+          trailLon: peak.lon,
+        });
       }
+    }
 
+    if (!hasAnyWaypoint) {
       // 들머리 / 날머리가 없으면 기본 추가
       if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
         const startPt = points[0];
@@ -1986,7 +2025,12 @@
   // 동일한 15m 여유값을 그대로 써서, 이동 중 구간 재정렬이 화면에 보이는
   // 텍스트 안내("갈림길1 → 갈림길2")와 항상 같은 목적지를 가리키도록
   // 통일한다.
-  function findNextMilestone(traveledDist) {
+  // isReversing=true면 "코스를 거꾸로(날머리 쪽에서 들머리 쪽으로) 걷는
+  // 중"이라는 뜻 — 원점회귀/왕복 코스에서 정상까지 갔다가 같은 길로
+  // 되돌아올 때 실제로 벌어지는 상황이다. 이때는 traveledDist 기준
+  // "코스 순서상 다음"이 아니라 "코스 순서상 이전" 마일스톤이 사용자가
+  // 실제로 다음에 만날 갈림길이므로, prevM/nextM을 뒤바꿔 반환한다.
+  function findNextMilestone(traveledDist, isReversing) {
     if (!currentMilestones || currentMilestones.length < 2) return null;
     let prevM = currentMilestones[0];
     let nextM = currentMilestones[currentMilestones.length - 1];
@@ -1998,6 +2042,13 @@
         nextM = currentMilestones[i];
         break;
       }
+    }
+    if (isReversing) {
+      // 코스 순서상 "이전" 마일스톤(prevM)이 되돌아가는 방향으로는
+      // "다음" 목표가 된다 — 그 지점의 turnAngle도 진입/이탈 방향이
+      // 뒤바뀌므로 화면 표시 시점에 180도 반전해서 써야 한다(호출부
+      // showUpcomingTurnAlert 쪽에서 처리).
+      return { prevM: nextM, nextM: prevM };
     }
     return { prevM, nextM };
   }
@@ -2949,6 +3000,38 @@
   const ARRIVAL_DISTANCE_M = 20;       // 날머리까지 이 거리 이내면 "도착"
   const ARRIVAL_MIN_TRAVELED_M = 50;   // 원점회귀 코스 출발 직후 오탐 방지용 최소 이동거리
 
+  // ↩️ 왕복/원점회귀 코스 역주행(되돌아가는 중) 감지 — 정상까지 갔다가
+  // 같은 길로 되돌아오는 코스에서, 올라갈 때와 내려갈 때 모두 갈림길
+  // 안내가 나와야 한다는 요구사항. 판정 기준은 traveledDist(GPS가
+  // GPX 트랙 위에 투영된 코스 순서상 진행거리)의 증감 추이뿐이다 —
+  // 나침반/자이로는 전혀 쓰지 않는다.
+  // 히스테리시스: "역주행 시작"은 REVERSE_ENTER_STREAK회 연속 감소해야
+  // 확정하고, "정방향 복귀"는 단 1회만 증가해도 즉시 해제한다 — 왕복
+  // 코스에서 방향을 트는 순간(정상 등)에는 실제로 잠시 제자리에 머물며
+  // GPS가 흔들릴 수 있으므로 "역주행 진입"만 신중하게, "복귀"는 민감하게
+  // 잡아 빠르게 정상 안내로 돌아오게 한다.
+  const REVERSE_ENTER_STREAK = 3;
+  let isReversingOnTrail = false;
+  let lastTraveledDistForReverse = null;
+  let reverseDecreaseStreak = 0;
+
+  function updateReversingState(traveledDist) {
+    if (lastTraveledDistForReverse === null) {
+      lastTraveledDistForReverse = traveledDist;
+      return;
+    }
+    const delta = traveledDist - lastTraveledDistForReverse;
+    lastTraveledDistForReverse = traveledDist;
+    if (delta < -0.5) { // 0.5m 이상 감소해야 "뒤로 갔다"로 카운트(GPS 미세 노이즈 무시)
+      reverseDecreaseStreak++;
+      if (reverseDecreaseStreak >= REVERSE_ENTER_STREAK) isReversingOnTrail = true;
+    } else if (delta > 0.5) {
+      reverseDecreaseStreak = 0;
+      isReversingOnTrail = false; // 정방향 복귀는 즉시 반영
+    }
+    // delta가 -0.5~0.5m 사이(거의 정지)면 기존 상태를 그대로 유지한다.
+  }
+
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
@@ -2994,24 +3077,50 @@
       // 이내로 가까워지면 buildMilestones()가 코스 로드 시 미리 계산해둔
       // turnAngle/turnLabel(좌회전/우회전/직진)을 그대로 보여준다.
       // 정지/이동 상태, 나침반, GPS heading 전부 참조하지 않는다.
-      const milestoneResult = findNextMilestone(traveledDist);
+      //
+      // ↩️ 왕복/원점회귀 코스: 정상까지 갔다가 같은 길로 되돌아올 때도
+      // 갈림길 안내가 나와야 한다는 요구사항 — traveledDist 증감 추이로
+      // "되돌아가는 중"을 판정(updateReversingState)하고, 역방향이면
+      // findNextMilestone이 코스 순서상 이전 마일스톤을 다음 목표로
+      // 반환하도록 뒤집는다. distToNextM 계산도 방향에 맞게 뒤집어야
+      // 하고, turnAngle도 진입/이탈이 반대가 되므로 180도 반전해서
+      // 보여준다(showUpcomingTurnAlert에 반전된 값을 직접 넘긴다).
+      updateReversingState(traveledDist);
+      const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
       if (milestoneResult) {
         const prevM = milestoneResult.prevM;
         const nextM = milestoneResult.nextM;
-        const distToNextM = Math.max(0, nextM.distanceM - traveledDist);
+        const distToNextM = isReversingOnTrail
+          ? Math.max(0, traveledDist - nextM.distanceM)
+          : Math.max(0, nextM.distanceM - traveledDist);
 
         // 🧭 구간 heading-up: 현재 구간(prevM→nextM)이 이전과 달라졌을
         // 때만 지도를 스냅 회전시킨다 — 매 GPS 픽스마다 재계산하지 않음.
         if (isSegmentRotationMode) {
-          const segKey = prevM.name + '@' + prevM.distanceM + '->' + nextM.name + '@' + nextM.distanceM;
+          const segKey = prevM.name + '@' + prevM.distanceM + '->' + nextM.name + '@' + nextM.distanceM + (isReversingOnTrail ? '@rev' : '');
           if (segKey !== currentRotationSegmentKey) {
             currentRotationSegmentKey = segKey;
-            const heading = computeSegmentHeading(prevM, nextM);
+            // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을
+            // 원래 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이
+            // 올바른 진행방향을 계산한다.
+            const heading = isReversingOnTrail
+              ? computeSegmentHeading(nextM, prevM)
+              : computeSegmentHeading(prevM, nextM);
             if (heading !== null) applySegmentRotation(heading);
           }
         }
 
-        showUpcomingTurnAlert(nextM, distToNextM);
+        // 역방향으로 이 지점을 지날 때는 좌/우가 뒤바뀌므로 turnAngle을
+        // 180도 반전한 임시 마일스톤 객체를 만들어 넘긴다 — 원본
+        // nextM.turnAngle/turnLabel은 코스 로드 시 정방향 기준으로
+        // 고정 계산된 값이라 직접 건드리지 않는다.
+        const alertTarget = isReversingOnTrail
+          ? Object.assign({}, nextM, {
+              turnAngle: (nextM.turnAngle === null) ? null : shortestAngleDiff(nextM.turnAngle + 180, 0),
+              turnLabel: (nextM.turnLabel === null || nextM.turnLabel === '직진') ? nextM.turnLabel : classifyTurnAngle(shortestAngleDiff(nextM.turnAngle + 180, 0))
+            })
+          : nextM;
+        showUpcomingTurnAlert(alertTarget, distToNextM);
 
         toast.className = 'gps-toast';
         toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
@@ -3062,7 +3171,11 @@
   let lastBeepedStepKey = null; // "갈림길이름@30m단위구간" — 같은 10m 구간에서 중복 알람 방지
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
-    const key = nextM.name + '@' + nextM.distanceM;
+    // key에 방향(isReversingOnTrail)을 포함시켜, 왕복 코스에서 같은
+    // 갈림길을 올라갈 때 한 번, 내려갈 때 또 한 번 각각 독립적으로
+    // 알람이 울리도록 한다 — 방향 정보 없이 좌표+거리만 쓰면 "이미
+    // 알람 울린 지점"으로 오판해 두 번째 통과 시 스킵될 수 있었다.
+    const key = nextM.name + '@' + nextM.distanceM + (isReversingOnTrail ? '@rev' : '@fwd');
     // 직진 구간이거나 회전각을 계산할 수 없는 지점(들머리/날머리 등)은
     // 안내할 게 없으므로 화살표를 띄우지 않는다.
     if (!nextM.turnLabel || nextM.turnLabel === '직진' || distToNextM > TURN_ALERT_DISTANCE_M) {
