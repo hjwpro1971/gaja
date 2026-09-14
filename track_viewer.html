@@ -1427,14 +1427,42 @@
       }
     }, 100);
 
-    // 길찾기 회전 모드에서는 손가락으로 확대/축소(핀치줌, 더블탭)해도
-    // 화면 중심이 내 위치를 벗어나지 않아야 한다. Leaflet의 핀치줌은
-    // 손가락 중심점 기준으로 확대되어 중심이 살짝씩 밀릴 수 있으므로,
-    // 줌 동작이 끝날 때마다 다시 내 위치로 중심을 맞춘다.
-    map.on('zoomend', () => {
-      if (isHeadingUp && lastKnownPos) {
-        map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: false });
+    // 개선 2: 손을 떼는 즉시 내 위치로 강제 복귀시키면 다른 지역을
+    // 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와 "드래그가 안 되는
+    // 것"처럼 느껴진다. 손을 뗀 뒤에도 일정 시간(7초)은 그 자리에 머물게
+    // 두고, 그 시간이 지나야 자동으로 내 위치(+회전)로 복귀한다. 드래그와
+    // 핀치줌(아래 zoomstart/zoomend) 양쪽에서 공유하는 타이머다.
+    const DRAG_RETURN_DELAY_MS = 7000;
+    let dragReturnTimer = null;
+
+    // 사용자가 핀치줌/더블탭/버튼으로 확대·축소하는 동안에도 "지도를
+    // 직접 조작 중"으로 표시해야 한다. isMapBeingDragged를 세팅하는
+    // 건 손가락 드래그(startManualMapDrag)뿐이었는데, 핀치줌은 이
+    // 플래그를 전혀 건드리지 않아 확대 직후 들어오는 GPS 픽스(약 1초
+    // 간격)가 3515행 부근 조건을 그대로 통과해 즉시 내 위치로
+    // 재중심시켜버렸다 — 사용자에게는 "확대해도 금방 원래대로
+    // 돌아온다"로 체감됐다. zoomstart/zoomend를 드래그와 동일한
+    // 7초 유예 메커니즘에 연결해 해결한다.
+    map.on('zoomstart', () => {
+      isMapBeingDragged = true;
+      isMapDragReturnPending = false;
+      if (dragReturnTimer) {
+        clearTimeout(dragReturnTimer);
+        dragReturnTimer = null;
       }
+    });
+    map.on('zoomend', () => {
+      isMapBeingDragged = false;
+      isMapDragReturnPending = true;
+      if (dragReturnTimer) clearTimeout(dragReturnTimer);
+      dragReturnTimer = setTimeout(() => {
+        dragReturnTimer = null;
+        isMapDragReturnPending = false;
+        if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
+          map.setView([lastKnownPos.lat, lastKnownPos.lon], map.getZoom(), { animate: true });
+          if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
+        }
+      }, DRAG_RETURN_DELAY_MS);
     });
 
     // 손가락으로 지도를 끌어(드래그) 화면 밖의 다른 구간을 잠깐 둘러볼 수
@@ -1453,12 +1481,6 @@
     // 된다(반전 후 다시 반전하는 이중 계산을 피해 이 한 곳에서만 부호를
     // 결정한다 — moveManualMapDrag가 mapRotationDeg를 그대로 참조만 함).
     //
-    // 개선 2: 손을 떼는 즉시 내 위치로 강제 복귀시키면 다른 지역을
-    // 보려고 드래그해도 손을 떼자마자 바로 튕겨 돌아와 "드래그가 안 되는
-    // 것"처럼 느껴진다. 손을 뗀 뒤에도 일정 시간(7초)은 그 자리에 머물게
-    // 두고, 그 시간이 지나야 자동으로 내 위치(+회전)로 복귀한다.
-    const DRAG_RETURN_DELAY_MS = 7000;
-    let dragReturnTimer = null;
     let manualDragActive = false;
     let manualDragLastX = 0;
     let manualDragLastY = 0;
