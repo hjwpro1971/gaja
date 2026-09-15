@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_wayfind_ring_centered_on_me';
+      const APP_BUILD = 'v20260928_wayfind_fixed_arrow_map_rotates';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v77').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v78').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -447,41 +447,29 @@
     .wayfind-overlay-mode-btn {
       top: 70px; left: 14px; padding: 8px 14px; font-size: 13px; font-weight: 700; color: #2e7d32;
     }
-    /* 링 중심을 화면 정중앙이 아니라 "내 위치"가 실제로 표시되는 화면
-       좌표(세로 70% 지점, #map.heading-up의 top:70% 앵커와 동일 —
-       v69 참고)에 맞춘다. 링 자체도 원형 대신 세로로 긴 타원으로 바꿔,
-       중심(=내 위치)에서 위쪽으로 길게 뻗어나가는 포인터처럼 보이게
-       한다 — 사용자 요청: "센터는 내 위치와 같은 위치에서 가야할 곳
-       다음 위치를 가리켜야 해". */
-    .wayfind-ring-wrap {
-      position: absolute; top: 70%; left: 50%; width: 46vw; height: 74vw;
-      max-width: 260px; max-height: 420px; min-width: 170px; min-height: 280px;
-      margin-left: -23vw; margin-top: -55vw;
-      border-radius: 50%; pointer-events: none;
-      background: radial-gradient(ellipse, rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.35) 100%);
-      border: 3px solid rgba(46,125,50,0.55);
+    /* 🧭 길찾기 모드 전면 재설계(v78, 사용자 설계): "링이 도는" 방식을
+       버리고, 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시 방향)
+       시킨 채 지도(#map) 자체가 폰이 향한 방향의 반대로 회전한다.
+       나침반 표준 "헤딩업" 지도와 동일한 원리 — 화살표가 항상 실제
+       목표 방향을 가리키는 결과가 된다(순수 계산 검증:
+       scratchpad/verify_wayfind_map_rotate.js). 화살표 꼬리는 내 위치가
+       실제로 표시되는 화면 좌표(세로 70% 지점, #map.heading-up의
+       top:70% 앵커와 동일 — v69 참고)에 맞춘다. */
+    .wayfind-arrow-wrap {
+      position: absolute; top: 70%; left: 50%; width: 2px; height: 58vh;
+      max-height: 420px; min-height: 260px;
+      margin-left: -1px; margin-top: -58vh;
+      pointer-events: none; display: flex; flex-direction: column; align-items: center;
     }
-    .wayfind-ring-rotor {
-      position: absolute; inset: 0; transform-origin: center center;
-      pointer-events: auto; touch-action: none;
+    .wayfind-arrow-shaft {
+      flex: 1; width: 4px; background: linear-gradient(to top, rgba(211,47,47,0.35), #d32f2f 55%);
+      border-radius: 2px;
     }
-    .wayfind-ring-mark-n {
-      position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
-      font-size: 34px; color: #2e7d32; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35));
-    }
-    /* 화면(폰) 기준 고정선 — 링이 돌아도 이 선은 항상 12시에 그대로 있어,
-       "링의 초록 화살표가 이 고정선과 겹치는 순간"이 곧 사용자가 보는
-       정면(=가야 할 방향)과 코스 방향이 일치한다는 뜻이 된다. 링이
-       세로로 길어진 만큼 기준선도 함께 늘여 중심(내 위치)에서 위쪽
-       끝까지 길게 이어지도록 해 "다음 위치를 직접 가리키는" 느낌을
-       준다. */
-    .wayfind-ring-fixed-line {
-      position: absolute; top: -14px; left: 50%; width: 2px; height: 55%;
-      margin-left: -1px; background: #d32f2f;
+    .wayfind-arrow-head {
+      font-size: 40px; line-height: 1; color: #d32f2f; margin-top: -4px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
     }
     .wayfind-hint-badge {
-      /* 링이 세로로 길어지고 중심이 70%로 내려간 만큼(위 wayfind-ring-wrap
-         참고) 하단 여백도 함께 늘려 링과 겹치지 않게 한다. */
       position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
       max-width: 85vw; text-align: center; pointer-events: none;
       background: rgba(27,94,32,0.92); color: #fff; font-size: 13px; font-weight: 700;
@@ -585,7 +573,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v77)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v78)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -629,21 +617,19 @@
   <div class="arrow-label" id="bottomArrowLabel">12시 방향</div>
 </div>
 
-<!-- 🧭 길찾기 모드 — 지도 위에 반투명 나침반 링을 오버레이한다. 팝업으로
-     지도를 가리지 않고, 현재 위치로 확대된 지도(빨간 경로선 포함)와
-     나침반을 동시에 보면서 "경로선이 링의 기준선과 일치하는 방향"을
-     직관적으로 찾을 수 있게 한다. 확정 개념 없이 사용자가 원할 때
-     닫기(✕)만 누르면 된다 — 나침반은 계속 실시간으로 돈다. -->
+<!-- 🧭 길찾기 모드 — 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시)
+     되어 있고, 폰을 돌리면(또는 손가락으로 화면을 돌리면) 그 반대
+     방향으로 지도 자체가 회전해 화살표가 실제 목표 방향을 계속
+     가리키게 한다(표준 헤딩업 지도 원리). 확정 개념 없이 사용자가
+     원할 때 닫기(✕)만 누르면 된다. -->
 <div class="wayfind-overlay" id="wayfindOverlay" style="display:none;">
   <button type="button" class="wayfind-overlay-close" onclick="closeWayfindMode()" title="닫기">✕</button>
   <button type="button" class="wayfind-overlay-mode-btn" id="wayfindModeToggleBtn" onclick="toggleWayfindInputMode()">✋ 손으로 돌리기</button>
-  <div class="wayfind-ring-wrap" id="wayfindRingWrap">
-    <div class="wayfind-ring-rotor" id="wayfindRingRotor">
-      <div class="wayfind-ring-mark-n">▲</div>
-    </div>
-    <div class="wayfind-ring-fixed-line"></div>
+  <div class="wayfind-arrow-wrap" id="wayfindArrowWrap">
+    <div class="wayfind-arrow-shaft"></div>
+    <div class="wayfind-arrow-head">▲</div>
   </div>
-  <div class="wayfind-hint-badge" id="wayfindHintBadge">빨간 경로선이 나침반 기준선과 겹치면 그 방향으로 가면 됩니다</div>
+  <div class="wayfind-hint-badge" id="wayfindHintBadge">화살표가 가리키는 방향으로 가면 됩니다</div>
 </div>
 
 <!-- 지도 레이어 선택 메뉴 -->
@@ -691,7 +677,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=77')
+      navigator.serviceWorker.register('./sw.js?v=78')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2282,48 +2268,37 @@
   }
 
   // ===================================================================
-  // 🧭 길찾기 모드 — 지도 위 나침반 링 오버레이.
-  // 지도를 가리는 팝업 대신, 지도(빨간 경로선 포함) 위에 반투명 링을
-  // 얹는다. 링에는 회전하는 초록 화살표(▲, 링의 "가리키는 방향")와
-  // 화면에 고정된 빨간 기준선(12시)이 있다 — 이 둘이 겹치는 순간이
-  // "지금 폰이 향한 방향(또는 사용자가 손으로 지정한 방향)이 경로
-  // 진행방향과 일치"한다는 뜻이다. 입력 방식은 나침반(자동)과
-  // 손가락 회전(수동) 두 가지를 토글로 전환한다. 확정 버튼/모달
-  // 없이 실시간으로 계속 보여주다가 사용자가 닫기(✕)를 누르면 종료.
-  const WAYFIND_TARGET_AHEAD_M = 20; // 목표 방위각을 구할 전방 지점 거리
-
+  // 🧭 길찾기 모드 — 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시)
+  // 되어 있고, 지도(#map) 자체가 폰이 향한 방향(또는 손가락으로 지정한
+  // 방향)으로 회전한다(표준 헤딩업 지도 원리 — applySegmentRotation을
+  // 그대로 재사용). 결과적으로 화살표가 항상 실제 목표 방향을 계속
+  // 가리키게 된다. 입력 방식은 나침반(자동)과 손가락 회전(수동) 두
+  // 가지를 토글로 전환한다. 확정 버튼/모달 없이 실시간으로 계속
+  // 반영하다가 사용자가 닫기(✕)를 누르면 종료(원래 회전값 복원).
   let isWayfindActive = false;
-  let wayfindTargetBearing = null; // 목표 방위각(고정, 켜져 있는 동안 재계산 안 함)
   let wayfindInputMode = 'compass'; // 'compass' | 'manual'
 
-  function computeWayfindTargetBearing() {
-    if (!lastKnownPos || !currentPoints || currentPoints.length < 2) return null;
-    const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
-    if (nearest.index < 0) return null;
-    const ahead = findPointAheadByDistance(currentPoints, cumulativeDistances, nearest.index, WAYFIND_TARGET_AHEAD_M);
-    if (!ahead) return null;
-    return calculateBearing(lastKnownPos.lat, lastKnownPos.lon, ahead.lat, ahead.lon);
-  }
-
-  // 링 회전값 = phoneAbsHeading - targetBearing. 폰이 목표 방향을 정확히
-  // 향하면 0이 되어, 링의 ▲(항상 링 위쪽에 고정)가 화면 12시의 빨간
-  // 기준선과 정확히 겹친다 — "나침반과 경로 방향이 일치"가 그대로
-  // 시각적으로 보이는 이유다.
-  function renderWayfindRing(rotationDeg) {
-    const rotor = document.getElementById('wayfindRingRotor');
-    if (rotor) rotor.style.transform = `rotate(${rotationDeg}deg)`;
+  // 지도(#map)를 phoneHeadingDeg(폰이 향한 절대 방위, 또는 손가락으로
+  // 지정한 방위)가 화면 위쪽을 향하도록 회전시킨다 — applySegmentRotation
+  // 과 완전히 동일한 CSS 회전 대상/부호 관례를 그대로 재사용한다(부호는
+  // 그 함수 한 곳에서만 결정한다는 이 파일의 원칙을 따름). 화살표는
+  // 화면에 고정(항상 12시)이므로, 이렇게 지도만 돌리면 화살표가 실제
+  // 목표 방향(현재는 "폰이 보는 방향 = 화면 위")을 계속 가리키는
+  // 결과가 된다. 순수 계산 검증: scratchpad/verify_wayfind_map_rotate.js.
+  function renderWayfindMapRotation(phoneHeadingDeg) {
+    applySegmentRotation(phoneHeadingDeg);
   }
 
   function handleWayfindOrientation(e) {
+    if (!isWayfindActive) return;
     if (e.alpha === null || isNaN(e.alpha)) return;
-    if (wayfindTargetBearing === null) return;
 
     let phoneAbsHeading = e.webkitCompassHeading;
     if (phoneAbsHeading === undefined || phoneAbsHeading === null) {
       phoneAbsHeading = (360 - e.alpha) % 360;
     }
 
-    renderWayfindRing(shortestAngleDiff(phoneAbsHeading, wayfindTargetBearing));
+    renderWayfindMapRotation(phoneAbsHeading);
   }
 
   function startWayfindCompassSensor() {
@@ -2350,39 +2325,35 @@
 
   // --- 손으로 돌리기(수동) — 나침반/자기장 센서를 전혀 쓰지 않는다.
   // MagSafe 자석, 금속 거치대의 자력계 간섭을 피하고 싶을 때 쓴다.
-  // 링 자체를 직접 돌리는 각도가 곧 phoneAbsHeading 자리를 대신한다.
-  let wayfindManualRotation = 0; // 사용자가 손으로 돌린 각도(도) — targetBearing 기준 상대값
+  // 화면을 손가락으로 좌우로 끄는 만큼 지도를 직접 회전시킨다 — 화살표는
+  // 항상 화면 고정이므로, 이 조작은 "화살표가 가리키는 실제 방향을
+  // 손으로 맞춘다"는 뜻이 된다.
+  let wayfindManualRotation = 0; // 현재 지도에 적용 중인 회전각(도) — renderWayfindMapRotation에 넘기는 절대값
   let wayfindDialDragging = false;
-  let wayfindDialDragStartAngle = 0;
+  let wayfindDialDragStartX = 0;
   let wayfindDialDragStartRotation = 0;
+  const WAYFIND_MANUAL_DRAG_DEG_PER_PX = 0.5; // 화면을 1px 끌 때 지도가 회전하는 각도
 
-  function wayfindDialAngleFromEvent(evt, wrapEl) {
-    const rect = wrapEl.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+  function wayfindDragClientX(evt) {
     const point = evt.touches ? evt.touches[0] : evt;
-    const dx = point.clientX - cx;
-    const dy = point.clientY - cy;
-    return Math.atan2(dx, -dy) * (180 / Math.PI); // 12시 방향 기준 시계방향 각도
+    return point.clientX;
   }
 
   function handleWayfindDialDragStart(evt) {
-    const wrap = document.getElementById('wayfindRingWrap');
-    if (!wrap) return;
     wayfindDialDragging = true;
-    wayfindDialDragStartAngle = wayfindDialAngleFromEvent(evt, wrap);
+    wayfindDialDragStartX = wayfindDragClientX(evt);
     wayfindDialDragStartRotation = wayfindManualRotation;
     evt.preventDefault();
   }
 
   function handleWayfindDialDragMove(evt) {
     if (!wayfindDialDragging) return;
-    const wrap = document.getElementById('wayfindRingWrap');
-    if (!wrap) return;
-    const currentAngle = wayfindDialAngleFromEvent(evt, wrap);
-    const delta = shortestAngleDiff(currentAngle, wayfindDialDragStartAngle);
-    wayfindManualRotation = ((wayfindDialDragStartRotation + delta) % 360 + 360) % 360;
-    renderWayfindRing(wayfindManualRotation);
+    const dx = wayfindDragClientX(evt) - wayfindDialDragStartX;
+    // 화면을 오른쪽으로 끌면(dx>0) 지도가 반시계 방향(-)으로 도는 관례 —
+    // 일반 지도 드래그(moveManualMapDrag)와 동일하게 "손가락으로 지형을
+    // 미는" 감각을 유지한다.
+    wayfindManualRotation = ((wayfindDialDragStartRotation - dx * WAYFIND_MANUAL_DRAG_DEG_PER_PX) % 360 + 360) % 360;
+    renderWayfindMapRotation(wayfindManualRotation);
     evt.preventDefault();
   }
 
@@ -2391,15 +2362,24 @@
   }
 
   function initWayfindDialEvents() {
-    const wrap = document.getElementById('wayfindRingWrap');
-    if (!wrap || wrap._wayfindBound) return;
-    wrap._wayfindBound = true;
-    wrap.addEventListener('mousedown', handleWayfindDialDragStart);
+    const overlay = document.getElementById('wayfindOverlay');
+    if (!overlay || overlay._wayfindDragBound) return;
+    overlay._wayfindDragBound = true;
+    overlay.style.pointerEvents = 'auto';
+    overlay.addEventListener('mousedown', handleWayfindDialDragStart);
     window.addEventListener('mousemove', handleWayfindDialDragMove);
     window.addEventListener('mouseup', handleWayfindDialDragEnd);
-    wrap.addEventListener('touchstart', handleWayfindDialDragStart, { passive: false });
+    overlay.addEventListener('touchstart', handleWayfindDialDragStart, { passive: false });
     window.addEventListener('touchmove', handleWayfindDialDragMove, { passive: false });
     window.addEventListener('touchend', handleWayfindDialDragEnd);
+  }
+
+  function stopWayfindDialEvents() {
+    const overlay = document.getElementById('wayfindOverlay');
+    if (overlay) {
+      overlay.style.pointerEvents = 'none';
+      overlay._wayfindDragBound = false;
+    }
   }
 
   // --- 입력 방식 전환 ---
@@ -2409,29 +2389,45 @@
     const hint = document.getElementById('wayfindHintBadge');
     if (wayfindInputMode === 'manual') {
       stopWayfindCompassSensor();
-      wayfindManualRotation = 0;
-      renderWayfindRing(0);
+      wayfindManualRotation = mapRotationDeg;
+      wayfindDialDragStartRotation = wayfindManualRotation;
       initWayfindDialEvents();
       if (btn) btn.textContent = '🧭 나침반으로 맞추기';
-      if (hint) hint.textContent = '링을 손가락으로 돌려 빨간 경로선과 초록 화살표를 맞춰보세요';
+      if (hint) hint.textContent = '화면을 손가락으로 좌우로 끌어 화살표 방향을 맞춰보세요';
     } else {
+      stopWayfindDialEvents();
       startWayfindCompassSensor();
       if (btn) btn.textContent = '✋ 손으로 돌리기';
-      if (hint) hint.textContent = '빨간 경로선이 나침반 기준선과 겹치면 그 방향으로 가면 됩니다';
+      if (hint) hint.textContent = '화살표가 가리키는 방향으로 가면 됩니다';
     }
   }
 
+  // 길찾기 모드에 들어가기 전, 원래(구간회전 등에 의해) 걸려 있던 지도
+  // 회전값을 기억해뒀다가 나갈 때 그대로 복원한다 — 길찾기 모드는
+  // 그 자체로 지도 회전(#map)을 나침반/손가락 값으로 직접 덮어쓰므로,
+  // 복원하지 않으면 종료 후 구간회전이 옛 각도에서 이어지거나 GPS가
+  // 다음 픽스까지 회전을 갱신하지 못해 잠깐 어긋나 보일 수 있다.
+  let wayfindSavedMapRotationDeg = null;
+
   function openWayfindMode() {
-    wayfindTargetBearing = computeWayfindTargetBearing();
-    if (wayfindTargetBearing === null) {
+    if (!lastKnownPos) {
       alert('현재 위치를 아직 확인할 수 없어요.\n[내 위치] 버튼을 먼저 눌러주세요.');
       return;
     }
 
     // 현재 위치로 확대 — 실제 걸어야 할 길(빨간 경로선)이 화면에 크게
-    // 보여야 나침반 링과 겹쳐보는 의미가 있다.
-    if (lastKnownPos) {
-      map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 18), { animate: true });
+    // 보여야 화살표와 맞춰보는 의미가 있다.
+    map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 18), { animate: true });
+
+    // applySegmentRotation은 #map이 heading-up 클래스(120vh 정사각형,
+    // top:70% 앵커)를 갖고 있다는 전제로 회전을 건다 — 구간회전이 아직
+    // 한 번도 안 걸린 상태(예: 첫 원점이 v75의 방향 일치 검사로 보류
+    // 중)라면 이 클래스가 없을 수 있으므로 길찾기 모드 진입 시 직접
+    // 보장한다.
+    const mapElForWayfind = document.getElementById('map');
+    if (mapElForWayfind && !mapElForWayfind.classList.contains('heading-up')) {
+      mapElForWayfind.classList.add('heading-up');
+      map.invalidateSize({ animate: false });
     }
 
     const overlay = document.getElementById('wayfindOverlay');
@@ -2441,22 +2437,24 @@
     const btn = document.getElementById('wayfindModeToggleBtn');
     if (btn) btn.textContent = '✋ 손으로 돌리기';
     const hint = document.getElementById('wayfindHintBadge');
-    if (hint) hint.textContent = '빨간 경로선이 나침반 기준선과 겹치면 그 방향으로 가면 됩니다';
+    if (hint) hint.textContent = '화살표가 가리키는 방향으로 가면 됩니다';
 
-    wayfindManualRotation = 0;
-    initWayfindDialEvents();
-    renderWayfindRing(0);
-
+    wayfindSavedMapRotationDeg = mapRotationDeg;
     isWayfindActive = true;
     startWayfindCompassSensor();
   }
 
   function closeWayfindMode() {
     isWayfindActive = false;
-    wayfindTargetBearing = null;
     stopWayfindCompassSensor();
+    stopWayfindDialEvents();
     const overlay = document.getElementById('wayfindOverlay');
     if (overlay) overlay.style.display = 'none';
+    // 길찾기 중 돌아갔던 지도 회전을 원래(구간회전 등) 값으로 복원.
+    if (wayfindSavedMapRotationDeg !== null) {
+      applySegmentRotation(wayfindSavedMapRotationDeg);
+      wayfindSavedMapRotationDeg = null;
+    }
   }
 
   // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
