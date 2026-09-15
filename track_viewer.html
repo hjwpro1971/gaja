@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260930_freeze_map_center_during_wayfind';
+      const APP_BUILD = 'v20261001_block_drag_during_wayfind_compass';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v80').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v81').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -573,7 +573,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v80)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v81)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -677,7 +677,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=80')
+      navigator.serviceWorker.register('./sw.js?v=81')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1563,6 +1563,15 @@
     }
 
     function startManualMapDrag(clientX, clientY) {
+      // 🧭 길찾기 모드(나침반 입력 중)에서는 wayfindOverlay의 pointer-events
+      // 를 none으로 꺼두기 때문에(오버레이가 손가락 회전 조작을 하지
+      // 않을 때는 지도를 그대로 보여줘야 하므로) 터치가 그대로 아래
+      // #map까지 전달돼 일반 드래그(panBy로 지도 중심 이동)가 함께
+      // 발동했다 — "내 위치와 화살표 시작점이 지도를 만지면 어긋난다"
+      // 버그의 원인. 길찾기 모드 중에는 지도 중심이 완전히 고정돼야
+      // 하므로(applyMapViewWithOffset이 이미 isWayfindActive면 setView를
+      // 건너뜀), 일반 드래그 자체를 시작하지 않는다.
+      if (isWayfindActive) return;
       manualDragActive = true;
       manualDragLastX = clientX;
       manualDragLastY = clientY;
