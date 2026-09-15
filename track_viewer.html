@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261003_fix_drag_rotation_transition_race';
+      const APP_BUILD = 'v20261004_finish_rotation_transition_on_pause';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v83').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v84').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -581,7 +581,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v83)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v84)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -685,7 +685,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=83')
+      navigator.serviceWorker.register('./sw.js?v=84')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1558,6 +1558,42 @@
     let manualDragLastX = 0;
     let manualDragLastY = 0;
 
+    // 🧭 #map.heading-up에는 transition:transform 0.5s가 걸려 있어
+    // 구간 회전(applySegmentRotation)이 즉시가 아니라 0.5초에 걸쳐
+    // 부드럽게 돌아간다. 문제는 이 CSS 트랜지션이 JS 타이머(setInterval
+    // 등)와 완전히 독립적으로 브라우저 자체 애니메이션 엔진에서 계속
+    // 진행된다는 점 — 시뮬레이션을 clearInterval로 일시정지해도(v83
+    // 이전) 이미 진행 중이던 회전 트랜지션은 남은 시간(최대 0.5초)
+    // 동안 백그라운드에서 계속 돈다. 그 사이 화면에 실제로 그려진
+    // 각도는 트랜지션 중간값인데, moveManualMapDrag는 항상 mapRotationDeg
+    // (트랜지션의 "최종 목표값")를 기준으로 계산하므로, 그 짧은 창
+    // 동안 드래그하면 손가락 방향과 지도 이동 방향이 어긋나 보였다
+    // (사용자 재현: "시뮬레이션 일시정지 상태에서, 회전 후에만" —
+    // 일시정지 직후 0.5초 이내에 드래그를 시작한 경우와 정확히 일치).
+    // 진행 중인 트랜지션을 그 자리에서 즉시 완료시켜(트랜지션 없이
+    // 목표 각도로 스냅) 화면과 mapRotationDeg를 강제로 일치시킨다 —
+    // toggleSimulationPause(일시정지 시점)와 startManualMapDrag(드래그
+    // 시작 시점, 안전망) 양쪽에서 호출한다.
+    function finishMapRotationTransitionNow() {
+      const el = document.getElementById('map');
+      if (!el) return;
+      el.style.transition = 'none';
+      el.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
+      // transition:'none' + transform 변경을 스타일에 대입만 하고 끝나면
+      // 브라우저가 이 변경을 실제 레이아웃/페인트에 언제 "커밋"할지
+      // 보장되지 않는다. offsetHeight를 강제로 읽어 리플로우를
+      // 동기적으로 트리거해, 이 시점에 transform이 화면에 확실히
+      // 반영되도록 보장한다.
+      void el.offsetHeight;
+      // 다음 tick부터 다시 부드러운 회전을 쓸 수 있도록 트랜지션을
+      // 복원한다 — 이번 프레임엔 이미 transition:none이 리플로우로
+      // 확정 반영됐으므로 이후 복원은 안전하다.
+      requestAnimationFrame(() => {
+        const el2 = document.getElementById('map');
+        if (el2) el2.style.transition = '';
+      });
+    }
+
     function rotateDragDelta(dx, dy, angleDeg) {
       const rad = angleDeg * Math.PI / 180;
       const cos = Math.cos(rad);
@@ -1591,30 +1627,9 @@
         dragReturnTimer = null;
       }
 
-      // ⚠️ #map.heading-up에는 transition:transform 0.5s가 걸려 있어
-      // 구간 회전(applySegmentRotation)이 즉시가 아니라 0.5초에 걸쳐
-      // 부드럽게 돌아간다. 그 트랜지션이 아직 끝나지 않은 도중(특히
-      // 시뮬레이션을 방금 일시정지한 직후 등) 드래그를 시작하면,
-      // moveManualMapDrag가 참조하는 mapRotationDeg(회전의 "최종
-      // 목표값")와 화면에 실제로 그려진 각도(트랜지션 진행 중인
-      // 중간값)가 서로 달라 손가락 방향과 지도 이동 방향이 어긋나
-      // 보였다(사용자 재현: "오른쪽으로 끌었는데 위로 움직임" — 최대
-      // 90도까지 어긋날 수 있는 각도 오차). 드래그 시작 시 진행 중인
-      // 트랜지션을 즉시 완료시켜(트랜지션 없이 현재 목표 각도로 스냅)
-      // 화면과 mapRotationDeg를 강제로 일치시킨다.
-      const mapElForDrag = document.getElementById('map');
-      if (mapElForDrag) {
-        mapElForDrag.style.transition = 'none';
-        mapElForDrag.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
-        // 다음 프레임부터 다시 부드러운 회전을 쓸 수 있도록 트랜지션을
-        // 복원한다 — 강제 리플로우 없이 그냥 다음 tick에 되돌려도
-        // 이번 프레임엔 이미 transition:none이 적용된 스타일이
-        // 렌더링되므로 안전하다(레이아웃 스래싱 방지를 위해 requestAnimationFrame 사용).
-        requestAnimationFrame(() => {
-          const el = document.getElementById('map');
-          if (el) el.style.transition = '';
-        });
-      }
+      // 드래그를 시작하는 시점에도 안전망으로 트랜지션을 강제 완료한다
+      // (아래 finishMapRotationTransitionNow 참고).
+      finishMapRotationTransitionNow();
     }
 
     function moveManualMapDrag(clientX, clientY) {
@@ -3780,6 +3795,14 @@
       isSimPaused = true;
       if (pauseBtn) pauseBtn.innerText = '▶️';
       showToastBadge('⏸️ 일시정지했습니다.');
+      // ⚠️ clearInterval은 다음 프레임 실행만 막을 뿐, 이미 진행 중이던
+      // 지도 회전 CSS 트랜지션(최대 0.5초)은 멈추지 않는다 — 그 상태로
+      // 두면 일시정지 직후 잠깐 동안은 화면에 보이는 각도와
+      // mapRotationDeg가 어긋나 그 사이 드래그하면 손가락 방향과 지도가
+      // 맞지 않았다(finishMapRotationTransitionNow 정의부 참고). 일시정지
+      // 시점에 트랜지션을 즉시 완료시켜, "정지 상태 = 지도가 완전히
+      // 멈춰 있다"를 항상 보장한다.
+      finishMapRotationTransitionNow();
       return;
     }
 
