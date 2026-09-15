@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260922_badge_counter_rotate';
+      const APP_BUILD = 'v20260923_rotate_after_pass_clock_dir';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v72').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v73').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -574,7 +574,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v72)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v73)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=72')
+      navigator.serviceWorker.register('./sw.js?v=73')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1372,6 +1372,15 @@
   // 막는다.
   function playTurnAlertBeep() {
     playTwoToneBeep(660);
+  }
+
+  // 🔊 갈림길 통과 알람 — 접근 알람(660Hz)과 구분되는 낮은 톤(550Hz)으로
+  // "방금 이 갈림길을 실제로 지났고, 지도가 다음 구간 방향으로 회전했다"를
+  // 알린다. 접근 알람이 여러 번(60/50/40/30m 등) 울릴 수 있는 것과 달리,
+  // 통과는 그 갈림길당 정확히 1회만 울린다(updateNavigationToast의 회전
+  // 트리거 시점에서 호출).
+  function playPassedMilestoneBeep() {
+    playTwoToneBeep(550);
   }
 
   function showToastBadge(msg, durationMs) {
@@ -2072,24 +2081,29 @@
   }
 
   // 현재 위치(누적거리 기준 traveledDist)를 기준으로 "다음 마일스톤"과
-  // "직전 마일스톤"을 찾는다. updateNavigationToast의 기존 로직과
-  // 동일한 15m 여유값을 그대로 써서, 이동 중 구간 재정렬이 화면에 보이는
-  // 텍스트 안내("갈림길1 → 갈림길2")와 항상 같은 목적지를 가리키도록
-  // 통일한다.
+  // "직전 마일스톤"을 찾는다. graceM(기본 15m)만큼 여유를 두어, 이동
+  // 중 구간 재정렬이 화면에 보이는 텍스트 안내("갈림길1 → 갈림길2")와
+  // 항상 같은 목적지를 가리키도록 통일한다.
+  // ⚠️ 지도 회전 트리거는 이 기본 여유값을 쓰지 않는다 — 실기기 테스트
+  // 결과 15m 여유 때문에 실제로 갈림길에 도착하기도 전에 지도가 먼저
+  // 회전해버려 혼란스럽다는 피드백이 있었다. 회전 판정은 graceM=0으로
+  // 별도 호출해 "정확히 지난 뒤"에만 전환되게 한다(updateNavigationToast
+  // 내부 참고).
   // isReversing=true면 "코스를 거꾸로(날머리 쪽에서 들머리 쪽으로) 걷는
   // 중"이라는 뜻 — 원점회귀/왕복 코스에서 정상까지 갔다가 같은 길로
   // 되돌아올 때 실제로 벌어지는 상황이다. 이때는 traveledDist 기준
   // "코스 순서상 다음"이 아니라 "코스 순서상 이전" 마일스톤이 사용자가
   // 실제로 다음에 만날 갈림길이므로, prevM/nextM을 뒤바꿔 반환한다.
-  function findNextMilestone(traveledDist, isReversing) {
+  function findNextMilestone(traveledDist, isReversing, graceM) {
     if (!currentMilestones || currentMilestones.length < 2) return null;
+    const grace = (graceM === undefined) ? 15 : graceM;
     let prevM = currentMilestones[0];
     let nextM = currentMilestones[currentMilestones.length - 1];
     for (let i = 0; i < currentMilestones.length; i++) {
-      if (currentMilestones[i].distanceM <= traveledDist + 15) {
+      if (currentMilestones[i].distanceM <= traveledDist + grace) {
         prevM = currentMilestones[i];
       }
-      if (currentMilestones[i].distanceM > traveledDist + 15) {
+      if (currentMilestones[i].distanceM > traveledDist + grace) {
         nextM = currentMilestones[i];
         break;
       }
@@ -3207,17 +3221,30 @@
 
         // 🧭 구간 heading-up: 현재 구간(prevM→nextM)이 이전과 달라졌을
         // 때만 지도를 스냅 회전시킨다 — 매 GPS 픽스마다 재계산하지 않음.
+        // ⚠️ 텍스트 안내(위 milestoneResult)와 달리 회전은 15m 여유값을
+        // 쓰지 않는다 — 여유값 때문에 실제로 갈림길에 도착하기 전에
+        // 지도가 먼저 회전해버려 혼란스럽다는 실기기 피드백에 따라,
+        // 회전 판정 전용으로 graceM=0으로 별도 조회해 "정확히 지난
+        // 뒤"에만 전환한다.
         if (isSegmentRotationMode) {
-          const segKey = prevM.name + '@' + prevM.distanceM + '->' + nextM.name + '@' + nextM.distanceM + (isReversingOnTrail ? '@rev' : '');
-          if (segKey !== currentRotationSegmentKey) {
-            currentRotationSegmentKey = segKey;
-            // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을
-            // 원래 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이
-            // 올바른 진행방향을 계산한다.
-            const heading = isReversingOnTrail
-              ? computeSegmentHeading(nextM, prevM)
-              : computeSegmentHeading(prevM, nextM);
-            if (heading !== null) applySegmentRotation(heading);
+          const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0);
+          if (rotResult) {
+            const rPrevM = rotResult.prevM, rNextM = rotResult.nextM;
+            const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
+            if (segKey !== currentRotationSegmentKey) {
+              const isFirstRotation = currentRotationSegmentKey === null;
+              currentRotationSegmentKey = segKey;
+              // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을
+              // 원래 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이
+              // 올바른 진행방향을 계산한다.
+              const heading = isReversingOnTrail
+                ? computeSegmentHeading(rNextM, rPrevM)
+                : computeSegmentHeading(rPrevM, rNextM);
+              if (heading !== null) applySegmentRotation(heading);
+              // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한
+              // 이전 갈림길이 없음)에는 통과 알람을 울리지 않는다.
+              if (!isFirstRotation) playPassedMilestoneBeep();
+            }
           }
         }
 
@@ -3298,7 +3325,11 @@
       return;
     }
 
-    const label = `${nextM.name} · ${nextM.turnLabel} (${Math.round(distToNextM)}m 앞)`;
+    // 좌회전/우회전 텍스트보다 몇 시 방향인지(예: "1시 방향")가 훨씬
+    // 직관적으로 보인다는 사용자 피드백 — turnAngle(미리 계산된 절대
+    // 회전각)을 시계방향 문구로 변환해 함께 보여준다.
+    const clockDir = angleDiffToClockDirection(nextM.turnAngle);
+    const label = `${nextM.name} · ${clockDir.clock} (${Math.round(distToNextM)}m 앞)`;
     // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 화면 회전용
     // 각도가 아니라 turnAngle(미리 계산된 절대 회전각)을 그대로 넘긴다 —
     // 화살표 아이콘 회전 자체가 "이 지점에서 꺾이는 방향"을 고정적으로
