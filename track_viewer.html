@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_freeze_rotation_during_drag';
+      const APP_BUILD = 'v20260927_wayfind_ring_centered_on_me';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v76').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v77').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -447,12 +447,18 @@
     .wayfind-overlay-mode-btn {
       top: 70px; left: 14px; padding: 8px 14px; font-size: 13px; font-weight: 700; color: #2e7d32;
     }
+    /* 링 중심을 화면 정중앙이 아니라 "내 위치"가 실제로 표시되는 화면
+       좌표(세로 70% 지점, #map.heading-up의 top:70% 앵커와 동일 —
+       v69 참고)에 맞춘다. 링 자체도 원형 대신 세로로 긴 타원으로 바꿔,
+       중심(=내 위치)에서 위쪽으로 길게 뻗어나가는 포인터처럼 보이게
+       한다 — 사용자 요청: "센터는 내 위치와 같은 위치에서 가야할 곳
+       다음 위치를 가리켜야 해". */
     .wayfind-ring-wrap {
-      position: absolute; top: 50%; left: 50%; width: 60vw; height: 60vw;
-      max-width: 320px; max-height: 320px; min-width: 220px; min-height: 220px;
-      margin-left: -30vw; margin-top: -30vw;
+      position: absolute; top: 70%; left: 50%; width: 46vw; height: 74vw;
+      max-width: 260px; max-height: 420px; min-width: 170px; min-height: 280px;
+      margin-left: -23vw; margin-top: -55vw;
       border-radius: 50%; pointer-events: none;
-      background: radial-gradient(circle, rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.35) 100%);
+      background: radial-gradient(ellipse, rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.35) 100%);
       border: 3px solid rgba(46,125,50,0.55);
     }
     .wayfind-ring-rotor {
@@ -465,13 +471,18 @@
     }
     /* 화면(폰) 기준 고정선 — 링이 돌아도 이 선은 항상 12시에 그대로 있어,
        "링의 초록 화살표가 이 고정선과 겹치는 순간"이 곧 사용자가 보는
-       정면(=가야 할 방향)과 코스 방향이 일치한다는 뜻이 된다. */
+       정면(=가야 할 방향)과 코스 방향이 일치한다는 뜻이 된다. 링이
+       세로로 길어진 만큼 기준선도 함께 늘여 중심(내 위치)에서 위쪽
+       끝까지 길게 이어지도록 해 "다음 위치를 직접 가리키는" 느낌을
+       준다. */
     .wayfind-ring-fixed-line {
-      position: absolute; top: -14px; left: 50%; width: 2px; height: 20px;
+      position: absolute; top: -14px; left: 50%; width: 2px; height: 55%;
       margin-left: -1px; background: #d32f2f;
     }
     .wayfind-hint-badge {
-      position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%);
+      /* 링이 세로로 길어지고 중심이 70%로 내려간 만큼(위 wayfind-ring-wrap
+         참고) 하단 여백도 함께 늘려 링과 겹치지 않게 한다. */
+      position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
       max-width: 85vw; text-align: center; pointer-events: none;
       background: rgba(27,94,32,0.92); color: #fff; font-size: 13px; font-weight: 700;
       padding: 10px 18px; border-radius: 16px; line-height: 1.5;
@@ -574,7 +585,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v76)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v77)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +691,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=76')
+      navigator.serviceWorker.register('./sw.js?v=77')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
