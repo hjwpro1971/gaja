@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260923_rotate_after_pass_clock_dir';
+      const APP_BUILD = 'v20260924_rotation_trigger_decoupled';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v73').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v74').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -574,7 +574,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v73)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v74)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=73')
+      navigator.serviceWorker.register('./sw.js?v=74')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3157,7 +3157,45 @@
     // delta가 -0.5~0.5m 사이(거의 정지)면 기존 상태를 그대로 유지한다.
   }
 
+  // 🧭 구간회전("원점 잡기") 트리거 — updateNavigationToast 본문과
+  // 별도로 분리했다. 원래는 updateNavigationToast의 "온트레일" 분기
+  // 안에서만 계산됐는데, 들머리 진입 직후처럼 GPS 정확도가 나쁘거나
+  // 위치가 잠깐 튀어 "이탈 상태"로 먼저 분류되면 그 분기가 조기
+  // return해버려 회전 판정 자체가 한 번도 실행되지 않는 문제가 있었다
+  // (사용자 재현: "들머리 들어갈때 원점이 잘 안 잡혀"). 이탈 여부와
+  // 무관하게 traveledDist만 있으면 항상 이 함수를 호출해, "정방향(또는
+  // 역방향)이 확정된 구간"이 바뀔 때마다 즉시 원점을 잡는다.
+  function updateSegmentRotationTrigger(traveledDist) {
+    if (!isSegmentRotationMode) return;
+    updateReversingState(traveledDist);
+    const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0);
+    if (!rotResult) return;
+    const rPrevM = rotResult.prevM, rNextM = rotResult.nextM;
+    const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
+    if (segKey === currentRotationSegmentKey) return;
+    const isFirstRotation = currentRotationSegmentKey === null;
+    currentRotationSegmentKey = segKey;
+    // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을 원래
+    // 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이 올바른
+    // 진행방향을 계산한다.
+    const heading = isReversingOnTrail
+      ? computeSegmentHeading(rNextM, rPrevM)
+      : computeSegmentHeading(rPrevM, rNextM);
+    if (heading !== null) applySegmentRotation(heading);
+    // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한 이전
+    // 갈림길이 없음)에는 통과 알람을 울리지 않는다.
+    if (!isFirstRotation) playPassedMilestoneBeep();
+  }
+
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+    // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
+    // 완전히 무관하게 항상 먼저 실행한다 — 토스트가 꺼져 있거나
+    // (toast.style.display==='none') 이탈 상태로 분류돼도 원점은
+    // 계속 잡혀야 한다.
+    if (currentMilestones && currentMilestones.length >= 2 && nearestIdx >= 0 && cumulativeDistances) {
+      updateSegmentRotationTrigger(cumulativeDistances[nearestIdx] || 0);
+    }
+
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
     if (!lastKnownPos) return;
@@ -3205,12 +3243,12 @@
       //
       // ↩️ 왕복/원점회귀 코스: 정상까지 갔다가 같은 길로 되돌아올 때도
       // 갈림길 안내가 나와야 한다는 요구사항 — traveledDist 증감 추이로
-      // "되돌아가는 중"을 판정(updateReversingState)하고, 역방향이면
+      // "되돌아가는 중"을 판정(updateReversingState, 위
+      // updateSegmentRotationTrigger에서 이미 호출됨)하고, 역방향이면
       // findNextMilestone이 코스 순서상 이전 마일스톤을 다음 목표로
       // 반환하도록 뒤집는다. distToNextM 계산도 방향에 맞게 뒤집어야
       // 하고, turnAngle도 진입/이탈이 반대가 되므로 180도 반전해서
       // 보여준다(showUpcomingTurnAlert에 반전된 값을 직접 넘긴다).
-      updateReversingState(traveledDist);
       const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
       if (milestoneResult) {
         const prevM = milestoneResult.prevM;
@@ -3218,35 +3256,6 @@
         const distToNextM = isReversingOnTrail
           ? Math.max(0, traveledDist - nextM.distanceM)
           : Math.max(0, nextM.distanceM - traveledDist);
-
-        // 🧭 구간 heading-up: 현재 구간(prevM→nextM)이 이전과 달라졌을
-        // 때만 지도를 스냅 회전시킨다 — 매 GPS 픽스마다 재계산하지 않음.
-        // ⚠️ 텍스트 안내(위 milestoneResult)와 달리 회전은 15m 여유값을
-        // 쓰지 않는다 — 여유값 때문에 실제로 갈림길에 도착하기 전에
-        // 지도가 먼저 회전해버려 혼란스럽다는 실기기 피드백에 따라,
-        // 회전 판정 전용으로 graceM=0으로 별도 조회해 "정확히 지난
-        // 뒤"에만 전환한다.
-        if (isSegmentRotationMode) {
-          const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0);
-          if (rotResult) {
-            const rPrevM = rotResult.prevM, rNextM = rotResult.nextM;
-            const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
-            if (segKey !== currentRotationSegmentKey) {
-              const isFirstRotation = currentRotationSegmentKey === null;
-              currentRotationSegmentKey = segKey;
-              // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을
-              // 원래 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이
-              // 올바른 진행방향을 계산한다.
-              const heading = isReversingOnTrail
-                ? computeSegmentHeading(rNextM, rPrevM)
-                : computeSegmentHeading(rPrevM, rNextM);
-              if (heading !== null) applySegmentRotation(heading);
-              // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한
-              // 이전 갈림길이 없음)에는 통과 알람을 울리지 않는다.
-              if (!isFirstRotation) playPassedMilestoneBeep();
-            }
-          }
-        }
 
         // 역방향으로 이 지점을 지날 때는 좌/우가 뒤바뀌므로 turnAngle을
         // 180도 반전한 임시 마일스톤 객체를 만들어 넘긴다 — 원본
