@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260929_fix_wayfind_manual_buttons';
+      const APP_BUILD = 'v20260930_freeze_map_center_during_wayfind';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v79').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v80').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -573,7 +573,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v79)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v80)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -677,7 +677,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=79')
+      navigator.serviceWorker.register('./sw.js?v=80')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2188,6 +2188,14 @@
   // =내 위치) 자체를 화면 하단쪽에 배치했다. 그래서 여기서는 오프셋
   // 계산 없이 항상 내 위치로 그냥 setView하면 된다.
   function applyMapViewWithOffset(lat, lon, zoom, viewOpts) {
+    // 🧭 길찾기 모드(isWayfindActive) 중에는 지도 중심을 완전히 고정한다
+    // — 그 상태에서 오직 회전(나침반/손가락)만 걸리는 게 설계 의도다
+    // (사용자 요청: "그 점은 고정이 되어야 해. 지도가 그 점을 중심으로
+    // 회전을 하는 거야"). 이 체크가 없으면 GPS/시뮬레이션 픽스가
+    // 계속 들어올 때마다 setView로 지도 중심이 재조정되면서, 동시에
+    // 나침반 회전도 걸려 지도가 상하좌우로 제멋대로 움직이는 것처럼
+    // 보였다(내 위치와 화살표 시작점이 계속 어긋나던 원인).
+    if (isWayfindActive) return;
     // 구간회전 모드에서는 setView를 항상 즉시(animate:false) 반영한다 —
     // 시뮬레이션이 250ms 인터벌로 이 함수를 반복 호출하는데, 애니메이션
     // 있는 setView가 겹쳐 호출되면 지도가 흔들리며 계속 움직이는
@@ -3200,7 +3208,11 @@
     // 유예까지 지나면(!isMapBeingDragged && !isMapDragReturnPending)
     // 다음 픽스에서 정상적으로 재판정된다 — segKey를 갱신하지 않으므로
     // 갈림길을 지난 사실 자체는 유실되지 않는다.
-    if (isMapBeingDragged || isMapDragReturnPending) return;
+    // 🧭 길찾기 모드 중에는 지도 회전을 전적으로 나침반/손가락 값이
+    // 담당한다(closeWayfindMode에서 원래 구간회전 값으로 복원) —
+    // 그 동안 구간회전이 끼어들면 나침반 회전과 충돌해 지도가 제멋대로
+    // 움직이는 것처럼 보인다.
+    if (isMapBeingDragged || isMapDragReturnPending || isWayfindActive) return;
     updateReversingState(traveledDist);
     const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0);
     if (!rotResult) return;
