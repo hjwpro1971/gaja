@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260924_rotation_trigger_decoupled';
+      const APP_BUILD = 'v20260925_first_rotation_heading_check';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v74').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v75').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -574,7 +574,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v74)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v75)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=74')
+      navigator.serviceWorker.register('./sw.js?v=75')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3165,6 +3165,12 @@
   // (사용자 재현: "들머리 들어갈때 원점이 잘 안 잡혀"). 이탈 여부와
   // 무관하게 traveledDist만 있으면 항상 이 함수를 호출해, "정방향(또는
   // 역방향)이 확정된 구간"이 바뀔 때마다 즉시 원점을 잡는다.
+  // 들머리 등 "첫 원점"을 잡을 때, 실제 GPS 이동방향이 그 구간의 GPX
+  // 방향과 이만큼 이내로 맞아야 회전을 건다. 너무 좁으면(예: 15도)
+  // GPS 오차로 영영 안 맞을 수 있고, 너무 넓으면(예: 150도) 걸러내는
+  // 의미가 없어 90도(수직/반대 방향까지만 차단)로 잡았다.
+  const FIRST_ROTATION_HEADING_TOLERANCE_DEG = 90;
+
   function updateSegmentRotationTrigger(traveledDist) {
     if (!isSegmentRotationMode) return;
     updateReversingState(traveledDist);
@@ -3174,14 +3180,28 @@
     const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
     if (segKey === currentRotationSegmentKey) return;
     const isFirstRotation = currentRotationSegmentKey === null;
-    currentRotationSegmentKey = segKey;
     // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을 원래
     // 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이 올바른
     // 진행방향을 계산한다.
     const heading = isReversingOnTrail
       ? computeSegmentHeading(rNextM, rPrevM)
       : computeSegmentHeading(rPrevM, rNextM);
-    if (heading !== null) applySegmentRotation(heading);
+    if (heading === null) return;
+    // 🧭 "원점"은 갈림길에 도착했다고 무조건 잡는 게 아니라, 실제로
+    // 그 방향으로 걷기 시작했다는 확인이 되어야 잡는다 — 들머리에서
+    // GPS를 막 켰을 때 아직 가만히 서 있거나 주차장 쪽으로 잠깐
+    // 움직이는 등, 코스 진행방향과 무관한 상태에서 첫 원점이 미리
+    // 잡혀버리는 걸 막기 위함(사용자 요청: "내가 갈 방향하고 일치되는
+    // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(갈림길 통과로 인한
+    // 재회전)는 통과 자체가 그 방향으로 걸었다는 증거이므로 이 검사를
+    // 하지 않는다 — 첫 원점에만 적용.
+    if (isFirstRotation) {
+      if (isCurrentlyStopped || gpsMovementHeading === null) return; // 아직 이동방향을 모르면 보류, 다음 픽스에서 재시도
+      const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, heading));
+      if (mismatch > FIRST_ROTATION_HEADING_TOLERANCE_DEG) return; // 반대/엉뚱한 방향으로 걷는 중이면 보류
+    }
+    currentRotationSegmentKey = segKey;
+    applySegmentRotation(heading);
     // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한 이전
     // 갈림길이 없음)에는 통과 알람을 울리지 않는다.
     if (!isFirstRotation) playPassedMilestoneBeep();
