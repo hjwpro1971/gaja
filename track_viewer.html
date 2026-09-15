@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_wayfind_fixed_arrow_map_rotates';
+      const APP_BUILD = 'v20260929_fix_wayfind_manual_buttons';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v78').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v79').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -573,7 +573,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v78)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v79)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -677,7 +677,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=78')
+      navigator.serviceWorker.register('./sw.js?v=79')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2340,6 +2340,13 @@
   }
 
   function handleWayfindDialDragStart(evt) {
+    // ⚠️ 닫기(✕)/모드 전환 버튼도 wayfindOverlay의 자식이라, 오버레이
+    // 전체에 건 드래그 리스너가 버튼 위에서도 함께 발동해 evt.preventDefault()
+    // 가 버튼의 클릭(특히 touchstart 이후의 합성 클릭)을 막아버렸다 —
+    // "손으로 돌리기 모드에서 버튼이 먹통" 버그. 이벤트 타겟이 버튼
+    // 안이면 드래그를 시작하지 않고 그대로 통과시켜 버튼 클릭이
+    // 정상 동작하게 한다.
+    if (evt.target.closest('.wayfind-overlay-close, .wayfind-overlay-mode-btn')) return;
     wayfindDialDragging = true;
     wayfindDialDragStartX = wayfindDragClientX(evt);
     wayfindDialDragStartRotation = wayfindManualRotation;
