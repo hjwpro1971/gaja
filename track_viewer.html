@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_fix_wayfind_arrow_maxheight_offset';
+      const APP_BUILD = 'v20261003_fix_drag_rotation_transition_race';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v82').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v83').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -581,7 +581,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v82)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v83)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -685,7 +685,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=82')
+      navigator.serviceWorker.register('./sw.js?v=83')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1589,6 +1589,31 @@
       if (dragReturnTimer) {
         clearTimeout(dragReturnTimer);
         dragReturnTimer = null;
+      }
+
+      // ⚠️ #map.heading-up에는 transition:transform 0.5s가 걸려 있어
+      // 구간 회전(applySegmentRotation)이 즉시가 아니라 0.5초에 걸쳐
+      // 부드럽게 돌아간다. 그 트랜지션이 아직 끝나지 않은 도중(특히
+      // 시뮬레이션을 방금 일시정지한 직후 등) 드래그를 시작하면,
+      // moveManualMapDrag가 참조하는 mapRotationDeg(회전의 "최종
+      // 목표값")와 화면에 실제로 그려진 각도(트랜지션 진행 중인
+      // 중간값)가 서로 달라 손가락 방향과 지도 이동 방향이 어긋나
+      // 보였다(사용자 재현: "오른쪽으로 끌었는데 위로 움직임" — 최대
+      // 90도까지 어긋날 수 있는 각도 오차). 드래그 시작 시 진행 중인
+      // 트랜지션을 즉시 완료시켜(트랜지션 없이 현재 목표 각도로 스냅)
+      // 화면과 mapRotationDeg를 강제로 일치시킨다.
+      const mapElForDrag = document.getElementById('map');
+      if (mapElForDrag) {
+        mapElForDrag.style.transition = 'none';
+        mapElForDrag.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
+        // 다음 프레임부터 다시 부드러운 회전을 쓸 수 있도록 트랜지션을
+        // 복원한다 — 강제 리플로우 없이 그냥 다음 tick에 되돌려도
+        // 이번 프레임엔 이미 transition:none이 적용된 스타일이
+        // 렌더링되므로 안전하다(레이아웃 스래싱 방지를 위해 requestAnimationFrame 사용).
+        requestAnimationFrame(() => {
+          const el = document.getElementById('map');
+          if (el) el.style.transition = '';
+        });
       }
     }
 
