@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261005_sw_update_via_cache_none';
+      const APP_BUILD = 'v20261006_paused_rotated_sim_drag_sign_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v85').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v86').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -581,7 +581,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v85)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v86)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -693,7 +693,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=85', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=86', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1649,8 +1649,16 @@
       manualDragLastY = clientY;
       if (dx === 0 && dy === 0) return;
 
+      // ⚠️ 순수 좌표 계산으로는 이 부호가 항상 맞아야 하는데(여러 차례
+      // 재검증 완료), 유독 "시뮬레이션을 일시정지한 상태 + 이미 구간
+      // 회전이 걸려 있는 상태"에서만 실기기 재현으로 드래그 방향이
+      // 정확히 반대로 나온다고 확인됐다(사용자 재현, 원인 특정 전
+      // 임시 대증 처방 — 실제 GPS 추적 중이나 시뮬레이션 재생 중에는
+      // 이 문제가 없다고 확인됨). 그 조건에서만 부호를 반전한다.
+      const isPausedRotatedSim = isSimPaused && isSegmentRotationMode && mapRotationDeg !== 0;
       const corrected = rotateDragDelta(dx, dy, mapRotationDeg);
-      map.panBy([-corrected.x, -corrected.y], { animate: false });
+      const sign = isPausedRotatedSim ? 1 : -1;
+      map.panBy([sign * corrected.x, sign * corrected.y], { animate: false });
     }
 
     function endManualMapDrag() {
