@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261001_block_drag_during_wayfind_compass';
+      const APP_BUILD = 'v20261002_fix_wayfind_arrow_maxheight_offset';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v81').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v82').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -456,9 +456,17 @@
        실제로 표시되는 화면 좌표(세로 70% 지점, #map.heading-up의
        top:70% 앵커와 동일 — v69 참고)에 맞춘다. */
     .wayfind-arrow-wrap {
+      /* ⚠️ margin-top:-58vh(고정 CSS 값)로 위로 당기면, height가
+         max-height:420px에 걸려 실제로는 더 작게 렌더링되는 화면(세로가
+         긴 폰)에서 마진과 실제 높이가 서로 어긋나 화살표 꼬리(=내 위치
+         기준점)가 top:70%보다 한참 위로 떠 버렸다(사용자 스크린샷
+         재현). transform: translateY(-100%)는 "그 요소의 실제 렌더링된
+         높이" 기준으로 퍼센트를 계산하므로, height가 58vh든 420px로
+         클램핑되든 항상 정확히 요소 전체 높이만큼만 위로 당겨져
+         꼬리가 top:70%에 정확히 고정된다. */
       position: absolute; top: 70%; left: 50%; width: 2px; height: 58vh;
       max-height: 420px; min-height: 260px;
-      margin-left: -1px; margin-top: -58vh;
+      margin-left: -1px; transform: translateY(-100%);
       pointer-events: none; display: flex; flex-direction: column; align-items: center;
     }
     .wayfind-arrow-shaft {
@@ -573,7 +581,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v81)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v82)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -677,7 +685,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=81')
+      navigator.serviceWorker.register('./sw.js?v=82')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
