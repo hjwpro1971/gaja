@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_first_rotation_heading_check';
+      const APP_BUILD = 'v20260926_freeze_rotation_during_drag';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v75').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v76').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -574,7 +574,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v75)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v76)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -680,7 +680,7 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=75')
+      navigator.serviceWorker.register('./sw.js?v=76')
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3173,6 +3173,18 @@
 
   function updateSegmentRotationTrigger(traveledDist) {
     if (!isSegmentRotationMode) return;
+    // ⚠️ 손가락으로 지도를 드래그하는 도중(isMapBeingDragged)에 갈림길을
+    // 지나 구간이 바뀌면 applySegmentRotation이 지도 CSS 회전을 즉시
+    // 바꿔버린다. 이때 moveManualMapDrag는 매 touchmove의 (dx,dy)를
+    // "직전 프레임 대비 이동량"으로 계산해 mapRotationDeg 기준으로
+    // 회전 보정하는데, 그 사이 회전각 자체가 바뀌면 다음 프레임의 보정이
+    // 어긋나 손가락 방향과 지도 이동 방향이 크게 틀어져 보인다(사용자
+    // 재현: "이동 중 드래그 시 지도가 손가락 반대/어긋난 방향으로 감").
+    // 드래그 중에는 회전 판정 자체를 보류하고, 드래그가 끝나 자동 복귀
+    // 유예까지 지나면(!isMapBeingDragged && !isMapDragReturnPending)
+    // 다음 픽스에서 정상적으로 재판정된다 — segKey를 갱신하지 않으므로
+    // 갈림길을 지난 사실 자체는 유실되지 않는다.
+    if (isMapBeingDragged || isMapDragReturnPending) return;
     updateReversingState(traveledDist);
     const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0);
     if (!rotResult) return;
