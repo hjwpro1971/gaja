@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_finish_rotation_transition_on_pause';
+      const APP_BUILD = 'v20261005_sw_update_via_cache_none';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v84').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v85').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -581,7 +581,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v84)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v85)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -685,7 +685,15 @@
     });
 
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=84')
+      // ⚠️ GitHub Pages는 정적 파일에 Cache-Control: max-age=600(10분)을
+      // 건다 — sw.js 자체가 이 HTTP 캐시에 걸리면, 쿼리스트링(?v=84)을
+      // 바꿔도 브라우저가 10분 이내엔 서버에 묻지도 않고 캐시된 옛
+      // sw.js 바이트를 그대로 쓸 수 있어 "새 버전 감지" 자체가 안 되는
+      // 근본 원인이었다(새로고침해도 적용 안 되는 문제). updateViaCache:
+      // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
+      // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
+      // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
+      navigator.serviceWorker.register('./sw.js?v=85', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
