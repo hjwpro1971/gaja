@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261006_paused_rotated_sim_drag_sign_fix';
+      const APP_BUILD = 'v20261007_improvement_batch_heading_offtrail_origin';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v86').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v87').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -386,11 +386,25 @@
       border: 3.5px solid #ffffff;
       box-shadow: 0 2px 10px rgba(0,0,0,0.4);
       pointer-events: none;
+      transition: background 0.2s;
     }
     @keyframes pulseGps {
       0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.7); }
       70% { box-shadow: 0 0 0 18px rgba(25, 118, 210, 0); }
       100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
+    }
+    /* 🚨 이탈/역주행 상태 표시 — 내 위치 점과 방향 화살표를 빨간색으로
+       바꿔 정상 상태와 시각적으로 명확히 구분한다. 정상 복귀하면
+       기존 파란색으로 돌아온다. */
+    .gps-marker-container.is-warning .my-gps-dot {
+      background: #d32f2f;
+    }
+    .gps-marker-container.is-warning .my-gps-pulse {
+      background: rgba(211, 47, 47, 0.35);
+      border-color: rgba(211, 47, 47, 0.6);
+    }
+    .gps-marker-container.is-warning polygon {
+      fill: #b71c1c !important;
     }
 
     /* 마커 라벨 뱃지 */
@@ -581,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v86)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v87)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -612,6 +626,7 @@
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+  <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
   <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px;">🐞</button>
 </div>
 
@@ -693,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=86', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=87', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1241,6 +1256,23 @@
     if (wrapper) {
       wrapper.style.transform = `rotate(${headingDeg}deg)`;
     }
+  }
+
+  // 🚨 이탈(isOffTrailState) 또는 역주행(isReversingOnTrail) 상태가
+  // 바뀔 때마다 내 위치 마커(userGpsMarker 또는 시뮬레이션의 simMarker)
+  // 의 DOM에 is-warning 클래스를 토글해 파란 점/화살표를 빨간색으로
+  // 바꾼다. 마커를 다시 만들지 않고 기존 DOM에 클래스만 더하므로
+  // 가볍다 — updateOffTrailHysteresis/updateReversingState가 상태를
+  // 바꿀 때마다 호출한다.
+  function updateGpsMarkerWarningStyle() {
+    const shouldWarn = isOffTrailState || isReversingOnTrail;
+    const marker = userGpsMarker || simMarker;
+    if (!marker || !marker.getElement) return;
+    const el = marker.getElement();
+    if (!el) return;
+    const container = el.querySelector('.gps-marker-container');
+    if (!container) return;
+    container.classList.toggle('is-warning', shouldWarn);
   }
 
   // --- 가속도 센서 (보행 진동 감지) ---
@@ -2126,11 +2158,17 @@
         const outBearing = calculateBearing(m.trailLat, m.trailLon, aheadPt.lat, aheadPt.lon);
         m.turnAngle = shortestAngleDiff(outBearing, inBearing); // -180~180, 양수=우회전, 음수=좌회전
         m.turnLabel = classifyTurnAngle(m.turnAngle);
+        // 지도 회전(computeSegmentHeading)이 재사용할 "이 갈림길에서
+        // 실제로 꺾어 나가는 방향"(15m 로컬 구간 기준). turnAngle과
+        // 정확히 같은 outBearing 계산식을 그대로 저장해, 회전 기준과
+        // 안내 텍스트 기준이 항상 일치하도록 한다.
+        m.outBearing = outBearing;
       } else {
         // 들머리/날머리 그 자체(behind==distanceM 또는 ahead==distanceM,
         // 즉 코스 맨 끝이라 진입/이탈 방향 중 하나가 아예 없음)만 계산 불가.
         m.turnAngle = null;
         m.turnLabel = null;
+        m.outBearing = null;
       }
     });
 
@@ -2236,15 +2274,21 @@
   // 🧭 구간(prevM→nextM) 진행방향 계산 — GPX 좌표만 사용, 센서 없음.
   // trailLat/trailLon은 buildMilestones가 이미 트랙에 매칭해둔 좌표라
   // 원본 웨이포인트 좌표(예: 전망대처럼 트랙에서 벗어난 지점)의 왜곡이 없다.
-  // 두 마일스톤이 너무 가까우면(30m 미만) 직선 방향이 GPS 오차에 취약해
-  // 흔들릴 수 있으므로, nextM 지점에서 15m 더 앞선 지점을 대신 쓴다.
+  //
+  // ⚠️ 이전 방식(구간이 30m 미만이면 nextM에서 15m 더 앞선 지점을 봄)은
+  // "다음 갈림길을 지나쳐서" 그 다음다음 구간의 방향까지 섞어버리는
+  // 문제가 있었다 — 실사용 재현: "실제는 3시 방향인데 1시처럼 안내됨".
+  // nextM(다음 갈림길)에는 이미 buildMilestones가 그 지점에서 "실제로
+  // 꺾어 나가는 방향"(outBearing, turnAngle과 동일한 15m 로컬 계산)을
+  // 저장해뒀다 — 지도 회전도 안내 텍스트("1시/3시 방향")와 정확히
+  // 같은 기준을 쓰도록 이 값을 우선 사용한다. nextM을 지나칠 필요가
+  // 전혀 없다.
   function computeSegmentHeading(prevM, nextM) {
     if (!prevM || !nextM) return null;
-    const segLen = nextM.distanceM - prevM.distanceM;
-    if (segLen < 30) {
-      const ahead = pointAtCumulativeDistance(currentPoints, cumulativeDistances, nextM.distanceM + 15);
-      if (ahead) return calculateBearing(prevM.trailLat, prevM.trailLon, ahead.lat, ahead.lon);
+    if (nextM.outBearing !== null && nextM.outBearing !== undefined) {
+      return nextM.outBearing;
     }
+    // outBearing이 없는 경우(들머리/날머리 자체 등)만 기존 직선 방식으로 폴백.
     return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
   }
 
@@ -2491,17 +2535,25 @@
   }
 
   // 길찾기 모드에 들어가기 전, 원래(구간회전 등에 의해) 걸려 있던 지도
-  // 회전값을 기억해뒀다가 나갈 때 그대로 복원한다 — 길찾기 모드는
-  // 그 자체로 지도 회전(#map)을 나침반/손가락 값으로 직접 덮어쓰므로,
-  // 복원하지 않으면 종료 후 구간회전이 옛 각도에서 이어지거나 GPS가
-  // 다음 픽스까지 회전을 갱신하지 못해 잠깐 어긋나 보일 수 있다.
+  // 회전값/줌/중심을 기억해뒀다가 나갈 때 그대로 복원한다 — 길찾기
+  // 모드는 그 자체로 지도 회전(#map)을 나침반/손가락 값으로 직접
+  // 덮어쓰고, 진입 시 현재 위치로 강제 확대(setView)까지 하므로,
+  // 복원하지 않으면 종료 후에도 회전이 옛 각도로 남거나(GPS가 다음
+  // 픽스까지 회전을 갱신 못해 잠깐 어긋나 보임) 사용자가 보던 줌
+  // 레벨/화면 위치가 유실된다(다른 구간을 미리 살펴보던 중이었을 수
+  // 있음).
   let wayfindSavedMapRotationDeg = null;
+  let wayfindSavedZoom = null;
+  let wayfindSavedCenter = null;
 
   function openWayfindMode() {
     if (!lastKnownPos) {
       alert('현재 위치를 아직 확인할 수 없어요.\n[내 위치] 버튼을 먼저 눌러주세요.');
       return;
     }
+
+    wayfindSavedZoom = map.getZoom();
+    wayfindSavedCenter = map.getCenter();
 
     // 현재 위치로 확대 — 실제 걸어야 할 길(빨간 경로선)이 화면에 크게
     // 보여야 화살표와 맞춰보는 의미가 있다.
@@ -2538,6 +2590,16 @@
     stopWayfindDialEvents();
     const overlay = document.getElementById('wayfindOverlay');
     if (overlay) overlay.style.display = 'none';
+    // 길찾기 진입 전 줌/중심을 먼저 복원한 뒤 회전을 적용한다 —
+    // setView(줌/중심)와 applySegmentRotation(회전)은 서로 다른 속성을
+    // 건드리므로 순서가 결과에 영향을 주지는 않지만, 회전이 걸린
+    // #map 위에서 setView가 자연스럽게 이어지도록 줌/중심을 먼저
+    // 되돌린다.
+    if (wayfindSavedZoom !== null && wayfindSavedCenter !== null) {
+      map.setView(wayfindSavedCenter, wayfindSavedZoom, { animate: true });
+      wayfindSavedZoom = null;
+      wayfindSavedCenter = null;
+    }
     // 길찾기 중 돌아갔던 지도 회전을 원래(구간회전 등) 값으로 복원.
     if (wayfindSavedMapRotationDeg !== null) {
       applySegmentRotation(wayfindSavedMapRotationDeg);
@@ -3189,11 +3251,37 @@
   // 갱신 시점이 늦으면(예: 이 함수를 안 쓰고 updateNavigationToast 안에서만
   // 갱신하면) 정지 시 방향 고정 로직이 "한 픽스 전"의 낡은 이탈 상태를
   // 참조하게 되는 문제가 있었다.
-  function updateOffTrailHysteresis(minDistanceM) {
-    if (!isOffTrailState && minDistanceM > 35) {
+  // GPS 정확도(accuracy, 미터)가 나쁠수록 이탈 판정 임계값을 완화한다 —
+  // 숲/계곡에서 accuracy가 30~40m까지 나빠지는 경우가 실제로 있는데,
+  // 고정된 35m 기준을 그대로 쓰면 GPS 오차만으로도 이탈 오판이 잦다.
+  // accuracy가 정상(15m 이하)이면 기존 기준(35m/25m) 그대로, 나쁠수록
+  // accuracy에 비례해 진입/복귀 기준을 함께 늘린다 — 상한을 둬 무한정
+  // 완화되지 않게 한다.
+  const OFFTRAIL_BASE_ENTER_M = 35;
+  const OFFTRAIL_BASE_RETURN_M = 25;
+  const OFFTRAIL_MAX_ENTER_M = 60;
+  const OFFTRAIL_MAX_RETURN_M = 45;
+  // 들머리 진입 전용 완화값 — GPS 이동방향이 아직 안정되지 않은 코스
+  // 시작 직후(TRAILHEAD_ENTRY_DISTANCE_M 이내, 첫 원점 미확정 상태)는
+  // 실제로 등산로 입구를 찾아 몇 걸음 헤매는 경우가 흔한데, 일반
+  // 이탈 기준(35m)을 그대로 적용하면 이탈 경고가 먼저 떠서 "어디로
+  // 가야 하지?"만 반복된다는 지적(개선 제안) — 들머리 근처에서는
+  // 기준을 넉넉히 잡아 이탈 경고 자체를 늦춘다.
+  const TRAILHEAD_ENTRY_DISTANCE_M = 30;
+  const TRAILHEAD_ENTER_M = 80;
+  const TRAILHEAD_MAX_ENTER_M = 100;
+  function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
+    const acc = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy : 0;
+    // accuracy가 15m를 넘는 만큼(오차분)을 그대로 임계값에 더한다.
+    const slack = Math.max(0, acc - 15);
+    const baseEnter = isNearTrailhead ? TRAILHEAD_ENTER_M : OFFTRAIL_BASE_ENTER_M;
+    const maxEnter = isNearTrailhead ? TRAILHEAD_MAX_ENTER_M : OFFTRAIL_MAX_ENTER_M;
+    const enterThreshold = Math.min(maxEnter, baseEnter + slack);
+    const returnThreshold = Math.min(OFFTRAIL_MAX_RETURN_M, OFFTRAIL_BASE_RETURN_M + slack);
+    if (!isOffTrailState && minDistanceM > enterThreshold) {
       isOffTrailState = true;
       returnStreakCount = 0;
-    } else if (isOffTrailState && minDistanceM < 25) {
+    } else if (isOffTrailState && minDistanceM < returnThreshold) {
       returnStreakCount++;
       if (returnStreakCount >= RETURN_CONFIRM_STREAK) {
         isOffTrailState = false;
@@ -3202,9 +3290,10 @@
         resetOffTrailStreak(); // 궤적 복귀 → 다음 이탈은 15초부터 다시 경고, 복귀음 재생
       }
     } else if (isOffTrailState) {
-      // 25m 미만 조건이 끊김(다시 25m 이상으로 튐) — 복귀 확정 전 노이즈이므로 카운터 리셋
+      // 복귀 기준 미만 조건이 끊김(다시 기준 이상으로 튐) — 복귀 확정 전 노이즈이므로 카운터 리셋
       returnStreakCount = 0;
     }
+    updateGpsMarkerWarningStyle();
   }
 
   // 화면 안내(시계 방향/좌우 안내)에 쓸 "현재 향한 절대 방위"를 반환한다.
@@ -3233,6 +3322,14 @@
   // GPS가 흔들릴 수 있으므로 "역주행 진입"만 신중하게, "복귀"는 민감하게
   // 잡아 빠르게 정상 안내로 돌아오게 한다.
   const REVERSE_ENTER_STREAK = 3;
+  // 누적거리 증감만으로는 GPS 튐(특히 왕복 구간이 겹쳐 있을 때
+  // traveledDist 자체가 순간적으로 오판될 수 있음)에 취약하다는
+  // 지적(개선 제안) — 실제 이동방향(gpsMovementHeading)이 현재 구간
+  // 진행방향(mapRotationDeg, 이미 계산되어 있는 값)과 이 각도 이상
+  // 벌어져 있을 때만 "역주행 방향과 일치"로 보고 누적거리 감소 카운트를
+  // 추가로 보강한다. 90도 이내(직각 근처, 옆으로 살짝 벗어난 정도)는
+  // 판정에 영향 주지 않는다.
+  const REVERSE_HEADING_MISMATCH_DEG = 135;
   let isReversingOnTrail = false;
   let lastTraveledDistForReverse = null;
   let reverseDecreaseStreak = 0;
@@ -3244,14 +3341,24 @@
     }
     const delta = traveledDist - lastTraveledDistForReverse;
     lastTraveledDistForReverse = traveledDist;
-    if (delta < -0.5) { // 0.5m 이상 감소해야 "뒤로 갔다"로 카운트(GPS 미세 노이즈 무시)
+    // 이동방향이 현재 구간 방향과 정반대에 가까운지(135도 이상 차이) —
+    // 누적거리 감소와 함께 확인해 단순 GPS 튐으로 인한 오판을 줄인다.
+    // 이동방향을 아직 모르면(코스 시작 직후 등) 이 보강 없이 거리
+    // 기준만으로 판정한다(기존 동작 유지).
+    const headingMismatch = gpsMovementHeading !== null
+      ? Math.abs(shortestAngleDiff(gpsMovementHeading, mapRotationDeg))
+      : null;
+    const headingAgreesWithReverse = headingMismatch === null || headingMismatch >= REVERSE_HEADING_MISMATCH_DEG;
+    if (delta < -0.5 && headingAgreesWithReverse) { // 0.5m 이상 감소 + 이동방향도 반대일 때만 카운트(GPS 미세 노이즈 무시)
       reverseDecreaseStreak++;
       if (reverseDecreaseStreak >= REVERSE_ENTER_STREAK) isReversingOnTrail = true;
     } else if (delta > 0.5) {
       reverseDecreaseStreak = 0;
       isReversingOnTrail = false; // 정방향 복귀는 즉시 반영
     }
-    // delta가 -0.5~0.5m 사이(거의 정지)면 기존 상태를 그대로 유지한다.
+    // delta가 -0.5~0.5m 사이(거의 정지)거나 이동방향이 반대와 다르면
+    // (GPS 튐 의심) 기존 상태를 그대로 유지한다.
+    updateGpsMarkerWarningStyle();
   }
 
   // 🧭 구간회전("원점 잡기") 트리거 — updateNavigationToast 본문과
@@ -3308,7 +3415,7 @@
     // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(갈림길 통과로 인한
     // 재회전)는 통과 자체가 그 방향으로 걸었다는 증거이므로 이 검사를
     // 하지 않는다 — 첫 원점에만 적용.
-    if (isFirstRotation) {
+    if (isFirstRotation && !forceOriginReset) {
       if (isCurrentlyStopped || gpsMovementHeading === null) return; // 아직 이동방향을 모르면 보류, 다음 픽스에서 재시도
       const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, heading));
       if (mismatch > FIRST_ROTATION_HEADING_TOLERANCE_DEG) return; // 반대/엉뚱한 방향으로 걷는 중이면 보류
@@ -3319,6 +3426,30 @@
     // 갈림길이 없음)에는 통과 알람을 울리지 않는다.
     if (!isFirstRotation) playPassedMilestoneBeep();
   }
+
+  // 🔄 수동 "원점 다시 잡기" 버튼 — GPS가 크게 튀거나 원점이 엉뚱하게
+  // 잡힌 것 같을 때, 사용자가 직접 지금 위치를 기준으로 원점을 강제
+  // 재설정할 수 있는 안전장치. currentRotationSegmentKey를 비워 다음
+  // updateSegmentRotationTrigger 호출에서 반드시 재계산이 일어나게
+  // 하고, forceOriginReset 플래그로 이번 한 번은 "첫 원점" 방향 일치
+  // 검사(FIRST_ROTATION_HEADING_TOLERANCE_DEG)를 건너뛴다 — 사용자가
+  // 명시적으로 요청한 재설정이므로 이동방향이 아직 안정되지 않았어도
+  // 즉시 반영하는 게 맞다.
+  let forceOriginReset = false;
+  function resetOriginNow() {
+    if (!isSegmentRotationMode || !lastKnownPos) {
+      showToastBadge('📍 먼저 [내 위치] 버튼으로 GPS를 켜주세요.');
+      return;
+    }
+    currentRotationSegmentKey = null;
+    forceOriginReset = true;
+    const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
+    const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
+    updateSegmentRotationTrigger(traveledDist);
+    forceOriginReset = false;
+    showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
+  }
+  window.resetOriginNow = resetOriginNow;
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
@@ -3342,6 +3473,18 @@
         return;
       }
       offTrailStreakCount++;
+      // 들머리 근처(첫 원점 미확정 + 코스 시작 30m 이내)에서는 "이탈"이
+      // 아니라 "들머리 진입 중"으로 안내한다 — GPS 이동방향이 아직
+      // 안정되지 않은 상태에서 갑자기 "이탈했다"는 경고만 뜨면
+      // 사용자가 어디로 가야 할지 판단하기 어렵다는 지적(개선 제안).
+      const traveledDistForNotice = cumulativeDistances[nearestIdx] || 0;
+      const isNearTrailheadNotice = isSegmentRotationMode && currentRotationSegmentKey === null && traveledDistForNotice < TRAILHEAD_ENTRY_DISTANCE_M;
+      if (isNearTrailheadNotice) {
+        toast.className = 'gps-toast';
+        let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+        toast.innerText = `🚩 들머리 진입 중 · 입구를 따라 조금만 더 이동하세요 (${distStr})`;
+        return;
+      }
       // 등산로 복귀 방향은 "북동쪽" 같은 절대 방위가 아니라, 마지막 GPS
       // 진행 방향(getCurrentAbsHeadingForGuidance) 기준 오른쪽/왼쪽
       // 상대 방향으로 안내한다.
@@ -3992,7 +4135,13 @@
         const nearestPoint = nearest.point;
         const nearestIdx = nearest.index;
 
-        updateOffTrailHysteresis(minDistanceM);
+        // 코스 시작(들머리) 근처인지 — 첫 원점이 아직 한 번도 안 잡힌
+        // 상태(currentRotationSegmentKey===null, v75의 "방향 일치 전
+        // 보류"와 같은 개념)이고 누적거리도 짧으면, 아직 GPS 이동방향이
+        // 안정되지 않은 구간으로 보고 이탈 판정 기준을 완화한다.
+        const traveledDistForEntry = cumulativeDistances[nearestIdx] || 0;
+        const isNearTrailhead = isSegmentRotationMode && currentRotationSegmentKey === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
+        updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead);
 
         // ⭐ 전면 재설계(2026-09-14): GPX가 경로 전체를 이미 알고 있으므로
         // "내가 지금 어느 방향을 보는가"는 더 이상 필요 없다. 정지/이동
