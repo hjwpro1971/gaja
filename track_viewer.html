@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261011_remove_turn_detection_keep_midpoint_only';
+      const APP_BUILD = 'v20261012_fix_drag_transform_before_headingup';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v91').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v92').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v91)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v92)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=91', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=92', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1617,6 +1617,18 @@
     function finishMapRotationTransitionNow() {
       const el = document.getElementById('map');
       if (!el) return;
+      // ⚠️ heading-up 클래스가 없을 때(북쪽 고정 상태, #map이 CSS 기본값인
+      // top:0;left:0;width:100%;height:100%)는 transform을 전혀 걸지 않는
+      // 것이 정상이다. 이 가드 없이 무조건 translate(-50%,-50%)를 강제
+      // 대입하면, top:0;left:0 요소에 자기 크기의 절반만큼 왼쪽 위로
+      // 당겨지는 translate가 걸려 지도가 화면 왼쪽 절반(정확히는 왼쪽
+      // 위 사분면)에만 보이고 나머지가 완전히 빈 배경으로 깨진다 —
+      // 사용자 재현: "드래그 하다가 갑자기 화면이 이렇게 변해"(v91).
+      // startManualMapDrag가 heading-up 여부와 무관하게 항상 이 함수를
+      // 안전망으로 호출하기 때문에, 실제로 트랜지션을 끊어야 할 때만
+      // (=heading-up이 걸려 회전 트랜지션이 존재할 때만) 동작하도록
+      // 여기서 가드한다.
+      if (!el.classList.contains('heading-up')) return;
       el.style.transition = 'none';
       el.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
       // transition:'none' + transform 변경을 스타일에 대입만 하고 끝나면
