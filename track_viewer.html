@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261007_improvement_batch_heading_offtrail_origin';
+      const APP_BUILD = 'v20261008_restore_origin_definition_lookahead50m';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v87').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v88').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v87)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v88)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=87', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=88', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2158,10 +2158,10 @@
         const outBearing = calculateBearing(m.trailLat, m.trailLon, aheadPt.lat, aheadPt.lon);
         m.turnAngle = shortestAngleDiff(outBearing, inBearing); // -180~180, 양수=우회전, 음수=좌회전
         m.turnLabel = classifyTurnAngle(m.turnAngle);
-        // 지도 회전(computeSegmentHeading)이 재사용할 "이 갈림길에서
-        // 실제로 꺾어 나가는 방향"(15m 로컬 구간 기준). turnAngle과
-        // 정확히 같은 outBearing 계산식을 그대로 저장해, 회전 기준과
-        // 안내 텍스트 기준이 항상 일치하도록 한다.
+        // outBearing 자체는 turnAngle 계산의 중간값이라 참고용으로만
+        // 저장해둔다 — 지도 회전(computeSegmentHeading)에는 쓰지 않는다
+        // (한때 재사용했다가 "원점" 정의를 깨는 버그가 됐던 이력 있음,
+        // computeSegmentHeading 정의부 주석 참고).
         m.outBearing = outBearing;
       } else {
         // 들머리/날머리 그 자체(behind==distanceM 또는 ahead==distanceM,
@@ -2272,23 +2272,42 @@
   }
 
   // 🧭 구간(prevM→nextM) 진행방향 계산 — GPX 좌표만 사용, 센서 없음.
-  // trailLat/trailLon은 buildMilestones가 이미 트랙에 매칭해둔 좌표라
-  // 원본 웨이포인트 좌표(예: 전망대처럼 트랙에서 벗어난 지점)의 왜곡이 없다.
+  // "원점"의 정의: 구간 시작점(prevM)을 화면 중앙 하단에 두고, 그
+  // 지점에서 실제로 걸어야 할 방향이 화면 위(12시)를 향하도록 회전
+  // 한다 — 즉 회전 기준은 항상 prevM 딱 한 곳이고, 방향은 "prevM에서
+  // 코스를 따라 앞으로 나아가는 방향"이어야 한다.
   //
-  // ⚠️ 이전 방식(구간이 30m 미만이면 nextM에서 15m 더 앞선 지점을 봄)은
-  // "다음 갈림길을 지나쳐서" 그 다음다음 구간의 방향까지 섞어버리는
-  // 문제가 있었다 — 실사용 재현: "실제는 3시 방향인데 1시처럼 안내됨".
-  // nextM(다음 갈림길)에는 이미 buildMilestones가 그 지점에서 "실제로
-  // 꺾어 나가는 방향"(outBearing, turnAngle과 동일한 15m 로컬 계산)을
-  // 저장해뒀다 — 지도 회전도 안내 텍스트("1시/3시 방향")와 정확히
-  // 같은 기준을 쓰도록 이 값을 우선 사용한다. nextM을 지나칠 필요가
-  // 전혀 없다.
-  function computeSegmentHeading(prevM, nextM) {
+  // ⚠️ v87에서 한 번 nextM.outBearing(다음 갈림길에서 실제로 꺾여
+  // 나가는 방향, ±15m 로컬)으로 바꿨었는데, 이건 "nextM에서의 방향"
+  // 이지 "prevM에서 나아가는 방향"이 아니다 — 원점의 정의 자체를
+  // 깨는 실수였다(사용자 지적: "구간A 시작점에서 지도를 회전해야
+  // 구간B가 90도 오게 해야 해"). 실기기 재현: "90도 회전이 되는
+  // 경우와 안 되는 경우가 나온다"(짧은 구간에서 nextM의 국소 방향이
+  // prevM→nextM 방향과 어긋나는 경우 발생).
+  //
+  // 그 전 버전(구간 30m 미만이면 nextM에서 15m 더 앞선 지점을 봄)도
+  // 긴 구간에서는 prevM→nextM 직선만 써서 "실제는 3시인데 1시처럼
+  // 안내됨"(구간 중간에 코너가 있으면 직선 방향이 어긋남) 문제가
+  // 있었다. 두 문제를 모두 피하는 절충안: prevM을 고정 기준점으로
+  // 삼되, 목표 지점은 nextM이 아니라 "prevM에서 코스를 따라
+  // SEGMENT_HEADING_LOOKAHEAD_M(50m) 앞으로 간 지점"으로 잡는다 —
+  // nextM이 그보다 가까우면(구간이 50m보다 짧으면) nextM을 그대로
+  // 쓴다. 이러면 긴 구간에서도 "실제로 지금 발 앞의 코너"만 보고
+  // 회전하고, 짧은 구간에서는 nextM 자체를 정확히 향한다.
+  const SEGMENT_HEADING_LOOKAHEAD_M = 50;
+  function computeSegmentHeading(prevM, nextM, isReversing) {
     if (!prevM || !nextM) return null;
-    if (nextM.outBearing !== null && nextM.outBearing !== undefined) {
-      return nextM.outBearing;
+    const segLen = Math.abs(nextM.distanceM - prevM.distanceM);
+    if (segLen <= SEGMENT_HEADING_LOOKAHEAD_M) {
+      return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
     }
-    // outBearing이 없는 경우(들머리/날머리 자체 등)만 기존 직선 방식으로 폴백.
+    // isReversing이면 코스 진행방향 자체가 인덱스 감소 방향이므로,
+    // prevM.distanceM에서 50m를 "빼서" 앞쪽(코스 시작 쪽) 지점을 본다.
+    const targetDistM = isReversing
+      ? prevM.distanceM - SEGMENT_HEADING_LOOKAHEAD_M
+      : prevM.distanceM + SEGMENT_HEADING_LOOKAHEAD_M;
+    const ahead = pointAtCumulativeDistance(currentPoints, cumulativeDistances, Math.max(0, targetDistM));
+    if (ahead) return calculateBearing(prevM.trailLat, prevM.trailLon, ahead.lat, ahead.lon);
     return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
   }
 
@@ -3400,12 +3419,15 @@
     const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
     if (segKey === currentRotationSegmentKey) return;
     const isFirstRotation = currentRotationSegmentKey === null;
-    // 역방향일 때는 구간 방향 자체가 반대이므로 prevM/nextM을 원래
-    // 순서(정방향 기준)로 되돌려 넘겨야 computeSegmentHeading이 올바른
-    // 진행방향을 계산한다.
+    // 역방향일 때는 "지금 실제로 서 있는/지나온 기준점"이 rNextM이므로
+    // (findNextMilestone이 역방향에서 prevM/nextM을 이미 뒤바꿔 반환함)
+    // computeSegmentHeading의 첫 인자(회전 기준점) 자리에 rNextM을,
+    // 둘째 인자(코스 순서상 참조용, 구간 길이 계산에만 쓰임) 자리에
+    // rPrevM을 넣는다. isReversing 플래그로 "코스를 따라 앞으로 50m"
+    // 방향을 인덱스 증가/감소 중 어느 쪽으로 찾을지 결정한다.
     const heading = isReversingOnTrail
-      ? computeSegmentHeading(rNextM, rPrevM)
-      : computeSegmentHeading(rPrevM, rNextM);
+      ? computeSegmentHeading(rNextM, rPrevM, true)
+      : computeSegmentHeading(rPrevM, rNextM, false);
     if (heading === null) return;
     // 🧭 "원점"은 갈림길에 도착했다고 무조건 잡는 게 아니라, 실제로
     // 그 방향으로 걷기 시작했다는 확인이 되어야 잡는다 — 들머리에서
