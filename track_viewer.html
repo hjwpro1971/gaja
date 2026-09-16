@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261010_drag_uses_applied_rotation_value';
+      const APP_BUILD = 'v20261011_remove_turn_detection_keep_midpoint_only';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v90').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v91').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v90)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v91)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=90', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=91', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2184,28 +2184,19 @@
   }
 
   // 🧭 자동 회전 트리거 포인트 — 사용자가 GPX에 태깅한 갈림길/봉우리
-  // (currentMilestones)와는 별개로, 트랙 좌표 자체를 분석해 (1) 45도
-  // 이상 급격히 꺾이는 지점과 (2) 마일스톤 구간이 너무 길 때 그 중간
-  // 지점을 찾아 "원점을 다시 잡을 지점"으로 삼는다. 목적은 "지금 걷는
-  // 방향이 항상 화면 정면(위쪽)에 직선으로 보이게" 하는 것 하나뿐이라
-  // (사용자 정의), 이 지점들은 이름도 마커도 없다 — 화면에 아무것도
-  // 표시하지 않고 오직 지도 회전에만 쓰인다. 안내 텍스트("갈림길1 →
-  // 갈림길2")는 currentMilestones만 쓰고 이 목록은 절대 섞이지 않는다.
+  // (currentMilestones)와는 별개로, 마일스톤 구간이 너무 길 때 그
+  // 중간 지점을 찾아 "원점을 다시 잡을 지점"으로 삼는다. 목적은
+  // "지금 걷는 방향이 항상 화면 정면(위쪽)에 직선으로 보이게" 하는
+  // 것 하나뿐이라(사용자 정의), 이 지점은 이름도 마커도 없다 — 화면에
+  // 아무것도 표시하지 않고 오직 지도 회전에만 쓰인다. 안내 텍스트
+  // ("갈림길1 → 갈림길2")는 currentMilestones만 쓰고 이 목록은 절대
+  // 섞이지 않는다.
   //
-  // 설계(사용자 확정):
-  // 1) 45도 이상 급격한 방향 전환 지점을 자동 감지해 원점 트리거로 삼는다.
-  // 2) 마일스톤 구간이 길면(AUTO_ROTATION_LONG_SEGMENT_M 이상) 그 중간
-  //    지점에서도 한 번 원점을 다시 잡는다.
-  // 3) GPS/GPX 노이즈 오탐을 줄이기 위해, 인접 두 트랙포인트가 아니라
-  //    전후 각 15m 구간의 평균 방향(마일스톤 turnAngle과 동일한 방식)
-  //    차이로 판정한다.
-  // 4) 기존 마일스톤과 가깝거나(20m 이내) 자동 포인트끼리 너무
-  //    촘촘하면(30m 이내) 병합/제외해 회전이 과도하게 자주 걸리지
-  //    않게 한다.
-  const AUTO_ROTATION_TURN_DEG = 45;
-  const AUTO_ROTATION_SAMPLE_STEP_M = 10;
-  const AUTO_ROTATION_LOOKBACK_M = 15;
-  const AUTO_ROTATION_LOOKAHEAD_M = 15;
+  // ⚠️ v89에서 "45도 이상 급격한 방향 전환 지점 자동 감지"도 함께
+  // 넣었었는데, 실기기 재현(영월구봉대산 A코스): "지도가 춤을 춰" —
+  // 10m 간격 스캔이 실제 등산로의 자연스러운 굽이(지그재그, 계단길
+  // 등)에도 촘촘히 반응해 회전이 너무 잦았다. 사용자 지시로 제거하고
+  // "긴 구간에서만 중간에 한 번 원점 잡기"만 남긴다.
   const AUTO_ROTATION_MIN_GAP_FROM_MILESTONE_M = 20;
   const AUTO_ROTATION_MIN_GAP_BETWEEN_M = 30;
   const AUTO_ROTATION_LONG_SEGMENT_M = 400;
@@ -2215,23 +2206,7 @@
     if (totalDistM <= 0) return [];
 
     const candidates = [];
-    // (1) 45도 이상 급격한 방향 전환 지점 — AUTO_ROTATION_SAMPLE_STEP_M
-    // 간격으로 코스 전체를 훑는다.
-    for (let d = AUTO_ROTATION_LOOKBACK_M; d < totalDistM - AUTO_ROTATION_LOOKAHEAD_M; d += AUTO_ROTATION_SAMPLE_STEP_M) {
-      const here = pointAtCumulativeDistance(points, cumDistances, d);
-      const behind = pointAtCumulativeDistance(points, cumDistances, d - AUTO_ROTATION_LOOKBACK_M);
-      const ahead = pointAtCumulativeDistance(points, cumDistances, d + AUTO_ROTATION_LOOKAHEAD_M);
-      if (!here || !behind || !ahead) continue;
-      const inBearing = calculateBearing(behind.lat, behind.lon, here.lat, here.lon);
-      const outBearing = calculateBearing(here.lat, here.lon, ahead.lat, ahead.lon);
-      const turn = Math.abs(shortestAngleDiff(outBearing, inBearing));
-      if (turn >= AUTO_ROTATION_TURN_DEG) {
-        // name은 화면에 노출되지 않는 내부 식별자일 뿐이다(segKey 생성용).
-        candidates.push({ name: '@turn', distanceM: d, trailLat: here.lat, trailLon: here.lon });
-      }
-    }
-
-    // (2) 마일스톤 구간이 긴 경우 중간 지점도 후보에 추가.
+    // 마일스톤 구간이 긴 경우 중간 지점을 후보로 추가.
     if (milestones && milestones.length >= 2) {
       for (let i = 0; i < milestones.length - 1; i++) {
         const segLen = milestones[i + 1].distanceM - milestones[i].distanceM;
