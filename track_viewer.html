@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261012_fix_drag_transform_before_headingup';
+      const APP_BUILD = 'v20261013_fix_drag_rotation_sign_after_autorotate';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v92').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v93').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v92)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v93)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=92', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=93', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1647,14 +1647,29 @@
     }
 
     function rotateDragDelta(dx, dy, angleDeg) {
+      // ⚠️ 근본 수정(자동 회전 이후 드래그 반전 버그): #map의 CSS는
+      // `rotate(${-appliedMapRotationDeg}deg)`로 걸린다. CSS rotate(θ)는
+      // 이미 "화면 좌표계(Y축 아래)에서 θ만큼 시계방향"이 되도록 표준
+      // 행렬 [[cosθ,-sinθ],[sinθ,cosθ]]을 그대로 쓴다 — Y-down이라서
+      // 별도로 sin 부호를 뒤집어야 한다는 이전 가정이 틀렸다(그 가정은
+      // "회전이 0도일 때"만 우연히 결과가 맞아떨어져 실기기에서 자동
+      // 회전 발생 전까지는 버그가 드러나지 않았다).
+      //
+      // 손가락이 화면에서 (dx,dy)만큼 움직이면, 지도 콘텐츠(mapPane)도
+      // 화면상에서 정확히 (dx,dy)만큼 따라와야 한다(직접조작 드래그의
+      // 기본 원칙). mapPane은 #map의 자식이라 #map의 CSS 회전
+      // rotate(-appliedMapRotationDeg) 안쪽 좌표계에서 이동한다. 따라서
+      // mapPane이 자기 좌표계에서 이동해야 할 벡터 m은, #map의 CSS
+      // 회전을 적용했을 때 화면상 (dx,dy)가 나오도록 역산해야 한다:
+      //   screen(dx,dy) = R_css(-appliedMapRotationDeg) * m
+      //   m = R_css(appliedMapRotationDeg) * (dx,dy)
+      // (R_css(θ)*(x,y) = (x cosθ - y sinθ, x sinθ + y cosθ), sin 부호 반전 없음)
       const rad = angleDeg * Math.PI / 180;
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
-      // 브라우저 화면 좌표계는 Y축이 아래를 향하므로, 표준 2D 회전 행렬과
-      // sin 부호가 반대로 적용되어야 직관적인 손가락 방향(pan)과 일치한다.
       return {
-        x: dx * cos + dy * sin,
-        y: -dx * sin + dy * cos
+        x: dx * cos - dy * sin,
+        y: dx * sin + dy * cos
       };
     }
 
