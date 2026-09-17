@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261017_trailhead_first_fix_lock_30m';
+      const APP_BUILD = 'v20261017_fix_fitbounds_blocks_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v99').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v100').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v99)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v100)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=99', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=100', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1186,6 +1186,11 @@
   let stopEnteredAt = null;     // 정지(STOPPED) 확정 시각 — 절전 모드 진입 타이머 기준
   let isMapBeingDragged = false;     // 손가락으로 지도를 끌고 있는 중 — 이 동안은 내 위치로 강제 복귀시키지 않는다
   let isMapDragReturnPending = false; // 개선 2: 손을 뗀 뒤 자동 복귀 유예 시간(7초) 동안 true — 이 동안도 GPS 픽스의 강제 복귀를 막는다
+  // fitRoute() 등 프로그램이 직접 지도를 확대/축소할 때 true — 이 동안은
+  // zoomstart/zoomend 핸들러가 "드래그 후 자동복귀 유예"를 걸지 않는다.
+  // 사용자가 손가락으로 조작한 게 아니므로 그 유예 자체가 불필요하고,
+  // 걸리면 원점 판정(updateSegmentRotationTrigger)이 최대 7초간 막힌다.
+  let isProgrammaticZoomInProgress = false;
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
   let lastGpsMoveTime = 0;
@@ -1562,7 +1567,20 @@
     // 재중심시켜버렸다 — 사용자에게는 "확대해도 금방 원래대로
     // 돌아온다"로 체감됐다. zoomstart/zoomend를 드래그와 동일한
     // 7초 유예 메커니즘에 연결해 해결한다.
+    //
+    // ⚠️ fitRoute()(코스 로드 시 자동 호출 + 우측 "전체 경로" 버튼)도
+    // 내부적으로 map.fitBounds()를 호출해 zoomstart/zoomend를 발화시킨다
+    // — 이건 사용자가 손가락으로 지도를 조작한 게 아니라 프로그램이
+    // 화면을 재배치한 것뿐인데, 구분 없이 그대로 걸리면
+    // isMapDragReturnPending이 7초간 켜져 그동안
+    // updateSegmentRotationTrigger(원점 판정) 자체가 완전히 막힌다.
+    // 사용자 재현: 코스를 불러오자마자(=fitRoute 직후) 시뮬레이션을
+    // 시작하면 첫 원점이 지연되거나 엉뚱한 지점에서 잡혔다 — Playwright로
+    // 직접 재현·확인함(순방향 확인 지연이 아니라 이 7초 차단이 근본
+    // 원인이었다). fitRoute()가 zoom을 바꾸기 직전
+    // isProgrammaticZoomInProgress를 세워 이 zoomend 유예를 건너뛴다.
     map.on('zoomstart', () => {
+      if (isProgrammaticZoomInProgress) return;
       isMapBeingDragged = true;
       isMapDragReturnPending = false;
       if (dragReturnTimer) {
@@ -1571,6 +1589,7 @@
       }
     });
     map.on('zoomend', () => {
+      if (isProgrammaticZoomInProgress) return;
       isMapBeingDragged = false;
       isMapDragReturnPending = true;
       if (dragReturnTimer) clearTimeout(dragReturnTimer);
@@ -2992,11 +3011,24 @@
   }
 
   // 코스를 화면 시각적 정중앙에 정확히 배치 (상단 헤더 여백 보정)
+  // ⚠️ fitBounds가 유발하는 zoomstart/zoomend는 사용자가 손가락으로
+  // 지도를 조작한 게 아니므로, initMap()의 zoomend 핸들러에 걸린
+  // "드래그 후 자동복귀 유예"(isMapDragReturnPending, 7초)가 걸리지
+  // 않도록 억제한다 — 억제하지 않으면 코스 로드 직후 원점 판정 자체가
+  // 7초간 막혀 첫 원점이 지연되거나 엉뚱한 지점에서 잡히는 버그가
+  // 있었다(Playwright 시뮬레이션으로 재현·확인).
   function fitRoute() {
     if (!map || !polyline) return;
+    isProgrammaticZoomInProgress = true;
     map.fitBounds(polyline.getBounds(), {
       paddingTopLeft: [40, 85],
       paddingBottomRight: [40, 45]
+    });
+    // fitBounds의 zoom/pan 애니메이션이 모두 끝난 뒤(moveend)에만
+    // 플래그를 내린다 — zoomend 직후 바로 내리면 이어지는 panBy 애니메이션
+    // 중 또 다른 zoomend가 발생하는 경우를 놓칠 수 있다.
+    map.once('moveend', () => {
+      isProgrammaticZoomInProgress = false;
     });
   }
 
@@ -3508,6 +3540,16 @@
     if (!lastKnownPos) return;
 
     const isFirstRotation = currentRotationOriginDist === null;
+
+    // 🧭 들머리 첫 잠금(firstRotationLockedAt)은 "첫 원점이 아직 없는
+    // 상태"에서만 순방향 확인/30m 초과 판정을 거친다. 첫 원점이 이미
+    // 확정된 뒤(!isFirstRotation)에는 그 판정 블록에 다시 도달하지
+    // 않으므로, 잠금이 남아있다면 여기서 정리한다 — 실제 회전 동작에는
+    // 영향 없지만(firstRotationLockedAt은 !isFirstRotation 경로에서
+    // 쓰이지 않음) 상태를 깔끔하게 유지한다.
+    if (!isFirstRotation && firstRotationLockedAt !== null) {
+      firstRotationLockedAt = null;
+    }
 
     if (!isFirstRotation) {
       // 🧭 이미 원점이 있으면: 현재 기준점에서 찾은 목표에 실제로
