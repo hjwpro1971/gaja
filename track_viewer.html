@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261017_new_icon_ato_gajago_name';
+      const APP_BUILD = 'v20261017_trailhead_first_fix_lock_30m';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v98').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v99').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v98)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v99)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=98', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=99', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1314,6 +1314,7 @@
       // 모두 켜지도록 완전히 연동한다.
       isSegmentRotationMode = true;
       currentRotationOriginDist = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
+      firstRotationLockedAt = null;
       if (mapEl) mapEl.classList.add('heading-up');
       {
         const z = Math.max(map.getZoom(), 16);
@@ -1329,6 +1330,7 @@
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationOriginDist = null;
+      firstRotationLockedAt = null;
       mapRotationDeg = 0;
       appliedMapRotationDeg = 0;
       updateRouteBadgeRotation();
@@ -3459,6 +3461,15 @@
   // 넓으면 실제로 갈림길에 닿기 한참 전에 회전해버려 "미리 회전"
   // 문제가 재발하므로 좁게 잡는다.
   const ROTATION_ARRIVAL_GRACE_M = 12;
+  // 들머리 첫 원점 즉시고정 반경 — 이 거리(m) 이내에서는 실제 GPS
+  // 이동방향을 기다리지 않고 GPX 코스 방향으로 즉시 원점을 고정한다
+  // (사용자 지시: "GPS 첫 Fix -> 90도 고정 -> 들머리 30m 이내에서는
+  // 유지 -> 순방향 확인되면 즉시 해제 -> 30m 벗어나도 확인 안 되면
+  // 강제 종료"). firstRotationLockedAt은 이 잠금이 시작된 traveledDist
+  // (null이면 잠금 없음/이미 해제됨) — updateSegmentRotationTrigger
+  // 정의부에서 사용.
+  const TRAILHEAD_ORIGIN_RADIUS_M = 30;
+  let firstRotationLockedAt = null;
 
   function updateSegmentRotationTrigger(traveledDist) {
     if (!isSegmentRotationMode) return;
@@ -3525,49 +3536,67 @@
       return;
     }
 
-    // 🧭 첫 원점(들머리) — 아직 기준점이 없으므로, 내 현재 위치를
-    // 임시 기준점 삼아 다음 목표를 찾고 그 방향으로 회전한다.
+    // 🧭 첫 원점(들머리) — 단순화된 설계(사용자 지시):
+    // "GPS 첫 Fix → 90도 즉시 고정 → 들머리 30m 이내에서는 유지 →
+    // 그 전에 순방향(실제 이동방향과 일치)이 확인되면 즉시 그 방향으로
+    // 갱신 → 30m를 벗어나도 확인이 안 되면 그 시점 GPX 코스 방향으로
+    // 강제 확정." 이전 버전(v97)은 "GPS 이동방향이 아직 없으면 들머리
+    // 반경 안에서만 즉시 확정하고 반경 밖에서는 계속 보류"하는 조건부
+    // 방식이었는데, 실제로는 반경 밖에서 gpsMovementHeading이 계속
+    // null인 채로 남는 경우(예: 시뮬레이션 첫 프레임처럼 이동방향
+    // 계산이 아예 다른 경로를 타는 경우) 여전히 영영 보류되는 사각
+    // 지대가 있었다. 이제 "첫 원점은 항상 즉시 GPX 코스 방향으로
+    // 확정"으로 단순화하고, 그 뒤 30m 이내에서 실제 이동방향이 확인
+    // 되면 그 방향으로 갱신(사실상 목표 도착 전이므로 즉시 재확정),
+    // 30m를 넘어도 확인이 안 되면 그대로(이미 확정된 코스 방향) 둔다
+    // — "강제 종료"는 곧 더 이상 아무 특별 처리 없이 일반 원점처럼
+    // 취급된다는 뜻이다(currentRotationOriginDist가 이미 세팅되어
+    // 있으므로 다음부터는 !isFirstRotation 경로로 자연히 넘어간다).
     const target = findNextRotationTarget(traveledDist, isReversingOnTrail);
     if (!target) return;
-    const heading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
-    if (heading === null) return;
+    const courseHeading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
+    if (courseHeading === null) return;
 
-    // ⚠️ 들머리 전용 즉시 확정 로직(사용자 재현: "들머리에서 원점을
-    // 안 잡는다") — 원인은 GPS 이동방향(gpsMovementHeading) 계산
-    // 자체가 첫 픽스에서는 무조건 null이고, 그 뒤로도 픽스 간 이동
-    // 거리가 GpsFilterEngine.MIN_DISTANCE(1.5m) 미만이면(들머리에서
-    // 가만히 서 있거나 배낭을 정리하는 등 GPS 오차 수준의 미세한
-    // 흔들림만 있으면) 계속 null로 남는다는 데 있었다. 아래 방향
-    // 일치 검사는 gpsMovementHeading이 있어야만 통과되므로, 그 값이
-    // 안정되기 전까지 원점 자체가 영영 안 잡혔다.
-    // 코스 시작(들머리) 반경 TRAILHEAD_ORIGIN_RADIUS_M(15m) 이내에서는
-    // GPS 이동방향 대신 GPX 코스 자체의 순방향(heading, target이 이미
-    // findNextRotationTarget으로 구한 "코스를 따라 앞으로 나아가는
-    // 방향")을 그대로 써서 즉시 원점을 잡는다 — 아직 실제로 걷기
-    // 시작했다는 증거는 없지만, 애초에 이 좌표 자체가 "코스 시작점
-    // 근처"이므로 코스 방향을 신뢰해도 되는 특수 구간이다. 15m를
-    // 벗어난 뒤(=충분히 걸어 GPS 이동방향이 신뢰할 만해진 뒤)에는
-    // 기존처럼 실제 이동방향과의 일치 검사를 거친다.
-    const TRAILHEAD_ORIGIN_RADIUS_M = 15;
-    const isAtTrailheadStart = traveledDist < TRAILHEAD_ORIGIN_RADIUS_M;
-
-    // 🧭 "원점"은 갈림길에 도착했다고 무조건 잡는 게 아니라, 실제로
-    // 그 방향으로 걷기 시작했다는 확인이 되어야 잡는다 — 들머리에서
-    // GPS를 막 켰을 때 아직 가만히 서 있거나 주차장 쪽으로 잠깐
-    // 움직이는 등, 코스 진행방향과 무관한 상태에서 첫 원점이 미리
-    // 잡혀버리는 걸 막기 위함(사용자 요청: "내가 갈 방향하고 일치되는
-    // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(목표 통과로 인한
-    // 재회전)는 통과 자체가 그 방향으로 걸었다는 증거이므로 이 검사를
-    // 하지 않는다 — 첫 원점에만, 그리고 들머리 반경 밖에서만 적용.
-    if (!forceOriginReset && !isAtTrailheadStart) {
-      if (isCurrentlyStopped || gpsMovementHeading === null) return; // 아직 이동방향을 모르면 보류, 다음 픽스에서 재시도
-      const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, heading));
-      if (mismatch > FIRST_ROTATION_HEADING_TOLERANCE_DEG) return; // 반대/엉뚱한 방향으로 걷는 중이면 보류
+    if (forceOriginReset) {
+      currentRotationOriginDist = traveledDist;
+      applySegmentRotation(courseHeading);
+      return;
     }
-    currentRotationOriginDist = traveledDist;
-    applySegmentRotation(heading);
-    // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한 이전
-    // 갈림길이 없음)에는 통과 알람을 울리지 않는다.
+
+    if (currentRotationOriginDist === null && firstRotationLockedAt === null) {
+      // GPS 첫 Fix(이 함수가 처음 원점을 확정 안 한 채로 호출되는
+      // 시점) — 실제 이동방향을 기다리지 않고 즉시 GPX 코스 방향으로
+      // 고정한다. firstRotationLockedAt에 잠금 시작 거리를 기록해
+      // 아래 30m 판정의 기준으로 삼는다.
+      firstRotationLockedAt = traveledDist;
+      currentRotationOriginDist = traveledDist;
+      applySegmentRotation(courseHeading);
+      return;
+    }
+
+    // 이미 첫 잠금이 걸린 상태(firstRotationLockedAt !== null) —
+    // 들머리 30m 반경 이내인 동안, 실제 GPS 이동방향이 코스 방향과
+    // 일치하는 것으로 확인되면 그 즉시 그 방향으로 갱신(=순방향 진입
+    // 확정)한다. 30m를 벗어났는데도 아직 확인이 안 됐으면 더 이상
+    // 이 특수 판정을 반복하지 않고 조용히 잠금을 해제한다 — 이후
+    // 프레임부터는 !isFirstRotation 경로(목표 도착 시에만 재회전)를
+    // 그대로 따른다.
+    const withinTrailheadRadius = (traveledDist - firstRotationLockedAt) < TRAILHEAD_ORIGIN_RADIUS_M;
+    if (withinTrailheadRadius && !isCurrentlyStopped && gpsMovementHeading !== null) {
+      const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, courseHeading));
+      if (mismatch <= FIRST_ROTATION_HEADING_TOLERANCE_DEG) {
+        // 순방향 확인 — 즉시 갱신하고 잠금 해제.
+        firstRotationLockedAt = null;
+        currentRotationOriginDist = traveledDist;
+        applySegmentRotation(courseHeading);
+      }
+      return;
+    }
+    if (!withinTrailheadRadius) {
+      // 30m를 벗어나도 순방향 확인이 안 됨 — 강제로 잠금 해제(이미
+      // 확정돼 있는 코스 방향 그대로 유지, 추가 조치 없음).
+      firstRotationLockedAt = null;
+    }
   }
 
   // 🔄 수동 "원점 다시 잡기" 버튼 — GPS가 크게 튀거나 원점이 엉뚱하게
@@ -3585,6 +3614,7 @@
       return;
     }
     currentRotationOriginDist = null;
+    firstRotationLockedAt = null;
     forceOriginReset = true;
     const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
     const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
@@ -4008,6 +4038,7 @@
       const mapEl = document.getElementById('map');
       isSegmentRotationMode = false;
       currentRotationOriginDist = null;
+      firstRotationLockedAt = null;
       mapRotationDeg = 0;
       appliedMapRotationDeg = 0;
       updateRouteBadgeRotation();
@@ -4040,6 +4071,7 @@
       const mapEl = document.getElementById('map');
       isSegmentRotationMode = true;
       currentRotationOriginDist = null;
+      firstRotationLockedAt = null;
       if (mapEl) mapEl.classList.add('heading-up');
     }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
