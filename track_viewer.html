@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261017_arrival_based_rotation_300m';
+      const APP_BUILD = 'v20261017_trailhead_immediate_origin';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v96').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v97').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v96)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v97)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=96', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=97', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3531,6 +3531,26 @@
     if (!target) return;
     const heading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
     if (heading === null) return;
+
+    // ⚠️ 들머리 전용 즉시 확정 로직(사용자 재현: "들머리에서 원점을
+    // 안 잡는다") — 원인은 GPS 이동방향(gpsMovementHeading) 계산
+    // 자체가 첫 픽스에서는 무조건 null이고, 그 뒤로도 픽스 간 이동
+    // 거리가 GpsFilterEngine.MIN_DISTANCE(1.5m) 미만이면(들머리에서
+    // 가만히 서 있거나 배낭을 정리하는 등 GPS 오차 수준의 미세한
+    // 흔들림만 있으면) 계속 null로 남는다는 데 있었다. 아래 방향
+    // 일치 검사는 gpsMovementHeading이 있어야만 통과되므로, 그 값이
+    // 안정되기 전까지 원점 자체가 영영 안 잡혔다.
+    // 코스 시작(들머리) 반경 TRAILHEAD_ORIGIN_RADIUS_M(15m) 이내에서는
+    // GPS 이동방향 대신 GPX 코스 자체의 순방향(heading, target이 이미
+    // findNextRotationTarget으로 구한 "코스를 따라 앞으로 나아가는
+    // 방향")을 그대로 써서 즉시 원점을 잡는다 — 아직 실제로 걷기
+    // 시작했다는 증거는 없지만, 애초에 이 좌표 자체가 "코스 시작점
+    // 근처"이므로 코스 방향을 신뢰해도 되는 특수 구간이다. 15m를
+    // 벗어난 뒤(=충분히 걸어 GPS 이동방향이 신뢰할 만해진 뒤)에는
+    // 기존처럼 실제 이동방향과의 일치 검사를 거친다.
+    const TRAILHEAD_ORIGIN_RADIUS_M = 15;
+    const isAtTrailheadStart = traveledDist < TRAILHEAD_ORIGIN_RADIUS_M;
+
     // 🧭 "원점"은 갈림길에 도착했다고 무조건 잡는 게 아니라, 실제로
     // 그 방향으로 걷기 시작했다는 확인이 되어야 잡는다 — 들머리에서
     // GPS를 막 켰을 때 아직 가만히 서 있거나 주차장 쪽으로 잠깐
@@ -3538,8 +3558,8 @@
     // 잡혀버리는 걸 막기 위함(사용자 요청: "내가 갈 방향하고 일치되는
     // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(목표 통과로 인한
     // 재회전)는 통과 자체가 그 방향으로 걸었다는 증거이므로 이 검사를
-    // 하지 않는다 — 첫 원점에만 적용.
-    if (!forceOriginReset) {
+    // 하지 않는다 — 첫 원점에만, 그리고 들머리 반경 밖에서만 적용.
+    if (!forceOriginReset && !isAtTrailheadStart) {
       if (isCurrentlyStopped || gpsMovementHeading === null) return; // 아직 이동방향을 모르면 보류, 다음 픽스에서 재시도
       const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, heading));
       if (mismatch > FIRST_ROTATION_HEADING_TOLERANCE_DEG) return; // 반대/엉뚱한 방향으로 걷는 중이면 보류
