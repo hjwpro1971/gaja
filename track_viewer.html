@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261017_arrival_based_rotation_500m';
+      const APP_BUILD = 'v20261017_arrival_based_rotation_300m';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v95').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v96').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v95)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v96)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=95', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=96', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2202,26 +2202,27 @@
   // 항상 "기준점(직전에 도착한 지점)에서 다음 목표를 바라보는 방향"
   // 이어야 하고, 접근하는 동안은 이전 회전값을 그대로 유지해야 한다.
   //
-  // 새 설계(v95): findNextRotationTarget(originDist, isReversing)은
-  // "기준점(originDist, 직전에 도착/통과한 지점)"에서 코스를 따라 최대
-  // ROTATION_TARGET_MAX_LOOKAHEAD_M(500m) 앞을 보되, 그 사이에
-  // 마일스톤(갈림길/봉우리/들날머리)이 있으면 그 지점을, 없으면 정확히
-  // 500m 앞 지점을 목표로 삼는다. traveledDist(현재 GPS 위치)는 이
-  // 함수에 넘기지 않는다 — 목표는 기준점에서만 파생되고, 실제 위치는
-  // updateSegmentRotationTrigger가 "목표에 도달했는지" 판정할 때만
-  // 별도로 쓰인다(그래야 접근 중에는 회전이 흔들리지 않는다).
+  // 새 설계(v95, v96에서 500m->300m로 축소): findNextRotationTarget
+  // (originDist, isReversing)은 "기준점(originDist, 직전에 도착/통과한
+  // 지점)"에서 코스를 따라 최대 ROTATION_TARGET_MAX_LOOKAHEAD_M(300m)
+  // 앞을 보되, 그 사이에 마일스톤(갈림길/봉우리/들날머리)이 있으면 그
+  // 지점을, 없으면 정확히 300m 앞 지점을 목표로 삼는다.
+  // traveledDist(현재 GPS 위치)는 이 함수에 넘기지 않는다 — 목표는
+  // 기준점에서만 파생되고, 실제 위치는 updateSegmentRotationTrigger가
+  // "목표에 도달했는지" 판정할 때만 별도로 쓰인다(그래야 접근 중에는
+  // 회전이 흔들리지 않는다).
   //
   // 지도 회전(applySegmentRotation)과 갈림길 "몇 시 방향" 안내
   // (showUpcomingTurnAlert)는 둘 다 이 함수가 반환하는 좌표만을
   // 원천으로 삼아 자기 시점에 맞는 방향을 계산하므로, 서로 다른
   // 지점을 기준으로 삼는 일 자체가 구조적으로 불가능해진다.
-  const ROTATION_TARGET_MAX_LOOKAHEAD_M = 500;
+  const ROTATION_TARGET_MAX_LOOKAHEAD_M = 300;
   function findNextRotationTarget(originDist, isReversing) {
     if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
     const totalDistM = cumulativeDistances[cumulativeDistances.length - 1] || 0;
     if (totalDistM <= 0) return null;
 
-    // 기준점(originDist)에서 앞으로 나아가는 방향으로 최대 500m 지점의 누적거리.
+    // 기준점(originDist)에서 앞으로 나아가는 방향으로 최대 300m 지점의 누적거리.
     const maxLookaheadDistM = isReversing
       ? Math.max(0, originDist - ROTATION_TARGET_MAX_LOOKAHEAD_M)
       : Math.min(totalDistM, originDist + ROTATION_TARGET_MAX_LOOKAHEAD_M);
@@ -2244,10 +2245,10 @@
       return { name: nearestMilestone.name, distanceM: nearestMilestone.distanceM, lat: nearestMilestone.trailLat, lon: nearestMilestone.trailLon, isMilestone: true };
     }
 
-    // 구간 안에 마일스톤이 없으면, 정확히 500m 앞(또는 코스 끝) 지점.
+    // 구간 안에 마일스톤이 없으면, 정확히 300m 앞(또는 코스 끝) 지점.
     const pt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, maxLookaheadDistM);
     if (!pt) return null;
-    return { name: '@500m', distanceM: maxLookaheadDistM, lat: pt.lat, lon: pt.lon, isMilestone: false };
+    return { name: '@300m', distanceM: maxLookaheadDistM, lat: pt.lat, lon: pt.lon, isMilestone: false };
   }
 
   // 회전각(도, 양수=우회전/음수=좌회전)을 사람이 읽는 안내 문구로 변환.
@@ -3519,7 +3520,7 @@
       if (heading === null) return;
       currentRotationOriginDist = newOriginDist;
       applySegmentRotation(heading);
-      // 이름 없는 500m 지점 통과는 실제 갈림길 통과가 아니므로 조용히.
+      // 이름 없는 300m 지점 통과는 실제 갈림길 통과가 아니므로 조용히.
       if (currentTarget.isMilestone) playPassedMilestoneBeep();
       return;
     }
