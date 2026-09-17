@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261017_fix_fitbounds_blocks_rotation';
+      const APP_BUILD = 'v20261018_hide_wayfind_debug_buttons';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v100').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v101').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v100)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v101)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -622,12 +622,15 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
-  <button class="fab-btn" id="wayfindBtn" onclick="openWayfindMode()" title="길찾기 (방향 맞추기)">🧭</button>
+  <!-- 길찾기 모드 버튼 숨김(사용자 요청: "필요 없을걸 같아") — 기능/로직은
+       그대로 남겨두고 UI에서만 제거. 필요해지면 style="display:none"만 지우면 됨. -->
+  <button class="fab-btn" id="wayfindBtn" onclick="openWayfindMode()" title="길찾기 (방향 맞추기)" style="display:none;">🧭</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
   <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
-  <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px;">🐞</button>
+  <!-- 회전 검증 로그(디버그용) 버튼 숨김(사용자 요청) — 기능은 유지. -->
+  <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px; display:none;">🐞</button>
 </div>
 
 <!-- 🧭 하단 대형 방향 화살표 — 다음 갈림길이 가까워지면(showUpcomingTurnAlert)
@@ -708,7 +711,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=100', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=101', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
