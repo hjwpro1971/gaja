@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261013_fix_drag_rotation_sign_after_autorotate';
+      const APP_BUILD = 'v20261017_unified_heading_source_100m_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v93').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v94').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v93)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v94)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -708,7 +708,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=93', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=94', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1990,8 +1990,6 @@
   // 비효율적이므로, drawRoute에서 한 번만 만들어 캐시해둔다.
   let cumulativeDistances = [];
   let currentMilestones = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
-  let currentAutoRotationPoints = []; // 회전 전용(화면 표시 없음) 자동 감지 지점 — buildAutoRotationPoints 참고
-  let currentRotationTriggerPoints = []; // currentMilestones + currentAutoRotationPoints를 distanceM 순으로 병합한 목록(회전 트리거 전용, 코스 로드 시 1회 계산)
 
   
   // GPX 경유지/지명을 경로상 누적거리(distanceM)에 매핑
@@ -2165,106 +2163,78 @@
 
     list.sort((a, b) => a.distanceM - b.distanceM);
 
-    // ⭐ 전면 재설계(2026-09-14): "미리 안내" 방식 — GPX가 경로 전체를
-    // 이미 알고 있으므로, 이 갈림길에서 "들어오는 방향"과 "나가는 방향"
-    // 이 이루는 회전각(turnAngle)을 지금(코스 로드 시점) 미리 계산해
-    // 저장해둔다. 실시간으로는 "내가 지금 보는 방향"을 나침반/GPS로
-    // 알아낼 필요가 전혀 없다 — 실제 내비게이션 앱(카카오내비 등)처럼
-    // "이 지점은 원래 좌회전/우회전/직진"이라는 사실 자체가 좌표만으로
-    // 고정되어 있기 때문이다. GPS는 "내가 이 지점에 얼마나 가까워졌나"
-    // 판정에만 쓰인다.
-    const TURN_LOOKBACK_M = 15;  // 진입 방향 계산에 쓸 "갈림길 이전 지점" 거리
-    const TURN_LOOKAHEAD_M = 15; // 이탈 방향 계산에 쓸 "갈림길 이후 지점" 거리
-    // 짧은 코스에서는 갈림길이 들머리/날머리에서 15m 이내로 가까운 경우가
-    // 흔한데, 예전엔 이럴 때 회전각 계산을 통째로 포기(null)해 실제
-    // 갈림길인데도 안내가 전혀 안 뜨는 결함이 있었다. behindDistM/
-    // aheadDistM을 코스 경계(0~totalDistM) 안에서 가능한 만큼만이라도
-    // 확보되면 계산을 시도하도록 완화한다 — lookback/lookahead 거리가
-    // 15m보다 짧아져도(예: 갈림길이 들머리에서 8m 지점이면 8m만 사용)
-    // 방향 자체는 여전히 유효하게 구할 수 있다. 진짜로 방향을 구할 수
-    // 없는 경우(들머리/날머리 그 자체, 즉 behind/ahead 거리가 0)만 null.
-    list.forEach(m => {
-      const behindDistM = Math.max(0, m.distanceM - TURN_LOOKBACK_M);
-      const aheadDistM = Math.min(totalDistM, m.distanceM + TURN_LOOKAHEAD_M);
-      const behindPt = pointAtCumulativeDistance(points, cumDistances, behindDistM);
-      const aheadPt = pointAtCumulativeDistance(points, cumDistances, aheadDistM);
-      if (behindPt && aheadPt && (behindDistM < m.distanceM) && (aheadDistM > m.distanceM)) {
-        const inBearing = calculateBearing(behindPt.lat, behindPt.lon, m.trailLat, m.trailLon);
-        const outBearing = calculateBearing(m.trailLat, m.trailLon, aheadPt.lat, aheadPt.lon);
-        m.turnAngle = shortestAngleDiff(outBearing, inBearing); // -180~180, 양수=우회전, 음수=좌회전
-        m.turnLabel = classifyTurnAngle(m.turnAngle);
-        // outBearing 자체는 turnAngle 계산의 중간값이라 참고용으로만
-        // 저장해둔다 — 지도 회전(computeSegmentHeading)에는 쓰지 않는다
-        // (한때 재사용했다가 "원점" 정의를 깨는 버그가 됐던 이력 있음,
-        // computeSegmentHeading 정의부 주석 참고).
-        m.outBearing = outBearing;
-      } else {
-        // 들머리/날머리 그 자체(behind==distanceM 또는 ahead==distanceM,
-        // 즉 코스 맨 끝이라 진입/이탈 방향 중 하나가 아예 없음)만 계산 불가.
-        m.turnAngle = null;
-        m.turnLabel = null;
-        m.outBearing = null;
-      }
-    });
-
+    // ⭐ 전면 재설계(2026-09-17): "단일 진행방향 소스" 방식으로 전환 —
+    // 코스 로드 시점에 turnAngle(진입/이탈 상대 회전각)을 미리 계산해
+    // 두던 이전 방식은 지도 회전 기준(computeSegmentHeading, prevM에서
+    // 50m 앞)과 안내 각도 기준(turnAngle, 갈림길 전후 15m)이 서로 다른
+    // 지점·다른 계산식을 썼다. 지도가 정확히 회전되어 있어도 안내
+    // 각도가 화면과 어긋나고, 짧은 구간(들머리/날머리 근처, 좁은
+    // 갈림길 간격)일수록 어긋남이 컸다(사용자 실기기 재현 다수: "경로가
+    // 12시가 아니라 1시/9시", "원점을 못 잡음").
+    //
+    // 이제 turnAngle을 여기서 미리 계산하지 않는다 — 지도 회전과 몇 시
+    // 방향 안내 모두, 실시간으로 findNextRotationTarget()/
+    // updateSegmentRotationTrigger()가 "현재 화면이 가리키는 방향"과
+    // "다음 목표 지점 방향"을 같은 기준(내 위치 → 목표 좌표 직선
+    // 방향)으로 매번 계산해 항상 일치시킨다. 자세한 설계는
+    // findNextRotationTarget() 정의부 참고.
     return list;
   }
 
-  // 🧭 자동 회전 트리거 포인트 — 사용자가 GPX에 태깅한 갈림길/봉우리
-  // (currentMilestones)와는 별개로, 마일스톤 구간이 너무 길 때 그
-  // 중간 지점을 찾아 "원점을 다시 잡을 지점"으로 삼는다. 목적은
-  // "지금 걷는 방향이 항상 화면 정면(위쪽)에 직선으로 보이게" 하는
-  // 것 하나뿐이라(사용자 정의), 이 지점은 이름도 마커도 없다 — 화면에
-  // 아무것도 표시하지 않고 오직 지도 회전에만 쓰인다. 안내 텍스트
-  // ("갈림길1 → 갈림길2")는 currentMilestones만 쓰고 이 목록은 절대
-  // 섞이지 않는다.
+  // 🧭 회전/안내 방향 목표 지점 계산 — "단일 진행방향 소스" 설계
+  // (2026-09-17 전면 재설계).
   //
-  // ⚠️ v89에서 "45도 이상 급격한 방향 전환 지점 자동 감지"도 함께
-  // 넣었었는데, 실기기 재현(영월구봉대산 A코스): "지도가 춤을 춰" —
-  // 10m 간격 스캔이 실제 등산로의 자연스러운 굽이(지그재그, 계단길
-  // 등)에도 촘촘히 반응해 회전이 너무 잦았다. 사용자 지시로 제거하고
-  // "긴 구간에서만 중간에 한 번 원점 잡기"만 남긴다.
-  const AUTO_ROTATION_MIN_GAP_FROM_MILESTONE_M = 20;
-  const AUTO_ROTATION_MIN_GAP_BETWEEN_M = 30;
-  const AUTO_ROTATION_LONG_SEGMENT_M = 400;
+  // 이전 방식(코스 로드 시 buildAutoRotationPoints로 회전 트리거를
+  // 미리 목록으로 만들어둠 + computeSegmentHeading의 50m lookahead)은
+  // 회전 기준 지점과, 갈림길 안내에 쓰는 turnAngle의 기준 지점(전후
+  // 15m)이 서로 달라 실기기에서 반복적으로 어긋났다(사용자 재현:
+  // "경로가 12시가 아니라 1시/9시", "짧은 구간에서 원점을 못 잡음").
+  //
+  // 새 설계: 매 위치 갱신마다 실시간으로 "다음 회전 목표 지점"을
+  // 계산한다 — 규칙은 내 위치에서 코스를 따라 최대
+  // ROTATION_TARGET_MAX_LOOKAHEAD_M(100m) 앞을 보되, 그 사이에
+  // 마일스톤(갈림길/봉우리/들날머리)이 있으면 그 마일스톤 지점을
+  // 목표로 삼고, 없으면 정확히 100m 앞 지점(이름 없는 좌표)을 목표로
+  // 삼는다 — "둘 중 더 가까운 쪽"(사용자 지시: "100m 내에 갈림길이나
+  // 경로 끝점이 보이면 이것을 기준으로 다시 원점 잡고").
+  //
+  // 지도 회전(applySegmentRotation)과 갈림길 "몇 시 방향" 안내
+  // (showUpcomingTurnAlert)는 둘 다 이 함수가 반환하는 좌표만을
+  // 원천으로 삼아 자기 시점에 맞는 방향을 계산하므로, 서로 다른
+  // 지점을 기준으로 삼는 일 자체가 구조적으로 불가능해진다.
+  const ROTATION_TARGET_MAX_LOOKAHEAD_M = 100;
+  function findNextRotationTarget(traveledDist, isReversing) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const totalDistM = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    if (totalDistM <= 0) return null;
 
-  function buildAutoRotationPoints(points, cumDistances, milestones) {
-    const totalDistM = cumDistances[cumDistances.length - 1] || 0;
-    if (totalDistM <= 0) return [];
+    // 코스를 따라 앞으로 나아가는 방향으로 최대 100m 지점의 누적거리.
+    const maxLookaheadDistM = isReversing
+      ? Math.max(0, traveledDist - ROTATION_TARGET_MAX_LOOKAHEAD_M)
+      : Math.min(totalDistM, traveledDist + ROTATION_TARGET_MAX_LOOKAHEAD_M);
 
-    const candidates = [];
-    // 마일스톤 구간이 긴 경우 중간 지점을 후보로 추가.
-    if (milestones && milestones.length >= 2) {
-      for (let i = 0; i < milestones.length - 1; i++) {
-        const segLen = milestones[i + 1].distanceM - milestones[i].distanceM;
-        if (segLen >= AUTO_ROTATION_LONG_SEGMENT_M) {
-          const midDistM = milestones[i].distanceM + segLen / 2;
-          const midPt = pointAtCumulativeDistance(points, cumDistances, midDistM);
-          if (midPt) candidates.push({ name: '@mid', distanceM: midDistM, trailLat: midPt.lat, trailLon: midPt.lon });
+    // 그 100m 구간 안에 있는 마일스톤 중, 코스 순서상 가장 가까운(=내
+    // 위치에서 가장 먼저 만나는) 것을 찾는다.
+    let nearestMilestone = null;
+    if (currentMilestones && currentMilestones.length > 0) {
+      currentMilestones.forEach(m => {
+        const isAheadInDirection = isReversing
+          ? (m.distanceM < traveledDist && m.distanceM >= maxLookaheadDistM)
+          : (m.distanceM > traveledDist && m.distanceM <= maxLookaheadDistM);
+        if (!isAheadInDirection) return;
+        if (!nearestMilestone || Math.abs(m.distanceM - traveledDist) < Math.abs(nearestMilestone.distanceM - traveledDist)) {
+          nearestMilestone = m;
         }
-      }
+      });
+    }
+    if (nearestMilestone) {
+      return { name: nearestMilestone.name, distanceM: nearestMilestone.distanceM, lat: nearestMilestone.trailLat, lon: nearestMilestone.trailLon, isMilestone: true };
     }
 
-    candidates.sort((a, b) => a.distanceM - b.distanceM);
-
-    // 기존 마일스톤과 너무 가까운 후보 제외.
-    const milestoneDists = (milestones || []).map(m => m.distanceM);
-    const farFromMilestones = candidates.filter(c =>
-      milestoneDists.every(md => Math.abs(md - c.distanceM) >= AUTO_ROTATION_MIN_GAP_FROM_MILESTONE_M)
-    );
-
-    // 자동 포인트끼리도 최소 간격을 두고, 촘촘하면 가장 먼저(=코스
-    // 순서상 앞쪽) 것만 남긴다 — 배열이 이미 distanceM 순 정렬이므로
-    // 순회하며 직전 채택 지점과의 거리만 확인하면 된다.
-    const result = [];
-    let lastDist = -Infinity;
-    farFromMilestones.forEach(c => {
-      if (c.distanceM - lastDist >= AUTO_ROTATION_MIN_GAP_BETWEEN_M) {
-        result.push(c);
-        lastDist = c.distanceM;
-      }
-    });
-    return result;
+    // 100m 안에 마일스톤이 없으면, 정확히 100m 앞(또는 코스 끝) 지점.
+    const pt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, maxLookaheadDistM);
+    if (!pt) return null;
+    return { name: '@100m', distanceM: maxLookaheadDistM, lat: pt.lat, lon: pt.lon, isMilestone: false };
   }
 
   // 회전각(도, 양수=우회전/음수=좌회전)을 사람이 읽는 안내 문구로 변환.
@@ -2294,12 +2264,10 @@
   // 되돌아올 때 실제로 벌어지는 상황이다. 이때는 traveledDist 기준
   // "코스 순서상 다음"이 아니라 "코스 순서상 이전" 마일스톤이 사용자가
   // 실제로 다음에 만날 갈림길이므로, prevM/nextM을 뒤바꿔 반환한다.
-  // list 파라미터를 생략하면 currentMilestones(화면 안내용)를 쓴다.
-  // 회전 트리거(updateSegmentRotationTrigger)는 currentMilestones와
-  // currentAutoRotationPoints를 병합한 목록을 넘겨, GPX에 태깅 안 된
-  // 45도 급전환/긴 구간 중간 지점도 원점 트리거로 함께 잡히게 한다.
-  function findNextMilestone(traveledDist, isReversing, graceM, list) {
-    const source = list || currentMilestones;
+  // 항상 currentMilestones(화면 안내용)를 쓴다 — 회전 트리거는 별도
+  // 함수 findNextRotationTarget이 담당한다(2026-09-17 재설계 이후).
+  function findNextMilestone(traveledDist, isReversing, graceM) {
+    const source = currentMilestones;
     if (!source || source.length < 2) return null;
     const grace = (graceM === undefined) ? 15 : graceM;
     let prevM = source[0];
@@ -2368,44 +2336,18 @@
     return findPointAheadByDistance(points, distances, 0, targetDistM);
   }
 
-  // 🧭 구간(prevM→nextM) 진행방향 계산 — GPX 좌표만 사용, 센서 없음.
-  // "원점"의 정의: 구간 시작점(prevM)을 화면 중앙 하단에 두고, 그
-  // 지점에서 실제로 걸어야 할 방향이 화면 위(12시)를 향하도록 회전
-  // 한다 — 즉 회전 기준은 항상 prevM 딱 한 곳이고, 방향은 "prevM에서
-  // 코스를 따라 앞으로 나아가는 방향"이어야 한다.
-  //
-  // ⚠️ v87에서 한 번 nextM.outBearing(다음 갈림길에서 실제로 꺾여
-  // 나가는 방향, ±15m 로컬)으로 바꿨었는데, 이건 "nextM에서의 방향"
-  // 이지 "prevM에서 나아가는 방향"이 아니다 — 원점의 정의 자체를
-  // 깨는 실수였다(사용자 지적: "구간A 시작점에서 지도를 회전해야
-  // 구간B가 90도 오게 해야 해"). 실기기 재현: "90도 회전이 되는
-  // 경우와 안 되는 경우가 나온다"(짧은 구간에서 nextM의 국소 방향이
-  // prevM→nextM 방향과 어긋나는 경우 발생).
-  //
-  // 그 전 버전(구간 30m 미만이면 nextM에서 15m 더 앞선 지점을 봄)도
-  // 긴 구간에서는 prevM→nextM 직선만 써서 "실제는 3시인데 1시처럼
-  // 안내됨"(구간 중간에 코너가 있으면 직선 방향이 어긋남) 문제가
-  // 있었다. 두 문제를 모두 피하는 절충안: prevM을 고정 기준점으로
-  // 삼되, 목표 지점은 nextM이 아니라 "prevM에서 코스를 따라
-  // SEGMENT_HEADING_LOOKAHEAD_M(50m) 앞으로 간 지점"으로 잡는다 —
-  // nextM이 그보다 가까우면(구간이 50m보다 짧으면) nextM을 그대로
-  // 쓴다. 이러면 긴 구간에서도 "실제로 지금 발 앞의 코너"만 보고
-  // 회전하고, 짧은 구간에서는 nextM 자체를 정확히 향한다.
-  const SEGMENT_HEADING_LOOKAHEAD_M = 50;
-  function computeSegmentHeading(prevM, nextM, isReversing) {
-    if (!prevM || !nextM) return null;
-    const segLen = Math.abs(nextM.distanceM - prevM.distanceM);
-    if (segLen <= SEGMENT_HEADING_LOOKAHEAD_M) {
-      return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
-    }
-    // isReversing이면 코스 진행방향 자체가 인덱스 감소 방향이므로,
-    // prevM.distanceM에서 50m를 "빼서" 앞쪽(코스 시작 쪽) 지점을 본다.
-    const targetDistM = isReversing
-      ? prevM.distanceM - SEGMENT_HEADING_LOOKAHEAD_M
-      : prevM.distanceM + SEGMENT_HEADING_LOOKAHEAD_M;
-    const ahead = pointAtCumulativeDistance(currentPoints, cumulativeDistances, Math.max(0, targetDistM));
-    if (ahead) return calculateBearing(prevM.trailLat, prevM.trailLon, ahead.lat, ahead.lon);
-    return calculateBearing(prevM.trailLat, prevM.trailLon, nextM.trailLat, nextM.trailLon);
+  // 🧭 진행방향 계산의 단일 소스 — GPX 좌표만 사용, 센서 없음.
+  // "원점"의 정의: 내 현재 위치에서, 실제로 걸어야 할 다음 목표 지점
+  // (findNextRotationTarget이 반환)을 향한 직선 방향이 화면 위(12시)를
+  // 향하도록 회전한다. 지도 회전과 갈림길 "몇 시 방향" 안내 모두 이
+  // 함수 하나만 거치므로 서로 다른 기준점을 쓸 수 없다(2026-09-17
+  // 전면 재설계 — 이전에는 회전 기준(구간 시작점+50m)과 안내 각도
+  // 기준(갈림길 전후 15m)이 분리돼 있어 실기기에서 반복적으로
+  // 어긋났다).
+  function computeGuidanceHeading(fromLat, fromLon, targetLat, targetLon) {
+    if (fromLat === undefined || fromLon === undefined || targetLat === undefined || targetLon === undefined) return null;
+    if (fromLat === null || fromLon === null || targetLat === null || targetLon === null) return null;
+    return calculateBearing(fromLat, fromLon, targetLat, targetLon);
   }
 
   // 🧭 구간회전 모드의 지도 중심 배치 — v68에서 "화면 정중앙 = 구간
@@ -2981,12 +2923,6 @@
     };
 
     currentMilestones = buildMilestones(points, points.waypoints, cumulativeDistances);
-    // 회전 전용(화면 표시 없음) — 45도 이상 급격한 방향 전환 지점과
-    // 긴 마일스톤 구간의 중간 지점을 코스 로드 시 1회 미리 계산해둔다.
-    currentAutoRotationPoints = buildAutoRotationPoints(points, cumulativeDistances, currentMilestones);
-    // 회전 트리거(updateSegmentRotationTrigger)가 매 프레임 새로 병합하지
-    // 않도록, 마일스톤+자동 포인트를 distanceM 순으로 한 번만 합쳐둔다.
-    currentRotationTriggerPoints = currentMilestones.concat(currentAutoRotationPoints).sort((a, b) => a.distanceM - b.distanceM);
     if (currentMilestones && currentMilestones.length > 0) {
       currentMilestones.forEach(m => {
         if (!m.hideMarker) {
@@ -3361,8 +3297,8 @@
   }
 
   // 등산로 진행 및 코스 일탈/역주행 실시간 상태 안내 토스트
-  // 히스테리시스: 35m 넘으면 "이탈 상태" 진입, 25m 밑으로 돌아와야 "정상"으로 해제.
-  // 경계선(30m 부근)에서 왔다갔다 하며 토스트가 깜빡이는 것을 막는다.
+  // 히스테리시스: 20m 넘으면 "이탈 상태" 진입, 12m 밑으로 돌아와야 "정상"으로 해제.
+  // 경계선(16m 부근)에서 왔다갔다 하며 토스트가 깜빡이는 것을 막는다.
   let isOffTrailState = false;
   let offTrailStreakCount = 0; // GPS 갱신마다 1씩 증가 — 연속 3회(약 3초) 이상일 때만 경고음
   const RETURN_CONFIRM_STREAK = 3; // 복귀음도 이탈 경고음과 대칭으로, 연속 3회(약 3초) 이상 정상 상태가 유지되어야 울린다 — GPS 순간 튐으로 잠깐만 25m 밑으로 들어왔다 다시 이탈해도 오알람이 울리지 않도록 함
@@ -3375,23 +3311,30 @@
   // 참조하게 되는 문제가 있었다.
   // GPS 정확도(accuracy, 미터)가 나쁠수록 이탈 판정 임계값을 완화한다 —
   // 숲/계곡에서 accuracy가 30~40m까지 나빠지는 경우가 실제로 있는데,
-  // 고정된 35m 기준을 그대로 쓰면 GPS 오차만으로도 이탈 오판이 잦다.
-  // accuracy가 정상(15m 이하)이면 기존 기준(35m/25m) 그대로, 나쁠수록
-  // accuracy에 비례해 진입/복귀 기준을 함께 늘린다 — 상한을 둬 무한정
-  // 완화되지 않게 한다.
-  const OFFTRAIL_BASE_ENTER_M = 35;
-  const OFFTRAIL_BASE_RETURN_M = 25;
-  const OFFTRAIL_MAX_ENTER_M = 60;
-  const OFFTRAIL_MAX_RETURN_M = 45;
+  // 고정된 기준을 그대로 쓰면 GPS 오차만으로도 이탈 오판이 잦다.
+  // accuracy가 정상(15m 이하)이면 기존 기준 그대로, 나쁠수록 accuracy에
+  // 비례해 진입/복귀 기준을 함께 늘린다 — 상한을 둬 무한정 완화되지
+  // 않게 한다.
+  // ⚠️ 기준값 축소(사용자 실기기 재현: "40m는 너무 심한 것 아녀..
+  // 이탈이면 계속 측정해서 이탈 확정을 빨리 해서 알람을 최대한 빨리
+  // 알려주어야지") — 기존 35m/25m(최대 60m/45m)는 산길 폭 대비 넓어
+  // 실제로 명확히 벗어난 뒤에도 한참 지나야 경고가 떴다. 20m/12m
+  // (최대 35m/25m)로 좁혀 체감 지연을 줄인다. 연속 확인 횟수(약 3초)는
+  // 그대로 유지해 GPS 순간 튐으로 인한 오탐은 계속 방지한다.
+  const OFFTRAIL_BASE_ENTER_M = 20;
+  const OFFTRAIL_BASE_RETURN_M = 12;
+  const OFFTRAIL_MAX_ENTER_M = 35;
+  const OFFTRAIL_MAX_RETURN_M = 25;
   // 들머리 진입 전용 완화값 — GPS 이동방향이 아직 안정되지 않은 코스
   // 시작 직후(TRAILHEAD_ENTRY_DISTANCE_M 이내, 첫 원점 미확정 상태)는
   // 실제로 등산로 입구를 찾아 몇 걸음 헤매는 경우가 흔한데, 일반
-  // 이탈 기준(35m)을 그대로 적용하면 이탈 경고가 먼저 떠서 "어디로
-  // 가야 하지?"만 반복된다는 지적(개선 제안) — 들머리 근처에서는
-  // 기준을 넉넉히 잡아 이탈 경고 자체를 늦춘다.
+  // 이탈 기준을 그대로 적용하면 이탈 경고가 먼저 떠서 "어디로 가야
+  // 하지?"만 반복된다는 지적(개선 제안) — 들머리 근처에서는 기준을
+  // 넉넉히 잡아 이탈 경고 자체를 늦춘다. 이 완화값은 위 기준 축소와
+  // 별개로 그대로 유지한다(들머리 근처는 여전히 헤맬 수 있으므로).
   const TRAILHEAD_ENTRY_DISTANCE_M = 30;
-  const TRAILHEAD_ENTER_M = 80;
-  const TRAILHEAD_MAX_ENTER_M = 100;
+  const TRAILHEAD_ENTER_M = 60;
+  const TRAILHEAD_MAX_ENTER_M = 80;
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
     const acc = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy : 0;
     // accuracy가 15m를 넘는 만큼(오차분)을 그대로 임계값에 더한다.
@@ -3508,38 +3451,47 @@
     // 재현: "이동 중 드래그 시 지도가 손가락 반대/어긋난 방향으로 감").
     // 드래그 중에는 회전 판정 자체를 보류하고, 드래그가 끝나 자동 복귀
     // 유예까지 지나면(!isMapBeingDragged && !isMapDragReturnPending)
-    // 다음 픽스에서 정상적으로 재판정된다 — segKey를 갱신하지 않으므로
-    // 갈림길을 지난 사실 자체는 유실되지 않는다.
+    // 다음 픽스에서 정상적으로 재판정된다 — 목표 지점 키를 갱신하지
+    // 않으므로 갈림길을 지난 사실 자체는 유실되지 않는다.
     // 🧭 길찾기 모드 중에는 지도 회전을 전적으로 나침반/손가락 값이
     // 담당한다(closeWayfindMode에서 원래 구간회전 값으로 복원) —
     // 그 동안 구간회전이 끼어들면 나침반 회전과 충돌해 지도가 제멋대로
     // 움직이는 것처럼 보인다.
     if (isMapBeingDragged || isMapDragReturnPending || isWayfindActive) return;
+    // 🚨 경로 이탈 중에는 회전보다 복귀 방향 안내가 우선이어야 한다는
+    // 지적(사용자: "경로에서 벗어 났는데 회전보다 내가 가야할 곳을
+    // 알려주는게 낫지") — 이탈 상태에서는 회전 자체를 동결(마지막
+    // 회전값 유지)하고, updateNavigationToast의 이탈 안내 분기가
+    // 복귀 방향을 전담한다. 복귀하면 다음 픽스에서 정상 재개된다.
+    // 단, resetOriginNow()로 사용자가 명시적으로 재설정을 요청한
+    // 경우(forceOriginReset)는 이탈 중이어도 그 즉시 반영한다 —
+    // 이탈 상태에서도 "지금 이 위치를 새 기준으로 삼고 싶다"는 명시적
+    // 요청까지 막을 이유는 없다.
+    if (isOffTrailState && !forceOriginReset) return;
     updateReversingState(traveledDist);
-    // 회전 트리거는 마일스톤(화면 표시)뿐 아니라 자동 감지 지점(45도
-    // 급전환, 긴 구간 중간점 — 화면 표시 없음)도 함께 참조한다.
-    const rotResult = findNextMilestone(traveledDist, isReversingOnTrail, 0, currentRotationTriggerPoints);
-    if (!rotResult) return;
-    const rPrevM = rotResult.prevM, rNextM = rotResult.nextM;
-    const segKey = rPrevM.name + '@' + rPrevM.distanceM + '->' + rNextM.name + '@' + rNextM.distanceM + (isReversingOnTrail ? '@rev' : '');
-    if (segKey === currentRotationSegmentKey) return;
-    const isFirstRotation = currentRotationSegmentKey === null;
-    // 역방향일 때는 "지금 실제로 서 있는/지나온 기준점"이 rNextM이므로
-    // (findNextMilestone이 역방향에서 prevM/nextM을 이미 뒤바꿔 반환함)
-    // computeSegmentHeading의 첫 인자(회전 기준점) 자리에 rNextM을,
-    // 둘째 인자(코스 순서상 참조용, 구간 길이 계산에만 쓰임) 자리에
-    // rPrevM을 넣는다. isReversing 플래그로 "코스를 따라 앞으로 50m"
-    // 방향을 인덱스 증가/감소 중 어느 쪽으로 찾을지 결정한다.
-    const heading = isReversingOnTrail
-      ? computeSegmentHeading(rNextM, rPrevM, true)
-      : computeSegmentHeading(rPrevM, rNextM, false);
+    if (!lastKnownPos) return;
+
+    // 🧭 단일 진행방향 소스: 다음 회전 목표 지점(마일스톤 또는 100m
+    // 앞 지점)을 실시간으로 찾고, "내 현재 위치 → 그 목표 지점"의
+    // 직선 방향을 그대로 회전각으로 쓴다. 목표 지점 자체가 바뀔 때만
+    // (=목표를 갱신할 때만) 재회전한다.
+    const target = findNextRotationTarget(traveledDist, isReversingOnTrail);
+    if (!target) return;
+    const targetKey = target.name + '@' + target.distanceM + (isReversingOnTrail ? '@rev' : '');
+    const heading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
     if (heading === null) return;
+
+    // 목표가 아직 안 바뀌었으면(같은 마일스톤/같은 100m 구간을 향해
+    // 계속 걷는 중) 재회전하지 않는다 — 매 픽스 재계산은 하지만 CSS
+    // 회전은 목표가 실제로 바뀔 때만 스냅 전환된다.
+    if (targetKey === currentRotationSegmentKey) return;
+    const isFirstRotation = currentRotationSegmentKey === null;
     // 🧭 "원점"은 갈림길에 도착했다고 무조건 잡는 게 아니라, 실제로
     // 그 방향으로 걷기 시작했다는 확인이 되어야 잡는다 — 들머리에서
     // GPS를 막 켰을 때 아직 가만히 서 있거나 주차장 쪽으로 잠깐
     // 움직이는 등, 코스 진행방향과 무관한 상태에서 첫 원점이 미리
     // 잡혀버리는 걸 막기 위함(사용자 요청: "내가 갈 방향하고 일치되는
-    // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(갈림길 통과로 인한
+    // 순간 원점을 잡는 로직"). 이미 한 번 잡힌 뒤(목표 통과로 인한
     // 재회전)는 통과 자체가 그 방향으로 걸었다는 증거이므로 이 검사를
     // 하지 않는다 — 첫 원점에만 적용.
     if (isFirstRotation && !forceOriginReset) {
@@ -3547,11 +3499,12 @@
       const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, heading));
       if (mismatch > FIRST_ROTATION_HEADING_TOLERANCE_DEG) return; // 반대/엉뚱한 방향으로 걷는 중이면 보류
     }
-    currentRotationSegmentKey = segKey;
+    currentRotationSegmentKey = targetKey;
     applySegmentRotation(heading);
     // 코스 시작 직후 첫 회전(전 구간이 없어 "통과"라 부를 만한 이전
-    // 갈림길이 없음)에는 통과 알람을 울리지 않는다.
-    if (!isFirstRotation) playPassedMilestoneBeep();
+    // 갈림길이 없음)에는 통과 알람을 울리지 않는다. 100m 앞 지점
+    // (이름 없는 목표)으로의 전환도 실제 갈림길 통과가 아니므로 조용히.
+    if (!isFirstRotation && target.isMilestone) playPassedMilestoneBeep();
   }
 
   // 🔄 수동 "원점 다시 잡기" 버튼 — GPS가 크게 튀거나 원점이 엉뚱하게
@@ -3580,9 +3533,11 @@
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
-    // 완전히 무관하게 항상 먼저 실행한다 — 토스트가 꺼져 있거나
-    // (toast.style.display==='none') 이탈 상태로 분류돼도 원점은
-    // 계속 잡혀야 한다.
+    // 무관하게 토스트 표시 여부(toast.style.display==='none')와는
+    // 상관없이 항상 먼저 실행한다. 단 이탈 상태(isOffTrailState) 중에는
+    // updateSegmentRotationTrigger 내부에서 회전 자체를 동결한다 —
+    // 이탈 중에는 회전보다 복귀 방향 안내가 우선이어야 한다는 지적
+    // 참고(updateSegmentRotationTrigger 정의부).
     if (currentMilestones && currentMilestones.length >= 2 && nearestIdx >= 0 && cumulativeDistances) {
       updateSegmentRotationTrigger(cumulativeDistances[nearestIdx] || 0);
     }
@@ -3637,21 +3592,22 @@
       const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
       const fmtM = m => `${(m / 1000).toFixed(2)}km`;
 
-      // ⭐ 전면 재설계(2026-09-14) "미리 안내" 방식: GPX가 경로 전체를
-      // 이미 알고 있으므로, "내가 지금 어느 방향을 보고 있는가"는 전혀
-      // 필요 없다. 다음 갈림길까지 거리만 계속 계산하다가, 일정 거리
-      // 이내로 가까워지면 buildMilestones()가 코스 로드 시 미리 계산해둔
-      // turnAngle/turnLabel(좌회전/우회전/직진)을 그대로 보여준다.
-      // 정지/이동 상태, 나침반, GPS heading 전부 참조하지 않는다.
+      // ⭐ 전면 재설계(2026-09-17) "단일 진행방향 소스" 방식: turnAngle을
+      // 코스 로드 시점에 미리 계산해두던 이전 방식은 지도 회전 기준과
+      // 안내 각도 기준이 서로 다른 지점을 봐서 실기기에서 반복적으로
+      // 어긋났다(1~4·9·10번 사용자 재현 참고). 이제 "몇 시 방향"은
+      // 실시간으로, "지금 화면이 가리키는 방향(mapRotationDeg — 방금
+      // updateSegmentRotationTrigger가 nextM을 향해 맞춰놓은 값)" 대비
+      // "nextM을 지난 뒤 실제로 가야 할 다음 목표 방향"의 상대각으로
+      // 계산한다. 회전과 안내가 같은 값(mapRotationDeg)에서 파생되므로
+      // 화면과 어긋날 수가 없다.
       //
       // ↩️ 왕복/원점회귀 코스: 정상까지 갔다가 같은 길로 되돌아올 때도
       // 갈림길 안내가 나와야 한다는 요구사항 — traveledDist 증감 추이로
       // "되돌아가는 중"을 판정(updateReversingState, 위
       // updateSegmentRotationTrigger에서 이미 호출됨)하고, 역방향이면
       // findNextMilestone이 코스 순서상 이전 마일스톤을 다음 목표로
-      // 반환하도록 뒤집는다. distToNextM 계산도 방향에 맞게 뒤집어야
-      // 하고, turnAngle도 진입/이탈이 반대가 되므로 180도 반전해서
-      // 보여준다(showUpcomingTurnAlert에 반전된 값을 직접 넘긴다).
+      // 반환하도록 뒤집는다. distToNextM 계산도 방향에 맞게 뒤집는다.
       const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
       if (milestoneResult) {
         const prevM = milestoneResult.prevM;
@@ -3660,17 +3616,27 @@
           ? Math.max(0, traveledDist - nextM.distanceM)
           : Math.max(0, nextM.distanceM - traveledDist);
 
-        // 역방향으로 이 지점을 지날 때는 좌/우가 뒤바뀌므로 turnAngle을
-        // 180도 반전한 임시 마일스톤 객체를 만들어 넘긴다 — 원본
-        // nextM.turnAngle/turnLabel은 코스 로드 시 정방향 기준으로
-        // 고정 계산된 값이라 직접 건드리지 않는다.
-        const alertTarget = isReversingOnTrail
-          ? Object.assign({}, nextM, {
-              turnAngle: (nextM.turnAngle === null) ? null : shortestAngleDiff(nextM.turnAngle + 180, 0),
-              turnLabel: (nextM.turnLabel === null || nextM.turnLabel === '직진') ? nextM.turnLabel : classifyTurnAngle(shortestAngleDiff(nextM.turnAngle + 180, 0))
-            })
-          : nextM;
-        showUpcomingTurnAlert(alertTarget, distToNextM);
+        // nextM을 지난 직후(코스 진행거리 기준 살짝 더 간 지점)에서
+        // findNextRotationTarget과 완전히 같은 규칙으로 "그 다음 목표"를
+        // 찾는다 — 마일스톤이 있으면 그 지점, 없으면 100m 앞 지점.
+        // 이게 "nextM에서 실제로 꺾여 나가는 방향"이다.
+        const afterNextMDist = isReversingOnTrail
+          ? Math.max(0, nextM.distanceM - 1)
+          : nextM.distanceM + 1;
+        const afterTarget = findNextRotationTarget(afterNextMDist, isReversingOnTrail);
+        let turnAngle = null;
+        let turnLabel = null;
+        if (afterTarget) {
+          const outBearing = computeGuidanceHeading(nextM.trailLat, nextM.trailLon, afterTarget.lat, afterTarget.lon);
+          if (outBearing !== null) {
+            // "지금 화면이 가리키는 방향" = nextM을 향해 이미 맞춰진
+            // mapRotationDeg. 그 방향 대비 nextM 통과 후 방향의 상대각이
+            // 곧 화면 기준 "몇 시로 꺾어야 하는지"다.
+            turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
+            turnLabel = classifyTurnAngle(turnAngle);
+          }
+        }
+        showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
 
         toast.className = 'gps-toast';
         toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
@@ -3738,14 +3704,15 @@
     }
 
     // 좌회전/우회전 텍스트보다 몇 시 방향인지(예: "1시 방향")가 훨씬
-    // 직관적으로 보인다는 사용자 피드백 — turnAngle(미리 계산된 절대
-    // 회전각)을 시계방향 문구로 변환해 함께 보여준다.
+    // 직관적으로 보인다는 사용자 피드백 — turnAngle(호출부에서 실시간
+    // 계산한, "지금 화면이 가리키는 방향" 대비 상대 회전각)을 시계방향
+    // 문구로 변환해 함께 보여준다.
     const clockDir = angleDiffToClockDirection(nextM.turnAngle);
     const label = `${nextM.name} · ${clockDir.clock} (${Math.round(distToNextM)}m 앞)`;
-    // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 화면 회전용
-    // 각도가 아니라 turnAngle(미리 계산된 절대 회전각)을 그대로 넘긴다 —
-    // 화살표 아이콘 회전 자체가 "이 지점에서 꺾이는 방향"을 고정적으로
-    // 보여주는 용도로 바뀌었으므로 내 현재 heading과 무관하다.
+    // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
+    // 그대로 넘긴다 — 화면이 이미 nextM 방향(mapRotationDeg)으로 맞춰진
+    // 상태이므로, 이 값은 화면 기준 "몇 시로 꺾어야 하는지"와 정확히
+    // 일치한다(updateNavigationToast 호출부 주석 참고).
     showBottomDirectionArrow(nextM.turnAngle, label, false);
     lastAlertedMilestoneKey = key;
 
