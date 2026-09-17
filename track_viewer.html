@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261018_rotation_lookahead_100m_sim_500m';
+      const APP_BUILD = 'v20261018_reset_origin_full_gps_state_reset';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v103').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v104').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v103)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v104)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -711,7 +711,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=103', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=104', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3667,12 +3667,36 @@
   // 검사(FIRST_ROTATION_HEADING_TOLERANCE_DEG)를 건너뛴다 — 사용자가
   // 명시적으로 요청한 재설정이므로 이동방향이 아직 안정되지 않았어도
   // 즉시 반영하는 게 맞다.
+  //
+  // ⚠️ v104: 원래는 원점 관련 상태(currentRotationOriginDist,
+  // firstRotationLockedAt)만 리셋했는데, 사용자가 실기기에서 "GPS를
+  // 끄고 다시 켜니 들머리에서 제대로 방향을 잡았다"고 재현 — GPS
+  // 재시작(startGpsTracking)은 원점뿐 아니라 gpsFilterEngine 내부
+  // 상태(잘못 수렴된 좌표/속도/방위각 누적), gpsMovementHeading,
+  // isCurrentlyStopped, 이탈(isOffTrailState)·역주행(isReversingOnTrail)
+  // 판정까지 전부 초기화한다. 이 버튼도 "GPS를 껐다 켜는 것과 동일한
+  // 효과"를 내도록 같은 리셋을 함께 수행해, 산행 중 방향이 이상해지거나
+  // 오류가 날 때 GPS를 완전히 재시작하지 않고도 이 버튼 하나로 복구할
+  // 수 있게 한다.
   let forceOriginReset = false;
   function resetOriginNow() {
     if (!isSegmentRotationMode || !lastKnownPos) {
       showToastBadge('📍 먼저 [내 위치] 버튼으로 GPS를 켜주세요.');
       return;
     }
+    // GPS 필터/방향/이탈/역주행 상태를 GPS 재시작과 동일하게 초기화 —
+    // startGpsTracking()의 해당 초기화 블록과 의도적으로 동일하게 맞춘다.
+    gpsFilterEngine.reset();
+    gpsMovementHeading = null;
+    isCurrentlyStopped = false;
+    isOffTrailState = false;
+    offTrailStreakCount = 0;
+    returnStreakCount = 0;
+    isReversingOnTrail = false;
+    lastTraveledDistForReverse = null;
+    reverseDecreaseStreak = 0;
+    lastAlertedMilestoneKey = null;
+
     currentRotationOriginDist = null;
     firstRotationLockedAt = null;
     forceOriginReset = true;
