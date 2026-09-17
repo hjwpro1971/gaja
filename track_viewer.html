@@ -54,13 +54,13 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261018_reset_origin_full_gps_state_reset';
+      const APP_BUILD = 'v20261018_gps_longpress_debug_logging';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v104').forEach(k => caches.delete(k));
+              keys.filter(k => k !== 'gaja-trail-cache-v105').forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +595,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v104)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v105)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -711,7 +711,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=104', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=105', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1149,6 +1149,14 @@
   // 언제든 수동으로 지금까지의 로그를 저장하고 싶을 때 콘솔에서
   // window.__dumpDirectionDebugLog() 호출.
   window.__dumpDirectionDebugLog = () => directionDebugLogger.exportCSV();
+  // GPS 아이콘(🎯)을 길게 누르면(handleGpsBtnLongPress) true로 세팅되는
+  // 디버그 모드 플래그 — 일반 사용자는 절대 마주치지 않는 숨김 기능
+  // (사용자 지시: "일반 유저들은 이 기능 사용할 이유가 없어"). true인
+  // 동안은 (1) startGpsTracking()이 directionDebugLogger를 시작하고,
+  // (2) visibilitychange 핸들러가 화면이 꺼져도 GPS를 끄지 않아
+  // 백그라운드에서도 데이터 수집이 계속된다. stopGpsTracking()에서
+  // 자동으로 false로 되돌아간다.
+  let isDebugLoggingMode = false;
   // ════════════════════════════════════════════════════════════════
 
   let map = null;
@@ -3939,6 +3947,12 @@
   let wasTrackingBeforeHidden = false;
 
   document.addEventListener('visibilitychange', () => {
+    // 🐞 디버그 로깅 모드(GPS 아이콘 길게 눌러 시작) 중에는 화면이
+    // 꺼져도 GPS를 끄지 않는다 — 버그 재현 데이터를 백그라운드에서도
+    // 끊기지 않고 계속 수집해야 하기 때문이다(사용자 지시: "이 경우에는
+    // gps 가 백그라운드에서 안 꺼지고 데이타를 계속 수집할 수 있게").
+    // 일반 사용자는 이 플래그가 항상 false이므로 기존 절전 동작 그대로.
+    if (isDebugLoggingMode) return;
     if (document.visibilityState === 'hidden') {
       if (watchId !== null) {
         wasTrackingBeforeHidden = true;
@@ -4256,6 +4270,53 @@
   }
   window.toggleSimulationPause = toggleSimulationPause;
 
+  // 🐞 GPS 아이콘 길게 누르기 — 회전 검증 디버그 로깅을 시작하는 숨김
+  // 진입점(사용자 지시: "버그 잡는다고 데이터 수집하고 있는 기능을
+  // gps 아이콘 길게 클릭하면 그때 시작을 하게 해 줘... 일반 유저들은
+  // 이 기능 사용할 이유가 없어"). 짧게 누르면(클릭) 기존 toggleGPS()
+  // 그대로 동작하고, GPS_LONG_PRESS_MS 이상 누르고 있으면 그 클릭은
+  // 무시하고 대신 디버그 모드로 GPS를 (재)시작한다.
+  const GPS_LONG_PRESS_MS = 800;
+  let gpsBtnPressTimer = null;
+  let gpsBtnLongPressTriggered = false;
+
+  function handleGpsBtnPressStart() {
+    gpsBtnLongPressTriggered = false;
+    if (gpsBtnPressTimer) clearTimeout(gpsBtnPressTimer);
+    gpsBtnPressTimer = setTimeout(() => {
+      gpsBtnLongPressTriggered = true;
+      startDebugLoggingGps();
+    }, GPS_LONG_PRESS_MS);
+  }
+  function handleGpsBtnPressEnd() {
+    if (gpsBtnPressTimer) { clearTimeout(gpsBtnPressTimer); gpsBtnPressTimer = null; }
+  }
+  // 길게 누르기로 트리거된 동작 직후에 발생하는 click 이벤트(짧게 누른
+  // 것으로 오인해 toggleGPS()가 중복 실행되는 것)를 한 번만 막는다.
+  function handleGpsBtnClickCapture(e) {
+    if (gpsBtnLongPressTriggered) {
+      gpsBtnLongPressTriggered = false;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }
+
+  // GPS가 꺼져 있으면 디버그 모드로 새로 시작하고, 이미 켜져 있으면
+  // (일반 클릭으로 이미 추적 중이었던 경우) 로깅만 추가로 시작한다 —
+  // 두 경우 모두 켜진 뒤에는 isDebugLoggingMode=true라 백그라운드에서도
+  // 데이터가 끊기지 않는다.
+  function startDebugLoggingGps() {
+    if (simInterval !== null || isSimPaused) toggleSimulation();
+    isDebugLoggingMode = true;
+    if (watchId === null && !isGpsSleeping) {
+      startGpsTracking();
+    } else {
+      if (isGpsSleeping) exitGpsSleep('디버그 로깅 시작');
+      if (!directionDebugLogger.isLogging) directionDebugLogger.start();
+    }
+    showToastBadge('🐞 디버그 로깅 모드로 GPS를 시작했습니다.\n화면이 꺼져도 계속 데이터를 수집합니다.');
+  }
+
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
     if (simInterval !== null || isSimPaused) toggleSimulation(); // 시뮬레이션 중(재생/일시정지)이면 끄기
@@ -4296,6 +4357,7 @@
       directionDebugLogger.stop();
       directionDebugLogger.exportCSV();
     }
+    isDebugLoggingMode = false;
   }
 
   // handleGpsPositionUpdate(아래)와 startGpsTracking 양쪽에서 쓰는
@@ -4312,8 +4374,13 @@
       return;
     }
 
-    // [회전 검증 디버그 로그 시작]
-    directionDebugLogger.start();
+    // [회전 검증 디버그 로그 시작] — 평소엔 켜지 않는다(사용자 지시:
+    // "일반 유저들은 이 기능 사용할 이유가 없어"). GPS 아이콘을 길게
+    //눌렀을 때만(handleGpsBtnLongPress) isDebugLoggingMode가 true로
+    // 세팅된 채 이 함수가 호출되므로, 그 경우에만 로깅을 시작한다.
+    if (isDebugLoggingMode) {
+      directionDebugLogger.start();
+    }
 
     showHeadingArrow = true;
 
@@ -4770,6 +4837,20 @@
 
   window.addEventListener('DOMContentLoaded', async () => {
     initMap();
+
+    // 🐞 GPS 아이콘 길게 누르기 → 디버그 로깅 모드 진입 (handleGpsBtnPressStart
+    // 정의부 참고). capture 단계에서 click을 가로채 짧게 누른 것으로
+    // 오인한 toggleGPS() 중복 실행을 막는다.
+    const gpsBtnEl = document.getElementById('gpsBtn');
+    if (gpsBtnEl) {
+      gpsBtnEl.addEventListener('touchstart', handleGpsBtnPressStart, { passive: true });
+      gpsBtnEl.addEventListener('touchend', handleGpsBtnPressEnd);
+      gpsBtnEl.addEventListener('touchcancel', handleGpsBtnPressEnd);
+      gpsBtnEl.addEventListener('mousedown', handleGpsBtnPressStart);
+      gpsBtnEl.addEventListener('mouseup', handleGpsBtnPressEnd);
+      gpsBtnEl.addEventListener('mouseleave', handleGpsBtnPressEnd);
+      gpsBtnEl.addEventListener('click', handleGpsBtnClickCapture, true);
+    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
