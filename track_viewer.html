@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v109';
+    const CACHE_NAME = 'gaja-trail-cache-v110';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_fix_ios_vh_rotation_axis';
+      const APP_BUILD = 'v20261019_fix_reset_origin_drag_guard';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -635,7 +635,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v109)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v110)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -751,7 +751,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=109', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=110', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3120,7 +3120,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v109';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v110';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3603,7 +3603,18 @@
     // 담당한다(closeWayfindMode에서 원래 구간회전 값으로 복원) —
     // 그 동안 구간회전이 끼어들면 나침반 회전과 충돌해 지도가 제멋대로
     // 움직이는 것처럼 보인다.
-    if (isMapBeingDragged || isMapDragReturnPending || isWayfindActive) return;
+    // ⚠️ forceOriginReset(resetOriginNow() 명시적 클릭)은 드래그 유예
+    // 가드를 우회한다 — 이 가드가 없으면 "지도를 손가락으로 둘러보고
+    // 놓은 직후(자동 복귀 유예 7초 이내)"에 원점 버튼을 눌러도 조용히
+    // 아무 일도 안 일어났다(사용자 재현: "원점 다시 잡는 메뉴... 클릭
+    // 하면 현재 위치에서 지도를 90도 돌려야 하는데... 눈에는 안
+    // 되고있는것 같아" — 실제로는 지도가 잘못된 방향으로 남아있는
+    // 상황에서 버튼을 눌렀는데 반응이 없었음). 길찾기 모드는 그동안
+    // 나침반/손가락이 회전을 전담하는 완전히 다른 구조이므로 이
+    // 예외에서 제외한다(길찾기 중에는 원점 버튼 자체를 쓸 상황이
+    // 아니다).
+    if ((isMapBeingDragged || isMapDragReturnPending) && !forceOriginReset) return;
+    if (isWayfindActive) return;
     // 🚨 경로 이탈 중에는 회전보다 복귀 방향 안내가 우선이어야 한다는
     // 지적(사용자: "경로에서 벗어 났는데 회전보다 내가 가야할 곳을
     // 알려주는게 낫지") — 이탈 상태에서는 회전 자체를 동결(마지막
