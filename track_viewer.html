@@ -52,15 +52,31 @@
       } catch(e) {}
     })();
 
+    // ⚠️ 이 캐시 이름은 sw.js의 CACHE_NAME과 반드시 동일해야 한다 —
+    // autoSaveOfflineMap()/cleanupEvictedCourseTiles()(메인 스크립트,
+    // 아래쪽)가 오프라인 지도 타일을 저장할 때도 이 이름을 그대로
+    // 재사용한다(window.__GAJA_CACHE_NAME으로 노출). 예전엔 그 두
+    // 함수가 'gaja-trail-cache-v5'를 별도로 하드코딩하고 있었는데,
+    // sw.js가 새 버전(v6, v7, ... v106)으로 배포될 때마다 activate
+    // 이벤트가 "CACHE_NAME과 다른 모든 캐시=구버전"으로 간주해 그
+    // 'gaja-trail-cache-v5'를 자동 삭제해버렸다 — 사용자가 "오프라인
+    // 저장 완료"를 본 뒤에도 다음 배포 한 번이면 저장된 타일이 통째로
+    // 사라지는 근본 원인이었다(사용자 재현: "홈 화면에 바로 가기
+    // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
+    // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
+    // 항상 같은 이름을 쓴다.
+    const CACHE_NAME = 'gaja-trail-cache-v107';
+    window.__GAJA_CACHE_NAME = CACHE_NAME;
+
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261018_ios_sim_audio_unlock_fix';
+      const APP_BUILD = 'v20261019_fix_tile_cache_name_mismatch';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
           if ('caches' in window) {
             caches.keys().then(keys => {
-              keys.filter(k => k !== 'gaja-trail-cache-v106').forEach(k => caches.delete(k));
+              keys.filter(k => k !== CACHE_NAME).forEach(k => caches.delete(k));
             });
           }
           if (!sessionStorage.getItem('gajago_reloaded_flag')) {
@@ -595,7 +611,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v106)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v107)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -711,7 +727,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=106', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=107', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3060,6 +3076,12 @@
   // localStorage 조회 1번으로 끝내고, 온전히 끝난 코스는 네트워크를
   // 아예 건드리지 않는다.
   const TILES_SAVED_KEY = 'gajago_tiles_saved_v1';
+  // window.__GAJA_CACHE_NAME은 head의 인라인 스크립트(파일 최상단)가
+  // 파싱 시점에 이미 세팅해두므로 이 시점엔 항상 존재해야 하지만,
+  // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
+  // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
+  // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v107';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3085,10 +3107,11 @@
 
   // 저장된 코스 목록(saved_hiking_routes_v1, 최대 MAX_SAVED_ROUTES개)에서
   // 밀려나 더 이상 존재하지 않는 코스의 오프라인 지도 타일을 Cache Storage에서
-  // 지운다. 타일 캐시(gaja-trail-cache-v5)에는 자동 삭제가 없어서, 여러
-  // 산을 다니며 코스를 계속 열어보면 오래된 코스의 타일이 스마트폰
-  // 저장공간에 무한정 쌓이는 문제가 있었다 — 코스 목록에서 밀려나는
-  // 시점(=더 이상 이 앱에서 접근할 방법이 없어지는 시점)에 맞춰 정리한다.
+  // 지운다. 타일 캐시(window.__GAJA_CACHE_NAME, sw.js의 CACHE_NAME과 동일)에는
+  // 자동 삭제가 없어서, 여러 산을 다니며 코스를 계속 열어보면 오래된
+  // 코스의 타일이 스마트폰 저장공간에 무한정 쌓이는 문제가 있었다 —
+  // 코스 목록에서 밀려나는 시점(=더 이상 이 앱에서 접근할 방법이 없어지는
+  // 시점)에 맞춰 정리한다.
   async function cleanupEvictedCourseTiles() {
     if (!('caches' in window)) return;
 
@@ -3108,7 +3131,7 @@
     if (evictedKeys.length === 0) return;
 
     try {
-      const cache = await caches.open('gaja-trail-cache-v5');
+      const cache = await caches.open(TILE_CACHE_NAME);
       for (const key of evictedKeys) {
         const entry = tileStatusMap[key];
         const urls = (entry && entry.tileUrls) || [];
@@ -3196,7 +3219,7 @@
     const total = tileUrls.length;
 
     try {
-      const cache = await caches.open('gaja-trail-cache-v5');
+      const cache = await caches.open(TILE_CACHE_NAME);
       await cache.addAll(['./track_viewer.html', './leaflet.js', './leaflet.css']).catch(() => {});
 
       let completed = 0;
