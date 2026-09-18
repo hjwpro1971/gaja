@@ -10,8 +10,20 @@
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
   <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
   <meta name="theme-color" content="#2e7d32">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- ⚠️ apple-mobile-web-app-capable을 의도적으로 넣지 않는다 — 이 태그가
+       있으면 iOS가 "홈 화면에 추가"한 아이콘을 standalone(주소창 없는
+       독립 앱)으로 연다. iOS의 standalone 세션은 일반 Safari 탭과 같은
+       origin이어도 localStorage를 별도 저장소로 취급하는 경우가 실제로
+       있어(iOS 버전에 따른 알려진 동작), 사파리에서 저장해둔 "저장된
+       코스 목록"이 홈 화면 바로가기에서는 안 보이는 문제가 있었다
+       (사용자 재현: "사파리는 되는데 홈화면에 만든 바로가기가 안 돼...
+       저장된 지도 리스트가 안 나온다" → "크롬으로 열면 보이고 인앱
+       [standalone]으로 열면 안 보여" → 사용자 지시: "인앱으로 안
+       열리게 하면 돼"). 이 태그를 빼면 홈 화면 아이콘도 항상 일반
+       Safari 탭(주소창 있는 상태)으로 열려, 사파리 탭에서 저장한
+       localStorage를 그대로 공유한다. manifest.json의 display:
+       "browser"도 원래부터 이 방향과 일치했다(standalone/fullscreen이
+       아님). -->
   <meta name="apple-mobile-web-app-title" id="appleAppTitle" content="아토-가자go">
   <title>아토-가자go</title>
   <script>
@@ -65,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v107';
+    const CACHE_NAME = 'gaja-trail-cache-v108';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_fix_tile_cache_name_mismatch';
+      const APP_BUILD = 'v20261019_disable_ios_standalone_mode';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -611,7 +623,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v107)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v108)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -727,7 +739,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=107', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=108', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3081,7 +3093,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v107';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v108';
 
   function getTileSaveStatus(courseKey) {
     try {
