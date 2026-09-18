@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v108';
+    const CACHE_NAME = 'gaja-trail-cache-v109';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_disable_ios_standalone_mode';
+      const APP_BUILD = 'v20261019_fix_ios_vh_rotation_axis';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -167,8 +167,20 @@
        하단쪽에 위치하게 되어, 오프셋 계산(panBy 등) 없이도 내 위치가
        항상 화면 하단부에 나타나고 그 위로 넓게 앞길이 보인다. */
     #map.heading-up {
-      width: 120vh !important;
-      height: 120vh !important;
+      /* ⚠️ 120vh 대신 calc(120 * var(--real-vh, 1vh))를 쓴다 — iOS
+         Safari는 주소창/하단 도구모음이 화면 일부를 차지하는데, CSS의
+         vh 단위가 그 도구모음까지 포함한 전체 뷰포트 높이로 계산되는
+         경우가 많아 120vh로 만든 정사각형이 실제 화면보다 크게 그려져,
+         회전축(내 위치)이 맞춰지는 지점(top:70%)이 실제로 보이는
+         화면에서는 기기·상황마다 다르게 보였다(사용자 재현: "아이폰에서
+         내 위치가 한 가운데야. 30프로 지점으로 하기로 했는데"). --real-vh
+         는 JS가 window.innerHeight(실제 눈에 보이는 뷰포트, 도구모음
+         제외)를 측정해 매 리사이즈마다 갱신하는 CSS 변수(아래
+         updateRealVhUnit() 정의부 참고) — 이 값을 쓰면 iOS/안드로이드
+         모두 실제 화면 크기 기준으로 동일하게 동작한다. 아직 JS가
+         실행되기 전(변수 미정의) 순간을 위해 1vh를 fallback으로 둔다. */
+      width: calc(120 * var(--real-vh, 1vh)) !important;
+      height: calc(120 * var(--real-vh, 1vh)) !important;
       top: 70% !important;
       left: 50% !important;
       transform: translate(-50%, -50%) rotate(0deg);
@@ -623,7 +635,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v108)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v109)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -739,7 +751,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=108', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=109', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1569,6 +1581,21 @@
   // 보장하고, 버전이 바뀌어 지도가 깨지는 게 확인되면 이 값만 수동으로
   // 갱신한다.
   const naverTileVersion = '1788514292';
+
+  // 🧭 iOS Safari의 vh 단위 오차 보정 — #map.heading-up의 CSS 정의부
+  // 주석 참고. window.innerHeight는 실제로 눈에 보이는 뷰포트 높이
+  // (iOS 주소창/도구모음이 접혔다 펴졌다 하는 만큼 매번 달라질 수
+  // 있음)를 반환하므로, 이 값을 100으로 나눈 "실제 1vh"를 CSS 변수로
+  // 갱신해둔다. resize/orientationchange마다 다시 계산해, 주소창이
+  // 접히거나 펴져도 회전축(내 위치) 위치가 항상 화면 실측 기준
+  // 30%(top:70%) 지점에 오도록 유지한다.
+  function updateRealVhUnit() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--real-vh', `${vh}px`);
+  }
+  updateRealVhUnit();
+  window.addEventListener('resize', updateRealVhUnit);
+  window.addEventListener('orientationchange', updateRealVhUnit);
 
   // 2. 지도 초기화
   function initMap() {
@@ -3093,7 +3120,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v108';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v109';
 
   function getTileSaveStatus(courseKey) {
     try {
