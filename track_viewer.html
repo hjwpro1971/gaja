@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260919_fix_turn_label_redundant_direction';
+      const APP_BUILD = 'v20260919_remove_dead_code';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -224,12 +224,6 @@
       .title-box { padding: 10px 8px; gap: 4px; }
       .title-box h1 { min-width: 0; }
     }
-    .btn-file-open {
-      background: #2e7d32; color: #ffffff; font-size: 12px; font-weight: 700;
-      padding: 6px 12px; border-radius: 10px; cursor: pointer; border: none;
-      white-space: nowrap; box-shadow: 0 2px 6px rgba(46,125,50,0.3);
-    }
-
     /* 우측 플로팅 버튼 컬럼 */
     .fab-col {
       /* top을 75px -> 128px로 내려, 상단 갈림길 안내 토스트(.gps-toast,
@@ -489,11 +483,6 @@
     .modal-box .icon { font-size: 44px; margin-bottom: 8px; }
     .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
     .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
-    .btn-select-main {
-      width: 100%; padding: 15px; font-size: 16px; font-weight: 800; color: #ffffff;
-      background: #2e7d32; border: none; border-radius: 12px; cursor: pointer;
-      box-shadow: 0 4px 12px rgba(46,125,50,0.3);
-    }
 
     /* 🧭 길찾기 모드 — 지도를 가리지 않는 오버레이 방식. 지도(빨간
        경로선 포함)는 그대로 보이는 상태에서, 화면 중앙에 반투명
@@ -1224,18 +1213,6 @@
   let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태
   let guideLine = null; // 등산로 연결 점선 가이드
 
-  function getKoreanDirection(deg) {
-    const dirs = ['북(N)', '북동(NE)', '동(E)', '남동(SE)', '남(S)', '남서(SW)', '서(W)', '북서(NW)'];
-    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
-    return dirs[idx];
-  }
-
-  function getKoreanDirectionShort(deg) {
-    const dirs = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
-    const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
-    return dirs[idx];
-  }
-
   function calculateBearing(lat1, lon1, lat2, lon2) {
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
@@ -1257,7 +1234,6 @@
   let isProgrammaticZoomInProgress = false;
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
-  let lastGpsMoveTime = 0;
 
   // 🧭 구간(갈림길↔갈림길) heading-up 지도 회전 — track_viewer.html과
   // 달리 이 실험판(track_viewer2.html)만의 기능. isHeadingUp(GPS 켜짐
@@ -1522,9 +1498,8 @@
     }, durationMs || 3200);
   }
 
-  // 나침반/자이로 센서를 더 이상 쓰지 않으므로 initCompass/stopCompass는
-  // no-op으로 남겨둔다 — 호출부를 일일이 지우는 대신 안전하게 유지.
-  function initCompass() {}
+  // 나침반/자이로 센서를 더 이상 쓰지 않으므로 stopCompass는 no-op으로
+  // 남겨둔다 — 호출부(GPS 정지 시점들)를 일일이 지우는 대신 안전하게 유지.
   function stopCompass() {}
 
   // 🧭 하단 대형 방향 화살표(내비게이션 스타일) — 다음 갈림길이
@@ -4150,7 +4125,7 @@
         gpsFilterEngine.reset();
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
-        startGpsTracking(); // GPS 재시작 — 내부에서 initCompass, wakeLock 등도 함께 재요청됨
+        startGpsTracking(); // GPS 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
       }
     }
   });
@@ -4705,7 +4680,6 @@
         // 미리 계산된 회전각)는 updateNavigationToast가 전담한다.
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
-          lastGpsMoveTime = Date.now();
           // 내 위치 마커(userGpsMarker)는 Leaflet 마커라 #map의 자식
           // 레이어 안에 있다 — 구간 heading-up이 켜져 #map이
           // rotate(-mapRotationDeg)만큼 이미 돌아가 있으면, 화살표도
