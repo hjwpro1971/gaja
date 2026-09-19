@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v110';
+    const CACHE_NAME = 'gaja-trail-cache-v111';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_fix_reset_origin_drag_guard';
+      const APP_BUILD = 'v20261019_offtrail_message_action_verb';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -635,7 +635,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v110)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v111)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -751,7 +751,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=110', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=111', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2551,14 +2551,19 @@
     return { clock: '12시 방향', arrow: '⬆️' };
   }
 
-  // 방위각 차이를 "오른쪽/왼쪽" 쉬운 말로 변환 — 이탈 시 복귀 방향 안내용
+  // 방위각 차이를 "오른쪽/왼쪽" 쉬운 말로 변환 — 이탈 시 복귀 방향 안내용.
+  // ⚠️ "왼쪽으로 많이"처럼 방향·정도만 말하고 동사(행동)가 빠지면
+  // 사용자가 "그래서 뭘 어쩌라는 거지?"로 받아들인다(사용자 재현:
+  // "19m 벗어났다. 왼쪽으로 많이.. ?? 이게 무슨 말이지.. 어찌라고?").
+  // 항상 "~쪽으로 [돌아서/방향을 트세요]"처럼 완결된 지시문으로
+  // 끝내야 한다.
   function angleDiffToPlainKorean(angleDiff) {
     const abs = Math.abs(angleDiff);
     const side = angleDiff >= 0 ? '오른쪽' : '왼쪽';
     if (abs <= 15) return '그대로 직진하세요';
-    if (abs <= 45) return `${side}으로 조금`;
-    if (abs <= 100) return `${side}으로`;
-    return `${side}으로 많이`;
+    if (abs <= 45) return `${side}으로 조금 방향을 트세요`;
+    if (abs <= 100) return `${side}으로 방향을 트세요`;
+    return `${side}으로 크게 돌아서 경로를 찾으세요`;
   }
 
   // ===================================================================
@@ -3120,7 +3125,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v110';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v111';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3864,7 +3869,7 @@
       const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
       toast.className = 'gps-toast warning';
       let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
-      toast.innerText = `🚨 [이탈] ${distStr} 벗어났어요 ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
+      toast.innerText = `🚨 [이탈] 경로에서 ${distStr} 벗어났어요. ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
       // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
       // 유지될 때만 실제 경고음을 울린다.
