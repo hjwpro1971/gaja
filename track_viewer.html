@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v115';
+    const CACHE_NAME = 'gaja-trail-cache-v116';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_fix_duplicate_gps_start_android';
+      const APP_BUILD = 'v20260919_fix_turn_label_redundant_direction';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -648,7 +648,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v115)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v116)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -3180,7 +3180,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v115';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v116';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4074,7 +4074,12 @@
     // 계산한, "지금 화면이 가리키는 방향" 대비 상대 회전각)을 시계방향
     // 문구로 변환해 함께 보여준다.
     const clockDir = angleDiffToClockDirection(nextM.turnAngle);
-    const label = `${nextM.name} · ${clockDir.clock} (${Math.round(distToNextM)}m 앞)`;
+    // "9시 방향 (좌회전)"처럼 clockDir.clock에 괄호로 붙은 회전 설명은
+    // "9시방향으로"라는 조사 자체가 이미 회전 의미를 담고 있어 중복
+    // 지시로 들린다는 사용자 피드백(2026-09-19) — 괄호 부분은 버리고
+    // "OO에서 X시방향으로(NNm앞)" 형식으로만 표기한다.
+    const clockOnly = clockDir.clock.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, '');
+    const label = `${nextM.name}에서 ${clockOnly}으로(${Math.round(distToNextM)}m앞)`;
     // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
     // 그대로 넘긴다 — 화면이 이미 nextM 방향(mapRotationDeg)으로 맞춰진
     // 상태이므로, 이 값은 화면 기준 "몇 시로 꺾어야 하는지"와 정확히
