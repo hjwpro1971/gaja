@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v114';
+    const CACHE_NAME = 'gaja-trail-cache-v115';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_auto_restore_last_opened_course';
+      const APP_BUILD = 'v20261019_fix_duplicate_gps_start_android';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -648,7 +648,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v114)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v115)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -764,7 +764,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=114', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=115', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3180,7 +3180,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v114';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v115';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5136,6 +5136,13 @@
         const badge = document.getElementById('gpxLoadingBadge');
         if (badge) badge.remove();
       }
+      // ⚠️ 여기서 GPS를 다시 켜려 하지 않는다 — drawRoute()가 코스를
+      // 그릴 때 이미 "watchId===null이면 startGpsTracking()"으로 GPS를
+      // 자동 시작한다(3172행 부근, "opt-in을 뒤집었다" 주석 참고).
+      // 한때 이 자리에 loadGpsWasOnState() 체크로 GPS를 한 번 더 켜는
+      // 코드가 있었는데, drawRoute의 자동시작과 중복되어
+      // watchPosition이 두 번 걸리는 버그였다(실측: watchId가 1이 아닌
+      // 2로 나옴) — 제거함.
     } else if (!hadGpxUrl) {
       showSavedRouteList();
     }
