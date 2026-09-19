@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v111';
+    const CACHE_NAME = 'gaja-trail-cache-v112';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_offtrail_message_action_verb';
+      const APP_BUILD = 'v20261019_nav_toast_distance_split_lines';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -635,7 +635,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v111)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v112)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -751,7 +751,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=111', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=112', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3125,7 +3125,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v111';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v112';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3886,6 +3886,12 @@
       const remainingDist = Math.max(0, totalDist - traveledDist);
       const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
       const fmtM = m => `${(m / 1000).toFixed(2)}km`;
+      // ⭐ "전체 Nkm" 한 줄에 남은 거리와 전체 거리가 같이 뭉쳐 있어
+      // 지금까지 실제로 얼마나 걸었는지 가늠하기 어렵다는 지적(사용자
+      // 요청: "(전체1.46km중 1.0km이동)"으로 구분해서 보여달라) —
+      // "전체 X중 Y 이동"처럼 전체 거리 대비 이동거리를 별도로 표시한다.
+      const totalDistStr = `${(totalDist / 1000).toFixed(2)}km`;
+      const traveledDistStr = `${(traveledDist / 1000).toFixed(2)}km`;
 
       // ⭐ 전면 재설계(2026-09-17 v94, 2026-09-17 v95) "단일 진행방향
       // 소스 + 도착 시점 회전" 방식: turnAngle을 코스 로드 시점에 미리
@@ -3937,7 +3943,14 @@
         showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
 
         toast.className = 'gps-toast';
-        toast.innerText = `🧭 ${prevM.name} → ${nextM.name} · ${fmtM(distToNextM)} 남음 (전체 ${remainingStr})`;
+        // .gps-toast는 white-space:normal이라 innerText의 \n이 줄바꿈으로
+        // 렌더링되지 않는다 — 이 메시지만 <br>로 줄을 나눠야 하므로
+        // innerHTML을 쓴다. prevM/nextM.name은 GPX 웨이포인트 이름(외부
+        // 파일에서 올 수 있음)이라 다른 innerHTML 사용부(저장된 코스
+        // 목록의 safeName)와 동일하게 '<'를 이스케이프해 HTML 인젝션을
+        // 막는다.
+        const escName = s => String(s || '').replace(/</g, '&lt;');
+        toast.innerHTML = `🧭 ${escName(prevM.name)} → ${escName(nextM.name)} · ${fmtM(distToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
 
         // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
         // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
