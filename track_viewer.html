@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v113';
+    const CACHE_NAME = 'gaja-trail-cache-v114';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261019_bottom_arrow_label_font_size';
+      const APP_BUILD = 'v20261019_auto_restore_last_opened_course';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -648,7 +648,7 @@
 <div class="top-header" id="topHeader">
   <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
     <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
-    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v113)" style="flex-shrink: 0;">
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v114)" style="flex-shrink: 0;">
       📲<span class="btn-text"> 바로가기</span>
     </button>
     <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
@@ -764,7 +764,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=113', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=114', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2964,6 +2964,44 @@
     } catch(e) { return []; }
   }
 
+  // 🔁 "마지막으로 연 코스"를 별도로 기억해둔다 — 홈 화면 아이콘이
+  // 자동으로 그 코스를 이어서 열게 하기 위해서다.
+  //
+  // ⚠️ 이유(사용자 재현): "바로가기 아이콘을 클릭해서 산행맵을 보다가
+  // 잠시 다른 것[다른 앱으로 전환]. 또는 핸드폰 꺼진 후 다시 켜서
+  // 바로가기 아이콘을 클릭하면 산행맵이 처음부터 다시 시작해... 산행지
+  // 선택부터 해야하는게 문제야... 홈화면에 있는 아이콘을 클릭하더라도
+  // GPS 계산하고 다시 내 위치를 잡아야지 왜 산행지 선택부터 나오냐고."
+  //
+  // 원인: iOS의 "홈 화면에 추가"는 manifest.json의 start_url을 쓰지
+  // 않고, 사용자가 "추가"를 누른 그 순간의 실제 URL을 그대로 고정해
+  // 기억한다(Android Chrome과 다른 동작). 사용자가 코스 선택 화면
+  // (쿼리 없는 URL)에서 "홈 화면에 추가"를 눌렀다면, 그 아이콘은
+  // 영원히 그 쿼리 없는 URL로 열려 매번 "산행지 선택" 화면부터
+  // 시작됐다 — GPS 자체는 화면이 다시 보일 때(visibilitychange) 정상
+  // 재계산되지만(이건 의도대로 동작), 애초에 "어떤 코스를 보고
+  // 있었는지" 자체가 유실되는 게 진짜 문제였다.
+  //
+  // 해결: 코스를 열 때마다(drawRoute -> 이 함수 호출 지점) 그 코스의
+  // 이름/원본 URL을 localStorage에 별도로 기록해두고, 페이지가 쿼리
+  // 파라미터 없이 열렸을 때(DOMContentLoaded의 hadGpxUrl===false 분기)
+  // 이 기록을 읽어 자동으로 그 코스를 이어서 연다 — 홈 화면 아이콘이
+  // 어떤 URL을 가리키든 상관없이 항상 "마지막으로 보던 코스"로
+  // 복원된다(다른 일반 앱들이 상태를 이어가는 것과 동일한 체감).
+  const LAST_OPENED_COURSE_KEY = 'gajago_last_opened_course_v1';
+  function saveLastOpenedCourse(courseName, sourceUrl) {
+    if (!sourceUrl) return; // 원본 URL이 없는 코스(파일 직접 업로드 등)는 재접속 시 다시 열 방법이 없으므로 기록하지 않는다
+    try {
+      localStorage.setItem(LAST_OPENED_COURSE_KEY, JSON.stringify({ name: courseName, sourceUrl }));
+    } catch(e) {}
+  }
+  function loadLastOpenedCourse() {
+    try {
+      const raw = localStorage.getItem(LAST_OPENED_COURSE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+
   function saveRouteToStorage(courseName, sourceUrl, points) {
     try {
       const newRoute = {
@@ -3086,6 +3124,10 @@
     // 로컬 저장소에 코스 좌표 영구 보관 (산속에서 재접속 시 0.01초 만에 즉시 복원,
     // 여러 코스를 동시에 보관해 오프라인 상태에서도 목록에서 골라볼 수 있다)
     saveRouteToStorage(courseName, sourceUrl, points);
+    // 홈 화면 아이콘이 쿼리 없는 URL로 열려도 이 코스를 이어서 열 수
+    // 있도록 "마지막으로 연 코스"도 별도로 기록(saveLastOpenedCourse
+    // 정의부 주석 참고).
+    saveLastOpenedCourse(courseName, sourceUrl);
 
     document.getElementById('emptyModal').style.display = 'none';
 
@@ -3138,7 +3180,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v113';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v114';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5015,6 +5057,19 @@
     let gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
     let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
+
+    // 🔁 URL에 코스 쿼리가 없으면(=홈 화면 아이콘이 쿼리 없는 URL로
+    // 고정되어 있는 경우 등) "마지막으로 연 코스"를 자동으로 이어서
+    // 연다 — saveLastOpenedCourse 정의부 주석 참고. 이 값으로 gpxUrl을
+    // 채워두면 바로 아래 "if (gpxUrl) { ... }" 정상 로드 경로가 그대로
+    // 재사용된다(별도 분기를 새로 만들지 않음).
+    if (!hadGpxUrl) {
+      const lastCourse = loadLastOpenedCourse();
+      if (lastCourse && lastCourse.sourceUrl) {
+        gpxUrl = lastCourse.sourceUrl;
+        decodedCourseName = lastCourse.name || '';
+      }
+    }
 
     if (!decodedCourseName && gpxUrl) {
       const m = decodeURIComponent(gpxUrl).match(/([^\/\?#&=:"']+\.gpx)/i);
