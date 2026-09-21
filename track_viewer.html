@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v135';
+    const CACHE_NAME = 'gaja-trail-cache-v136';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_lowpower_poll_error_fix';
+      const APP_BUILD = 'v20260921_delete_route_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=135', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=136', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3309,7 +3309,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v135';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v136';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3582,6 +3582,19 @@
       // 삭제 직후에는 캐시가 고아로 남았다. 방금 routes에서 이미 제거했으니
       // 여기서 호출하면 이 코스도 즉시 evictedKeys로 잡혀 함께 정리된다.
       cleanupEvictedCourseTiles().catch(() => {});
+      // 🧹 "마지막으로 연 코스"(LAST_OPENED_COURSE_KEY)는 저장 목록과
+      // 완전히 별도의 키라 위 splice로는 안 지워진다 — 사용자 신고:
+      // "저장된 등산로 코스 제거 했는데 다시 실행하면 그 지운 코스가
+      // 그대로 나옴". 홈 화면 아이콘(쿼리 없는 URL)으로 열면
+      // DOMContentLoaded가 이 키를 읽어 자동으로 코스를 이어서 여는데,
+      // 방금 지운 코스가 마지막으로 열었던 코스와 같다면 이 기록도
+      // 함께 지워야 다음 실행 때 빈 화면(코스 선택 대기)으로 시작한다.
+      if (target && target.sourceUrl) {
+        const lastCourse = loadLastOpenedCourse();
+        if (lastCourse && lastCourse.sourceUrl === target.sourceUrl) {
+          try { localStorage.removeItem(LAST_OPENED_COURSE_KEY); } catch(e) {}
+        }
+      }
     }
   }
   window.deleteSavedRouteByIndex = deleteSavedRouteByIndex;
