@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v130';
+    const CACHE_NAME = 'gaja-trail-cache-v131';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_debug_beep_test_TEMP';
+      const APP_BUILD = 'v20260921_audio_fix_confirmed';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=130', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=131', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3278,7 +3278,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v130';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v131';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4342,16 +4342,6 @@
         if (lowPowerModeEnabled) {
           wasPollingBeforeHidden = true;
           startLowPowerPolling(); // 내부에서 watchId clearWatch까지 처리
-          // 🧪 임시 디버그(2026-09-21) — 화면이 꺼진 동안 실제로 소리가
-          // 나는지 GPX 코스/지명 없이도 확인하기 위해, 화면을 끄면 10초
-          // 후 강제로 테스트 비프음 1회를 재생한다. 검증 끝나면 이 블록
-          // 전체를 지울 것.
-          setTimeout(() => {
-            if (isLowPowerPolling) {
-              console.log('🧪 화면 꺼짐 10초 경과 — 테스트 비프음 재생 시도');
-              playTurnAlertBeep();
-            }
-          }, 10000);
         } else {
           wasPollingBeforeHidden = false;
           navigator.geolocation.clearWatch(watchId);
