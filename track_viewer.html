@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v136';
+    const CACHE_NAME = 'gaja-trail-cache-v137';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_delete_route_fix';
+      const APP_BUILD = 'v20260921_tts_bg_attempt';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=136', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=137', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1436,16 +1436,22 @@
   // 엔진으로 오프라인에서도 동작한다. 비프음과 달리 "무엇을 어떻게
   // 해야 하는지"까지 말로 전달할 수 있어, 화면을 보지 않고 걷는 중에도
   // 이탈 방향이나 갈림길 회전 방향을 바로 알 수 있게 한다.
-  // 화면이 꺼진 저전력 모드에서는 대부분의 브라우저/WebView가 음성
-  // 합성 자체를 일시정지시키므로(비프음과 달리 TTS는 이 제약이 훨씬
-  // 강함), 화면이 켜져 있을 때만 말하고 꺼진 동안은 비프음+진동에만
-  // 의존한다 — speak() 호출 전에 visibilityState를 확인한다.
+  // ⚠️ 예전엔 화면이 꺼지면(visibilityState !== 'visible') 아예 speak()를
+  // 시도조차 하지 않았다 — "대부분의 브라우저/WebView가 화면 꺼짐 중
+  // 음성 합성을 일시정지시킨다"는 일반론에 따른 선제 차단이었는데,
+  // 실기기(APK)에서는 비프음이 화면 꺼짐 중에도 정상 재생되는 것과
+  // 달리 음성만 전혀 안 들린다는 사용자 재현으로 이 가정이 이 앱의
+  // 실제 환경과 안 맞는다는 게 확인됐다(사용자 지시: "화면 꺼버리면
+  // 바로 목소리가 안 나와" — 이건 이 체크 때문에 시도조차 안 한
+  // 것이었음). 이제 화면 꺼짐과 무관하게 항상 speak()를 시도한다 —
+  // 실제로 브라우저가 막으면(정책상 무음 처리 등) 아래 try/catch가
+  // 조용히 실패하고 비프음+진동은 이미 별도 경로로 보장되므로 위험은
+  // 없다.
   let ttsEnabled = true;
   let lastTtsUtterance = '';
   let lastTtsTime = 0;
   function speakGuidance(text) {
     if (!ttsEnabled || !('speechSynthesis' in window)) return;
-    if (document.visibilityState !== 'visible') return;
     // 같은 문장이 짧은 간격(2초) 안에 중복 호출되는 것만 걸러낸다 —
     // GPS 픽스마다 재계산되는 거리/각도값이 문장에 섞여 있어 완전
     // 동일 문장이 반복 호출될 일은 드물지만, 혹시 모를 연속 호출로
@@ -3309,7 +3315,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v136';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v137';
 
   function getTileSaveStatus(courseKey) {
     try {
