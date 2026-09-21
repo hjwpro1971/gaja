@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v122';
+    const CACHE_NAME = 'gaja-trail-cache-v123';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_origin_lock_fix';
+      const APP_BUILD = 'v20260921_reverse_segment_penalty';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -805,7 +805,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=122', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=123', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2046,37 +2046,58 @@
   // 실제로 걷는 방향은 항상 하나뿐이다 — GPX 상에 막다른 길을 왕복하는
   // 구간이 있어 "가는 길"과 "오는 길" 좌표가 거의 겹치더라도, 사용자
   // 입장에서는 둘 중 하나로 애매할 이유가 없다. 그런데 순수 최단거리
-  // 비교(또는 거리에 작은 방향 페널티만 더하는 방식)는 GPS 오차 1~2m
-  // 차이로도 반대편 세그먼트를 골라버릴 수 있었다 — "순방향으로 잘
-  // 걷고 있는데 역방향으로 오판"되는 근본 원인이었다.
-  // 그래서 페널티가 아니라 하드 필터로 바꾼다: 최근 실제 이동방향과
-  // REVERSE_SEGMENT_EXCLUDE_DEG(90도) 이상 어긋나는 세그먼트는 거리와
-  // 무관하게 아예 후보에서 제외하고, 남은(진행방향과 맞는) 세그먼트들
-  // 중에서만 최단거리로 고른다. 진행방향 정보가 아직 없으면(GPS 막
-  // 켠 시점 등) 필터 없이 순수 거리로 폴백한다.
+  // 비교만으로는 GPS 오차 1~2m 차이로도 반대편 세그먼트를 골라버릴 수
+  // 있었다 — "순방향으로 잘 걷고 있는데 역방향으로 오판"되는 근본
+  // 원인이었다.
+  //
+  // ⚠️ 하드 필터(완전 제외)였던 이전 버전은 "가는 길/오는 길이 별도
+  // 좌표열로 겹쳐 있는 왕복 코스"만 전제하고 있었는데, 편도(단일) 트랙
+  // 하나를 실제로 왕복해서 걷는 코스에서는 정반대 결과를 냈다 —
+  // 사용자가 되돌아서 역방향으로 걷는 순간, 진행방향이 트랙 원래 방향과
+  // 180도 가까워지면서 필터가 "지금 내가 서 있는 바로 그 트랙 세그먼트"
+  // 자체를 제외해버려, 엉뚱하게 먼 지점(다른 지명 근처 등)이 최근접점
+  // 으로 잡혔다(사용자 재현: "경로상에 있는데 이탈이라고 한다 — 역방향
+  // 인데 인식을 못 한다"). 제외 자체가 없으면 이탈/역방향 판정의 재료인
+  // nearestIdx/traveledDist가 틀어지고, 그 결과 이탈 오판이 역방향 감지
+  // 로직(updateSegmentRotationTrigger 안에서만 호출되는 updateReversingState)
+  // 까지 막아버리는 연쇄였다.
+  //
+  // 완전 제외 대신 "페널티"로 완화한다: 방향이 REVERSE_SEGMENT_EXCLUDE_DEG
+  // (90도) 이상 어긋나는 세그먼트는 실제 거리에 REVERSE_SEGMENT_PENALTY_M
+  // 만큼 가산해 비교한다. 진짜 왕복 겹침 구간(가는 길/오는 길이 물리적
+  // 으로 거의 같은 자리)에서는 방향 맞는 세그먼트가 여전히 우선되고
+  // (거리 차가 페널티보다 작으므로), 편도 트랙 역방향처럼 "가장 가까운
+  // 게 사실 방향만 반대인 바로 그 트랙"인 경우에도 페널티를 더해도
+  // 다른 먼 세그먼트보다는 가까우므로 정상적으로 선택된다.
   const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
+  const REVERSE_SEGMENT_PENALTY_M = 30;
 
   // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
   function findNearestInRange(lat, lon, points, startIdx, endIdx) {
-    let minDist = Infinity;
+    let minScore = Infinity; // 방향 페널티가 포함된 "선택용" 점수
+    let nearestActualDist = Infinity; // 페널티 없는 실제 거리(이탈 판정 등에 쓸 값)
     let nearestPoint = points[startIdx] || points[0];
     let nearestIdx = startIdx;
 
-    // 1차: 진행방향과 심하게 어긋나는(REVERSE_SEGMENT_EXCLUDE_DEG 이상)
-    // 세그먼트를 제외한 상태로 최단거리를 찾는다.
+    // 진행방향과 REVERSE_SEGMENT_EXCLUDE_DEG(90도) 이상 어긋나는 세그먼트는
+    // 완전히 제외하지 않고 점수에 페널티만 더한다 — 편도 트랙을 역방향
+    // 으로 걸을 때도 "지금 서 있는 바로 그 트랙"이 여전히 선택될 수
+    // 있게 하기 위함(REVERSE_SEGMENT_EXCLUDE_DEG 정의부 주석 참고).
     for (let i = startIdx; i < endIdx; i++) {
       const a = points[i];
       const b = points[i + 1];
 
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      let score = d;
       if (latestMovementBearingForTrailMatch !== null) {
         const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
         const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
-        if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) continue; // 반대 방향 세그먼트는 후보에서 제외
+        if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
       }
 
-      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
-      if (d < minDist) {
-        minDist = d;
+      if (score < minScore) {
+        minScore = score;
+        nearestActualDist = d;
         nearestIdx = i;
         const dA = haversineMeters(lat, lon, a.lat, a.lon);
         const dB = haversineMeters(lat, lon, b.lat, b.lon);
@@ -2084,25 +2105,7 @@
       }
     }
 
-    // 2차 폴백: 진행방향과 맞는 세그먼트가 범위 안에 하나도 없으면(예:
-    // 방향 전환 직후라 아직 반대편에 있음) 필터 없이 순수 거리로 재탐색 —
-    // "후보가 아예 없어서 위치를 못 찾는" 상황을 막는다.
-    if (minDist === Infinity) {
-      for (let i = startIdx; i < endIdx; i++) {
-        const a = points[i];
-        const b = points[i + 1];
-        const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
-        if (d < minDist) {
-          minDist = d;
-          nearestIdx = i;
-          const dA = haversineMeters(lat, lon, a.lat, a.lon);
-          const dB = haversineMeters(lat, lon, b.lat, b.lon);
-          nearestPoint = dA <= dB ? a : b;
-        }
-      }
-    }
-
-    return { distance: minDist, point: nearestPoint, index: nearestIdx };
+    return { distance: nearestActualDist, point: nearestPoint, index: nearestIdx };
   }
 
   // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
@@ -3333,7 +3336,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v122';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v123';
 
   function getTileSaveStatus(courseKey) {
     try {
