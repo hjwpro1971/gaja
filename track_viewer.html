@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v120';
+    const CACHE_NAME = 'gaja-trail-cache-v121';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_remember_last_zoom';
+      const APP_BUILD = 'v20260921_low_power_persist';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -805,7 +805,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=120', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=121', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3264,8 +3264,19 @@
     // 매번 GPS 버튼을 눌러야 시작되던 이전 방식 대신, 산에서 지도만 켜면
     // 곧바로 방향 안내가 되도록 opt-out 대신 opt-in을 뒤집었다. 이미 GPS가
     // 켜져 있으면(코스를 다시 불러온 경우 등) 중복 시작하지 않는다.
-    if (watchId === null) {
-      startGpsTracking();
+    //
+    // 🔔 마지막에 저전력 알림 모드를 켠 채로 앱을 종료했다면, 재진입
+    // 시에도 일반 GPS가 아니라 저전력 모드로 바로 시작한다 — "🔔 모드는
+    // 무조건 1순위"(사용자 지시). localStorage 플래그는
+    // startLowPowerPolling/stopLowPowerPolling이 관리한다.
+    if (watchId === null && !isLowPowerMode) {
+      let wantsLowPower = false;
+      try { wantsLowPower = localStorage.getItem('gajago_low_power_mode') === '1'; } catch(e) {}
+      if (wantsLowPower) {
+        toggleLowPowerMode();
+      } else {
+        startGpsTracking();
+      }
     }
   }
 
@@ -3303,7 +3314,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v120';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v121';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4855,6 +4866,12 @@
 
   function startLowPowerPolling() {
     isLowPowerMode = true;
+    // 📌 이 모드가 "마지막으로 쓴 모드"임을 기록한다 — 앱을 껐다가
+    // 홈 화면 아이콘으로 재진입해도(2026-09-21, 사용자 신고: "🔔 모드가
+    // 일순위인데 홈 화면 아이콘 클릭하면 GPS 일반 모드로 잡히고 🔔가
+    // 꺼진다") drawRoute()의 GPS 자동 시작 지점에서 이 값을 확인해
+    // 저전력 모드로 바로 재시작한다.
+    try { localStorage.setItem('gajago_low_power_mode', '1'); } catch(e) {}
     // 일반 watchPosition은 저전력 모드와 동시에 켜둘 필요가 없다 —
     // GPS 칩을 계속 붙잡고 있으면 폴링으로 전환하는 의미가 없어진다.
     if (watchId !== null) {
@@ -4869,6 +4886,7 @@
 
   function stopLowPowerPolling() {
     isLowPowerMode = false;
+    try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
     if (lowPowerPollTimerId) { clearInterval(lowPowerPollTimerId); lowPowerPollTimerId = null; }
   }
 
