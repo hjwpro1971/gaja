@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v134';
+    const CACHE_NAME = 'gaja-trail-cache-v135';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_origin_simplify';
+      const APP_BUILD = 'v20260921_lowpower_poll_error_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=134', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=135', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3309,7 +3309,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v134';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v135';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4894,9 +4894,25 @@
     if (!isLowPowerPolling) return;
     navigator.geolocation.getCurrentPosition(
       handleGpsPositionUpdate,
-      handleGpsError,
+      handleLowPowerPollError,
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
+  }
+
+  // 저전력 폴링(5초 간격 단발 getCurrentPosition) 전용 에러 핸들러 —
+  // 사용자 재현: "gps 수신 실패라는 메세지가 안 나오다가 나와"(화면
+  // 껐다 켤 때, 저전력 모드). 원래 일반 GPS용 handleGpsError는 "연속
+  // 추적(watchPosition)이 완전히 끊겼다"는 심각한 에러로 취급해
+  // watchId를 지우고 wakeLock까지 해제하는데, pollOnceForLowPower는
+  // 애초에 매번 새로 getCurrentPosition을 단발 호출하는 구조라
+  // watchId 자체가 없다 — 신호가 약한 구간(실내 진입 직전, 나무 밀집)
+  // 에서 한 번 타임아웃난 것뿐인데도 "GPS 수신 실패" 경고가 뜨고
+  // isLowPowerPolling은 안 꺼지니 5초 뒤 다시 폴링해 조용해지는,
+  // 정상 동작인데 사용자에게는 원인불명 경고로만 보이는 결함이었다.
+  // 저전력 중 일시적 실패는 그냥 이번 픽스만 건너뛰고 다음 5초
+  // 폴링에 맡긴다 — 화면/GPS 상태를 아무것도 건드리지 않는다.
+  function handleLowPowerPollError() {
+    console.warn('⚠️ 저전력 폴링 중 GPS 픽스 실패(다음 폴링에서 재시도)');
   }
 
   function updateLowPowerBtnUI() {
