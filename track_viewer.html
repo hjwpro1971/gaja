@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v119';
+    const CACHE_NAME = 'gaja-trail-cache-v120';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_sim_decel_tuning';
+      const APP_BUILD = 'v20260921_remember_last_zoom';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -805,7 +805,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=119', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=120', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1421,7 +1421,7 @@
       firstRotationLockedAt = null;
       if (mapEl) mapEl.classList.add('heading-up');
       {
-        const z = Math.max(map.getZoom(), 16);
+        const z = getPreferredGpsZoom();
         applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: false });
       }
       // heading-up 클래스가 #map의 width/height를 100% -> 120vh로 급격히
@@ -1644,6 +1644,22 @@
   window.addEventListener('resize', updateRealVhUnit);
   window.addEventListener('orientationchange', updateRealVhUnit);
 
+  // 📌 GPS를 새로 켜서 내 위치로 확대할 때 쓸 줌 레벨을 결정한다.
+  // localStorage에 저장된 "마지막으로 사용자가 직접 맞춘 줌"이 있으면
+  // 그 값을 쓰고, 없으면(최초 설치 등) 기존 최소값 16을 그대로 쓴다.
+  // 저장값이 현재 줌보다 작아도 무시하지 않고 그대로 존중한다 —
+  // "직전 배율 그대로"가 요구사항이지 "더 확대"가 목적이 아니다.
+  function getPreferredGpsZoom() {
+    try {
+      const saved = localStorage.getItem('gajago_last_zoom');
+      if (saved !== null) {
+        const z = parseFloat(saved);
+        if (!isNaN(z)) return z;
+      }
+    } catch(e) {}
+    return Math.max(map.getZoom(), 16);
+  }
+
   // 2. 지도 초기화
   function initMap() {
     map = L.map('map', {
@@ -1703,6 +1719,14 @@
     });
     map.on('zoomend', () => {
       if (isProgrammaticZoomInProgress) return;
+      // 📌 사용자가 직접(손가락/버튼으로) 바꾼 줌 레벨만 저장한다 —
+      // fitRoute() 같은 프로그램에 의한 자동 축소는 isProgrammaticZoomInProgress
+      // 가드로 이미 위에서 걸러진다. 다음에 코스를 다시 열 때
+      // (홈 화면 아이콘 재진입 등) 이 값을 복원해, 매번 전체 경로가
+      // 보이는 축소된 배율로 시작하는 대신 마지막에 보던 확대 수준을
+      // 그대로 이어간다(2026-09-21, 사용자 신고: "원점 잡는데 전체
+      // 경로를 보여주고 있어. 직전에 사용한 배율 그대로 보여줘야 하는데").
+      try { localStorage.setItem('gajago_last_zoom', String(map.getZoom())); } catch(e) {}
       isMapBeingDragged = false;
       isMapDragReturnPending = true;
       if (dragReturnTimer) clearTimeout(dragReturnTimer);
@@ -3279,7 +3303,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v119';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v120';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5056,7 +5080,7 @@
           });
           userGpsMarker = L.marker([lat, lon], { icon: gpsIcon, zIndexOffset: 1000 }).addTo(map);
           {
-            const z = Math.max(map.getZoom(), 16);
+            const z = getPreferredGpsZoom();
             applyMapViewWithOffset(lat, lon, z, { animate: true });
           }
           // 내 위치를 켜는 순간부터 GPS 켜짐 모드(자동 센터링)와 방향 화살표를 함께 시작한다.
@@ -5070,7 +5094,7 @@
         } else {
           userGpsMarker.setLatLng([lat, lon]);
           if (isFirstFix) {
-            const z = Math.max(map.getZoom(), 16);
+            const z = getPreferredGpsZoom();
             applyMapViewWithOffset(lat, lon, z, { animate: true });
           } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
             // 구간회전 모드에서는 지도 중심이 항상 현재 구간 시작점에
