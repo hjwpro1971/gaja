@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v133';
+    const CACHE_NAME = 'gaja-trail-cache-v134';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_tts_sim_fix';
+      const APP_BUILD = 'v20260921_origin_simplify';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=133', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=134', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1338,7 +1338,6 @@
       // 모두 켜지도록 완전히 연동한다.
       isSegmentRotationMode = true;
       currentRotationOriginDist = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
-      firstRotationLockedAt = null;
       if (mapEl) mapEl.classList.add('heading-up');
       {
         const z = getPreferredGpsZoom();
@@ -1354,7 +1353,6 @@
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationOriginDist = null;
-      firstRotationLockedAt = null;
       mapRotationDeg = 0;
       appliedMapRotationDeg = 0;
       updateRouteBadgeRotation();
@@ -3311,7 +3309,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v133';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v134';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3763,26 +3761,12 @@
   // (사용자 재현: "들머리 들어갈때 원점이 잘 안 잡혀"). 이탈 여부와
   // 무관하게 traveledDist만 있으면 항상 이 함수를 호출해, "정방향(또는
   // 역방향)이 확정된 구간"이 바뀔 때마다 즉시 원점을 잡는다.
-  // 들머리 등 "첫 원점"을 잡을 때, 실제 GPS 이동방향이 그 구간의 GPX
-  // 방향과 이만큼 이내로 맞아야 회전을 건다. 너무 좁으면(예: 15도)
-  // GPS 오차로 영영 안 맞을 수 있고, 너무 넓으면(예: 150도) 걸러내는
-  // 의미가 없어 90도(수직/반대 방향까지만 차단)로 잡았다.
-  const FIRST_ROTATION_HEADING_TOLERANCE_DEG = 90;
   // 목표 지점에 "도착/통과했다"고 판정할 여유 거리 — GPS 오차를 감안해
   // 정확히 0m가 아니라 이 거리 이내로 들어오면 도착으로 본다(사용자
   // 지시: "GPS 오차률이 있다고 하니 최소한 갈림길 지나서 회전"). 너무
   // 넓으면 실제로 갈림길에 닿기 한참 전에 회전해버려 "미리 회전"
   // 문제가 재발하므로 좁게 잡는다.
   const ROTATION_ARRIVAL_GRACE_M = 12;
-  // 들머리 첫 원점 즉시고정 반경 — 이 거리(m) 이내에서는 실제 GPS
-  // 이동방향을 기다리지 않고 GPX 코스 방향으로 즉시 원점을 고정한다
-  // (사용자 지시: "GPS 첫 Fix -> 90도 고정 -> 들머리 30m 이내에서는
-  // 유지 -> 순방향 확인되면 즉시 해제 -> 30m 벗어나도 확인 안 되면
-  // 강제 종료"). firstRotationLockedAt은 이 잠금이 시작된 traveledDist
-  // (null이면 잠금 없음/이미 해제됨) — updateSegmentRotationTrigger
-  // 정의부에서 사용.
-  const TRAILHEAD_ORIGIN_RADIUS_M = 30;
-  let firstRotationLockedAt = null;
 
   // ════════════════════════════════════════════════════════════════
   // 🧭🧭🧭 이 앱 전체의 핵심 설계 원리(사용자 설명, 매우 중요 — 반드시
@@ -3803,18 +3787,18 @@
   // 이유다.
   //
   // 단, 이 전제는 "화면이 가리키는 방향(원점) = 실제로 가야 할 방향"
-  // 일 때만 성립한다. 실제 이동방향이 원점 기준으로 90도 이상
-  // 벌어지면(FIRST_ROTATION_HEADING_TOLERANCE_DEG=90도가 바로 이
-  // 한계선이다) "경로가 내 앞에 있다"는 전제 자체가 깨지고, 사용자는
-  // 다시 헷갈리기 시작한다. 그래서 이 세션 내내(v87~v110) 원점을
-  // 정확하게 잡고, 필요할 때 확실하게 재조정할 수 있게 만드는 데
-  // 집중했다 — 들머리 즉시고정(TRAILHEAD_ORIGIN_RADIUS_M), 목표 도착
-  // 판정(ROTATION_ARRIVAL_GRACE_M), 수동 재설정(resetOriginNow, 드래그
-  // 유예 가드까지 우회하도록 수정됨), 회전 목표 탐색 거리(100m/500m)
-  // 등 이 파일의 회전 관련 코드는 전부 "원점의 정확성"이라는 이
-  // 원리 하나를 지키기 위한 장치들이다. 새 기능을 추가하거나 리팩터링
-  // 할 때, 이 원리(경로가 항상 화면 정면에 오게 한다)를 깨뜨리지
-  // 않는지 항상 먼저 확인할 것.
+  // 일 때만 성립한다. 원점은 "내 위치 좌표 → 다음에 가야 할 좌표"
+  // 두 점만으로 계산하는 순수 기하학 값이라, 내가 실제로 어느 방향을
+  // 보고 서 있는지(GPS 실측 이동방향, 역방향, 갈림길 개수)와 무관하게
+  // 항상 유일하게 정해진다 — 그래서 GPS 실측 이동방향과 비교해
+  // "순방향인지" 재검증하던 예전 로직(2026-09-21 제거)은 이 원리와
+  // 애초에 모순이었다(updateSegmentRotationTrigger 정의부 참고).
+  // 정확성을 지키는 나머지 장치는 목표 도착 판정(ROTATION_ARRIVAL_GRACE_M),
+  // 수동 재설정(resetOriginNow, 드래그 유예 가드까지 우회하도록 수정됨),
+  // 회전 목표 탐색 거리(100m/500m)다 — 이 파일의 회전 관련 코드는 전부
+  // "원점의 정확성"이라는 이 원리 하나를 지키기 위한 장치들이다. 새
+  // 기능을 추가하거나 리팩터링할 때, 이 원리(경로가 항상 화면 정면에
+  // 오게 한다)를 깨뜨리지 않는지 항상 먼저 확인할 것.
   // ════════════════════════════════════════════════════════════════
   function updateSegmentRotationTrigger(traveledDist) {
     if (!isSegmentRotationMode) return;
@@ -3879,16 +3863,6 @@
     // 참고.
     const rotationLookaheadM = isSimulationMode ? SIM_ROTATION_TARGET_LOOKAHEAD_M : undefined;
 
-    // 🧭 들머리 첫 잠금(firstRotationLockedAt)은 "첫 원점이 아직 없는
-    // 상태"에서만 순방향 확인/30m 초과 판정을 거친다. 첫 원점이 이미
-    // 확정된 뒤(!isFirstRotation)에는 그 판정 블록에 다시 도달하지
-    // 않으므로, 잠금이 남아있다면 여기서 정리한다 — 실제 회전 동작에는
-    // 영향 없지만(firstRotationLockedAt은 !isFirstRotation 경로에서
-    // 쓰이지 않음) 상태를 깔끔하게 유지한다.
-    if (!isFirstRotation && firstRotationLockedAt !== null) {
-      firstRotationLockedAt = null;
-    }
-
     if (!isFirstRotation) {
       // 🧭 이미 원점이 있으면: 현재 기준점에서 찾은 목표에 실제로
       // 도착/통과했는지 확인한다. 아직 도착 전이면(접근 중) 아무것도
@@ -3947,67 +3921,29 @@
       return;
     }
 
-    // 🧭 첫 원점(들머리) — 단순화된 설계(사용자 지시):
-    // "GPS 첫 Fix → 90도 즉시 고정 → 들머리 30m 이내에서는 유지 →
-    // 그 전에 순방향(실제 이동방향과 일치)이 확인되면 즉시 그 방향으로
-    // 갱신 → 30m를 벗어나도 확인이 안 되면 그 시점 GPX 코스 방향으로
-    // 강제 확정." 이전 버전(v97)은 "GPS 이동방향이 아직 없으면 들머리
-    // 반경 안에서만 즉시 확정하고 반경 밖에서는 계속 보류"하는 조건부
-    // 방식이었는데, 실제로는 반경 밖에서 gpsMovementHeading이 계속
-    // null인 채로 남는 경우(예: 시뮬레이션 첫 프레임처럼 이동방향
-    // 계산이 아예 다른 경로를 타는 경우) 여전히 영영 보류되는 사각
-    // 지대가 있었다. 이제 "첫 원점은 항상 즉시 GPX 코스 방향으로
-    // 확정"으로 단순화하고, 그 뒤 30m 이내에서 실제 이동방향이 확인
-    // 되면 그 방향으로 갱신(사실상 목표 도착 전이므로 즉시 재확정),
-    // 30m를 넘어도 확인이 안 되면 그대로(이미 확정된 코스 방향) 둔다
-    // — "강제 종료"는 곧 더 이상 아무 특별 처리 없이 일반 원점처럼
-    // 취급된다는 뜻이다(currentRotationOriginDist가 이미 세팅되어
-    // 있으므로 다음부터는 !isFirstRotation 경로로 자연히 넘어간다).
+    // 🧭 첫 원점(들머리) — 대원칙(2026-09-21 재확정, 사용자 지시):
+    // "내 위치 좌표 → 다음에 있어야 할 위치 좌표, 이 둘로 90도 만들면
+    // 끝. 역방향, 갈림길 몇 개든 상관없다." 이 계산은 내가 실제로 어느
+    // 방향을 보고 서 있는지와 무관하게 항상 유일한 정답이 나온다 —
+    // GPS 실측 이동방향(gpsMovementHeading)과 비교해 "순방향인지"를
+    // 재검증하던 이전 로직(30m 반경, 90도 허용오차, firstRotationLockedAt
+    // 잠금)은 나침반/자이로 없이 좌표 계산만으로 방향을 정한다는 이
+    // 앱의 근본 설계(파일 상단 "이 함수 주변을 수정할 것" 원리 주석
+    // 참고)와 애초에 모순됐다 — GPS 이동방향은 부정확하고 흔들리는
+    // 값인데, 정확한 좌표 계산 결과를 그 부정확한 값으로 재검증하다가
+    // 불일치(90도 초과) 시 "그냥 방치"해버려 화면이 실제와 어긋난
+    // 채로 굳어지는 게 사용자가 재현한 "회전은 되는데 방향이 틀림"
+    // 버그의 원인이었다. 이제 GPS 첫 Fix에서 좌표 계산 결과로 즉시
+    // 확정하고 끝 — 재검증 없이, 다음 목표에 도착할 때만(!isFirstRotation
+    // 경로) 다시 계산한다.
     const target = findNextRotationTarget(traveledDist, isReversingOnTrail, rotationLookaheadM);
     if (!target) return;
     const courseHeading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
     if (courseHeading === null) return;
 
-    if (forceOriginReset) {
-      currentRotationOriginDist = traveledDist;
-      applySegmentRotation(courseHeading);
-      return;
-    }
-
-    if (currentRotationOriginDist === null && firstRotationLockedAt === null) {
-      // GPS 첫 Fix(이 함수가 처음 원점을 확정 안 한 채로 호출되는
-      // 시점) — 실제 이동방향을 기다리지 않고 즉시 GPX 코스 방향으로
-      // 고정한다. firstRotationLockedAt에 잠금 시작 거리를 기록해
-      // 아래 30m 판정의 기준으로 삼는다.
-      firstRotationLockedAt = traveledDist;
-      currentRotationOriginDist = traveledDist;
-      applySegmentRotation(courseHeading);
-      return;
-    }
-
-    // 이미 첫 잠금이 걸린 상태(firstRotationLockedAt !== null) —
-    // 들머리 30m 반경 이내인 동안, 실제 GPS 이동방향이 코스 방향과
-    // 일치하는 것으로 확인되면 그 즉시 그 방향으로 갱신(=순방향 진입
-    // 확정)한다. 30m를 벗어났는데도 아직 확인이 안 됐으면 더 이상
-    // 이 특수 판정을 반복하지 않고 조용히 잠금을 해제한다 — 이후
-    // 프레임부터는 !isFirstRotation 경로(목표 도착 시에만 재회전)를
-    // 그대로 따른다.
-    const withinTrailheadRadius = (traveledDist - firstRotationLockedAt) < TRAILHEAD_ORIGIN_RADIUS_M;
-    if (withinTrailheadRadius && !isCurrentlyStopped && gpsMovementHeading !== null) {
-      const mismatch = Math.abs(shortestAngleDiff(gpsMovementHeading, courseHeading));
-      if (mismatch <= FIRST_ROTATION_HEADING_TOLERANCE_DEG) {
-        // 순방향 확인 — 즉시 갱신하고 잠금 해제.
-        firstRotationLockedAt = null;
-        currentRotationOriginDist = traveledDist;
-        applySegmentRotation(courseHeading);
-      }
-      return;
-    }
-    if (!withinTrailheadRadius) {
-      // 30m를 벗어나도 순방향 확인이 안 됨 — 강제로 잠금 해제(이미
-      // 확정돼 있는 코스 방향 그대로 유지, 추가 조치 없음).
-      firstRotationLockedAt = null;
-    }
+    currentRotationOriginDist = traveledDist;
+    applySegmentRotation(courseHeading);
+    return;
   }
 
   // 🔄 수동 "원점 다시 잡기" 버튼 — GPS가 크게 튀거나 원점이 엉뚱하게
@@ -4050,7 +3986,6 @@
     remainingBeepThresholds = null;
 
     currentRotationOriginDist = null;
-    firstRotationLockedAt = null;
     forceOriginReset = true;
     const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
     const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
@@ -4438,7 +4373,6 @@
         mapRotationDeg = 0;
         appliedMapRotationDeg = 0;
         currentRotationOriginDist = null;
-        firstRotationLockedAt = null;
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
 
@@ -4616,7 +4550,6 @@
       isSegmentRotationMode = false;
       isSimulationMode = false;
       currentRotationOriginDist = null;
-      firstRotationLockedAt = null;
       mapRotationDeg = 0;
       appliedMapRotationDeg = 0;
       updateRouteBadgeRotation();
@@ -4666,7 +4599,6 @@
       isSegmentRotationMode = true;
       isSimulationMode = true;
       currentRotationOriginDist = null;
-      firstRotationLockedAt = null;
       if (mapEl) mapEl.classList.add('heading-up');
     }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
@@ -5017,7 +4949,6 @@
     // 여기서 미리 세팅해두면 첫 픽스부터 곧바로 동작한다.
     isSegmentRotationMode = true;
     currentRotationOriginDist = null;
-    firstRotationLockedAt = null;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
