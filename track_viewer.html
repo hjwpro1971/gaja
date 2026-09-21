@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v132';
+    const CACHE_NAME = 'gaja-trail-cache-v133';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_tts_guidance';
+      const APP_BUILD = 'v20260921_tts_sim_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=132', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=133', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3311,7 +3311,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v132';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v133';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4342,7 +4342,15 @@
   // 단계를 알린다"는 사용자 기대와 맞다 — distToNextM은 48.3처럼 임계값
   // 근처의 애매한 실측값이라 그대로 읽으면 "48미터 앞"처럼 어색하다.
   // clockOnly가 null이면(회전각 계산 실패) 방향 없이 지명과 거리만 말한다.
+  //
+  // ⚠️ 시뮬레이션 중에는 50/30/10m 3번 다 말하지 않고 50m 1번만 말한다
+  // (2026-09-21, 사용자 신고: "비프음만 나와.. 이동속도가 빠르지 소리가
+  // 못 마춰" — 시뮬레이션은 감속해도 프레임 간격이 250ms~1.5초인데 TTS
+  // 문장 재생엔 1~2초가 걸려, 30m/10m 임계값이 이전 발화가 끝나기도
+  // 전에 밀려 들어와 speechSynthesis.cancel()에 계속 잘려나갔다. 실제
+  // 산행(GPS)은 실제 이동 속도라 이 문제가 없으므로 그대로 3단계 유지).
   function speakTurnApproach(nextM, threshold, clockOnly) {
+    if (isSimulationMode && threshold !== 50) return;
     const text = clockOnly
       ? `${threshold}미터 앞 ${clockOnly}`
       : `${nextM.name} ${threshold}미터 앞`;
