@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v126';
+    const CACHE_NAME = 'gaja-trail-cache-v127';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_milestone_never_silent';
+      const APP_BUILD = 'v20260921_low_power_visibility_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=126', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=127', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3247,7 +3247,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v126';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v127';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4295,19 +4295,45 @@
   // 있는데 옛 위치·방향값이 남아있으면 복귀 시 급격한 격차를 좁히려
   // 하면서 지도·나침반·화살표가 한꺼번에 튀는 원인이 되기 때문이다.
   let wasTrackingBeforeHidden = false;
+  // 🔔 화면이 꺼지기(hidden) 직전에 저전력 모드였는지를 별도로 기억해둔다.
+  // stopLowPowerPolling()은 localStorage의 'gajago_low_power_mode' 플래그를
+  // 함께 지우는데(사용자가 명시적으로 🔔를 껐을 때 다음 재진입에 일반
+  // 모드로 시작하기 위함), 화면이 잠깐 꺼졌다 켜지는 것은 "저전력 모드를
+  // 끈 것"이 아니라 "일시 정지"이므로 그 플래그가 지워지면 안 된다 —
+  // 지워지면 visible 시점에 "원래 저전력 모드였는지"를 더 이상 알 수
+  // 없어져 항상 일반 모드로 복귀해버린다(2026-09-21, 사용자 신고: "🔔
+  // on 되고 화면 꺼짐. 다시 화면 켜지면 gps 찾고 있거나..."). 이 플래그로
+  // localStorage와 무관하게 직접 기억한다.
+  let wasLowPowerBeforeHidden = false;
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      if (watchId !== null) {
+      // 🔔 저전력 모드 중에는 watchId가 항상 null이라(폴링 방식) 아래
+      // watchId 기준 조건에 안 걸려, 화면이 꺼져도 setInterval 타이머가
+      // 전혀 정리되지 않았다. 백그라운드에서는 setInterval 자체가
+      // 브라우저에 의해 느려지거나 멈출 수 있는데, 이 상태에서 화면이
+      // 다시 켜져도 wasTrackingBeforeHidden이 한 번도 true가 된 적이
+      // 없어 아래 visible 분기의 재시작 로직도 실행되지 않아 반쯤 죽은
+      // 타이머가 그대로 남았다. isLowPowerMode도 함께 확인해 저전력
+      // 폴링도 동일하게 정지시킨다 — 단 localStorage 플래그는 지우지
+      // 않도록 stopLowPowerPolling() 대신 타이머만 직접 멈춘다.
+      if (watchId !== null || isLowPowerMode) {
         wasTrackingBeforeHidden = true;
-        navigator.geolocation.clearWatch(watchId);
+        wasLowPowerBeforeHidden = isLowPowerMode;
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
         watchId = null;
+        if (isLowPowerMode) {
+          isLowPowerMode = false;
+          if (lowPowerPollTimerId) { clearInterval(lowPowerPollTimerId); lowPowerPollTimerId = null; }
+        }
         releaseWakeLock();
         stopCompass();
       }
     } else if (document.visibilityState === 'visible') {
       if (wasTrackingBeforeHidden) {
+        const shouldResumeLowPower = wasLowPowerBeforeHidden;
         wasTrackingBeforeHidden = false;
+        wasLowPowerBeforeHidden = false;
         gpsFilterEngine.reset();
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
@@ -4327,7 +4353,15 @@
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
 
-        startGpsTracking(); // GPS 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
+        // 🔔 백그라운드로 가기 전이 저전력 모드였다면 그대로 저전력
+        // 모드로 재개한다 — 일반 GPS로 재시작한 뒤 다시 5초 폴링으로
+        // 전환하는 게 아니라, toggleLowPowerMode가 이미 이 전체 흐름
+        // (startGpsTracking 포함)을 처리하므로 그대로 위임한다.
+        if (shouldResumeLowPower) {
+          toggleLowPowerMode();
+        } else {
+          startGpsTracking(); // GPS 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
+        }
       }
     }
   });
