@@ -49,6 +49,30 @@
   .poi-del-btn { transition: transform 0.1s ease; }
   .poi-del-btn:hover { background: #b91c1c !important; transform: scale(1.18); }
   .capturing .poi-del-btn, .capturing .poi-edit-btn { display: none !important; }
+
+  /* 📂 보관된 코스(GitHub tracks/) 가져오기 모달 */
+  .track-picker-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 3000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .track-picker-modal {
+    background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 440px;
+    max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .track-picker-modal h2 { font-size: 16px; margin-bottom: 12px; }
+  .track-picker-modal input[type="text"] {
+    width: 100%; padding: 9px 10px; border: 1.5px solid #cbd5e0; border-radius: 8px; font-size: 13.5px; margin-bottom: 10px;
+  }
+  .track-picker-list { overflow-y: auto; flex: 1; border-top: 1px solid #e2e8f0; }
+  .track-picker-item {
+    padding: 10px 4px; border-bottom: 1px solid #edf2f7; cursor: pointer; font-size: 13.5px; color: #2d3748;
+  }
+  .track-picker-item:hover { background: #f7fafc; }
+  .track-picker-empty { color: #94a3b8; font-size: 12.5px; text-align: center; padding: 20px 0; }
+  .track-picker-close {
+    margin-top: 12px; align-self: flex-end; font-size: 12.5px; font-weight: 700;
+    background: transparent; border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+  }
 </style>
   <script src="korea_pois.js"></script>
   <script src="my_custom_pois.js"></script>
@@ -65,6 +89,7 @@
       <legend>GPX 파일</legend>
       <label for="gpxFile">GPX 파일 선택</label>
       <input type="file" id="gpxFile" accept=".gpx">
+      <button class="btn" id="btn-open-track-picker" type="button" style="width:100%; margin-top:8px;">📂 보관된 코스에서 가져오기</button>
       <div class="warn-box" id="gpx-warn-box"></div>
       <div class="stat-grid" id="stat-grid" style="display:none;">
         <div class="stat-box"><span class="stat-label">트랙 포인트</span><span class="stat-value" id="stat-points"></span></div>
@@ -74,6 +99,7 @@
         <div class="stat-box"><span class="stat-label">소요시간</span><span class="stat-value" id="stat-duration"></span></div>
         <div class="stat-box" style="grid-column: span 2;"><span class="stat-label">산행날짜</span><span class="stat-value" id="stat-date"></span></div>
       </div>
+      <button class="btn" id="btn-clear-gpx" type="button" disabled style="width:100%; margin-top:10px; color:#c53030; border-color:#feb2b2;">🗑️ 지도 지우기</button>
     </fieldset>
 
     <fieldset>
@@ -109,6 +135,7 @@
     <fieldset id="poi-fieldset">
       <legend>지명 마커 설정</legend>
       <label style="margin:0 0 8px;"><input type="checkbox" id="showPoiMarkers" checked style="width:auto; margin-right:6px;">지도에 지명 마커 표시</label>
+      <label style="margin:0 0 8px;"><input type="checkbox" id="hideJunctions" style="width:auto; margin-right:6px;">🔀 갈림길 숨기기 (데이터는 그대로 유지, 화면에서만 안 보임)</label>
       <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
         <div>
           <label for="input-start-name" style="margin:0 0 2px; font-size:11px; color:#2b6cb0; font-weight:700;">🚩 들머리 지명</label>
@@ -139,22 +166,14 @@
     <fieldset id="course-fieldset">
       <legend>코스 요약</legend>
       <button class="btn" id="btn-generate-course" type="button" style="width:100%; margin-bottom:8px; font-weight:700; background:#edf2f7; border-color:#cbd5e0; color:#2d3748;">코스 텍스트 자동 생성</button>
+      <div style="margin-bottom:8px;">
+        <label for="input-nav-filename" style="margin:0 0 4px; font-size:11px; color:#2b6cb0; font-weight:700;">🧭 스마트 GPX 파일명</label>
+        <input type="text" id="input-nav-filename" placeholder="저장할 파일명 (기본: 불러온 파일명)" style="width:100%;">
+      </div>
       <button class="btn" id="btn-export-nav-gpx" type="button" style="width:100%; margin-bottom:8px; font-weight:700; background:#2b6cb0; border-color:#2b6cb0; color:#ffffff;">🧭 내비용 스마트 GPX 다운로드</button>
       <textarea id="course-text-output" rows="3" style="width:100%; display:none; resize:vertical; font-size:12px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748;" readonly></textarea>
     </fieldset>
 
-    <fieldset id="share-fieldset" style="margin-top:12px; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
-      <legend style="font-weight:700; color:#2b6cb0;">🚀 모바일 내비 배포 & 공유</legend>
-      <div style="margin-bottom:8px;">
-        <label for="share-course-title" style="font-size:12px; font-weight:700; color:#4a5568; margin-bottom:4px; display:block;">공유 안내 메시지 제목:</label>
-        <input type="text" id="share-course-title" value="대전 계룡산 산행 가이드 지도" placeholder="예: 대전 계룡산 산행 가이드 지도" style="width:100%; padding:6px 8px; font-size:12.5px; border:1px solid #cbd5e0; border-radius:6px; font-family:inherit;">
-      </div>
-      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
-        <button class="btn" id="btn-telegram-send" type="button" style="width:100%; padding:9px; font-size:13px; font-weight:800; color:#ffffff; background:linear-gradient(135deg, #2AABEE 0%, #229ED9 100%); border:none; border-radius:6px; cursor:pointer; box-shadow:0 3px 8px rgba(42,171,238,0.35);">✈️ 텔레그램으로 전송</button>
-        <button class="btn" id="btn-deploy-github" type="button" style="width:100%; padding:9px; font-weight:700; background:#24292e; border:none; border-radius:6px; color:#ffffff; font-size:12px; cursor:pointer; box-shadow:0 3px 8px rgba(36,41,46,0.35);">🚀 GitHub tracks에 배포</button>
-      </div>
-      <textarea id="share-msg-preview" rows="4" style="width:100%; font-size:11.5px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748; line-height:1.45; resize:vertical; background:#fff;" readonly placeholder="배포하면 공유 링크가 여기에 자동으로 완성됩니다."></textarea>
-    </fieldset>
     <div class="action-bar">
       <button class="btn btn-primary" id="btn-save-jpg" type="button" disabled style="flex:1;">전체캡쳐</button>
       <button class="btn" id="btn-save-jpg-partial" type="button" disabled style="flex:1;">부분캡쳐</button>
@@ -162,14 +181,6 @@
     <div class="warn-box" id="save-warn-box"></div>
     <div class="info-box" id="save-info-box"></div>
     <p class="map-note">인터넷 환경 및 지도 데이터량에 따라 캡처에 1~3초 정도 소요될 수 있습니다. 부분캡쳐는 버튼을 누른 뒤 지도 위에서 마우스로 원하는 영역을 드래그하면 그 영역만 저장됩니다.</p>
-
-    <div class="action-bar" style="margin-top:12px;">
-      <button class="btn" id="btn-open-nmap" type="button" disabled style="flex:1;">📱 네이버지도 앱에서 보기</button>
-      <button class="btn" id="btn-copy-nmap" type="button" disabled>링크 복사</button>
-    </div>
-    <p class="map-note">모바일에서 누르면 네이버지도 앱이 열리고, 들머리·경유지1~5·날머리를 잇는 도보 경로가 표시됩니다(최대 7지점, GPX 전체 궤적과는 다름). 앱 안에서 자유롭게 확대해 실제 지형을 볼 수 있습니다. 네이버지도 앱이 설치되어 있어야 동작합니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣으세요.</p>
-    <div class="warn-box" id="nmap-warn-box"></div>
-    <div class="info-box" id="nmap-info-box"></div>
   </div>
 
   <div class="main-pane" id="main-pane" style="position:relative;">
@@ -181,11 +192,27 @@
       <button id="btn-map-edit-toggle" type="button" style="background:#ffffff; color:#2d3748; border:1px solid #cbd5e0; font-size:12.5px; font-weight:700; padding:8px 12px; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.18); cursor:pointer; display:flex; align-items:center; gap:5px;">
         <span>✏️ 지명 편집</span>
       </button>
+      <div id="poi-undo-control" style="display:flex; box-shadow:0 2px 8px rgba(0,0,0,0.25); border-radius:6px; overflow:hidden; border:1px solid #cbd5e0;">
+        <button id="btn-poi-undo" type="button" disabled title="지명 편집 실행 취소" style="width:36px; height:36px; border:none; background:#ffffff; font-size:16px; color:#2d3748; cursor:pointer; border-right:1px solid #e2e8f0;">↩️</button>
+        <button id="btn-poi-redo" type="button" disabled title="지명 편집 다시 실행" style="width:36px; height:36px; border:none; background:#ffffff; font-size:16px; color:#2d3748; cursor:pointer;">↪️</button>
+      </div>
       <div id="zoom-control" style="display:flex; flex-direction:column; box-shadow:0 2px 8px rgba(0,0,0,0.25); border-radius:6px; overflow:hidden; border:1px solid #cbd5e0;">
         <button id="btn-zoom-in" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer; border-bottom:1px solid #e2e8f0;">+</button>
         <button id="btn-zoom-out" type="button" style="width:36px; height:36px; border:none; background:#ffffff; font-size:18px; font-weight:700; color:#2d3748; cursor:pointer;">−</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 📂 보관된 코스(GitHub tracks/) 가져오기 모달 -->
+<div class="track-picker-overlay" id="trackPickerOverlay" style="display:none;">
+  <div class="track-picker-modal">
+    <h2>📂 보관된 코스에서 가져오기</h2>
+    <input type="text" id="trackPickerSearch" placeholder="파일명으로 검색 (예: 재약산)">
+    <div class="track-picker-list" id="trackPickerList">
+      <p class="track-picker-empty">불러오는 중...</p>
+    </div>
+    <button class="track-picker-close" id="btnCloseTrackPicker" type="button">닫기</button>
   </div>
 </div>
 
@@ -320,6 +347,80 @@ const specialMarkersMap = {
   peak_top: { id: 'peak_top', name: '최고지점', isTerminal: true, defaultDx: 0, defaultDy: -50 }
 };
 
+// 📜 지명 편집 실행취소/다시실행 — 삭제/이름수정/드래그이동/추가 4가지
+// 편집 동작 전에 현재 상태를 스택에 찍어두고, ↩️/↪️로 오간다(2026-09-21
+// 요청: "지명 수정할 때 실행 취소 메뉴가 없다"). loadedPoiList뿐 아니라
+// 들머리/날머리 이름과 specialMarkersMap도 편집 대상이므로 함께 스냅샷에
+// 담는다. gpx-editor.html의 saveHistory/undoHistory와 같은 패턴이지만,
+// 이 페이지는 지명 편집 전용이라 되돌리기 대상을 통째 상태(loadedPoiList
+// 등)로 좁혀 별도로 구현한다.
+let poiHistoryStack = [];
+let poiRedoStack = [];
+const POI_HISTORY_LIMIT = 50;
+
+function snapshotPoiState() {
+  return {
+    loadedPoiList: JSON.parse(JSON.stringify(loadedPoiList || [])),
+    startTrailName,
+    endTrailName,
+    specialMarkersMap: JSON.parse(JSON.stringify(specialMarkersMap)),
+  };
+}
+
+function savePoiHistory() {
+  poiHistoryStack.push(snapshotPoiState());
+  if (poiHistoryStack.length > POI_HISTORY_LIMIT) poiHistoryStack.shift();
+  poiRedoStack = []; // 새 편집이 일어나면 redo 스택은 무효화(표준 undo/redo 관례)
+  updatePoiUndoRedoButtons();
+}
+
+function restorePoiState(state) {
+  loadedPoiList = state.loadedPoiList;
+  startTrailName = state.startTrailName;
+  endTrailName = state.endTrailName;
+  Object.keys(specialMarkersMap).forEach(k => delete specialMarkersMap[k]);
+  Object.assign(specialMarkersMap, state.specialMarkersMap);
+
+  const inputStartEl = document.getElementById('input-start-name');
+  if (inputStartEl) inputStartEl.value = startTrailName;
+  const inputEndEl = document.getElementById('input-end-name');
+  if (inputEndEl) inputEndEl.value = endTrailName;
+
+  if (loadedPoints) drawRoute(loadedPoints, true);
+  renderPoiMarkers(loadedPoiList);
+  updatePoiStatusText();
+  if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
+}
+
+function undoPoiEdit() {
+  if (poiHistoryStack.length === 0) return;
+  poiRedoStack.push(snapshotPoiState());
+  const prev = poiHistoryStack.pop();
+  restorePoiState(prev);
+  updatePoiUndoRedoButtons();
+}
+
+function redoPoiEdit() {
+  if (poiRedoStack.length === 0) return;
+  poiHistoryStack.push(snapshotPoiState());
+  const next = poiRedoStack.pop();
+  restorePoiState(next);
+  updatePoiUndoRedoButtons();
+}
+
+function updatePoiUndoRedoButtons() {
+  const undoBtn = document.getElementById('btn-poi-undo');
+  const redoBtn = document.getElementById('btn-poi-redo');
+  if (undoBtn) undoBtn.disabled = poiHistoryStack.length === 0;
+  if (redoBtn) redoBtn.disabled = poiRedoStack.length === 0;
+}
+
+function resetPoiHistory() {
+  poiHistoryStack = [];
+  poiRedoStack = [];
+  updatePoiUndoRedoButtons();
+}
+
 function findPoiById(id) {
   if (specialMarkersMap[id]) return specialMarkersMap[id];
   if (!loadedPoiList) return null;
@@ -332,14 +433,19 @@ window.onDeletePoi = function(e, poiId) {
     if (typeof e.stopPropagation === 'function') e.stopPropagation();
     if (typeof e.preventDefault === 'function') e.preventDefault();
   }
+  savePoiHistory();
   if (poiId === 'peak_top') {
     specialMarkersMap['peak_top'].deleted = true;
-    if (loadedPoints) drawRoute(loadedPoints);
+    if (loadedPoints) {
+      drawRoute(loadedPoints, true);
+      saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
+    }
     return;
   }
   loadedPoiList = (loadedPoiList || []).filter(p => String(p.id) !== String(poiId));
   renderPoiMarkers(loadedPoiList);
   updatePoiStatusText();
+  if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
 };
 
 // 들머리 / 날머리 / 최고지점 지명 수정 (클릭 또는 ✏️ 버튼 클릭 시)
@@ -357,6 +463,7 @@ window.onEditTerminal = function(e, poiId) {
 
   const newName = prompt(`새로운 ${labelType} 지명을 입력하세요:`, defaultName);
   if (newName !== null && newName.trim()) {
+    savePoiHistory();
     const formatted = newName.trim();
     if (isStart) {
       startTrailName = formatted;
@@ -373,8 +480,9 @@ window.onEditTerminal = function(e, poiId) {
     } else if (isPeak) {
       specialMarkersMap['peak_top'].name = formatted;
     }
-    if (loadedPoints) drawRoute(loadedPoints);
+    if (loadedPoints) drawRoute(loadedPoints, true);
     renderPoiMarkers(loadedPoiList);
+    if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
   }
 };
 
@@ -401,6 +509,7 @@ window.onStartPoiLabelDrag = function(e, poiId) {
   const startMouseY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0].clientY);
   const initDx = item.dx !== undefined ? item.dx : (item.defaultDx || 46);
   const initDy = item.dy !== undefined ? item.dy : (item.defaultDy || -38);
+  savePoiHistory(); // 드래그 시작 시점(편집 직전) 상태를 스냅샷으로 남긴다
 
   function handleMove(moveEvent) {
     const curMouseX = moveEvent.clientX !== undefined ? moveEvent.clientX : (moveEvent.touches && moveEvent.touches[0].clientX);
@@ -470,6 +579,7 @@ window.onStartPoiLabelDrag = function(e, poiId) {
     const endMouseY = endEvent.clientY !== undefined ? endEvent.clientY : (endEvent.changedTouches && endEvent.changedTouches[0].clientY) || startMouseY;
     item.dx = Math.round(initDx + (endMouseX - startMouseX));
     item.dy = Math.round(initDy + (endMouseY - startMouseY));
+    if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
   }
 
   window.addEventListener('mousemove', handleMove, { passive: false });
@@ -631,7 +741,13 @@ function placeDirectionArrows(points, color, intervalKm) {
   return arrows;
 }
 
-function drawRoute(points) {
+// preserveView: true면 map.fitBounds를 건너뛰어 사용자가 보고 있던
+// 확대/위치를 그대로 유지한다 — 실행취소(undoPoiEdit)가 이 함수를
+// 재사용하면서 매번 전체 경로가 보이게 화면을 축소시켜버리던 결함
+// 수정(2026-09-22, 사용자 신고: "취소버튼 클릭하니 화면이 축소가 돼..
+// 화면은 그대로 있어야 하고"). 새 코스를 처음 불러올 때 등 실제로
+// 전체 경로를 보여줘야 하는 호출부는 기존처럼 인자를 생략한다.
+function drawRoute(points, preserveView) {
   clearMapLayers();
 
   const path = points.map(p => new naver.maps.LatLng(p.lat, p.lon));
@@ -646,9 +762,11 @@ function drawRoute(points) {
     strokeOpacity: 0.9
   });
 
-  const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
-  path.forEach(ll => bounds.extend(ll));
-  map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+  if (!preserveView) {
+    const bounds = new naver.maps.LatLngBounds(path[0], path[0]);
+    path.forEach(ll => bounds.extend(ll));
+    map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+  }
 
   if (document.getElementById('showMarkers').checked) {
     const start = points[0];
@@ -744,8 +862,15 @@ function renderPoiMarkers(poiFlow) {
   if (showCheckbox && !showCheckbox.checked) return;
   if (!poiFlow || poiFlow.length === 0) return;
 
+  // "갈림길 숨기기"는 데이터(loadedPoiList)를 지우거나 초기화하지 않는다 —
+  // 화면 렌더링 단계에서만 갈림길 카테고리를 건너뛴다. 그래서 체크를
+  // 풀면 사용자가 직접 수정해둔 갈림길들이 그 상태 그대로 다시 나타난다.
+  const hideJunctionsCheck = document.getElementById('hideJunctions');
+  const hideJunctions = !!(hideJunctionsCheck && hideJunctionsCheck.checked);
+
   poiFlow.forEach((item, idx) => {
     if (item.isTerminal) return; // 들머리/날머리는 drawRoute에서 표시
+    if (hideJunctions && item.category === '갈림길') return;
     const pos = new naver.maps.LatLng(item.lat, item.lon);
     let bg = '#4a5568';
     if (item.category === '사찰') bg = '#805ad5';
@@ -831,6 +956,7 @@ function setPoiEditMode(enable) {
 // 특정 좌표에 지명 추가 처리
 function addPoiAtLocation(lat, lon, name) {
   if (!loadedPoints || loadedPoints.length < 2) return;
+  savePoiHistory();
 
   const cumDist = [0];
   let totalDist = 0;
@@ -879,6 +1005,7 @@ function addPoiAtLocation(lat, lon, name) {
 
   renderPoiList(loadedPoiList);
   renderPoiMarkers(loadedPoiList);
+  saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
 
   const statusEl = document.getElementById('poi-status');
   if (statusEl) statusEl.innerHTML = `📍 <b>'${name}'</b> 지명이 추가되었습니다 (${routeDistKm.toFixed(1)}km 지점).`;
@@ -991,7 +1118,18 @@ async function initRoutePOIs(points) {
   // 3-1. GPX 파일 내부에 저장된 경유지(<wpt>)가 있는 경우 수집
   let intermediate = [];
   const wpts = points.waypoints || [];
-  if (wpts.length > 0) {
+  // GPX 안에 <wpt>가 있다는 건 이미 누군가 지명을 다듬어 저장했다는
+  // 뜻이다(예: gpx-map.html에서 직접 편집 후 "내비용 스마트 GPX
+  // 다운로드"로 wpt까지 포함해 내보낸 파일을 GitHub tracks/에 올려둔 것).
+  // 이 경우 korea_pois.js/mountain_junctions.js로 근처 지명을 또 자동
+  // 채굴해 덧붙이면, 이미 정리해둔 목록 위에 관련 없는 주변 봉우리가
+  // 잔뜩 섞여 "모든 지명이 다 나온다"는 문제가 생긴다(2026-09-21 신고
+  // — "보관된 코스에서 가져오기"로 불러왔더니 편집한 지명이 아니라
+  // 자동 채굴 결과가 그대로 나옴). wpt가 있으면 그것만 신뢰하고 추가
+  // 채굴을 생략한다 — wpt가 아예 없을 때만(로컬 파일을 처음 불러왔을
+  // 때 등) 기존처럼 자동 채굴한다.
+  const hasUserWpts = wpts.length > 0;
+  if (hasUserWpts) {
     wpts.forEach((w, idx) => {
       // (버그 수정) 파일 재로드 시, 시스템이 자동 생성하는 스페셜 마커가 일반 마커로 중복 생성되는 현상(지명 증식) 방지
       if (w.name && (w.name.includes('들머리') || w.name.includes('날머리') || w.name.includes('최고고도') || w.name.includes('최고지점'))) return;
@@ -1031,7 +1169,9 @@ async function initRoutePOIs(points) {
     });
   }
 
+  const seenNames = new Set(intermediate.map(p => p.name));
 
+  if (!hasUserWpts) {
     let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
     points.forEach(p => {
       if (p.lat < minLat) minLat = p.lat;
@@ -1071,15 +1211,18 @@ async function initRoutePOIs(points) {
       endNode.name = endTrailName;
     }
 
-    const seenNames = new Set(intermediate.map(p => p.name));
-  
     candidateElements.forEach((c, idx) => {
       if (startFacility && c.name.includes(startFacility) && haversineKm(startPt, c) <= 0.3) return;
       if (endFacility && c.name.includes(endFacility) && haversineKm(endPt, c) <= 0.3) return;
   
       const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: c.lat, lon: c.lon }, points, cumDist);
-      // 등산로에서 직선거리 최대 650m 이내의 봉우리, 고개, 사찰, 조망 명소까지 포괄 발굴
-      if (minDistKm <= 0.65) {
+      // 등산로에서 직선거리 최대 150m 이내의 봉우리, 고개, 사찰, 조망
+      // 명소까지만 발굴한다. 650m였을 때는 능선이 여러 갈래로 갈라지는
+      // 지역(예: 수통골-빈계산 코스)에서 실제로는 지나가지 않는 인접
+      // 봉우리(옥녀봉, 백운봉 등)까지 자동으로 코스에 끼어드는 문제가
+      // 있었다(2026-09-21 신고). 150m는 등산로 폭+GPS 오차를 감안하면서도
+      // 실제로 경로가 스치듯 지나가는 지점만 남기는 값이다.
+      if (minDistKm <= 0.15) {
         if (routeDistKm < 0.12 || routeDistKm > totalDist - 0.12) return;
   
         const dedupeKey = `${c.name}_${Math.round(routeDistKm * 3)}`;
@@ -1153,8 +1296,9 @@ async function initRoutePOIs(points) {
         });
       });
     }
+  } // !hasUserWpts (자동 채굴 블록 끝)
 
-    intermediate.sort((a, b) => a.routeDistKm - b.routeDistKm);
+  intermediate.sort((a, b) => a.routeDistKm - b.routeDistKm);
 
   // 1차 화면 즉시 반영 (들머리/날머리/최고지점)
   loadedPoiList = [startNode, ...intermediate, endNode];
@@ -1203,6 +1347,7 @@ async function initRoutePOIs(points) {
     drawRoute(loadedPoints);
   }
   renderPoiMarkers(loadedPoiList);
+  saveGpxDraft(points, gpxBaseName, loadedPoiList); // 자동 탐색 결과까지 반영해 draft 갱신
 
   if (statusEl) {
     if (intermediate.length > 0) {
@@ -1216,13 +1361,6 @@ async function initRoutePOIs(points) {
 // 산행요약 생성(hiking_summary.html)이 자동으로 채워 쓸 수 있도록
 // 산행지/산행일자/거리&시간을 localStorage에 넘겨둔다. 서로 다른 iframe에서
 // 로드되는 별개 페이지라 직접 DOM 접근이 불가능해 localStorage를 매개로 사용.
-// 네이버지도 링크가 가리킬 공개 배포처. 이 도구를 로컬 파일이나 사내망
-// NAS에서 열더라도 링크는 항상 이 주소로 만들어야 외부인이 클릭할 수 있다.
-const GITHUB_PAGES_BASE_URL = 'https://hjwpro1971.github.io/gaja/';
-
-// 네이버지도 앱에 전달할 호출자 식별용 도메인(규격상 서비스 도메인).
-const NAVER_MAP_APP_NAME = 'hjwpro1971.github.io';
-
 const SUMMARY_HANDOFF_KEY = 'gajaGpxToSummaryHandoff';
 
 function saveHandoffToSummary(mountainName, stats) {
@@ -1253,73 +1391,217 @@ function saveHandoffToSummary(mountainName, stats) {
   }
 }
 
-function handleGPXFile(e) {
-  const file = e.target.files && e.target.files[0];
+// GPX 텍스트(로컬 파일이든 GitHub에서 받아온 것이든)를 파싱해 지도에
+// 그리고 모든 관련 상태를 갱신하는 공통 로직. 로컬 파일 선택(handleGPXFile)과
+// "보관된 코스 가져오기"(loadTrackFromGitHub) 양쪽에서 재사용한다
+// (2026-09-21 요청 — GitHub tracks/ 폴더에 이미 보관된 GPX들을 gpx-map.html
+// 에서도 바로 불러올 수 있어야 한다는 요청으로 handleGPXFile의 reader.onload
+// 로직을 분리함).
+function loadGpxFromText(text, baseName) {
   const warnBox = document.getElementById('gpx-warn-box');
   const statGrid = document.getElementById('stat-grid');
   const saveBtn = document.getElementById('btn-save-jpg');
   const savePartialBtn = document.getElementById('btn-save-jpg-partial');
+
+  gpxBaseName = baseName || 'gpx';
+
+  try {
+    const points = parseGPX(text);
+    loadedPoints = points;
+    clearPoiMarkers();
+    loadedPoiList = [];
+    resetPoiHistory(); // 새 코스를 불러오면 이전 코스의 실행취소 기록은 의미가 없다
+    specialMarkersMap['peak_top'].deleted = false;
+    delete specialMarkersMap['peak_top'].name;
+    delete specialMarkersMap['peak_top'].dx;
+    delete specialMarkersMap['peak_top'].dy;
+    delete specialMarkersMap['start'].dx;
+    delete specialMarkersMap['start'].dy;
+    delete specialMarkersMap['end'].dx;
+    delete specialMarkersMap['end'].dy;
+    drawRoute(points);
+
+    const stats = computeStats(points);
+    document.getElementById('stat-points').textContent = points.length + '개';
+    document.getElementById('stat-distance').textContent = stats.totalKm.toFixed(2) + 'km';
+    document.getElementById('stat-maxalt').textContent = stats.maxAlt !== null ? Math.round(stats.maxAlt) + 'm' : '-';
+    document.getElementById('stat-minalt').textContent = stats.minAlt !== null ? Math.round(stats.minAlt) + 'm' : '-';
+    document.getElementById('stat-duration').textContent = stats.durationMs !== null ? formatDuration(stats.durationMs) : '- (GPX에 시간 정보 없음)';
+    document.getElementById('stat-date').textContent = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '- (GPX에 날짜 정보 없음)';
+    statGrid.style.display = 'grid';
+
+    warnBox.style.display = 'none';
+    saveBtn.disabled = false;
+    savePartialBtn.disabled = false;
+    document.getElementById('btn-clear-gpx').disabled = false;
+
+    saveHandoffToSummary(gpxBaseName, stats);
+    saveGpxDraft(points, gpxBaseName);
+    initRoutePOIs(points);
+    const navFilenameInput = document.getElementById('input-nav-filename');
+    if (navFilenameInput) {
+      navFilenameInput.value = gpxBaseName;
+    }
+    return true;
+  } catch (err) {
+    warnBox.style.display = 'block';
+    warnBox.textContent = '⚠ GPX 파일을 읽는 중 오류: ' + err.message;
+    statGrid.style.display = 'none';
+    saveBtn.disabled = true;
+    savePartialBtn.disabled = true;
+    return false;
+  }
+}
+
+function handleGPXFile(e) {
+  const file = e.target.files && e.target.files[0];
   if (!file) return;
 
-  gpxBaseName = file.name.replace(/\.gpx$/i, '') || 'gpx';
-
+  const baseName = file.name.replace(/\.gpx$/i, '') || 'gpx';
   const reader = new FileReader();
   reader.onload = () => {
-    try {
-      const points = parseGPX(reader.result);
-      loadedPoints = points;
-      clearPoiMarkers();
-      loadedPoiList = [];
-      specialMarkersMap['peak_top'].deleted = false;
-      delete specialMarkersMap['peak_top'].name;
-      delete specialMarkersMap['peak_top'].dx;
-      delete specialMarkersMap['peak_top'].dy;
-      delete specialMarkersMap['start'].dx;
-      delete specialMarkersMap['start'].dy;
-      delete specialMarkersMap['end'].dx;
-      delete specialMarkersMap['end'].dy;
-      drawRoute(points);
-
-      const stats = computeStats(points);
-      document.getElementById('stat-points').textContent = points.length + '개';
-      document.getElementById('stat-distance').textContent = stats.totalKm.toFixed(2) + 'km';
-      document.getElementById('stat-maxalt').textContent = stats.maxAlt !== null ? Math.round(stats.maxAlt) + 'm' : '-';
-      document.getElementById('stat-minalt').textContent = stats.minAlt !== null ? Math.round(stats.minAlt) + 'm' : '-';
-      document.getElementById('stat-duration').textContent = stats.durationMs !== null ? formatDuration(stats.durationMs) : '- (GPX에 시간 정보 없음)';
-      document.getElementById('stat-date').textContent = stats.hikeDate !== null ? formatDateWithWeekday(stats.hikeDate) : '- (GPX에 날짜 정보 없음)';
-      statGrid.style.display = 'grid';
-
-      warnBox.style.display = 'none';
-      saveBtn.disabled = false;
-      savePartialBtn.disabled = false;
-      document.getElementById('btn-open-nmap').disabled = false;
-      document.getElementById('btn-copy-nmap').disabled = false;
-
-      saveHandoffToSummary(gpxBaseName, stats);
-      saveGpxDraft(points, gpxBaseName);
-      initRoutePOIs(points);
-
-      const shareTitleEl = document.getElementById('share-course-title');
-      if (shareTitleEl) {
-        let cleanName = gpxBaseName.replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
-        shareTitleEl.value = cleanName + ' 산행 가이드 지도';
-        if (typeof updateShareMessagePreview === 'function') updateShareMessagePreview();
-      }
-    } catch (err) {
-      warnBox.style.display = 'block';
-      warnBox.textContent = '⚠ GPX 파일을 읽는 중 오류: ' + err.message;
-      statGrid.style.display = 'none';
-      saveBtn.disabled = true;
-      savePartialBtn.disabled = true;
-      document.getElementById('btn-open-nmap').disabled = true;
-      document.getElementById('btn-copy-nmap').disabled = true;
-    }
+    loadGpxFromText(reader.result, baseName);
   };
   reader.onerror = () => {
+    const warnBox = document.getElementById('gpx-warn-box');
     warnBox.style.display = 'block';
     warnBox.textContent = '⚠ 파일을 읽을 수 없습니다.';
   };
   reader.readAsText(file);
+}
+
+// ════════════════════════════════════════════════════════════════
+// 📂 보관된 코스(GitHub tracks/) 가져오기 — GitHub의 hjwpro1971/gaja
+// 저장소 tracks/ 폴더에는 이미 여러 GPX가 수동으로 올라가 있는데(재약산
+// A코스, 내연산, 남덕유산 등), gpx-map.html에서는 로컬 파일 선택으로만
+// 불러올 수 있었다(2026-09-21 요청). 공개 저장소라 목록 조회/원본
+// 다운로드 모두 토큰 없이 가능하다 — 쓰기(uploadToGitHub)만 토큰이 필요.
+// ════════════════════════════════════════════════════════════════
+
+let trackPickerFiles = null; // GitHub tracks/ 폴더 목록 캐시(모달 열 때마다 재조회하지 않음)
+
+async function fetchTrackPickerFiles() {
+  if (trackPickerFiles) return trackPickerFiles;
+  const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/tracks`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/vnd.github.v3+json' } });
+  if (!res.ok) throw new Error(`GitHub 목록 조회 실패 (HTTP ${res.status})`);
+  const data = await res.json();
+  trackPickerFiles = (Array.isArray(data) ? data : [])
+    .filter(f => f.type === 'file' && /\.gpx$/i.test(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return trackPickerFiles;
+}
+
+function renderTrackPickerList(files, keyword) {
+  const listEl = document.getElementById('trackPickerList');
+  const kw = (keyword || '').trim().toLowerCase();
+  const filtered = kw ? files.filter(f => f.name.toLowerCase().includes(kw)) : files;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<p class="track-picker-empty">일치하는 코스가 없습니다.</p>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  filtered.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'track-picker-item';
+    item.textContent = f.name.replace(/\.gpx$/i, '');
+    item.onclick = () => selectTrackFromPicker(f);
+    listEl.appendChild(item);
+  });
+}
+
+async function selectTrackFromPicker(file) {
+  const listEl = document.getElementById('trackPickerList');
+  listEl.innerHTML = '<p class="track-picker-empty">⏳ 불러오는 중...</p>';
+  try {
+    // download_url은 raw.githubusercontent.com을 가리키는 공개 링크라
+    // 토큰 없이 바로 fetch 가능하다.
+    const res = await fetch(file.download_url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const baseName = file.name.replace(/\.gpx$/i, '') || 'gpx';
+    const ok = loadGpxFromText(text, baseName);
+    closeTrackPicker();
+    if (ok) {
+      showTrackPickerToastFallback(`✅ '${baseName}' 코스를 불러왔습니다.`);
+    }
+  } catch (err) {
+    listEl.innerHTML = `<p class="track-picker-empty">⚠ 불러오기 실패: ${err.message}</p>`;
+  }
+}
+
+// gpx-map.html에는 showToast 같은 공용 토스트 함수가 없어(gpx_editor.html
+// 전용 UI), 로드 성공만 gpx-warn-box 옆 info-box로 짧게 알린다 — 이미
+// loadGpxFromText가 통계 패널을 갱신하므로 필수는 아니지만, "방금 뭐가
+// 로드됐는지"를 명확히 하기 위함.
+function showTrackPickerToastFallback(msg) {
+  const warnBox = document.getElementById('gpx-warn-box');
+  if (!warnBox) return;
+  warnBox.style.display = 'block';
+  warnBox.style.background = '#e6fffa';
+  warnBox.style.borderColor = '#38b2ac';
+  warnBox.style.color = '#234e52';
+  warnBox.textContent = msg;
+  setTimeout(() => {
+    warnBox.style.display = 'none';
+    warnBox.style.background = '';
+    warnBox.style.borderColor = '';
+    warnBox.style.color = '';
+  }, 3000);
+}
+
+async function openTrackPicker() {
+  document.getElementById('trackPickerOverlay').style.display = 'flex';
+  document.getElementById('trackPickerSearch').value = '';
+  const listEl = document.getElementById('trackPickerList');
+  listEl.innerHTML = '<p class="track-picker-empty">불러오는 중...</p>';
+  try {
+    const files = await fetchTrackPickerFiles();
+    renderTrackPickerList(files, '');
+  } catch (err) {
+    listEl.innerHTML = `<p class="track-picker-empty">⚠ 목록을 불러오지 못했습니다: ${err.message}</p>`;
+  }
+}
+
+function closeTrackPicker() {
+  document.getElementById('trackPickerOverlay').style.display = 'none';
+}
+
+// 🗑️ 지도 지우기 — 새 GPX를 불러오지 않고도 현재 지도/통계/지명을 모두
+// 비운다. handleGPXFile이 로드 시 채우는 상태를 그대로 역순으로 되돌리고,
+// localStorage draft(GPX_DRAFT_KEY)도 함께 지운다 — 안 지우면 새로고침 시
+// restoreGpxDraftIfAny()가 방금 지운 지도를 그대로 복원해버린다
+// (2026-09-20, "기존 GPX 지도 지우는 기능이 없다" 요청으로 추가).
+function clearGpx() {
+  if (!loadedPoints || loadedPoints.length === 0) return;
+  if (!confirm('🗑️ 현재 지도를 지울까요?\n\n불러온 GPX 경로와 지명 편집 내용이 모두 사라지며, 되돌릴 수 없습니다.')) return;
+
+  clearMapLayers();
+  clearPoiMarkers();
+  loadedPoints = null;
+  loadedPoiList = [];
+  gpxBaseName = 'gpx';
+  resetPoiHistory();
+
+  try { localStorage.removeItem(GPX_DRAFT_KEY); } catch (e) {}
+
+  document.getElementById('gpxFile').value = '';
+  document.getElementById('gpx-warn-box').style.display = 'none';
+  document.getElementById('stat-grid').style.display = 'none';
+  document.getElementById('btn-save-jpg').disabled = true;
+  document.getElementById('btn-save-jpg-partial').disabled = true;
+  document.getElementById('btn-clear-gpx').disabled = true;
+  const navFilenameInput = document.getElementById('input-nav-filename');
+  if (navFilenameInput) navFilenameInput.value = '';
+  const courseOutput = document.getElementById('course-text-output');
+  if (courseOutput) { courseOutput.value = ''; courseOutput.style.display = 'none'; }
+
+  if (map) {
+    map.setCenter(new naver.maps.LatLng(36.5, 127.8));
+    map.setZoom(7);
+  }
 }
 
 // index.html의 iframe 안에서 쓰일 때 다른 메뉴로 전환하면 iframe이 즉시
@@ -1330,12 +1612,22 @@ function handleGPXFile(e) {
 // 다시 로드될 때 그 데이터로 지도를 곧바로 다시 그려 복원한다.
 const GPX_DRAFT_KEY = 'gpxMapDraft';
 
-function saveGpxDraft(points, baseName) {
+// poiList도 함께 저장한다 — 예전엔 트랙(points)만 저장해서, 사용자가
+// 지명을 추가·삭제·이름수정·라벨 드래그로 편집해도 draft에는 전혀 반영되지
+// 않았다. 그 상태로 다시 열면 restoreGpxDraftIfAny()가 매번 initRoutePOIs()
+// 로 지명을 트랙에서 처음부터 자동 재생성해, 편집한 내용이 통째로
+// 초기화된 것처럼 보였다(2026-09-20 실사고). loadedPoiList가 있으면
+// 그것도 함께 저장해, 복원 시 자동 재생성 대신 이 저장본을 그대로 쓴다.
+function saveGpxDraft(points, baseName, poiList) {
   try {
     localStorage.setItem(GPX_DRAFT_KEY, JSON.stringify({
       points: points.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele, time: p.time ? p.time.toISOString() : null })),
       waypoints: points.waypoints || [],
-      baseName
+      baseName,
+      poiList: Array.isArray(poiList) ? poiList : null,
+      startTrailName: typeof startTrailName !== 'undefined' ? startTrailName : null,
+      endTrailName: typeof endTrailName !== 'undefined' ? endTrailName : null,
+      specialMarkersMap: (typeof specialMarkersMap !== 'undefined') ? specialMarkersMap : null
     }));
   } catch (e) {
     // localStorage 용량 초과 등은 자동저장 실패로 조용히 넘어감(핵심 기능인 지도 생성에는 영향 없음)
@@ -1368,15 +1660,36 @@ function restoreGpxDraftIfAny() {
     gpxBaseName = data.baseName || 'gpx';
     loadedPoints = points;
     clearPoiMarkers();
-    loadedPoiList = [];
-    specialMarkersMap['peak_top'].deleted = false;
-    delete specialMarkersMap['peak_top'].name;
-    delete specialMarkersMap['peak_top'].dx;
-    delete specialMarkersMap['peak_top'].dy;
-    delete specialMarkersMap['start'].dx;
-    delete specialMarkersMap['start'].dy;
-    delete specialMarkersMap['end'].dx;
-    delete specialMarkersMap['end'].dy;
+
+    // 저장된 poiList가 있으면(2026-09-20 이후 저장된 draft) 그걸 그대로
+    // 복원한다 — initRoutePOIs()를 다시 부르면 사용자가 편집한 지명이
+    // 전부 사라지고 트랙에서 자동 재생성된 지명으로 덮인다. poiList가
+    // 없는 옛 draft(트랙만 저장되던 시절)는 예전처럼 자동 재생성으로
+    // 폴백한다.
+    const hasSavedPoi = Array.isArray(data.poiList) && data.poiList.length > 0;
+    if (hasSavedPoi) {
+      loadedPoiList = data.poiList;
+      if (data.startTrailName) startTrailName = data.startTrailName;
+      if (data.endTrailName) endTrailName = data.endTrailName;
+      if (data.specialMarkersMap) {
+        Object.keys(specialMarkersMap).forEach(k => delete specialMarkersMap[k]);
+        Object.assign(specialMarkersMap, data.specialMarkersMap);
+      }
+      const inputStartEl = document.getElementById('input-start-name');
+      if (inputStartEl) inputStartEl.value = startTrailName;
+      const inputEndEl = document.getElementById('input-end-name');
+      if (inputEndEl) inputEndEl.value = endTrailName;
+    } else {
+      loadedPoiList = [];
+      specialMarkersMap['peak_top'].deleted = false;
+      delete specialMarkersMap['peak_top'].name;
+      delete specialMarkersMap['peak_top'].dx;
+      delete specialMarkersMap['peak_top'].dy;
+      delete specialMarkersMap['start'].dx;
+      delete specialMarkersMap['start'].dy;
+      delete specialMarkersMap['end'].dx;
+      delete specialMarkersMap['end'].dy;
+    }
     drawRoute(points);
 
     const stats = computeStats(points);
@@ -1391,239 +1704,21 @@ function restoreGpxDraftIfAny() {
     warnBox.style.display = 'none';
     saveBtn.disabled = false;
     savePartialBtn.disabled = false;
-    document.getElementById('btn-open-nmap').disabled = false;
-    document.getElementById('btn-copy-nmap').disabled = false;
-    initRoutePOIs(points);
+    document.getElementById('btn-clear-gpx').disabled = false;
+    if (hasSavedPoi) {
+      renderPoiList(loadedPoiList);
+      renderPoiMarkers(loadedPoiList);
+    } else {
+      initRoutePOIs(points);
+    }
+    const navFilenameInput = document.getElementById('input-nav-filename');
+    if (navFilenameInput) {
+      navFilenameInput.value = gpxBaseName;
+    }
   } catch (e) {
     // 저장된 draft가 깨져 있으면 무시(지도는 빈 상태로 시작)
   }
 }
-
-// 두 좌표 사이 거리(m). 경유지가 서로 너무 붙어 있는지 판정하는 데 쓴다.
-function distanceMeters(a, b) {
-  const R = 6371000, rad = x => x * Math.PI / 180;
-  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
-  const h = Math.sin(dLat / 2) ** 2 +
-            Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
-// 이미 고른 지점과 이 정도 안쪽이면 "같은 자리"로 보고 건너뛴다.
-const WAYPOINT_MIN_GAP_M = 150;
-
-// 경로에서 네이버지도에 넘길 지점을 고른다.
-//
-// 처음에는 전체 구간을 균등 분할해 그대로 썼는데, 원점회귀(왕복) 코스에서
-// 문제가 됐다. 같은 길을 되짚어 내려오므로 후반 경유지가 전반 경유지와
-// 거의 같은 좌표가 되고(실제 사례: 경유지5와 경유지1이 7m, 경유지4와
-// 경유지2가 42m 차이), 네이버지도 앱이 "같은 지점을 되돌아가는 경로"를
-// 도보 경로로 풀지 못해 "경유지가 도로 주변이 아닙니다" 오류를 냈다
-// (2026-08-27).
-//
-// 그래서 "균등분할 후보를 앞에서부터 훑다가 목표 개수(wanted)가 차면
-// 멈춘다"로 바꿨는데, 이번엔 종주 코스(예: 팔영산 8봉)에서 후보가 초반
-// 구간에서 5개를 다 채워버려 정상부·후반 봉우리들이 통째로 후보에도 못
-// 들고 배제되는 새 버그가 생겼다(2026-08-30). 경유지가 등산로 초반
-// 20~30% 구간에만 몰려, 실제 코스와 무관한 링크가 만들어졌다.
-//
-// 그다음엔 "전체 구간에서 몇 번째 경유지인가"에 따라 목표 위치를 미리
-// wanted등분(1/(wanted+1), 2/(wanted+1), ...)으로 정해두고, 그 목표
-// 위치에 가장 가까운 지점부터 바깥쪽으로 탐색해 WAYPOINT_MIN_GAP_M
-// 이상 떨어진 첫 후보를 채택하도록 바꿨다. 각 경유지가 자기 목표 구간에
-// 묶여 있으므로 종주 코스에서도 전체에 고르게 퍼지고, 왕복 코스에서
-// 되짚어 오는 지점은 여전히 최소간격 조건으로 걸러진다.
-//
-// 그런데 이 방식은 "인덱스(=trkpt 개수)" 기준 균등분할이라, 능선이 크게
-// 굽은 구간에서 문제가 됐다(예: 상학봉-묘봉 종주, 2026-08-30). 정상을
-// 넘는 구간은 trkpt 개수는 적어도 실제 걸은 거리가 훨씬 길고 굴곡도
-// 심한데, 인덱스 균등분할은 그런 구간에도 다른 구간과 똑같은 경유지
-// 1~2개만 배정한다. 그 결과 두 경유지 사이 실제 등산로가 크게 휘어
-// 있는데도 네이버지도가 그 굴곡을 못 따라가 도보경로가 능선을 벗어나
-// 이상하게 그려졌다(경로거리/직선거리 비율이 50%까지 떨어지는 구간에서
-// 실제로 재현 확인).
-//
-// 그래서 목표 위치를 "인덱스 균등분할"이 아니라 "실제로 걸은 누적거리
-// 균등분할"로 잡는다. 굽은 구간은 직선거리에 비해 걸은 거리가 훨씬
-// 길므로, 누적거리 기준으로 등분하면 그런 구간에 자연히 경유지가 더
-// 촘촘히 배정된다(반대로 밋밋한 직선 구간은 경유지가 적어도 문제없다).
-function pickWaypoints(points, count) {
-  if (points.length === 0) return [];
-  if (points.length <= 2) return points.slice();
-  if (count <= 2) return [points[0], points[points.length - 1]];
-
-  const start = points[0];
-  const end = points[points.length - 1];
-  const middle = [];
-  const wanted = count - 2;                 // 들머리·날머리를 뺀 개수
-  const lastIdx = points.length - 1;
-
-  // 각 지점까지의 누적 이동거리(m). cumDist는 idx에 대해 단조증가한다.
-  const cumDist = [0];
-  for (let i = 1; i <= lastIdx; i++) {
-    cumDist.push(cumDist[i - 1] + distanceMeters(points[i - 1], points[i]));
-  }
-  const totalDist = cumDist[lastIdx];
-
-  // 이분탐색으로 목표 누적거리에 가장 가까운 idx를 찾는다.
-  function idxAtDist(targetDist) {
-    let lo = 0, hi = lastIdx;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cumDist[mid] < targetDist) lo = mid + 1; else hi = mid;
-    }
-    return lo;
-  }
-
-  for (let slot = 1; slot <= wanted; slot++) {
-    const targetIdx = idxAtDist((slot / (wanted + 1)) * totalDist);
-    let chosen = null;
-    // 목표 지점에서 앞뒤로 번갈아 반경을 넓혀가며, 이미 고른 지점들과
-    // WAYPOINT_MIN_GAP_M 이상 떨어진 첫 후보를 찾는다.
-    for (let d = 0; d <= lastIdx && !chosen; d++) {
-      for (const idx of (d === 0 ? [targetIdx] : [targetIdx - d, targetIdx + d])) {
-        if (idx < 1 || idx > lastIdx - 1) continue; // 들머리·날머리와는 별개로 취급
-        const p = points[idx];
-        const tooClose = [start, ...middle].some(
-          q => distanceMeters(p, q) < WAYPOINT_MIN_GAP_M);
-        if (!tooClose) { chosen = p; break; }
-      }
-    }
-    if (chosen) middle.push(chosen);
-  }
-
-  // 날머리와 겹치는 마지막 경유지도 정리한다.
-  while (middle.length &&
-         distanceMeters(middle[middle.length - 1], end) < WAYPOINT_MIN_GAP_M) {
-    middle.pop();
-  }
-
-  // 들머리와 날머리는 코스의 시작·끝이므로 언제나 그대로 넘긴다.
-  // 원점회귀에서 둘이 같은 자리인 것은 정상이며, 날머리를 빼면 하산길이
-  // 지도에서 통째로 사라진다. (한때 "출발지=도착지면 경로 탐색이
-  // 실패한다"고 짐작해 날머리를 제외했었는데, 확인해 보지 않은 추측이었고
-  // 실제 원점회귀 코스도 정상 동작했다.)
-  return [start, ...middle, end];
-}
-
-function buildNaverMapDeepLinkParams(points) {
-  const waypoints = pickWaypoints(points, 7);
-  const start = waypoints[0];
-  const end = waypoints[waypoints.length - 1];
-  const middles = waypoints.slice(1, -1);
-
-  const params = new URLSearchParams();
-  params.set('slat', start.lat);
-  params.set('slng', start.lon);
-  params.set('sname', '들머리');
-  middles.forEach((p, i) => {
-    const n = i + 1;
-    params.set(`v${n}lat`, p.lat);
-    params.set(`v${n}lng`, p.lon);
-    params.set(`v${n}name`, `경유지${n}`);
-  });
-  params.set('dlat', end.lat);
-  params.set('dlng', end.lon);
-  params.set('dname', '날머리');
-  // appname은 네이버지도 앱에 "누가 호출했는지" 알리는 식별자로, 규격상
-  // 호출한 웹서비스의 도메인을 넣는 자리다. 예전에는 location.href를 통째로
-  // 넣어, 도구를 사내망 NAS에서 열면 사설 IP와 내부 경로·캐시버스터까지
-  // 그대로 실려 나갔다(2026-08-26 실제 사고: 링크 안에
-  // appname=https://192.168.219.119:8443/gpx-map.html?_t=... 가 박힘).
-  // 외부에 노출할 값도 아니고 앱 동작에도 부적절하므로, 공개 배포 도메인으로
-  // 고정한다.
-  params.set('appname', NAVER_MAP_APP_NAME);
-  return params;
-}
-
-function buildNaverMapDeepLinks(points) {
-  const params = buildNaverMapDeepLinkParams(points);
-  const query = params.toString();
-  const nmapUrl = `nmap://route/walk?${query}`;
-  const intentUrl = `intent://route/walk?${query}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
-  return { nmapUrl, intentUrl };
-}
-
-function isAndroid() {
-  return /Android/i.test(navigator.userAgent);
-}
-
-function isIOS() {
-  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function openInNaverMapApp() {
-  const warnBox = document.getElementById('nmap-warn-box');
-  const infoBox = document.getElementById('nmap-info-box');
-  warnBox.style.display = 'none';
-  infoBox.style.display = 'none';
-
-  if (!loadedPoints) return;
-  const { nmapUrl, intentUrl } = buildNaverMapDeepLinks(loadedPoints);
-
-  if (isAndroid()) {
-    location.href = intentUrl;
-    return;
-  }
-
-  if (isIOS()) {
-    const fallbackTimer = setTimeout(() => {
-      if (!document.hidden) {
-        infoBox.style.display = 'block';
-        infoBox.textContent = 'ℹ 네이버지도 앱이 설치되어 있지 않은 것 같습니다. 앱스토어에서 "네이버지도"를 설치한 뒤 다시 시도해주세요.';
-      }
-    }, 1500);
-    document.addEventListener('visibilitychange', function onVis() {
-      if (document.hidden) {
-        clearTimeout(fallbackTimer);
-        document.removeEventListener('visibilitychange', onVis);
-      }
-    });
-    location.href = nmapUrl;
-    return;
-  }
-
-  infoBox.style.display = 'block';
-  infoBox.textContent = 'ℹ 모바일에서만 앱이 열립니다. [링크 복사]로 주소를 복사해 블로그 등에 붙여넣어 모바일 사용자가 클릭하게 하세요.';
-}
-
-function buildRedirectPageUrl(points) {
-  const params = buildNaverMapDeepLinkParams(points);
-  const query = params.toString();
-  // nmap-redirect.html은 블로그에 붙여 "남이 클릭하는" 공개 링크이고,
-  // 클릭하는 사람은 대개 이 도구에 접근할 수 없는 외부인·모바일이다.
-  // 그래서 이 도구를 어디서 열었든(로컬 파일, 사내망 NAS 등) 링크만은
-  // 항상 공개 배포처인 GitHub Pages를 가리켜야 한다.
-  //
-  // location.href 기준 상대경로로 만들었다가 두 번 사고가 났다:
-  //  - 2026-08-24: 도구를 하위 폴더로 옮기자 링크가 그 폴더를 가리켜 404.
-  //  - 2026-08-26: NAS(http://<사설IP>:8080)에서 도구를 열자 링크가 NAS를
-  //    가리켜, 핸드폰에서 클릭하니 NAS 로그인 인증 화면이 떴다.
-  // 그래서 상대경로를 버리고 배포 주소를 상수로 고정한다.
-  // (builder.html의 GITHUB_PAGES_BASE_URL과 같은 취지·같은 값이다.)
-  const redirectBase = GITHUB_PAGES_BASE_URL + 'nmap-redirect.html';
-  const redirectParams = new URLSearchParams();
-  redirectParams.set('q', query);
-  if (gpxBaseName) redirectParams.set('title', gpxBaseName);
-  return `${redirectBase}?${redirectParams.toString()}`;
-}
-
-function copyNaverMapLink() {
-  const warnBox = document.getElementById('nmap-warn-box');
-  const infoBox = document.getElementById('nmap-info-box');
-  warnBox.style.display = 'none';
-  infoBox.style.display = 'none';
-
-  if (!loadedPoints) return;
-  const redirectUrl = buildRedirectPageUrl(loadedPoints);
-  navigator.clipboard.writeText(redirectUrl).then(() => {
-    infoBox.style.display = 'block';
-    infoBox.textContent = 'ℹ 블로그 등에 붙일 수 있는 일반 https 링크가 클립보드에 복사되었습니다. 클릭하면 네이버지도 앱으로 자동 연결됩니다. (네이버지도 앱이 설치된 기기에서만 열립니다)';
-  }).catch(err => {
-    warnBox.style.display = 'block';
-    warnBox.textContent = '⚠ 복사 실패: ' + err.message;
-  });
-}
-
 
 // JPG 저장: html2canvas 근사 캡처, getDisplayMedia 화면 공유를 차례로
 // 시도했으나 좌표 어긋남/화질 저하/오버레이 잔류 문제가 반복 재현되어
@@ -1879,10 +1974,17 @@ async function capturePartialArea(cropX, cropY, cropW, cropH, containerW, contai
 }
 
 document.getElementById('gpxFile').addEventListener('change', handleGPXFile);
+document.getElementById('btn-clear-gpx').addEventListener('click', clearGpx);
+document.getElementById('btn-open-track-picker').addEventListener('click', openTrackPicker);
+document.getElementById('btnCloseTrackPicker').addEventListener('click', closeTrackPicker);
+document.getElementById('trackPickerOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'trackPickerOverlay') closeTrackPicker(); // 배경 클릭 시 닫기
+});
+document.getElementById('trackPickerSearch').addEventListener('input', (e) => {
+  if (trackPickerFiles) renderTrackPickerList(trackPickerFiles, e.target.value);
+});
 document.getElementById('btn-save-jpg').addEventListener('click', saveAsJPG);
 document.getElementById('btn-save-jpg-partial').addEventListener('click', startPartialCapture);
-document.getElementById('btn-open-nmap').addEventListener('click', openInNaverMapApp);
-document.getElementById('btn-copy-nmap').addEventListener('click', copyNaverMapLink);
 document.getElementById('btn-apply-style').addEventListener('click', () => {
   saveStyleToStorage();
   if (loadedPoints) drawRoute(loadedPoints);
@@ -1948,6 +2050,13 @@ if (showPoiCheck) {
   });
 }
 
+const hideJunctionsCheck = document.getElementById('hideJunctions');
+if (hideJunctionsCheck) {
+  hideJunctionsCheck.addEventListener('change', () => {
+    renderPoiMarkers(loadedPoiList);
+  });
+}
+
 restoreStyleFromStorage();
 initMap();
 restoreGpxDraftIfAny();
@@ -1957,10 +2066,11 @@ restoreGpxDraftIfAny();
   const GH_REPO_OWNER = 'hjwpro1971';
   const GH_REPO_NAME = 'gaja';
 
-  // 내비용 스마트 GPX XML 생성 공통 함수
-  function buildNavGpxXml() {
+  // 내비용 스마트 GPX XML 생성 공통 함수 (커스텀 파일명/트랙명 지원)
+  function buildNavGpxXml(customTrackName) {
     if (!loadedPoints || loadedPoints.length < 2) return null;
 
+    const trackName = (customTrackName || gpxBaseName || 'trail').trim();
     const cumDist = [0];
     let totalDist = 0;
     for (let i = 1; i < loadedPoints.length; i++) {
@@ -2014,7 +2124,7 @@ restoreGpxDraftIfAny();
     const lines = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<gpx version="1.1" creator="gajago-nav" xmlns="http://www.topografix.com/GPX/1/1">');
-    lines.push('  <metadata><name>' + (gpxBaseName || 'trail') + '</name></metadata>');
+    lines.push('  <metadata><name>' + trackName + '</name></metadata>');
 
     wpts.forEach(w => {
       const safeName = (w.name || '').replace(/[<>&"']/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[s]);
@@ -2027,7 +2137,7 @@ restoreGpxDraftIfAny();
     });
 
     lines.push('  <trk>');
-    lines.push('    <name>' + (gpxBaseName || 'trail') + '</name>');
+    lines.push('    <name>' + trackName + '</name>');
     lines.push('    <trkseg>');
     loadedPoints.forEach(p => {
       let trkpt = '      <trkpt lat="' + p.lat.toFixed(6) + '" lon="' + p.lon.toFixed(6) + '">';
@@ -2048,7 +2158,15 @@ restoreGpxDraftIfAny();
   }
 
   function exportNavGpx() {
-    const xml = buildNavGpxXml();
+    const navFilenameInput = document.getElementById('input-nav-filename');
+    let customName = (navFilenameInput ? navFilenameInput.value : '').trim();
+    if (!customName) {
+      customName = gpxBaseName || 'trail';
+    }
+    // 확장자 .gpx 중복 제거 및 최종 저장 파일명 결정
+    const cleanBaseName = customName.replace(/\.gpx$/i, '').trim() || 'trail';
+
+    const xml = buildNavGpxXml(cleanBaseName);
     if (!xml) {
       alert('GPX 데이터를 먼저 불러오세요.');
       return;
@@ -2057,32 +2175,14 @@ restoreGpxDraftIfAny();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = (gpxBaseName || 'trail') + '_nav.gpx';
+    a.download = cleanBaseName + '.gpx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  function getComputedNavFileName() {
-    return (gpxBaseName || 'trail') + '_nav.gpx';
-  }
 
-  function updateShareMessagePreview() {
-    const titleInput = document.getElementById('share-course-title');
-    const title = (titleInput ? titleInput.value : '').trim() || (gpxBaseName ? gpxBaseName + ' 코스' : '내 산행 코스');
-    const fileName = getComputedNavFileName();
-    const htmlFileName = fileName.replace(/\.gpx$/i, '.html');
-    
-    // 카카오톡 썸네일 속이기용 정적 HTML 링크 반환
-    const linkUrl = 'https://hjwpro1971.github.io/gaja/tracks/' + encodeURIComponent(htmlFileName);
-    
-    const msg = '⛰️ [' + title + ']\n\n아래 링크를 누르시면 스마트폰에서 등산 지도와 지명, 실시간 길찾기 내비게이션이 바로 열립니다:\n👉 ' + linkUrl + '\n\n(※ 처음 여신 후 우측 상단 메뉴에서 [홈 화면에 추가]를 해두시면 산속 오프라인에서도 100% 작동합니다.)';
-
-    const previewEl = document.getElementById('share-msg-preview');
-    if (previewEl) previewEl.value = msg;
-    return { title, fileName, htmlFileName, linkUrl, msg };
-  }
 
   async function uploadToGitHub(token, path, content, commitMsg) {
     const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/${path}`;
@@ -2323,144 +2423,17 @@ restoreGpxDraftIfAny();
     }
   }
 
-  async function deployToGitHubTracks(silent = false) {
-    if (!loadedPoints || loadedPoints.length < 2) {
-      if (!silent) alert('먼저 GPX 파일을 불러와주세요.');
-      return false;
-    }
-
-    let token = localStorage.getItem('gh_gaja_upload_token') || localStorage.getItem(GH_TOKEN_KEY) || (window.__DEFAULT_GH_TOKEN || '');
-    if (!token) {
-      token = prompt('GitHub Personal Access Token (PAT)를 입력하세요:');
-      if (!token || !token.trim()) return false;
-      token = token.trim();
-      localStorage.setItem(GH_TOKEN_KEY, token);
-    }
-
-    const { title, fileName, htmlFileName } = updateShareMessagePreview();
-    const xmlContent = buildNavGpxXml();
-    
-    // 카카오톡 썸네일 속이기용 미끼 HTML 생성
-    const redirectHtml = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <title>${title}</title>
-  <meta property="og:title" content="${title}">
-  <meta property="og:description" content="실시간 등산로 길찾기 및 방향 탐색 내비게이션">
-  <meta property="og:image" content="https://hjwpro1971.github.io/gaja/images/app_icon_192.png">
-  <script>
-    window.location.replace('../track_viewer.html?file=tracks/${encodeURIComponent(fileName)}&name=${encodeURIComponent(title)}');
-  <` + `/script>
-</head>
-<body>
-  <p>지도로 이동 중입니다...</p>
-</body>
-</html>`;
-
-    const btn = document.getElementById('btn-deploy-github');
-    const originalText = btn.textContent;
-    btn.textContent = '⏳ 배포 중...';
-    btn.disabled = true;
-
-    try {
-      // 1. GPX 파일 업로드
-      await uploadToGitHub(token, `tracks/${encodeURIComponent(fileName)}`, xmlContent, `Upload nav track: ${fileName}`);
-      
-      // 2. 카카오톡 썸네일용 미끼 HTML 파일 업로드
-      await uploadToGitHub(token, `tracks/${encodeURIComponent(htmlFileName)}`, redirectHtml, `Upload redirect html for: ${title}`);
-
-      updateShareMessagePreview();
-      if (!silent) {
-        alert(`🚀 GitHub 배포 성공!\n\n파일: tracks/${fileName}\n\n이제 [링크/메시지 복사] 또는 [텔레그램 전송]을 이용하세요!`);
-      }
-      return true;
-    } catch(err) {
-      if (!silent) alert('GitHub 배포 실패:\n' + err.message);
-      throw err;
-    } finally {
-      btn.textContent = originalText;
-      btn.disabled = false;
-    }
-  }
-
-
-
-  async function sendToTelegramBot() {
-    if (!loadedPoints || loadedPoints.length < 2) {
-      alert('먼저 GPX 파일을 불러와주세요.');
-      return;
-    }
-
-    const { title, fileName, linkUrl } = updateShareMessagePreview();
-    const courseName = title || '등산 코스';
-
-    const confirmed = confirm(`⛰️ [텔레그램 전송]\n\n코스명: ${courseName}\n파일: tracks/${fileName}\n\nGitHub에 자동 배포 후 내 스마트폰 텔레그램으로 전송하시겠습니까?`);
-    if (!confirmed) return;
-
-    const btn = document.getElementById('btn-telegram-send');
-    const origText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '🚀 GitHub 배포 중...';
-
-    try {
-      // 1. GitHub tracks/ 에 자동 배포
-      await deployToGitHubTracks(true);
-
-      // 2. 텔레그램 봇으로 링크 전송
-      btn.innerHTML = '✈️ 텔레그램 전송 중...';
-      const botToken = window.__TELEGRAM_BOT_TOKEN;
-      const chatId = window.__TELEGRAM_CHAT_ID;
-
-      if (botToken && chatId) {
-        // HTTPS 직접 호출 (브라우저 Mixed Content 차단 방지)
-        const tgText = `⛰️ <b><a href="${linkUrl}">${courseName} 산행 가이드</a></b>\n\n위 링크를 누르시면 스마트폰 웹 브라우저가 열리며, 실시간 방향탐색 네비게이션이 바로 시작됩니다.`;
-        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: tgText,
-            parse_mode: 'HTML'
-          })
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.description || '텔레그램 API 전송 실패');
-      } else {
-        // 폴백: NAS 프록시 호출
-        const res = await fetch('http://192.168.219.119:8991/api/gpx-notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: linkUrl, courseName })
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.message || '전송 실패');
-      }
-
-      btn.innerHTML = '✨ 전송 완료!';
-      alert(`✅ 텔레그램으로 [${courseName}] 전송되었습니다! 🚀\n스마트폰 텔레그램을 바로 확인해보세요.`);
-      // (기능 추가) 배포/전송 완료 후, 사용자의 로컬(예: Y:\gaja-tools\tracks)로 저장할 수 있게 다운로드 창 띄우기
-      exportNavGpx();
-      setTimeout(() => {
-        btn.innerHTML = origText;
-        btn.disabled = false;
-      }, 2500);
-    } catch (err) {
-      alert('전송 중 오류: ' + err.message);
-      btn.innerHTML = origText;
-      btn.disabled = false;
-    }
-  }
-
   document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
-  document.getElementById('btn-deploy-github').addEventListener('click', () => deployToGitHubTracks(false));
-  document.getElementById('btn-telegram-send').addEventListener('click', sendToTelegramBot);
-  document.getElementById('share-course-title').addEventListener('input', updateShareMessagePreview);
+  const navFilenameInputEl = document.getElementById('input-nav-filename');
+  if (navFilenameInputEl) {
+    navFilenameInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') exportNavGpx(); });
+  }
 
 
-  
-  document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));('click', () => zoomBy(1));
-document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(-1));
+  document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));
+  document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(-1));
+  document.getElementById('btn-poi-undo').addEventListener('click', undoPoiEdit);
+  document.getElementById('btn-poi-redo').addEventListener('click', redoPoiEdit);
 function generateCourseText() {
   if (!loadedPoints || loadedPoints.length < 2) {
     alert("GPX 데이터를 먼저 불러오세요.");
