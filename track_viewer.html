@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v124';
+    const CACHE_NAME = 'gaja-trail-cache-v125';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_remove_debug_logger';
+      const APP_BUILD = 'v20260921_sim_decel_interval';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=124', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=125', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3247,7 +3247,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v124';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v125';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4431,7 +4431,7 @@
 
     // 재생 중이거나(simInterval) 일시정지 중(isSimPaused)이면 완전 종료.
     if (simInterval || isSimPaused) {
-      if (simInterval) clearInterval(simInterval);
+      if (simInterval) clearTimeout(simInterval);
       simInterval = null;
       isSimPaused = false;
       btn.innerText = '▶️';
@@ -4527,11 +4527,26 @@
     startSimInterval();
   }
 
-  // 250ms 인터벌로 시뮬레이션 프레임을 진행시키는 공용 로직 — 최초
-  // 재생 시작(toggleSimulation)과 일시정지 후 재개(toggleSimulationPause)
-  // 양쪽에서 동일하게 재사용한다.
+  // 기준 인터벌(감속 없을 때의 프레임 간격) — 아래 SIM_BASE_INTERVAL_MS로 이동.
+  const SIM_BASE_INTERVAL_MS = 250;
+
+  // 시뮬레이션 프레임을 진행시키는 공용 로직 — 최초 재생 시작
+  // (toggleSimulation)과 일시정지 후 재개(toggleSimulationPause) 양쪽에서
+  // 동일하게 재사용한다.
+  //
+  // ⚠️ setInterval(고정 250ms) 대신 setTimeout 재귀로 바꿨다(2026-09-21,
+  // 사용자 신고: "시뮬레이션 안 돼.. 자동으로 속도 조절하는거"). 원인은
+  // 이동 단위가 GPX 원본 포인트(인덱스)라는 데 있었다 — 감속 계산 자체는
+  // 정상적으로 작은 stepDistanceM을 냈지만, 그 코스의 GPX 포인트 간격이
+  // 넓은 구간(예: 30~40m)에서는 "요청한 stepDistanceM만큼만 이동"이
+  // 물리적으로 불가능해 결국 다음 포인트까지 강제로 점프해버려 감속이
+  // 전혀 체감되지 않았다. 좌표를 선형 보간해도 회전/비프음 판정
+  // (updateNavigationToast -> updateSegmentRotationTrigger)이 여전히
+  // 정수 인덱스의 누적거리만 참조하므로 근본 해결이 안 된다 — 대신
+  // 프레임 "간격"을 감속 비율만큼 늘려, 다음 포인트까지 실제로 더 오래
+  // 걸리게 해서 체감 속도를 맞춘다(이동 단위는 그대로 유지, 시간만 조절).
   function startSimInterval() {
-    simInterval = setInterval(() => {
+    function tick() {
       if (!currentPoints || simIndex >= currentPoints.length) {
         toggleSimulation();
         return;
@@ -4555,20 +4570,18 @@
 
       // 🐢 갈림길 자동 감속(2026-09-21, #4 사용자 지시): 다음 갈림길까지
       // 60m 이내면 사용자가 고른 배속을 상한으로 점진 감속하고, 50m
-      // 이내는 항상 0.5배속(stepDistanceM=2)으로 고정한다 — 아무리 빠른
+      // 이내는 항상 0.5배속에 해당하는 배율로 고정한다 — 아무리 빠른
       // 배속을 골라도 갈림길 직전에는 천천히 지나가며 안내를 놓치지
       // 않도록. SIM_DECEL_START_M 밖(60m 초과)에서는 평소 속도 그대로.
       // 감속 시작 거리(SIM_DECEL_START_M)는 하단 화살표가 뜨는 거리
-      // (TURN_ALERT_DISTANCE_M=60m, showUpcomingTurnAlert 정의부)와 맞춘다
-      // — 원래 100m로 시작했더니 화살표가 뜨는 60m 시점엔 아직 감속이
-      // 절반만 진행돼 고배속(4~5x)에서는 화살표가 뜬 직후에도 여전히
-      // 빠르게 지나가버렸다(사용자 피드백). 화살표가 뜨는 순간부터 바로
-      // 느려지기 시작하도록 감속 시작점을 화살표 표시 구간에 맞췄다.
-      // 완전 저속(50m) 도달 지점은 원래 값 그대로 유지(사용자 선택) —
-      // 60m~50m 구간에서 집중적으로 줄어드는 형태.
+      // (TURN_ALERT_DISTANCE_M=60m, showUpcomingTurnAlert 정의부)와 맞춘다.
+      // decelSpeedRatio: 1(감속 없음) ~ SIM_SLOW_STEP_M/stepDistanceM
+      // (완전 저속, 0.5배속과 동등)까지의 배율 — 이동 거리가 아니라
+      // 프레임 간격(delayMs)에 곱해 "더 천천히" 만드는 데 쓴다.
       const SIM_DECEL_START_M = 60;
       const SIM_DECEL_SLOW_M = 50;
-      const SIM_SLOW_STEP_M = 2; // 0.5배속에 해당하는 stepDistanceM
+      const SIM_SLOW_STEP_M = 2; // 0.5배속에 해당하는 기준 step(delay 배율 계산용)
+      let decelSpeedRatio = 1; // 1 = 정상 속도, 값이 클수록(예: 4) 느려짐(간격을 그만큼 늘림)
       if (currentMilestones && currentMilestones.length >= 2) {
         const traveledDist = cumulativeDistances[simIndex] || 0;
         const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
@@ -4576,13 +4589,20 @@
           const distToNext = isReversingOnTrail
             ? Math.max(0, traveledDist - milestoneResult.nextM.distanceM)
             : Math.max(0, milestoneResult.nextM.distanceM - traveledDist);
+          const slowStepDistanceM = Math.max(SIM_SLOW_STEP_M, stepDistanceM); // 목표: 0.5배속과 동등한 stepDistanceM
+          let targetStepDistanceM = stepDistanceM;
           if (distToNext <= SIM_DECEL_SLOW_M) {
-            stepDistanceM = SIM_SLOW_STEP_M;
+            targetStepDistanceM = SIM_SLOW_STEP_M;
           } else if (distToNext <= SIM_DECEL_START_M) {
-            // 100m -> 50m 구간에서 stepDistanceM을 선형으로 감속(1 -> 0)
+            // 60m -> 50m 구간에서 선형으로 감속(1 -> 0)
             const decelRatio = (distToNext - SIM_DECEL_SLOW_M) / (SIM_DECEL_START_M - SIM_DECEL_SLOW_M);
-            stepDistanceM = SIM_SLOW_STEP_M + (stepDistanceM - SIM_SLOW_STEP_M) * decelRatio;
+            targetStepDistanceM = SIM_SLOW_STEP_M + (stepDistanceM - SIM_SLOW_STEP_M) * decelRatio;
           }
+          // "이동 거리를 줄이는" 대신 "그만큼 프레임 간격을 늘리는" 배율로
+          // 환산한다 — GPX 포인트 간격과 무관하게 항상 체감 속도가 정확히
+          // 반영된다(이동 자체는 다음 포인트까지 그대로, 그 포인트에
+          // 도달하는 데 걸리는 시간만 느려짐).
+          decelSpeedRatio = stepDistanceM / Math.max(targetStepDistanceM, 0.001);
         }
       }
 
@@ -4594,7 +4614,17 @@
         nextIndex++;
       }
       simIndex = nextIndex;
-    }, 250);
+
+      // GPX 포인트 간격이 아주 넓은 구간에서는 decelSpeedRatio가 극단적으로
+      // 커질 수 있다(한 스텝 실제 이동거리가 목표 저속보다 훨씬 크면 그
+      // 배율만큼 간격이 늘어남) — 프레임이 몇 초씩 멈춘 것처럼 보이는
+      // 역효과를 막기 위해 한 프레임당 최대 지연을 SIM_MAX_DELAY_MS로
+      // 제한한다(사용자 확인: "최대 1.5초로 제한").
+      const SIM_MAX_DELAY_MS = 1500;
+      const delayMs = Math.min(SIM_BASE_INTERVAL_MS * decelSpeedRatio, SIM_MAX_DELAY_MS);
+      simInterval = setTimeout(tick, delayMs);
+    }
+    simInterval = setTimeout(tick, SIM_BASE_INTERVAL_MS);
   }
 
   // 시뮬레이션 재생 중 "일시정지 ↔ 재개" 토글 — toggleSimulation()의
@@ -4608,7 +4638,7 @@
 
     if (simInterval) {
       // 재생 중 -> 일시정지
-      clearInterval(simInterval);
+      clearTimeout(simInterval);
       simInterval = null;
       isSimPaused = true;
       if (pauseBtn) pauseBtn.innerText = '▶️';
