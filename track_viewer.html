@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v137';
+    const CACHE_NAME = 'gaja-trail-cache-v138';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_tts_bg_attempt';
+      const APP_BUILD = 'v20260921_lowpower_audio_prewake';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=137', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=138', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3315,7 +3315,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v137';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v138';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4874,6 +4874,21 @@
 
     if (lowPowerModeEnabled) {
       showToastBadge('🔔 저전력 모드 예약됨\n화면이 꺼지면 5초 간격으로 전환됩니다.');
+      // 🔊 사용자 신고(2026-09-21): "저전력모드에서 화면이 꺼지면 소리도
+      // 나야 정상아닌가?" — 화면이 꺼진 뒤(visibilitychange 'hidden')에
+      // AudioContext를 처음 만들거나 resume()하면, 화면이 이미 안 보이는
+      // 상태라 브라우저/WebView의 오디오 자동재생 정책(사용자 제스처 필요)
+      // 에 걸려 조용히 거부될 수 있다. 지금 이 버튼 클릭은 확실한 사용자
+      // 제스처이므로, 화면이 꺼지기 전에 여기서 미리 AudioContext를
+      // 만들고 완전히 running 상태로 깨워둔다 — 화면이 꺼진 뒤에는
+      // resume()을 다시 호출할 필요 없이 이미 살아있는 컨텍스트를 그대로
+      // 쓸 수 있다.
+      try {
+        if (!audioCtx || audioCtx.state === 'closed') {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      } catch(e) {}
     } else {
       showToastBadge('🔕 저전력 모드를 해제했습니다.');
       // 이미 화면이 꺼진 채로(드문 경우: 백그라운드 탭에서 이 함수가
