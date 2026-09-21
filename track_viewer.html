@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v131';
+    const CACHE_NAME = 'gaja-trail-cache-v132';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_audio_fix_confirmed';
+      const APP_BUILD = 'v20260921_tts_guidance';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=131', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=132', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1431,6 +1431,39 @@
       // 문제 파악이 가능하게 하고 진동으로라도 한 번 더 시도한다.
       console.warn('⚠️ 비프음 재생 실패:', e);
       try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e2) {}
+    }
+  }
+
+  // 🔊 음성(TTS) 안내 — Web Speech API. 서버/API 키 없이 기기 내장
+  // 엔진으로 오프라인에서도 동작한다. 비프음과 달리 "무엇을 어떻게
+  // 해야 하는지"까지 말로 전달할 수 있어, 화면을 보지 않고 걷는 중에도
+  // 이탈 방향이나 갈림길 회전 방향을 바로 알 수 있게 한다.
+  // 화면이 꺼진 저전력 모드에서는 대부분의 브라우저/WebView가 음성
+  // 합성 자체를 일시정지시키므로(비프음과 달리 TTS는 이 제약이 훨씬
+  // 강함), 화면이 켜져 있을 때만 말하고 꺼진 동안은 비프음+진동에만
+  // 의존한다 — speak() 호출 전에 visibilityState를 확인한다.
+  let ttsEnabled = true;
+  let lastTtsUtterance = '';
+  let lastTtsTime = 0;
+  function speakGuidance(text) {
+    if (!ttsEnabled || !('speechSynthesis' in window)) return;
+    if (document.visibilityState !== 'visible') return;
+    // 같은 문장이 짧은 간격(2초) 안에 중복 호출되는 것만 걸러낸다 —
+    // GPS 픽스마다 재계산되는 거리/각도값이 문장에 섞여 있어 완전
+    // 동일 문장이 반복 호출될 일은 드물지만, 혹시 모를 연속 호출로
+    // 문장이 끊기지 않도록 방어한다.
+    const now = Date.now();
+    if (text === lastTtsUtterance && now - lastTtsTime < 2000) return;
+    lastTtsUtterance = text;
+    lastTtsTime = now;
+    try {
+      window.speechSynthesis.cancel(); // 이전 발화가 남아있으면 끊고 새로 시작
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ko-KR';
+      utter.rate = 1.05;
+      window.speechSynthesis.speak(utter);
+    } catch (e) {
+      console.warn('⚠️ 음성 안내 재생 실패:', e);
     }
   }
 
@@ -3278,7 +3311,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v131';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v132';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4076,6 +4109,7 @@
       // 유지될 때만 실제 경고음을 울린다.
       if (offTrailStreakCount >= 3) {
         playOffTrailBeep();
+        speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
       }
     } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
       // 정지 중에는 "정지 중" 안내만, 이동 중에는 남은 거리만 표시한다.
@@ -4237,6 +4271,7 @@
     // 대체 없음) "그 지명 자체가 없어서" 안내 못 하는 경우는 없다.
     const isRealStraight = nextM.turnLabel === '직진';
     const hasDirection = nextM.turnLabel && nextM.turnAngle !== null;
+    let clockOnly = null; // 음성 안내("NN미터 앞 X시 방향")에서도 재사용
 
     if (hasDirection) {
       // 좌회전/우회전 텍스트보다 몇 시 방향인지(예: "1시 방향")가 훨씬
@@ -4248,7 +4283,7 @@
       // "9시방향으로"라는 조사 자체가 이미 회전 의미를 담고 있어 중복
       // 지시로 들린다는 사용자 피드백(2026-09-19) — 괄호 부분은 버리고
       // "OO에서 X시방향으로(NNm앞)" 형식으로만 표기한다.
-      const clockOnly = clockDir.clock.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, '');
+      clockOnly = clockDir.clock.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, '');
       const label = `${nextM.name}에서 ${clockOnly}으로(${Math.round(distToNextM)}m앞)`;
       // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
       // 그대로 넘긴다 — 화면이 이미 nextM 방향(mapRotationDeg)으로 맞춰진
@@ -4287,6 +4322,7 @@
       const closestThreshold = Math.min(...TURN_ALERT_BEEP_THRESHOLDS_M);
       if (distToNextM <= closestThreshold) {
         playTurnAlertBeep();
+        speakTurnApproach(nextM, closestThreshold, clockOnly);
       }
     } else if (remainingBeepThresholds && remainingBeepThresholds.length > 0) {
       // 이 갈림길에 머무는 동안 — 남은 임계값 중 다음 차례(가장 먼 값)를
@@ -4294,9 +4330,23 @@
       const nextThreshold = Math.max(...remainingBeepThresholds);
       if (distToNextM <= nextThreshold) {
         playTurnAlertBeep();
+        speakTurnApproach(nextM, nextThreshold, clockOnly);
         remainingBeepThresholds = remainingBeepThresholds.filter(t => t !== nextThreshold);
       }
     }
+  }
+
+  // 🔊 갈림길 접근 음성 안내 — "30미터 앞 10시 방향"처럼 "임계값 거리 +
+  // 몇 시 방향" 순서로 짧게 말한다. 실제 GPS 거리(distToNextM)가 아니라
+  // 방금 넘은 임계값(threshold, 50/30/10 중 하나)을 말해야 "정확히 그
+  // 단계를 알린다"는 사용자 기대와 맞다 — distToNextM은 48.3처럼 임계값
+  // 근처의 애매한 실측값이라 그대로 읽으면 "48미터 앞"처럼 어색하다.
+  // clockOnly가 null이면(회전각 계산 실패) 방향 없이 지명과 거리만 말한다.
+  function speakTurnApproach(nextM, threshold, clockOnly) {
+    const text = clockOnly
+      ? `${threshold}미터 앞 ${clockOnly}`
+      : `${nextM.name} ${threshold}미터 앞`;
+    speakGuidance(text);
   }
 
   // 화면 자동 꺼짐 방지 (Wake Lock) — 길찾기 회전 모드(화살표 ON, 2클릭)
