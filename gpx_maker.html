@@ -128,6 +128,23 @@
     .btn-super-copy:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(46,125,50,0.4); }
     .btn-super-copy:active { transform: translateY(0); }
 
+    .btn-kakaotalk {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      background: #FEE500;
+      color: #381e1f;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(254, 229, 0, 0.3);
+      transition: all 0.2s;
+    }
+    .btn-kakaotalk:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(254, 229, 0, 0.45); }
+    .btn-kakaotalk:active { transform: translateY(0); }
+
     .btn-telegram {
       width: 100%;
       margin-top: 10px;
@@ -278,6 +295,9 @@
         <button type="button" onclick="openTokenModal()" style="background: #ffffff; border: 1.5px solid #2e7d32; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #1b5e20; cursor: pointer;">
           🔑 깃허브 토큰
         </button>
+        <button type="button" onclick="openTelegramModal()" style="background: #ffffff; border: 1.5px solid #0288d1; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0277bd; cursor: pointer;">
+          🤖 텔레그램 설정
+        </button>
         <button type="button" onclick="loadPresetTracks()" style="background: #ffffff; border: 1.5px solid #81c784; padding: 5px 11px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #2e7d32; cursor: pointer;">
           🔄 새로고침
         </button>
@@ -315,10 +335,15 @@
       <input type="text" id="trackSearchInput" placeholder="🔍 산 이름 또는 날짜로 검색 (예: 덕유산, 지리산, 2025...)" oninput="filterTracks(this.value)" style="width: 100%; padding: 12px 16px; font-size: 14px; border-radius: 10px; border: 1.5px solid #81c784; background: #ffffff;">
     </div>
 
-    <!-- 방법 C: 드롭다운 목록 (검색어에 맞게 실시간 필터링됨) -->
-    <select id="presetTracksSelect" onchange="onPresetTrackSelected(this.value)" style="width: 100%; padding: 13px; font-size: 15px; border-radius: 12px; border: 2px solid #66bb6a; background: #ffffff; font-weight: bold; color: #1b5e20; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.06);">
-      <option value="">⏳ 깃허브에서 저장된 코스 목록을 불러오는 중입니다...</option>
-    </select>
+      <!-- 방법 C: 드롭다운 목록 (검색어에 맞게 실시간 필터링됨) -->
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <select id="presetTracksSelect" onchange="onPresetTrackSelected(this.value)" style="flex: 1; padding: 13px; font-size: 15px; border-radius: 12px; border: 2px solid #66bb6a; background: #ffffff; font-weight: bold; color: #1b5e20; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.06);">
+          <option value="">⏳ 깃허브에서 저장된 코스 목록을 불러오는 중입니다...</option>
+        </select>
+        <button type="button" onclick="deleteSelectedTrack()" style="background: #ffebee; color: #d32f2f; border: 1.5px solid #ffcdd2; padding: 13px; border-radius: 12px; font-size: 14px; font-weight: bold; cursor: pointer; min-width: 50px;" title="선택한 파일을 서버에서 영구 삭제합니다">
+          🗑️ 삭제
+        </button>
+      </div>
   </div>
 
   <!-- 보조: 생성된 GPX 주소 -->
@@ -346,13 +371,28 @@
       
       <div class="preview-box" id="previewArea"></div>
 
-      <button class="btn-super-copy" onclick="copyRichHyperlink()">
-        📋 링크 걸린 버튼 복사하기 (블로그에 바로 붙여넣기용)
-      </button>
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 14px;">
+        <button class="btn-super-copy" onclick="copyForSMS()" style="background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);">
+          📝 문자 메시지(SMS) 전용으로 복사하기
+        </button>
 
-      <button type="button" class="btn-telegram" id="btnTelegramSend" onclick="sendToGajagoBot()" style="display: none;">
-        🤖 텔레그램으로 전송하기
-      </button>
+        <button class="btn-super-copy" onclick="copyRichHyperlink()">
+          🔗 링크 걸린 버튼 복사하기 (블로그에 바로 붙여넣기용)
+        </button>
+
+        <div style="margin-bottom: 4px;">
+          <label for="kakaoMessageInput" style="display:block; font-size:12.5px; font-weight:700; color:#4a5568; margin-bottom:4px;">💬 카카오톡 메시지 문구 (직접 수정 가능)</label>
+          <textarea id="kakaoMessageInput" rows="3" style="width:100%; padding:9px 10px; font-size:13.5px; font-family:inherit; border:1.5px solid #fbc02d; border-radius:8px; resize:vertical; box-sizing:border-box;" placeholder="예: ⛰️ [코스명] 오프라인 등산지도"></textarea>
+        </div>
+
+        <button type="button" class="btn-kakaotalk" id="btnKakaoSend" onclick="sendToKakaoTalk()">
+          💬 카카오톡으로 전송하기
+        </button>
+
+        <button type="button" class="btn-telegram" id="btnTelegramSend" onclick="sendToGajagoBot()">
+          🤖 텔레그램 gajago_bot으로 전송하기
+        </button>
+      </div>
     </div>
 
     <!-- 📱 스마트폰 QR 코드 바로 열기 -->
@@ -381,26 +421,13 @@
 
   <!-- 하단 푸터 크레딧 -->
   <div style="text-align: center; margin-top: 36px; padding: 22px 0 10px; color: #43a047; font-size: 13px; font-weight: 700; border-top: 1.5px solid #c8e6c9;">
-    👣 Crafted by <b>가자go</b> · 오프라인 스마트 등산지도
+    👣 Crafted by <b>gajago</b> · 오프라인 스마트 등산지도
   </div>
 </div>
 
 <div class="toast" id="toast">📋 복사되었습니다!</div>
 
 <script>
-  // 텔레그램 전송(/api/gpx-notify)은 NAS 서버 자신에게 보내는 같은 오리진
-  // 요청이라 NAS에서 연 페이지에서만 동작한다. GitHub Pages 등 외부
-  // 배포본에서는 호출해도 항상 실패하므로 버튼 자체를 숨긴다.
-  (function hideTelegramButtonIfExternal() {
-    const isNas = location.hostname === '192.168.219.119' || location.hostname === 'localhost';
-    if (isNas) {
-      document.addEventListener('DOMContentLoaded', () => {
-        const btn = document.getElementById('btnTelegramSend');
-        if (btn) btn.style.display = 'flex';
-      });
-    }
-  })();
-
   let allTrackFiles = [];
 
   // 깃허브 tracks 폴더의 파일 목록을 실시간 자동 조회
@@ -857,6 +884,15 @@
     `;
 
     document.getElementById('resultSection').classList.add('active');
+
+    // 🔊 카카오 메시지 기본값 채우기 — 사용자가 직접 textarea를 건드린
+    // 적이 없을 때만 코스명이 바뀔 때마다 자동 갱신한다. 한 번이라도
+    // 직접 수정했다면(kakaoMessageEdited) 코스를 다시 선택해도 그
+    // 문구를 유지해 덮어쓰지 않는다.
+    const kakaoMsgEl = document.getElementById('kakaoMessageInput');
+    if (kakaoMsgEl && !kakaoMsgEl.dataset.userEdited) {
+      kakaoMsgEl.value = `⛰️ [${courseName} 오프라인 등산지도]\n\n아! 토요일은 산에 가자!, 오프라인 산행경로 지도입니다`;
+    }
   }
 
   async function copyRichHyperlink() {
@@ -906,12 +942,61 @@
       .replace(/"/g, '&quot;');
   }
 
-  // 🤖 텔레그램 전송 — 봇 토큰/Chat ID는 브라우저에 저장하지 않는다.
-  // NAS 서버(/api/gpx-notify)가 이미 갖고 있는 telegram_token.json을
-  // 그대로 쓰므로, 브라우저 저장공간이 지워져도(캐시 정리, 다른 기기 등)
-  // 다시 설정할 필요가 없다. 단, 이 API는 CORS를 열지 않았으므로 NAS에서
-  // 연 페이지(같은 오리진)에서만 동작한다 — GitHub Pages 등 외부 배포본
-  // 에서는 버튼 자체를 숨긴다(아래 hideTelegramButtonIfExternal 참고).
+  // 🤖 텔레그램 gajago_bot 연동 키
+  const TG_TOKEN_STORAGE_KEY = 'gajago_tg_bot_token';
+  const TG_CHAT_STORAGE_KEY = 'gajago_tg_chat_id';
+
+  function openKakaoModal() { const modal = document.getElementById('kakaoModal'); const keyInput = document.getElementById('kakaoKeyInput'); if (keyInput) keyInput.value = localStorage.getItem('gajago_kakao_js_key') || ''; if (modal) modal.classList.add('active'); }
+  function closeKakaoModal() { const modal = document.getElementById('kakaoModal'); if (modal) modal.classList.remove('active'); }
+  function saveKakaoConfigAndClose() { const keyInput = document.getElementById('kakaoKeyInput'); const key = keyInput ? keyInput.value.trim() : ''; localStorage.setItem('gajago_kakao_js_key', key); closeKakaoModal(); showToast('카카오 연동 설정 저장됨!'); }
+  function deleteKakaoConfig() { if (confirm('삭제하시겠습니까?')) { localStorage.removeItem('gajago_kakao_js_key'); const keyInput = document.getElementById('kakaoKeyInput'); if (keyInput) keyInput.value = ''; } }
+
+  function openTelegramModal() {
+    const modal = document.getElementById('telegramModal');
+    const tokenInput = document.getElementById('tgTokenInput');
+    const chatInput = document.getElementById('tgChatInput');
+    if (tokenInput) tokenInput.value = localStorage.getItem(TG_TOKEN_STORAGE_KEY) || '';
+    if (chatInput) chatInput.value = localStorage.getItem(TG_CHAT_STORAGE_KEY) || '';
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeTelegramModal() {
+    const modal = document.getElementById('telegramModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function saveTelegramConfigAndClose() {
+    const tokenInput = document.getElementById('tgTokenInput');
+    const chatInput = document.getElementById('tgChatInput');
+    const token = tokenInput ? tokenInput.value.trim() : '';
+    const chat = chatInput ? chatInput.value.trim() : '';
+
+    if (!token) {
+      alert('텔레그램 봇 토큰(Bot Token)을 입력해주세요.');
+      return;
+    }
+    if (!chat) {
+      alert('메시지를 수신할 텔레그램 대화방 ID(Chat ID)를 입력해주세요.');
+      return;
+    }
+
+    localStorage.setItem(TG_TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(TG_CHAT_STORAGE_KEY, chat);
+    closeTelegramModal();
+    showToast('💾 텔레그램 연동 정보가 브라우저에 안전하게 저장되었습니다!');
+  }
+
+  function deleteTelegramConfig() {
+    if (confirm('저장된 텔레그램 연동 정보를 삭제하시겠습니까?')) {
+      localStorage.removeItem(TG_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(TG_CHAT_STORAGE_KEY);
+      const tokenInput = document.getElementById('tgTokenInput');
+      const chatInput = document.getElementById('tgChatInput');
+      if (tokenInput) tokenInput.value = '';
+      if (chatInput) chatInput.value = '';
+      showToast('🗑️ 텔레그램 연동 정보가 삭제되었습니다.');
+    }
+  }
 
   async function sendToGajagoBot() {
     const finalUrl = document.getElementById('finalUrlText').innerText.trim();
@@ -920,45 +1005,141 @@
       return;
     }
 
-    const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
+    const botToken = localStorage.getItem(TG_TOKEN_STORAGE_KEY);
+    const chatId = localStorage.getItem(TG_CHAT_STORAGE_KEY);
 
+    if (!botToken || !chatId) {
+      alert('텔레그램 연동 설정(봇 토큰 및 Chat ID)이 필요합니다.\n설정 창을 엽니다.');
+      openTelegramModal();
+      return;
+    }
+
+    const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
+    
     // 버튼 클릭 시 최종 확인 팝업 (실수 방지 및 사용자 명시적 확인)
-    const confirmed = confirm(`⛰️ [텔레그램 전송 확인]\n\n코스명: ${courseName}\n\n이 등산지도 링크를 텔레그램으로 전송하시겠습니까?`);
+    const confirmed = confirm(`⛰️ [텔레그램 gajago_bot 전송 확인]\n\n코스명: ${courseName}\n\n이 등산지도 링크를 텔레그램 gajago_bot으로 전송하시겠습니까?`);
     if (!confirmed) {
       return;
     }
 
+    // 텔레그램 HTML 모드 (URL 내 & 기호를 &amp;로 치환하여 파싱 오류 방지)
+    const escapedUrlForHref = finalUrl.replace(/&/g, '&amp;');
+    const safeCourseName = escapeHtml(courseName);
+
+    // 긴 URL 주소를 화면에 노출하지 않고 '코스명 오프라인 등산지도' 텍스트 자체에 하이퍼링크 연결
+    const messageHtml = `⛰️ <a href="${escapedUrlForHref}"><b>${safeCourseName} 오프라인 등산지도</b></a>\n\n💡 위 파란색 글씨나 아래 버튼을 터치하시면 스마트폰에서 지도가 바로 열립니다.`;
+
     const btn = document.getElementById('btnTelegramSend');
     const origText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '⏳ 전송 중...';
+    btn.innerHTML = '⏳ gajago_bot으로 전송 중...';
 
     try {
-      // 봇 토큰/Chat ID는 브라우저가 모른다 — NAS 서버(nas-tools, 8991 포트)가
-      // telegram_token.json으로 이미 갖고 있는 값을 그대로 써서 전송한다.
-      // 이 페이지 자신은 gaja-tools(8444 포트)에서 서빙되는 다른 오리진이라
-      // 절대 주소로 불러야 하고, 서버 쪽에 CORS를 열어뒀다.
-      const res = await fetch('http://192.168.219.119:8991/api/gpx-notify', {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: finalUrl, courseName })
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: messageHtml,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: `🗺️ ${courseName} 지도 열기`, url: finalUrl }
+              ]
+            ]
+          }
+        })
       });
       const data = await res.json();
       if (data.ok) {
-        btn.innerHTML = '✅ 전송 완료!';
-        showToast('🎉 텔레그램으로 등산지도가 전송되었습니다! 📱');
+        btn.innerHTML = '✅ gajago_bot 전송 완료!';
+        showToast('🎉 텔레그램 gajago_bot으로 등산지도가 전송되었습니다! 📱');
         setTimeout(() => {
           btn.innerHTML = origText;
           btn.disabled = false;
         }, 2500);
       } else {
-        throw new Error(data.message || '전송 실패');
+        throw new Error(data.description || '전송 실패');
       }
     } catch(err) {
       alert('텔레그램 전송 중 오류: ' + err.message);
       btn.innerHTML = origText;
       btn.disabled = false;
     }
+  }
+
+  async function deleteSelectedTrack() {
+    const sel = document.getElementById('presetTracksSelect');
+    const filename = sel ? sel.value : '';
+    if (!filename) { alert('삭제할 산행 코스를 왼쪽 목록에서 먼저 선택해주세요.'); return; }
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!token) { alert('깃허브 파일 삭제 권한이 없습니다!\n화면 아래 [🔐 깃허브 토큰] 버튼을 눌러주세요.'); return; }
+    if (!confirm('정말로 [' + filename + '] 코스를 깃허브 서버에서 영구 삭제하시겠습니까?\n(이 작업은 되돌릴 수 없습니다!)')) return;
+    
+    const path = 'tracks/' + encodeURIComponent(filename);
+    const apiUrl = 'https://api.github.com/repos/hjwpro1971/gaja/contents/' + path;
+    try {
+      const getRes = await fetch(apiUrl + '?t=' + Date.now(), { headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' } });
+      if (!getRes.ok) {
+        if(getRes.status === 404) alert('이미 서버에서 삭제되었거나 찾을 수 없는 파일입니다.');
+        else alert('파일 정보를 가져오는데 실패했습니다.');
+        return;
+      }
+      const sha = (await getRes.json()).sha;
+      const delRes = await fetch(apiUrl, { method: 'DELETE', headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'Delete track: ' + filename, sha: sha }) });
+      if (delRes.ok) { 
+        showToast('🗑️ 파일이 성공적으로 삭제되었습니다!'); 
+        sel.value = ''; 
+        onPresetTrackSelected(''); 
+        await loadPresetTracks(); 
+      }
+      else alert('삭제 권한 부족 또는 실패!');
+    } catch(e) { alert('네트워크 오류'); }
+  }
+
+  function copyForSMS() {
+    const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
+    const finalUrl = document.getElementById('finalUrlText').innerText;
+    const smsText = '⛰️ [' + courseName + ' 오프라인 등산지도]\n아! 토요일은 산에 가자!, 오프라인 산행경로 지도입니다\n\n👇 아래 인터넷 주소를 누르시면 지도가 바로 열립니다!\n' + finalUrl;
+    navigator.clipboard.writeText(smsText).then(() => showToast('📝 문자로 보낼 준비 완료! 문자 창이나 카톡방에 [붙여넣기] 하세요.'));
+  }
+
+  async function sendToKakaoTalk() {
+    const finalUrl = document.getElementById('finalUrlText').innerText.trim();
+    if (!finalUrl) return alert('먼저 코스를 선택해주세요.');
+    const courseName = document.getElementById('courseNameInput').value.trim() || '등산 코스';
+    // 🔊 사용자 요청(2026-09-22): "보내는 메세지를 내가 직접 변경할 수
+    // 있게 해 줘.. '아~ 토요일은 산에~~~'라는 메세지가 공통으로
+    // 나가고 있는데 이것을 변경하고 싶어" — kakaoMessageInput에 직접
+    // 적은 문구가 있으면 그걸 그대로 서버에 전달하고, 비어 있으면
+    // 서버가 기존 기본 문구로 채운다(하위호환).
+    const customMessage = (document.getElementById('kakaoMessageInput') || {}).value || '';
+    const btn = document.getElementById('btnKakaoSend');
+    if (btn) btn.innerHTML = '⏳ 전송 중...';
+
+    try {
+      const res = await fetch('https://hjwpro.vercel.app/api/gpx-kakao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ courseName: courseName, url: finalUrl, message: customMessage.trim() }) });
+      const data = await res.json();
+      if (data.ok || data.isSuccess) {
+        if (btn) btn.innerHTML = '✅ 전송 완료!';
+        showToast('🎉 카카오톡 "나와의 채팅"으로 전송되었습니다!');
+        setTimeout(() => { if(btn) btn.innerHTML = '💬 카카오톡으로 전송하기'; }, 3000);
+        return;
+      }
+    } catch (e) {}
+
+    const KAKAO_KEY_STORAGE_KEY = 'gajago_kakao_js_key';
+    let kakaoKey = localStorage.getItem(KAKAO_KEY_STORAGE_KEY);
+    if (window.Kakao && kakaoKey && !window.Kakao.isInitialized()) { try { window.Kakao.init(kakaoKey); } catch(e){} }
+    if (window.Kakao && window.Kakao.isInitialized()) {
+      try {
+        window.Kakao.Share.sendDefault({ objectType: 'feed', content: { title: '⛰️ ' + courseName + ' 오프라인 등산지도', description: '아! 토요일은 산에 가자!, 오프라인 산행경로 지도입니다', imageUrl: 'https://hjwpro1971.github.io/gaja/icon-512.png', link: { mobileWebUrl: finalUrl, webUrl: finalUrl } }, buttons: [{ title: '🗺️ 등산지도 바로 열기', link: { mobileWebUrl: finalUrl, webUrl: finalUrl } }] });
+        return;
+      } catch (err) {}
+    }
+    copyForSMS();
   }
 
   function copyPlainUrl() {
@@ -979,6 +1160,10 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     loadPresetTracks();
+    const kakaoMsgEl = document.getElementById('kakaoMessageInput');
+    if (kakaoMsgEl) {
+      kakaoMsgEl.addEventListener('input', () => { kakaoMsgEl.dataset.userEdited = '1'; });
+    }
   });
 </script>
 
@@ -1023,5 +1208,61 @@
   </div>
 </div>
 
+<!-- 텔레그램 연동 설정 모달 -->
+<div class="modal-backdrop" id="telegramModal">
+  <div class="modal-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+      <h3 style="margin: 0; color: #0277bd; font-size: 18px; font-weight: 800;">🤖 텔레그램 gajago_bot 연동 설정</h3>
+      <button type="button" onclick="closeTelegramModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #757575;">✕</button>
+    </div>
+    
+    <p style="font-size: 13px; color: #424242; line-height: 1.5; margin-bottom: 14px;">
+      생성된 등산지도 링크를 텔레그램 봇으로 전송하기 위한 설정입니다.<br>
+      <span style="color: #0277bd; font-weight: bold;">입력하신 토큰과 대화방 ID는 깃허브에 공유되지 않으며, 내 브라우저(localStorage)에만 안전하게 보관됩니다.</span>
+    </p>
+
+    <div style="margin-bottom: 14px;">
+      <label style="display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: #333;">1. 텔레그램 봇 토큰 (Bot Token):</label>
+      <input type="password" id="tgTokenInput" placeholder="예: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz..." style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #4fc3f7; font-size: 14px; box-sizing: border-box;">
+      <div style="font-size: 12px; color: #666; margin-top: 6px;">
+        💡 텔레그램 @BotFather에게 발급받은 봇 토큰을 입력합니다.
+      </div>
+    </div>
+
+    <div style="margin-bottom: 18px;">
+      <label style="display: block; font-size: 13px; font-weight: bold; margin-bottom: 6px; color: #333;">2. 내 대화방 ID (Chat ID):</label>
+      <input type="text" id="tgChatInput" placeholder="예: 123456789" style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #4fc3f7; font-size: 14px; box-sizing: border-box;">
+      <div style="font-size: 12px; color: #666; margin-top: 6px;">
+        💡 메시지를 수신할 본인의 텔레그램 Chat ID를 입력합니다.
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button type="button" onclick="deleteTelegramConfig()" style="background: #f5f5f5; border: 1px solid #ccc; color: #d32f2f; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        설정 삭제
+      </button>
+      <button type="button" onclick="saveTelegramConfigAndClose()" style="background: #0288d1; border: none; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">
+        저장하기
+      </button>
+    </div>
+  </div>
+</div>
+
+  <!-- 카카오톡 모달 -->
+  <div class="modal-backdrop" id="kakaoModal">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="margin: 0; color: #381e1f; font-size: 18px; font-weight: 800;">💬 카카오톡 공유 연동 설정</h3>
+        <button type="button" onclick="closeKakaoModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #757575;">✕</button>
+      </div>
+      <div style="margin-bottom: 14px;">
+        <input type="password" id="kakaoKeyInput" placeholder="예: 7a8b9c... (JavaScript 키)" style="width: 100%; padding: 11px 13px; border-radius: 8px; border: 1.5px solid #fbc02d; font-size: 14px; box-sizing: border-box;">
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" onclick="deleteKakaoConfig()" style="background: #f5f5f5; border: 1px solid #ccc; color: #d32f2f; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">삭제</button>
+        <button type="button" onclick="saveKakaoConfigAndClose()" style="background: #FEE500; border: none; color: #381e1f; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;">저장</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
