@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v123';
+    const CACHE_NAME = 'gaja-trail-cache-v124';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_reverse_segment_penalty';
+      const APP_BUILD = 'v20260921_remove_debug_logger';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -706,8 +706,6 @@
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
   <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
-  <!-- 회전 검증 로그(디버그용) 버튼 숨김(사용자 요청) — 기능은 유지. -->
-  <button class="fab-btn" onclick="window.__dumpDirectionDebugLog()" title="회전 검증 로그 지금 저장" style="font-size:16px; display:none;">🐞</button>
 </div>
 
 <!-- 🧭 하단 대형 방향 화살표 — 다음 갈림길이 가까워지면(showUpcomingTurnAlert)
@@ -805,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=123', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=124', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1165,93 +1163,6 @@
 
   const gpsFilterEngine = new GpsFilterEngine();
   // ────────────────────────────────────────────────────────────────
-
-  // ════════════════════════════════════════════════════════════════
-  // 🐞 회전 로직 검증용 디버그 로거 — 사진으로 한 장씩 비교하는 대신,
-  // 1초 주기로 회전 계산의 모든 중간값을 CSV로 남겨 어느 계산 단계에서
-  // 어긋나는지 데이터로 추적할 수 있게 한다. GPS 추적 시작/종료에 맞춰
-  // 자동 시작/자동 다운로드되며, dumpDirectionDebugLog()로 언제든 수동
-  // 저장도 가능하다.
-  class DirectionDebugLogger {
-    constructor() {
-      this.logs = [];
-      this.isLogging = false;
-      this.timerId = null;
-    }
-    start() {
-      this.logs = [];
-      this.isLogging = true;
-      if (this.timerId) clearInterval(this.timerId);
-      this.timerId = setInterval(() => this.captureSnapshot(), 1000);
-      console.log('🐞 [DirectionDebugLogger] 회전 검증 로그 기록 시작');
-    }
-    stop() {
-      this.isLogging = false;
-      if (this.timerId) {
-        clearInterval(this.timerId);
-        this.timerId = null;
-      }
-      console.log(`🐞 [DirectionDebugLogger] 기록 종료 (총 ${this.logs.length}개)`);
-    }
-    // 1초마다 현재 전역 상태를 그대로 스냅샷한다 — watchPosition 콜백
-    // 내부 값을 별도로 안 건드리고, 이미 존재하는 전역 변수만 읽는다.
-    // 센서(나침반/자이로) 제거 이후에는 GPS 좌표 기반 값만 남는다.
-    captureSnapshot() {
-      if (!this.isLogging) return;
-      const wrapper = document.getElementById('gpsHeadingWrapper');
-      const arrowCssTransform = wrapper ? wrapper.style.transform : '';
-
-      this.logs.push({
-        timestamp: new Date().toISOString(),
-        lat: lastKnownPos ? Number(lastKnownPos.lat.toFixed(7)) : '',
-        lon: lastKnownPos ? Number(lastKnownPos.lon.toFixed(7)) : '',
-        isCurrentlyStopped: isCurrentlyStopped,
-        gpsMovementHeading: gpsMovementHeading !== null ? Math.round(gpsMovementHeading) : '',
-        lastAlertedMilestoneKey: lastAlertedMilestoneKey || '',
-        arrowCssTransform: arrowCssTransform,
-      });
-    }
-    exportCSV(filename = `direction_debug_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`) {
-      if (this.logs.length === 0) {
-        alert('저장된 디버그 로그 데이터가 없습니다.');
-        return;
-      }
-      const headers = Object.keys(this.logs[0]);
-      const csvRows = [headers.join(',')];
-      for (const row of this.logs) {
-        const values = headers.map(header => {
-          const val = row[header];
-          return typeof val === 'string' ? `"${val}"` : val;
-        });
-        csvRows.push(values.join(','));
-      }
-      const csvContent = "﻿" + csvRows.join('\n'); // UTF-8 BOM
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      console.log(`🐞 [DirectionDebugLogger] CSV 저장 완료: ${filename}`);
-      showToastBadge('🐞 회전 검증 CSV 파일이 다운로드 되었습니다.');
-    }
-  }
-  const directionDebugLogger = new DirectionDebugLogger();
-  // 언제든 수동으로 지금까지의 로그를 저장하고 싶을 때 콘솔에서
-  // window.__dumpDirectionDebugLog() 호출.
-  window.__dumpDirectionDebugLog = () => directionDebugLogger.exportCSV();
-  // GPS 아이콘(🎯)을 길게 누르면(handleGpsBtnLongPress) true로 세팅되는
-  // 디버그 모드 플래그 — 일반 사용자는 절대 마주치지 않는 숨김 기능
-  // (사용자 지시: "일반 유저들은 이 기능 사용할 이유가 없어"). true인
-  // 동안은 (1) startGpsTracking()이 directionDebugLogger를 시작하고,
-  // (2) visibilitychange 핸들러가 화면이 꺼져도 GPS를 끄지 않아
-  // 백그라운드에서도 데이터 수집이 계속된다. stopGpsTracking()에서
-  // 자동으로 false로 되돌아간다.
-  let isDebugLoggingMode = false;
-  // ════════════════════════════════════════════════════════════════
 
   let map = null;
   let currentLayer = null;
@@ -3336,7 +3247,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v123';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v124';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4340,12 +4251,6 @@
   let wasTrackingBeforeHidden = false;
 
   document.addEventListener('visibilitychange', () => {
-    // 🐞 디버그 로깅 모드(GPS 아이콘 길게 눌러 시작) 중에는 화면이
-    // 꺼져도 GPS를 끄지 않는다 — 버그 재현 데이터를 백그라운드에서도
-    // 끊기지 않고 계속 수집해야 하기 때문이다(사용자 지시: "이 경우에는
-    // gps 가 백그라운드에서 안 꺼지고 데이타를 계속 수집할 수 있게").
-    // 일반 사용자는 이 플래그가 항상 false이므로 기존 절전 동작 그대로.
-    if (isDebugLoggingMode) return;
     if (document.visibilityState === 'hidden') {
       if (watchId !== null) {
         wasTrackingBeforeHidden = true;
@@ -4734,53 +4639,6 @@
   }
   window.toggleSimulationPause = toggleSimulationPause;
 
-  // 🐞 GPS 아이콘 길게 누르기 — 회전 검증 디버그 로깅을 시작하는 숨김
-  // 진입점(사용자 지시: "버그 잡는다고 데이터 수집하고 있는 기능을
-  // gps 아이콘 길게 클릭하면 그때 시작을 하게 해 줘... 일반 유저들은
-  // 이 기능 사용할 이유가 없어"). 짧게 누르면(클릭) 기존 toggleGPS()
-  // 그대로 동작하고, GPS_LONG_PRESS_MS 이상 누르고 있으면 그 클릭은
-  // 무시하고 대신 디버그 모드로 GPS를 (재)시작한다.
-  const GPS_LONG_PRESS_MS = 800;
-  let gpsBtnPressTimer = null;
-  let gpsBtnLongPressTriggered = false;
-
-  function handleGpsBtnPressStart() {
-    gpsBtnLongPressTriggered = false;
-    if (gpsBtnPressTimer) clearTimeout(gpsBtnPressTimer);
-    gpsBtnPressTimer = setTimeout(() => {
-      gpsBtnLongPressTriggered = true;
-      startDebugLoggingGps();
-    }, GPS_LONG_PRESS_MS);
-  }
-  function handleGpsBtnPressEnd() {
-    if (gpsBtnPressTimer) { clearTimeout(gpsBtnPressTimer); gpsBtnPressTimer = null; }
-  }
-  // 길게 누르기로 트리거된 동작 직후에 발생하는 click 이벤트(짧게 누른
-  // 것으로 오인해 toggleGPS()가 중복 실행되는 것)를 한 번만 막는다.
-  function handleGpsBtnClickCapture(e) {
-    if (gpsBtnLongPressTriggered) {
-      gpsBtnLongPressTriggered = false;
-      e.stopImmediatePropagation();
-      e.preventDefault();
-    }
-  }
-
-  // GPS가 꺼져 있으면 디버그 모드로 새로 시작하고, 이미 켜져 있으면
-  // (일반 클릭으로 이미 추적 중이었던 경우) 로깅만 추가로 시작한다 —
-  // 두 경우 모두 켜진 뒤에는 isDebugLoggingMode=true라 백그라운드에서도
-  // 데이터가 끊기지 않는다.
-  function startDebugLoggingGps() {
-    if (simInterval !== null || isSimPaused) toggleSimulation();
-    isDebugLoggingMode = true;
-    if (watchId === null && !isGpsSleeping) {
-      startGpsTracking();
-    } else {
-      if (isGpsSleeping) exitGpsSleep('디버그 로깅 시작');
-      if (!directionDebugLogger.isLogging) directionDebugLogger.start();
-    }
-    showToastBadge('🐞 디버그 로깅 모드로 GPS를 시작했습니다.\n화면이 꺼져도 계속 데이터를 수집합니다.');
-  }
-
   // 실시간 GPS 내 위치 추적 (확대 지도, 길찾기 회전 모드, 나침반 방향 빔, 등산로 복귀 가이드)
   function toggleGPS() {
     if (simInterval !== null || isSimPaused) toggleSimulation(); // 시뮬레이션 중(재생/일시정지)이면 끄기
@@ -4826,13 +4684,6 @@
     const waitingOverlayStop = document.getElementById('gpsWaitingOverlay');
     if (waitingOverlayStop) waitingOverlayStop.style.display = 'none';
     showToastBadge('📍 내 위치 추적을 종료했습니다.');
-
-    // [회전 검증 디버그 로그 자동 저장]
-    if (directionDebugLogger.isLogging) {
-      directionDebugLogger.stop();
-      directionDebugLogger.exportCSV();
-    }
-    isDebugLoggingMode = false;
 
     // 🔋 저전력 모드가 켜져 있었다면 함께 정리한다 — GPS를 완전히 끄는데
     // 폴링 타이머만 남아있으면 배터리 절약 취지에 반한다.
@@ -4940,14 +4791,6 @@
     if (!navigator.geolocation) {
       alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
       return;
-    }
-
-    // [회전 검증 디버그 로그 시작] — 평소엔 켜지 않는다(사용자 지시:
-    // "일반 유저들은 이 기능 사용할 이유가 없어"). GPS 아이콘을 길게
-    //눌렀을 때만(handleGpsBtnLongPress) isDebugLoggingMode가 true로
-    // 세팅된 채 이 함수가 호출되므로, 그 경우에만 로깅을 시작한다.
-    if (isDebugLoggingMode) {
-      directionDebugLogger.start();
     }
 
     showHeadingArrow = true;
@@ -5454,19 +5297,6 @@
       versionBadgeEl.innerText = m ? m[0] : full;
     }
 
-    // 🐞 GPS 아이콘 길게 누르기 → 디버그 로깅 모드 진입 (handleGpsBtnPressStart
-    // 정의부 참고). capture 단계에서 click을 가로채 짧게 누른 것으로
-    // 오인한 toggleGPS() 중복 실행을 막는다.
-    const gpsBtnEl = document.getElementById('gpsBtn');
-    if (gpsBtnEl) {
-      gpsBtnEl.addEventListener('touchstart', handleGpsBtnPressStart, { passive: true });
-      gpsBtnEl.addEventListener('touchend', handleGpsBtnPressEnd);
-      gpsBtnEl.addEventListener('touchcancel', handleGpsBtnPressEnd);
-      gpsBtnEl.addEventListener('mousedown', handleGpsBtnPressStart);
-      gpsBtnEl.addEventListener('mouseup', handleGpsBtnPressEnd);
-      gpsBtnEl.addEventListener('mouseleave', handleGpsBtnPressEnd);
-      gpsBtnEl.addEventListener('click', handleGpsBtnClickCapture, true);
-    }
 
     const urlParams = new URLSearchParams(window.location.search);
     const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
