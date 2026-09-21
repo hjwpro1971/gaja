@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v121';
+    const CACHE_NAME = 'gaja-trail-cache-v122';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_low_power_persist';
+      const APP_BUILD = 'v20260921_origin_lock_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -805,7 +805,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=121', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=122', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2610,6 +2610,25 @@
     // 있는 setView가 겹쳐 호출되면 지도가 흔들리며 계속 움직이는
     // 문제가 있었다(v65->v66에서 겪은 setView/panBy 충돌과 같은 계열).
     const opts = isSegmentRotationMode ? { animate: false } : viewOpts;
+
+    // 🧭 "영점을 잡을 때도 있고 안 잡을 때도 있다"(2026-09-21, 사용자
+    // 신고) 원인 수정: 이 setView가 fitRoute() 직후처럼 줌 레벨이 실제로
+    // 바뀌는 시점(GPS 첫 픽스로 확대할 때 등)에 걸리면, 코드상으로는
+    // "프로그램이 화면을 재배치한 것"인데도 fitRoute()와 달리
+    // isProgrammaticZoomInProgress로 감싸지 않아 zoomstart/zoomend
+    // 핸들러가 이를 "사용자가 직접 핀치줌한 것"으로 오판했다. 그러면
+    // isMapDragReturnPending이 켜져 7초간 updateSegmentRotationTrigger
+    // (영점 판정)가 완전히 막힌다 — 마침 이 setView 이전 줌과 이후 줌이
+    // 우연히 같으면(zoomend 미발생) 영점이 잡히고 다르면 안 잡히는
+    // 식으로 재현이 들쭉날쭉했다. fitRoute()와 동일하게 감싸 근본 차단.
+    // animate:false인 setView는 moveend를 동기적으로(같은 호출 스택 안에서)
+    // 발생시킬 수 있다 — 리스너를 setView 호출 "전"에 등록해야
+    // 놓치지 않는다(fitRoute()는 애니메이션이 있어 비동기라 순서가
+    // 상관없었지만, 여기는 opts.animate가 false일 수 있어 순서가 중요).
+    isProgrammaticZoomInProgress = true;
+    map.once('moveend', () => {
+      isProgrammaticZoomInProgress = false;
+    });
     map.setView([lat, lon], zoom, opts);
   }
 
@@ -3314,7 +3333,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v121';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v122';
 
   function getTileSaveStatus(courseKey) {
     try {
