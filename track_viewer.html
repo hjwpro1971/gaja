@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v128';
+    const CACHE_NAME = 'gaja-trail-cache-v129';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_low_power_redesign';
+      const APP_BUILD = 'v20260921_audio_resume_await';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=128', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=129', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1376,12 +1376,32 @@
   // "삐-삐" 두 번 울리는 비프음을 지정한 주파수(freqHz)로 재생하는 공통 헬퍼.
   // 이탈 경고음(880Hz)과 복귀 안내음(더 낮은 톤)이 같은 재생 로직을 쓰되
   // 톤만 달리해서, 듣는 사람이 소리만으로 "이탈"인지 "복귀"인지 구분할 수 있게 한다.
-  function playTwoToneBeep(freqHz) {
+  async function playTwoToneBeep(freqHz) {
     try {
-      if (!audioCtx) {
+      // 화면이 오래 꺼져 있다가 OS가 오디오 리소스를 회수하면 기존
+      // AudioContext가 'closed' 상태로 남을 수 있다 — 이 경우 resume()을
+      // 아무리 불러도 영원히 재개되지 않으므로 새로 만들어야 한다.
+      if (!audioCtx || audioCtx.state === 'closed') {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      // ⚠️ APK(안드로이드 WebView) 전환 후 발견(2026-09-21, 사용자 신고:
+      // "화면끄면 gps가 5초마다 작동하고... 아무런 소리가 안 나"):
+      // resume()은 비동기(Promise)인데 완료를 기다리지 않고 바로
+      // 오실레이터를 start()해버려서, 화면이 꺼진 백그라운드 상태처럼
+      // resume이 즉시 끝나지 않는 상황에서는 여전히 suspended인 채로
+      // 소리를 시도해 아무 소리도 안 났다. 화면이 켜진 상태에서는 resume
+      // 이 사실상 동기적으로 빨리 끝나 문제가 드러나지 않았을 뿐이다.
+      // WebView는 브라우저보다 이 제약이 더 엄격할 수 있어 await로
+      // 완료를 기다린 뒤에만 오실레이터를 시작한다.
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+      // resume 대기 중 다른 이유로 컨텍스트가 닫혔거나 여전히 suspended
+      // 라면(권한/정책상 재개가 거부된 경우) 조용히 포기 — 아래 catch로
+      // 넘어가 진동만이라도 시도한다.
+      if (audioCtx.state !== 'running') {
+        throw new Error('AudioContext not running after resume (state=' + audioCtx.state + ')');
+      }
 
       [0, 0.35].forEach(delay => {
         const osc = audioCtx.createOscillator();
@@ -3258,7 +3278,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v128';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v129';
 
   function getTileSaveStatus(courseKey) {
     try {
