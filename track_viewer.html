@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v140';
+    const CACHE_NAME = 'gaja-trail-cache-v141';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260922_trailhead_gps_heading_rotation';
+      const APP_BUILD = 'v20260922_lowpower_disabled';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -701,8 +701,11 @@
   <!-- 🔔 저전력 알림 모드(2026-09-21) — GPS를 자동으로 켜고 5초 간격
        폴링으로 전환, 기존 갈림길 접근 비프음/화살표 안내는 그대로 유지.
        화면이 꺼진 상태에서의 동작은 PWA로는 불가능(추후 APK에서 지원
-       예정)하고, 지금은 화면이 켜져 있는 동안의 배터리 절약용이다. -->
-  <button class="fab-btn" id="lowPowerBtn" onclick="toggleLowPowerMode()" title="저전력 알림 모드 (5초 간격 GPS + 갈림길 알림)">🔕</button>
+       예정)하고, 지금은 화면이 켜져 있는 동안의 배터리 절약용이다.
+       ⚠️ 2026-09-22 사용자 지시로 버튼을 일단 숨김(비활성화) — 로직/
+       localStorage 값('gajago_low_power_mode')은 전혀 건드리지 않았으니,
+       버튼만 다시 노출하면 즉시 원상 복구된다. -->
+  <button class="fab-btn" id="lowPowerBtn" onclick="toggleLowPowerMode()" title="저전력 알림 모드 (5초 간격 GPS + 갈림길 알림)" style="display:none;">🔕</button>
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
   <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
@@ -803,7 +806,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=140', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=141', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3287,17 +3290,13 @@
     // 🔔 항상 일반 GPS로 시작한다(2026-09-21 전면 재설계) — 화면이 켜져
     // 있는 이 시점엔 저전력 모드가 아니라 일반 GPS로 보여야 하기 때문
     // (사용자 지시: "화면이 켜지면 보통 gps 모드로 전환이 되어야 해").
-    // 다만 마지막으로 🔔 예약을 켜둔 채로 앱을 종료했다면 그 예약
-    // (lowPowerModeEnabled)만 복원해, 나중에 화면이 꺼질 때 자동으로
-    // 저전력으로 전환되도록 한다.
+    // ⚠️ 2026-09-22: 저전력 모드 버튼 자체를 숨긴 김에, 예전에 켜둔
+    // 예약(localStorage 'gajago_low_power_mode')이 남아있어도 자동
+    // 복원하지 않는다 — 안 그러면 버튼이 안 보이는데도 화면을 끄면
+    // 실제로는 저전력 폴링이 도는 모순이 생긴다. 버튼을 되돌릴 때 이
+    // 복원 로직도 함께 되돌릴 것.
     if (watchId === null && !isLowPowerPolling) {
-      let wantsLowPower = false;
-      try { wantsLowPower = localStorage.getItem('gajago_low_power_mode') === '1'; } catch(e) {}
       startGpsTracking();
-      if (wantsLowPower) {
-        lowPowerModeEnabled = true;
-        updateLowPowerBtnUI();
-      }
     }
   }
 
@@ -3335,7 +3334,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v140';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v141';
 
   function getTileSaveStatus(courseKey) {
     try {
