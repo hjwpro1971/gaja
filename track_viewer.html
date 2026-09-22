@@ -768,15 +768,6 @@
 <!-- 플로팅 GPS 상태 뱃지 (내 위치 켰을 때만 표시) -->
 <div class="gps-toast" id="gpsToast"></div>
 
-<!-- 🔧 임시 진단 패널 (백그라운드 소리 문제 확인용, 문제 해결 후 제거 예정) -->
-<div id="debugPanel" style="position:fixed; top:0; left:0; right:0; max-height:40vh; overflow-y:auto; background:rgba(0,0,0,0.85); color:#0f0; font-size:11px; font-family:monospace; z-index:99999; padding:6px; white-space:pre-wrap;">
-  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-    <b style="color:#fff;">🔧 진단 로그</b>
-    <button onclick="localStorage.removeItem('gajago_debug_log'); document.getElementById('debugLogText').innerText='';" style="font-size:10px;">지우기</button>
-  </div>
-  <div id="debugLogText"></div>
-</div>
-
 <!-- 📌 화면 하단 구석 버전 표시(2026-09-21) — 사용자가 "내가 최신 버전을
      쓰고 있는지" 직접 확인할 방법이 없었다(50명 사용자가 서비스워커
      갱신이 막혀 구버전에 갇히는 문제를 겪음). CACHE_NAME(위 인라인
@@ -1373,31 +1364,6 @@
     }
   }
 
-  // 🔧 임시 진단용 로그 함수 — localStorage에 누적 저장해서 화면이
-  // 꺼졌다 켜져도 로그가 안 사라지게 하고, 화면 상단 패널에 표시한다.
-  // 문제 원인 확인 후 이 함수와 호출부들은 전부 제거할 예정.
-  function debugLog(msg) {
-    try {
-      const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-      const line = `[${time}] ${msg}`;
-      let logs = [];
-      try { logs = JSON.parse(localStorage.getItem('gajago_debug_log') || '[]'); } catch(e) {}
-      logs.push(line);
-      if (logs.length > 100) logs = logs.slice(-100); // 너무 길어지지 않게 최근 100개만 유지
-      localStorage.setItem('gajago_debug_log', JSON.stringify(logs));
-      const el = document.getElementById('debugLogText');
-      if (el) el.innerText = logs.join('\n');
-    } catch(e) {}
-  }
-  // 페이지 로드 시 이전에 쌓인 로그를 화면에 바로 복원
-  document.addEventListener('DOMContentLoaded', () => {
-    try {
-      const logs = JSON.parse(localStorage.getItem('gajago_debug_log') || '[]');
-      const el = document.getElementById('debugLogText');
-      if (el) el.innerText = logs.join('\n');
-    } catch(e) {}
-  });
-
   // 🔊 이탈 경고음 — 별도 음원 파일 없이 브라우저 내장 오디오로 생성.
   // 산속 오프라인 상태에서도 파일 다운로드 없이 항상 울려야 하므로
   // Web Audio API로 직접 비프음을 합성한다.
@@ -1409,7 +1375,6 @@
   // 이탈 경고음(880Hz)과 복귀 안내음(더 낮은 톤)이 같은 재생 로직을 쓰되
   // 톤만 달리해서, 듣는 사람이 소리만으로 "이탈"인지 "복귀"인지 구분할 수 있게 한다.
   async function playTwoToneBeep(freqHz) {
-    debugLog('playTwoToneBeep 진입 (visibility=' + document.visibilityState + ')');
     try {
       // 화면이 오래 꺼져 있다가 OS가 오디오 리소스를 회수하면 기존
       // AudioContext가 'closed' 상태로 남을 수 있다 — 이 경우 resume()을
@@ -1433,10 +1398,8 @@
       // 라면(권한/정책상 재개가 거부된 경우) 조용히 포기 — 아래 catch로
       // 넘어가 진동만이라도 시도한다.
       if (audioCtx.state !== 'running') {
-        debugLog('❌ AudioContext 재개 실패 (state=' + audioCtx.state + ')');
         throw new Error('AudioContext not running after resume (state=' + audioCtx.state + ')');
       }
-      debugLog('✅ AudioContext running, 오실레이터 재생 시도');
 
       [0, 0.35].forEach(delay => {
         const osc = audioCtx.createOscillator();
@@ -1465,7 +1428,6 @@
       // 상태 변화를 놓칠 위험이 있으므로, 최소한 콘솔에 원인을 남겨
       // 문제 파악이 가능하게 하고 진동으로라도 한 번 더 시도한다.
       console.warn('⚠️ 비프음 재생 실패:', e);
-      debugLog('❌ 비프음 재생 실패: ' + e.message);
       try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e2) {}
     }
   }
@@ -4065,7 +4027,7 @@
     }
 
     const toast = document.getElementById('gpsToast');
-    if (!toast || toast.style.display === 'none') { debugLog('⛔ 토스트 숨김상태라 이탈판정 중단됨 (display=' + (toast ? toast.style.display : 'null') + ')'); return; }
+    if (!toast || toast.style.display === 'none') return;
     if (!lastKnownPos) return;
 
     if (nearestPoint && isOffTrailState) {
@@ -4101,7 +4063,6 @@
       // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
       // 유지될 때만 실제 경고음을 울린다.
       if (offTrailStreakCount >= 3) {
-        debugLog('🔔 비프 호출 시도! (streak=' + offTrailStreakCount + ')');
         playOffTrailBeep();
         speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
       }
@@ -4384,7 +4345,6 @@
   let wasPollingBeforeHidden = false;
 
   document.addEventListener('visibilitychange', () => {
-    debugLog('visibilitychange → ' + document.visibilityState + ' (lowPowerModeEnabled=' + lowPowerModeEnabled + ')');
     if (document.visibilityState === 'hidden') {
       // 화면이 꺼질 때: 🔔 예약(lowPowerModeEnabled)이 켜져 있으면 일반
       // GPS를 저전력 폴링으로 전환하고, 꺼져 있으면 기존처럼 GPS 자체를
@@ -4966,7 +4926,6 @@
   }
 
   function pollOnceForLowPower() {
-    debugLog('폴링 타이머 실행됨 (isLowPowerPolling=' + isLowPowerPolling + ')');
     if (!isLowPowerPolling) return;
     navigator.geolocation.getCurrentPosition(
       handleGpsPositionUpdate,
@@ -5082,7 +5041,6 @@
   // 호출할 때마다 매번 새 익명 함수를 정의하면 두 경로의 로직이 어긋날
   // 위험이 있다).
   function handleGpsPositionUpdate(pos) {
-        debugLog('GPS 좌표 수신 (acc=' + Math.round(pos.coords.accuracy) + 'm)');
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
