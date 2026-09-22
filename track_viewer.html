@@ -3701,6 +3701,39 @@
   const TRAILHEAD_ENTRY_DISTANCE_M = 30;
   const TRAILHEAD_ENTER_M = 60;
   const TRAILHEAD_MAX_ENTER_M = 80;
+
+  // 🚩 들머리(GPX[0]) 접근 모드 — 산행 시작 시 현재 위치가 아직 트랙에서
+  // 멀리(집, 주차장, 차 안 등) 떨어져 있으면, 트랙 기반 이탈판정/갈림길
+  // 안내 대신 "들머리까지 직선거리 + 방향"만 안내한다. 트랙 근처(30m
+  // 이내, TRAILHEAD_ENTRY_DISTANCE_M 재사용)로 들어오면 자동으로 꺼지고
+  // 기존 트랙 안내 로직으로 넘어간다. 날머리는 이 판단에 관여하지 않는다
+  // (지시사항: "원점 회귀에서는 날머리를 판단하지 않는다").
+  let isApproachingTrailhead = false;
+  function updateTrailheadApproach(lat, lon) {
+    if (!currentPoints || currentPoints.length === 0) { isApproachingTrailhead = false; return; }
+    const trailhead = currentPoints[0]; // GPX[0] = 들머리 (지시사항 1항)
+    const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
+    isApproachingTrailhead = distToTrailhead > TRAILHEAD_ENTRY_DISTANCE_M && currentRotationOriginDist === null;
+    if (isApproachingTrailhead) {
+      const toast = document.getElementById('gpsToast');
+      if (toast) {
+        const heading = computeGuidanceHeading(lat, lon, trailhead.lat, trailhead.lon);
+        const distStr = distToTrailhead >= 1000 ? (distToTrailhead / 1000).toFixed(2) + 'km' : Math.round(distToTrailhead) + 'm';
+        toast.style.display = 'block';
+        toast.className = 'gps-toast';
+        if (heading !== null) {
+          // "몇 시 방향"은 화면이 이미 가리키는 방향(mapRotationDeg) 대비
+          // 상대각이어야 정확하다(angleDiffToClockDirection 정의부 참고) —
+          // 절대 방위(heading)를 그대로 넘기면 지도가 북쪽 기준일 때 틀린다.
+          const relativeAngle = shortestAngleDiff(heading, mapRotationDeg);
+          const clockDir = angleDiffToClockDirection(relativeAngle);
+          toast.innerText = `🚩 들머리까지 ${distStr} · ${clockDir.clock}`;
+        } else {
+          toast.innerText = `🚩 들머리까지 ${distStr}`;
+        }
+      }
+    }
+  }
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
     const acc = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy : 0;
     // accuracy가 15m를 넘는 만큼(오차분)을 그대로 임계값에 더한다.
@@ -4064,6 +4097,16 @@
   window.resetOriginNow = resetOriginNow;
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+    // 🚩 들머리(GPX[0]) 접근 모드 — 아직 트랙에서 멀리 떨어져 있으면
+    // (예: 산행 시작 직후 집/주차장) 트랙 기반 이탈판정·갈림길 안내·
+    // 구간회전을 전부 건너뛰고 들머리까지 거리/방향만 안내한다. 트랙
+    // 근처(TRAILHEAD_ENTRY_DISTANCE_M 이내)로 들어오면 자동으로 false가
+    // 되어 아래 기존 로직으로 자연스럽게 넘어간다.
+    if (lastKnownPos) {
+      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon);
+      if (isApproachingTrailhead) return;
+    }
+
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
     // 무관하게 토스트 표시 여부(toast.style.display==='none')와는
     // 상관없이 항상 먼저 실행한다. 단 이탈 상태(isOffTrailState) 중에는
