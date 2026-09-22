@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v139';
+    const CACHE_NAME = 'gaja-trail-cache-v140';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260922_web_edits_trailhead_approach';
+      const APP_BUILD = 'v20260922_trailhead_gps_heading_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=139', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=140', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3335,7 +3335,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v139';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v140';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3708,6 +3708,14 @@
   // 이내, TRAILHEAD_ENTRY_DISTANCE_M 재사용)로 들어오면 자동으로 꺼지고
   // 기존 트랙 안내 로직으로 넘어간다. 날머리는 이 판단에 관여하지 않는다
   // (지시사항: "원점 회귀에서는 날머리를 판단하지 않는다").
+  //
+  // 🧭 화면 회전(2026-09-22 추가, 사용자 지시): "가는 방향과 일치하면
+  // 쉽게 찾겠다 — 녹색선이 내 정면으로 오게 회전하면 GPS 신호만으로
+  // 방향을 잡을 수 있을 것 같다." 트랙 진입 전이라 코스 방향 기준이
+  // 없으므로, 실제 걷는 방향(gpsMovementHeading, GPS 연속 픽스로 추정된
+  // 이동방향)을 화면 정면(12시)으로 두고 회전시킨다 — 몇 걸음만 걸으면
+  // 이 값이 나오므로 "실시간"에 가깝게 갱신된다. applySegmentRotation을
+  // 그대로 재사용해 산행 중 heading-up 회전과 동일한 방식으로 돈다.
   let isApproachingTrailhead = false;
   function updateTrailheadApproach(lat, lon) {
     if (!currentPoints || currentPoints.length === 0) { isApproachingTrailhead = false; return; }
@@ -3715,6 +3723,13 @@
     const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
     isApproachingTrailhead = distToTrailhead > TRAILHEAD_ENTRY_DISTANCE_M && currentRotationOriginDist === null;
     if (isApproachingTrailhead) {
+      // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
+      // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
+      // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
+      if (gpsMovementHeading !== null) {
+        applySegmentRotation(gpsMovementHeading);
+      }
+
       const toast = document.getElementById('gpsToast');
       if (toast) {
         const heading = computeGuidanceHeading(lat, lon, trailhead.lat, trailhead.lon);
