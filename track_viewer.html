@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v141';
+    const CACHE_NAME = 'gaja-trail-cache-v142';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260922_lowpower_disabled';
+      const APP_BUILD = 'v20260922_native_foreground_service_bridge';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -806,7 +806,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=141', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=142', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3334,7 +3334,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v141';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v142';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4465,6 +4465,14 @@
   let wasPollingBeforeHidden = false;
 
   document.addEventListener('visibilitychange', () => {
+    // 🔌 네이티브 앱(gaja-app)에서는 화면이 꺼져도 Foreground Service가
+    // 계속 GPS를 공급하므로(포그라운드서비스_작업매뉴얼.md), 기존
+    // 저전력 폴링/GPS 완전 종료 로직을 건너뛴다 — 이게 이 작업의
+    // 존재 이유(화면 꺼짐 중에도 이탈 비프음이 즉시 울리게 하는 것)다.
+    // 화면이 다시 보일 때의 리셋(아래 'visible' 분기)도 네이티브에선
+    // 필요 없다 — watchId가 'native'로 계속 유지되어 위치가 끊긴 적이
+    // 없으므로 지도/회전 상태를 다시 초기화할 이유가 없다.
+    if (isNativeApp()) return;
     if (document.visibilityState === 'hidden') {
       // 화면이 꺼질 때: 🔔 예약(lowPowerModeEnabled)이 켜져 있으면 일반
       // GPS를 저전력 폴링으로 전환하고, 꺼져 있으면 기존처럼 GPS 자체를
@@ -4931,7 +4939,11 @@
     showHeadingArrow = false;
     releaseWakeLock();
     stopSleepMonitor(); // 🔋 절전 감시 타이머도 함께 정리 — 안 하면 GPS를 완전히 끈 뒤에도 백그라운드에서 계속 돔
-    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    if (isNativeApp()) {
+      try { window.AndroidBridge.stopForegroundLocation(); } catch(e) {}
+    } else if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+    }
     watchId = null;
     stopCompass();
     if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
@@ -4983,6 +4995,13 @@
   const LOW_POWER_POLL_INTERVAL_MS = 5000;
 
   function toggleLowPowerMode() {
+    // 🔌 네이티브 앱(gaja-app)에서는 Foreground Service가 화면 꺼짐
+    // 중에도 항상 정상 GPS를 공급하므로 저전력 폴링 자체가 무의미하다
+    // (오히려 두 위치 소스가 겹치면 혼란만 생김).
+    if (isNativeApp()) {
+      showToastBadge('📍 이 앱은 화면이 꺼져도 항상 정상 GPS로 동작합니다.');
+      return;
+    }
     // GPS 자체가 꺼져 있으면(지도만 보는 중) 저전력 모드를 선택할 수
     // 없다(사용자 지시) — 먼저 🎯로 GPS를 켜야 한다.
     if (watchId === null && !isLowPowerPolling) {
@@ -5149,11 +5168,29 @@
 
     isFirstFix = true;
 
-    watchId = navigator.geolocation.watchPosition(
-      handleGpsPositionUpdate,
-      handleGpsError,
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-    );
+    // 🔌 네이티브 앱(gaja-app, 포그라운드서비스_작업매뉴얼.md)에서는
+    // window.AndroidBridge가 주입되어 있다 — 이 경우 웹표준
+    // navigator.geolocation.watchPosition 대신 Kotlin의
+    // LocationForegroundService가 위치를 공급한다(화면이 꺼져도 계속
+    // 동작). 위치는 handleNativeLocationUpdate -> handleGpsPositionUpdate
+    // 경로로 그대로 들어온다. 두 GPS 소스를 동시에 켜면 배터리만
+    // 낭비되므로 택일한다.
+    // ⚠️ watchId는 이 파일 전체에서 "GPS 추적 중" 여부를 나타내는
+    // 범용 플래그로도 쓰인다(watchId !== null 체크가 여러 곳에 있음).
+    // 네이티브 경로도 이 관례를 따르기 위해 'native'라는 문자열을
+    // watchId에 넣어둔다 — navigator.geolocation.clearWatch()에 숫자가
+    // 아닌 값을 넘겨도 표준상 조용히 무시되므로 stopGpsTracking()의
+    // clearWatch(watchId) 호출도 안전하다.
+    if (isNativeApp()) {
+      watchId = 'native';
+      try { window.AndroidBridge.startForegroundLocation(); } catch(e) {}
+    } else {
+      watchId = navigator.geolocation.watchPosition(
+        handleGpsPositionUpdate,
+        handleGpsError,
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    }
 
     startSleepMonitor();
   }
@@ -5164,11 +5201,19 @@
   // 호출할 때마다 매번 새 익명 함수를 정의하면 두 경로의 로직이 어긋날
   // 위험이 있다).
   // 🔌 네이티브(안드로이드 Foreground Service)에서 위치를 받는 통로.
-  // 향후 Kotlin 쪽 Foreground Service가 GPS 위치를 얻으면 이 함수를
-  // 호출해서 넘겨준다 — 웹표준 navigator.geolocation의 pos 객체와
-  // 같은 모양(pos.coords.latitude 등)으로 감싸서 기존
-  // handleGpsPositionUpdate를 그대로 재사용한다. 안드로이드 쪽 작업
-  // 전까지는 이 함수가 호출되지 않으므로 기존 동작에 영향 없음.
+  // Kotlin 쪽 MainActivity가 WebView에 window.AndroidBridge를 JavaScript
+  // Interface로 등록해두면(포그라운드서비스_작업매뉴얼.md 4-3), 이 앱이
+  // TWA 껍데기가 아니라 그 네이티브 프로젝트(gaja-app)로 빌드된 것임을
+  // 알 수 있다. GPS 위치는 여전히 이 함수(handleNativeLocationUpdate)로
+  // 들어온다 — 웹표준 navigator.geolocation의 pos 객체와 같은 모양
+  // (pos.coords.latitude 등)으로 감싸서 기존 handleGpsPositionUpdate를
+  // 그대로 재사용한다. GitHub Pages로 배포된 일반 웹/PWA에서는
+  // window.AndroidBridge가 없으므로 isNativeApp()이 false를 반환하고,
+  // 이 함수도 호출되지 않아 기존 동작에 영향 없음.
+  function isNativeApp() {
+    return typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge !== null;
+  }
+
   window.handleNativeLocationUpdate = function(lat, lon, accuracy, speed, bearing) {
     const fakePos = {
       coords: {
@@ -5385,6 +5430,13 @@
   }
 
   function handleSleepTimerTick() {
+    // 🔌 네이티브 앱은 Foreground Service가 화면 꺼짐과 무관하게 항상
+    // 정상 GPS를 공급해야 하는 게 이번 작업의 목적이므로, 정지 시
+    // watchPosition을 멈추는 이 절전 로직(웹표준 GPS 전용 최적화)은
+    // 건너뛴다 — clearWatch(watchId)가 'native' 문자열에는 실효가
+    // 없어 절전 진입은 이름뿐이고, 재개 시 restartWatchPositionOnly가
+    // 엉뚱하게 웹표준 GPS를 새로 켜려 시도하는 사고를 막는다.
+    if (isNativeApp()) return;
     if (isGpsSleeping || watchId === null) return; // 이미 절전 중이거나 GPS 자체가 꺼져 있으면 할 일 없음
     if (!isCurrentlyStopped || stopEnteredAt === null) return;
     if (Date.now() - stopEnteredAt >= SLEEP_AFTER_STOPPED_MS) {
