@@ -1451,6 +1451,7 @@
   let lastTtsUtterance = '';
   let lastTtsTime = 0;
   function speakGuidance(text) {
+    return; // 음성 안내 기능 비활성화 (비프음/진동은 유지)
     if (!ttsEnabled || !('speechSynthesis' in window)) return;
     // 같은 문장이 짧은 간격(2초) 안에 중복 호출되는 것만 걸러낸다 —
     // GPS 픽스마다 재계산되는 거리/각도값이 문장에 섞여 있어 완전
