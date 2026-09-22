@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v138';
+    const CACHE_NAME = 'gaja-trail-cache-v139';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260921_lowpower_audio_prewake';
+      const APP_BUILD = 'v20260922_web_edits_trailhead_approach';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -803,7 +803,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=138', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=139', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1227,6 +1227,14 @@
   // 바라보는 방향이다 — 목표에 접근하는 동안은 이 값이 바뀌지 않으므로
   // 회전도 바뀌지 않는다(v95: "미리 회전하면 헷갈린다" 대응).
   let currentRotationOriginDist = null;
+  // 🧭 왕복(원점회귀) 코스는 "갈 때"/"올 때" 트랙이 GPS 오차 범위 안에서
+  // 거의 겹쳐 있어, 방향 정보 없이 곧바로 첫 원점을 확정하면 그날그날
+  // 미세한 좌표 오차만으로 반대쪽 트랙에 스냅될 수 있다(사용자 재현:
+  // "같은 지점인데 왕복 방향이 랜덤하게 반대로 나옴"). GPS 픽스가 이
+  // 횟수만큼 쌓여 실제 이동방향(gpsMovementHeading)이 안정되기 전까지는
+  // 첫 원점 확정을 보류한다 — updateSegmentRotationTrigger 정의부 참고.
+  const FIRST_ORIGIN_MIN_FIXES = 3;
+  let firstOriginFixCount = 0;
 
   // 🔋 배터리 절전 모드 — 오래 정지(휴식/식사 등)하면 GPS 수신을 잠시
   // 멈춘다. "다시 움직이기 시작했다"를 감지할 두 가지 독립 수단을
@@ -1338,6 +1346,7 @@
       // 모두 켜지도록 완전히 연동한다.
       isSegmentRotationMode = true;
       currentRotationOriginDist = null; // 다음 updateNavigationToast 호출에서 첫 회전 트리거되도록 리셋
+      firstOriginFixCount = 0;
       if (mapEl) mapEl.classList.add('heading-up');
       {
         const z = getPreferredGpsZoom();
@@ -1353,6 +1362,7 @@
     } else if (!enable) {
       isSegmentRotationMode = false;
       currentRotationOriginDist = null;
+      firstOriginFixCount = 0;
       mapRotationDeg = 0;
       appliedMapRotationDeg = 0;
       updateRouteBadgeRotation();
@@ -1451,6 +1461,7 @@
   let lastTtsUtterance = '';
   let lastTtsTime = 0;
   function speakGuidance(text) {
+    return; // 음성 안내 기능 비활성화 (비프음/진동은 유지)
     if (!ttsEnabled || !('speechSynthesis' in window)) return;
     // 같은 문장이 짧은 간격(2초) 안에 중복 호출되는 것만 걸러낸다 —
     // GPS 픽스마다 재계산되는 거리/각도값이 문장에 섞여 있어 완전
@@ -1543,6 +1554,11 @@
   // angleDiff 자리에는 실시간 측정값이 아니라 buildMilestones가 미리
   // 계산해둔 turnAngle(그 갈림길의 고정된 회전각)을 그대로 넘긴다.
   let isBottomArrowVisible = false;
+  // 🧭 노드점(방향점) 통과 직후에도 마지막 화살표를 잠깐 유지하기 위한
+  // 기억값 — showBottomDirectionArrow가 호출될 때마다 갱신된다.
+  let lastShownArrowAngle = null;
+  let lastShownArrowLabel = null;
+  const POST_MILESTONE_ARROW_HOLD_M = 10; // 노드점 통과 후 이 거리(m)까지는 직전 화살표 유지
 
   function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
     const el = document.getElementById('bottomDirectionArrow');
@@ -1555,6 +1571,10 @@
     rotor.style.transform = `rotate(${angleDiff}deg)`;
     label.textContent = clockLabel;
     isBottomArrowVisible = true;
+    // 노드점 통과 직후 POST_MILESTONE_ARROW_HOLD_M 구간 동안 이 화살표를
+    // 그대로 재사용하기 위해 마지막으로 표시한 각도/문구를 기억해둔다.
+    lastShownArrowAngle = angleDiff;
+    lastShownArrowLabel = clockLabel;
   }
 
   function hideBottomDirectionArrow() {
@@ -3315,7 +3335,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v138';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v139';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3681,6 +3701,39 @@
   const TRAILHEAD_ENTRY_DISTANCE_M = 30;
   const TRAILHEAD_ENTER_M = 60;
   const TRAILHEAD_MAX_ENTER_M = 80;
+
+  // 🚩 들머리(GPX[0]) 접근 모드 — 산행 시작 시 현재 위치가 아직 트랙에서
+  // 멀리(집, 주차장, 차 안 등) 떨어져 있으면, 트랙 기반 이탈판정/갈림길
+  // 안내 대신 "들머리까지 직선거리 + 방향"만 안내한다. 트랙 근처(30m
+  // 이내, TRAILHEAD_ENTRY_DISTANCE_M 재사용)로 들어오면 자동으로 꺼지고
+  // 기존 트랙 안내 로직으로 넘어간다. 날머리는 이 판단에 관여하지 않는다
+  // (지시사항: "원점 회귀에서는 날머리를 판단하지 않는다").
+  let isApproachingTrailhead = false;
+  function updateTrailheadApproach(lat, lon) {
+    if (!currentPoints || currentPoints.length === 0) { isApproachingTrailhead = false; return; }
+    const trailhead = currentPoints[0]; // GPX[0] = 들머리 (지시사항 1항)
+    const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
+    isApproachingTrailhead = distToTrailhead > TRAILHEAD_ENTRY_DISTANCE_M && currentRotationOriginDist === null;
+    if (isApproachingTrailhead) {
+      const toast = document.getElementById('gpsToast');
+      if (toast) {
+        const heading = computeGuidanceHeading(lat, lon, trailhead.lat, trailhead.lon);
+        const distStr = distToTrailhead >= 1000 ? (distToTrailhead / 1000).toFixed(2) + 'km' : Math.round(distToTrailhead) + 'm';
+        toast.style.display = 'block';
+        toast.className = 'gps-toast';
+        if (heading !== null) {
+          // "몇 시 방향"은 화면이 이미 가리키는 방향(mapRotationDeg) 대비
+          // 상대각이어야 정확하다(angleDiffToClockDirection 정의부 참고) —
+          // 절대 방위(heading)를 그대로 넘기면 지도가 북쪽 기준일 때 틀린다.
+          const relativeAngle = shortestAngleDiff(heading, mapRotationDeg);
+          const clockDir = angleDiffToClockDirection(relativeAngle);
+          toast.innerText = `🚩 들머리까지 ${distStr} · ${clockDir.clock}`;
+        } else {
+          toast.innerText = `🚩 들머리까지 ${distStr}`;
+        }
+      }
+    }
+  }
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
     const acc = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy : 0;
     // accuracy가 15m를 넘는 만큼(오차분)을 그대로 임계값에 더한다.
@@ -3955,10 +4008,38 @@
     // 버그의 원인이었다. 이제 GPS 첫 Fix에서 좌표 계산 결과로 즉시
     // 확정하고 끝 — 재검증 없이, 다음 목표에 도착할 때만(!isFirstRotation
     // 경로) 다시 계산한다.
-    const target = findNextRotationTarget(traveledDist, isReversingOnTrail, rotationLookaheadM);
+    //
+    // ⚠️ 2026-09-22 추가: 위 원칙은 유지하되, 왕복(원점회귀) 코스처럼
+    // "갈 때"/"올 때" 트랙이 GPS 오차 범위 안에서 거의 겹쳐 있는 구간은
+    // nearestPointOnTrail의 최초 전역탐색이 미세한 좌표 오차만으로
+    // 반대쪽 트랙에 스냅될 수 있다(사용자 재현: "같은 지점에서 왕복
+    // 방향이 랜덤하게 반대로 나옴"). 좌표 계산 자체를 재검증하는 게
+    // 아니라, "애초에 어느 트랙으로 스냅했는지"가 틀릴 수 있다는
+    // 별개의 문제다. GPS 픽스가 FIRST_ORIGIN_MIN_FIXES번 쌓여 실제
+    // 이동방향이 안정될 때까지 확정을 보류하고, 그 방향과 90도 넘게
+    // 어긋나면 왕복 반대쪽으로 재탐색해 바로잡는다.
+    firstOriginFixCount++;
+    if (firstOriginFixCount < FIRST_ORIGIN_MIN_FIXES) return; // 아직 이동방향 미확정 — 화면은 그대로 유지
+
+    let target = findNextRotationTarget(traveledDist, isReversingOnTrail, rotationLookaheadM);
     if (!target) return;
-    const courseHeading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
+    let courseHeading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
     if (courseHeading === null) return;
+
+    if (gpsMovementHeading !== null) {
+      const mismatch = Math.abs(shortestAngleDiff(courseHeading, gpsMovementHeading));
+      if (mismatch > 90) {
+        const altTarget = findNextRotationTarget(traveledDist, !isReversingOnTrail, rotationLookaheadM);
+        if (altTarget) {
+          const altHeading = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, altTarget.lat, altTarget.lon);
+          if (altHeading !== null && Math.abs(shortestAngleDiff(altHeading, gpsMovementHeading)) < mismatch) {
+            target = altTarget;
+            courseHeading = altHeading;
+            isReversingOnTrail = !isReversingOnTrail;
+          }
+        }
+      }
+    }
 
     currentRotationOriginDist = traveledDist;
     applySegmentRotation(courseHeading);
@@ -4005,6 +4086,7 @@
     remainingBeepThresholds = null;
 
     currentRotationOriginDist = null;
+    firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; // 수동 재설정은 대기 없이 즉시 확정
     forceOriginReset = true;
     const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
     const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
@@ -4015,6 +4097,16 @@
   window.resetOriginNow = resetOriginNow;
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+    // 🚩 들머리(GPX[0]) 접근 모드 — 아직 트랙에서 멀리 떨어져 있으면
+    // (예: 산행 시작 직후 집/주차장) 트랙 기반 이탈판정·갈림길 안내·
+    // 구간회전을 전부 건너뛰고 들머리까지 거리/방향만 안내한다. 트랙
+    // 근처(TRAILHEAD_ENTRY_DISTANCE_M 이내)로 들어오면 자동으로 false가
+    // 되어 아래 기존 로직으로 자연스럽게 넘어간다.
+    if (lastKnownPos) {
+      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon);
+      if (isApproachingTrailhead) return;
+    }
+
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
     // 무관하게 토스트 표시 여부(toast.style.display==='none')와는
     // 상관없이 항상 먼저 실행한다. 단 이탈 상태(isOffTrailState) 중에는
@@ -4129,7 +4221,22 @@
             turnLabel = classifyTurnAngle(turnAngle);
           }
         }
-        showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
+        // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
+        // 구간 동안은 하단 화살표를 새 목표(nextM) 기준으로 즉시
+        // 갱신하지 않고 직전 화살표를 그대로 유지한다 — 이전에는
+        // traveledDist가 prevM.distanceM을 넘는 즉시 nextM 기준으로
+        // 재계산되면서, 방금 지난 노드점의 방향 화살표가 통과와 동시에
+        // 사라져 확인할 새가 없었다(사용자 지시: "마지막 방향알림을
+        // 유지하다가 사라지게"). 상단 토스트(거리/지명 안내)는 이
+        // 영향을 받지 않고 기존 그대로 nextM 기준으로 계속 갱신된다.
+        const distPastPrevM = (prevM && prevM.distanceM !== undefined)
+          ? (isReversingOnTrail ? Math.max(0, prevM.distanceM - traveledDist) : Math.max(0, traveledDist - prevM.distanceM))
+          : Infinity;
+        if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M && lastShownArrowAngle !== null) {
+          showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
+        } else {
+          showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
+        }
 
         toast.className = 'gps-toast';
         // .gps-toast는 white-space:normal이라 innerText의 \n이 줄바꿈으로
@@ -4392,6 +4499,7 @@
         mapRotationDeg = 0;
         appliedMapRotationDeg = 0;
         currentRotationOriginDist = null;
+        firstOriginFixCount = 0;
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
 
@@ -4618,6 +4726,7 @@
       isSegmentRotationMode = true;
       isSimulationMode = true;
       currentRotationOriginDist = null;
+      firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; // 시뮬레이션은 미리보기이므로 대기 없이 즉시 확정
       if (mapEl) mapEl.classList.add('heading-up');
     }
     showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
@@ -4999,6 +5108,7 @@
     // 여기서 미리 세팅해두면 첫 픽스부터 곧바로 동작한다.
     isSegmentRotationMode = true;
     currentRotationOriginDist = null;
+    firstOriginFixCount = 0;
 
     // 브라우저는 사용자가 직접 화면을 누른 순간에만 소리 재생을 허용한다.
     // 나중에 산속에서 이탈했을 때 소리가 안 나는 걸 막기 위해,
@@ -5039,6 +5149,25 @@
   // 도 동일한 콜백을 그대로 재사용해야 하기 때문이다(watchPosition을
   // 호출할 때마다 매번 새 익명 함수를 정의하면 두 경로의 로직이 어긋날
   // 위험이 있다).
+  // 🔌 네이티브(안드로이드 Foreground Service)에서 위치를 받는 통로.
+  // 향후 Kotlin 쪽 Foreground Service가 GPS 위치를 얻으면 이 함수를
+  // 호출해서 넘겨준다 — 웹표준 navigator.geolocation의 pos 객체와
+  // 같은 모양(pos.coords.latitude 등)으로 감싸서 기존
+  // handleGpsPositionUpdate를 그대로 재사용한다. 안드로이드 쪽 작업
+  // 전까지는 이 함수가 호출되지 않으므로 기존 동작에 영향 없음.
+  window.handleNativeLocationUpdate = function(lat, lon, accuracy, speed, bearing) {
+    const fakePos = {
+      coords: {
+        latitude: lat,
+        longitude: lon,
+        accuracy: accuracy,
+        speed: speed,
+        heading: bearing
+      }
+    };
+    handleGpsPositionUpdate(fakePos);
+  };
+
   function handleGpsPositionUpdate(pos) {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
