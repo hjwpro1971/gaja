@@ -2424,18 +2424,11 @@
     const grace = (graceM === undefined) ? 15 : graceM;
     let prevM = source[0];
     let nextM = source[source.length - 1];
-    // ⚠️ 수정(2026-09-24): nextM(다음에 안내해야 할 지명)은 grace 여유
-    // 없이 "내 위치보다 뒤에 있는 첫 지명"으로 찾는다 — grace를 그대로
-    // 쓰면 지명 간 거리가 grace(15m)보다 짧거나 비슷할 때, 그 사이에
-    // 있는 지명이 nextM으로 한 번도 선택되지 못하고 통째로 건너뛰어져
-    // 50/30/10m 안내(showUpcomingTurnAlert)와 화살표가 그 지명에 대해
-    // 아예 안 뜨는 문제가 있었다. prevM("방금 지나온 지점" 표시용)만
-    // 기존 grace 로직을 유지해 화면 텍스트 전환은 매끄럽게 둔다.
     for (let i = 0; i < source.length; i++) {
       if (source[i].distanceM <= traveledDist + grace) {
         prevM = source[i];
       }
-      if (source[i].distanceM > traveledDist) {
+      if (source[i].distanceM > traveledDist + grace) {
         nextM = source[i];
         break;
       }
@@ -4565,6 +4558,12 @@
         isHeadingUp = false;
         mapRotationDeg = 0;
         appliedMapRotationDeg = 0;
+        // 포그라운드 복귀 직후 실제 CSS 회전도 즉시 초기화한다.
+        // 변수만 0으로 바꾸고 DOM은 이전 180° 회전을 유지해 첫 GPS 전까지
+        // 지도가 반대로 보이던 현상을 막는다.
+        const mapEl = document.getElementById("map");
+        if (mapEl) mapEl.style.transform = "translate(-50%, -50%) rotate(0deg)";
+        updateRouteBadgeRotation();
         currentRotationOriginDist = null;
         firstOriginFixCount = 0;
         isFirstFix = true;
