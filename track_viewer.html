@@ -4570,6 +4570,25 @@
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
 
+        // 🧭 #map의 실제 CSS 회전값도 JS 변수(mapRotationDeg,
+        // appliedMapRotationDeg)와 함께 0으로 되돌린다 — JS 변수만
+        // 리셋하고 DOM에 실제로 적용된 transform은 그대로 두면, 복귀
+        // 직후 새로 계산되는 회전각이 "백그라운드 진입 전의 낡은 화면
+        // 회전" 위에 겹쳐져 화살표(내 위치 마커)가 실제 진행 방향과
+        // 반대로 보이는 원인이 된다(사용자 재현: "포그라운드로 가져올
+        // 때 화살표가 진행방향과 반대"). 대원칙(어떤 경로로 들어오든
+        // GPS를 처음 잡는 것처럼 재계산)을 지키려면 화면(DOM)도 함께
+        // 원점으로 되돌려야 한다.
+        const mapElOnResume = document.getElementById('map');
+        if (mapElOnResume) {
+          mapElOnResume.style.transition = 'none';
+          mapElOnResume.style.transform = mapElOnResume.classList.contains('heading-up')
+            ? 'translate(-50%, -50%) rotate(0deg)'
+            : '';
+          void mapElOnResume.offsetHeight; // 리플로우 강제 — transform이 이 시점에 확실히 반영되도록 함
+          requestAnimationFrame(() => { mapElOnResume.style.transition = ''; }); // 다음 프레임부터 부드러운 회전 트랜지션 복원
+        }
+
         startGpsTracking(); // 항상 일반 GPS로 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
       }
     }
