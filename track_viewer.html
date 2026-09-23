@@ -660,9 +660,14 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
-  <!-- 길찾기 모드 버튼 숨김(사용자 요청: "필요 없을걸 같아") — 기능/로직은
-       그대로 남겨두고 UI에서만 제거. 필요해지면 style="display:none"만 지우면 됨. -->
-  <button class="fab-btn" id="wayfindBtn" onclick="openWayfindingMode()" title="길찾기 (다음 주요지점 안내)">🧭</button>
+  <!-- 🔍 길찾기 모드 토글 버튼(2026-09-23 변경) — 예전엔 이 버튼이 ON만
+       담당하고, 끌 때는 하단 wayfindingPanel의 작은 ✕ 버튼(엄지로 누르기
+       어려운 위치)을 따로 눌러야 했다(사용자 신고: "하단에 중지 버튼이
+       나와. 클릭하기 힘들어"). 이제 이 버튼 하나로 ON/OFF를 토글한다
+       (toggleWayfindingMode). 아이콘도 나침반(🧭)에서 돋보기(🔍)로
+       변경(사용자 요청) — 켜짐 여부는 .fab-btn.active(진한 배경)로
+       표시된다(다른 토글 버튼과 동일 패턴). -->
+  <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)">🔍</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <!-- 🔔 저전력 알림 모드(2026-09-21) — GPS를 자동으로 켜고 5초 간격
        폴링으로 전환, 기존 갈림길 접근 비프음/화살표 안내는 그대로 유지.
@@ -2419,11 +2424,18 @@
     const grace = (graceM === undefined) ? 15 : graceM;
     let prevM = source[0];
     let nextM = source[source.length - 1];
+    // ⚠️ 수정(2026-09-24): nextM(다음에 안내해야 할 지명)은 grace 여유
+    // 없이 "내 위치보다 뒤에 있는 첫 지명"으로 찾는다 — grace를 그대로
+    // 쓰면 지명 간 거리가 grace(15m)보다 짧거나 비슷할 때, 그 사이에
+    // 있는 지명이 nextM으로 한 번도 선택되지 못하고 통째로 건너뛰어져
+    // 50/30/10m 안내(showUpcomingTurnAlert)와 화살표가 그 지명에 대해
+    // 아예 안 뜨는 문제가 있었다. prevM("방금 지나온 지점" 표시용)만
+    // 기존 grace 로직을 유지해 화면 텍스트 전환은 매끄럽게 둔다.
     for (let i = 0; i < source.length; i++) {
       if (source[i].distanceM <= traveledDist + grace) {
         prevM = source[i];
       }
-      if (source[i].distanceM > traveledDist + grace) {
+      if (source[i].distanceM > traveledDist) {
         nextM = source[i];
         break;
       }
@@ -2462,20 +2474,29 @@
     return bearings;
   }
 
-  // 🧭 내 위치 화살표 방향의 단일 진입점(2026-09-23) — 나침반/자이로/
-  // GPS 이동방위각을 전혀 참조하지 않는다. 상태는 오직 두 가지뿐이다:
+  // 🧭 내 위치 화살표 방향의 단일 진입점(2026-09-23 → 2026-09-24 수정) —
+  // 나침반/자이로/GPS 이동방위각을 전혀 참조하지 않는 원칙은 그대로
+  // 유지한다. 다만 화살표 방향을 "매칭된 선분 자체의 원래 방향"
+  // (currentSegmentBearings[nearestIdx])이 아니라 "현재 내 GPS 좌표 →
+  // 코스를 따라 ARROW_LOOKAHEAD_M 앞 지점"으로 바꾼다 — 매칭 인덱스가
+  // (왕복 구간 등에서) 살짝 흔들려도 화살표는 항상 "지금 서 있는 곳
+  // 기준"으로 계산되므로 실제 위치와 무관하게 튀는 문제가 없다.
   //   ① TRAILHEAD_SEARCH: 아직 트랙에 진입 전 — 현재GPS → GPX[0] 방향
-  //   ② TRACK_NAVIGATION: 트랙 진입 후 — 매칭된 선분의 미리 계산된
-  //      bearing(currentSegmentBearings[nearestIdx]), 역주행 중이면 180도 반전
-  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow) {
+  //   ② TRACK_NAVIGATION: 트랙 진입 후 — 현재GPS → 코스를 따라 앞선
+  //      지점 방향, 역주행 중이면 반대 방향(뒤쪽)의 앞선 지점을 본다
+  const ARROW_LOOKAHEAD_M = 15;
+  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist) {
     if (isNearTrailheadNow) {
       if (!currentPoints || currentPoints.length === 0) return null;
       const trailhead = currentPoints[0];
       return calculateBearing(lat, lon, trailhead.lat, trailhead.lon);
     }
-    if (!currentSegmentBearings || nearestIdx < 0 || nearestIdx >= currentSegmentBearings.length) return null;
-    const segBearing = currentSegmentBearings[nearestIdx];
-    return isReversingOnTrail ? (segBearing + 180) % 360 : segBearing;
+    if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
+    const targetDist = isReversingOnTrail ? (dist - ARROW_LOOKAHEAD_M) : (dist + ARROW_LOOKAHEAD_M);
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
+    if (!aheadPt) return null;
+    return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
   }
 
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
@@ -2814,7 +2835,7 @@
     }
   }
 
-  // 우측 하단 🧭 버튼 — 사용자가 직접 눌러야 진입(수동 진입, 사용자 확정).
+  // 우측 하단 🔍 버튼 — 사용자가 직접 눌러야 진입(수동 진입, 사용자 확정).
   function openWayfindingMode() {
     if (!currentMilestones || currentMilestones.length === 0) {
       alert('이 코스에는 안내할 주요 지점(갈림길/봉우리/지명)이 없습니다.');
@@ -2829,9 +2850,24 @@
     wayfindingTargetMilestone = null; // updateWayfindingProgress가 다음 픽스에서 첫 목적지를 정함
     const panel = document.getElementById('wayfindingPanel');
     if (panel) panel.classList.add('active');
-    showToastBadge('🧭 길찾기 모드 시작\n다음 주요 지점까지 녹색선으로 안내합니다.');
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.add('active');
+    showToastBadge('🔍 길찾기 모드 시작\n다음 주요 지점까지 녹색선으로 안내합니다.');
   }
   window.openWayfindingMode = openWayfindingMode;
+
+  // 🔍 길찾기 버튼 토글(2026-09-23 추가) — 꺼진 상태에서 누르면 열고,
+  // 켜진 상태에서 누르면 닫는다. openWayfindingMode/closeWayfindingMode
+  // 각각의 기존 검증·정리 로직은 그대로 두고, 이 함수는 현재
+  // isWayfindActive 값만 보고 둘 중 하나로 분기한다.
+  function toggleWayfindingMode() {
+    if (isWayfindActive) {
+      closeWayfindingMode();
+    } else {
+      openWayfindingMode();
+    }
+  }
+  window.toggleWayfindingMode = toggleWayfindingMode;
 
   // 패널의 "🔄 복귀" 버튼 — RETURN_TO_ORIGIN 진입(명세 12번). 왕복 코스의
   // 자동 역주행 감지(isReversingOnTrail)와는 별개로, 사용자가 명시적으로
@@ -2843,6 +2879,8 @@
     wayfindingTargetMilestone = null;
     const panel = document.getElementById('wayfindingPanel');
     if (panel) panel.classList.add('active');
+    const btnRet = document.getElementById('wayfindBtn');
+    if (btnRet) btnRet.classList.add('active');
     showToastBadge('🔄 들머리로 복귀 안내를 시작합니다.');
   }
   window.startReturnToOrigin = startReturnToOrigin;
@@ -2853,6 +2891,12 @@
     wayfindingTargetMilestone = null;
     const panel = document.getElementById('wayfindingPanel');
     if (panel) panel.classList.remove('active');
+    // 🔍 상단 토글 버튼도 함께 꺼진 상태(비활성 배경)로 되돌린다 —
+    // 이 함수가 (1)버튼 재클릭으로 토글되거나 (2)날머리/들머리 자동
+    // 도착으로 호출되거나 어느 경로로 닫히든 버튼 표시가 항상 실제
+    // 상태(isWayfindActive)와 일치하게 한다.
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.remove('active');
     if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
   }
   window.closeWayfindingMode = closeWayfindingMode;
@@ -3639,12 +3683,41 @@
   const TRAILHEAD_ENTER_M = 60;
   const TRAILHEAD_MAX_ENTER_M = 80;
 
-  // 🚩 들머리(GPX[0]) 접근 모드 — 산행 시작 시 현재 위치가 아직 트랙에서
-  // 멀리(집, 주차장, 차 안 등) 떨어져 있으면, 트랙 기반 이탈판정/갈림길
-  // 안내 대신 "들머리까지 직선거리 + 방향"만 안내한다. 트랙 근처(30m
-  // 이내, TRAILHEAD_ENTRY_DISTANCE_M 재사용)로 들어오면 자동으로 꺼지고
-  // 기존 트랙 안내 로직으로 넘어간다. 날머리는 이 판단에 관여하지 않는다
-  // (지시사항: "원점 회귀에서는 날머리를 판단하지 않는다").
+  // 🚩 경로 접근 모드(2026-09-23 재설계) 전용 상수 — 위
+  // TRAILHEAD_ENTRY_DISTANCE_M(30m, 이탈경고 완화/보조 문구용으로 다른
+  // 두 곳에서 계속 쓰임)과는 별개다. "이미 경로 위(온트레일)인가"는
+  // 새 반경을 만들지 않고 기존 OFFTRAIL_BASE_ENTER_M(20m)을 그대로
+  // 재사용한다(사용자 확정 — 아래 updateTrailheadApproach 참고).
+  const TRAIL_APPROACH_MAX_M = 100; // 이 거리 이내면 방향 안내 시작, 벗어나면 거리만 표시
+
+  // 🚩 경로 접근 모드(2026-09-23 전면 재설계) — 예전엔 "들머리(GPX[0])
+  // 접근 모드"로, 산행 시작 시 현재 위치가 트랙에서 멀리(집, 주차장,
+  // 차 안 등) 떨어져 있을 때 오직 1번 점(들머리)만 목표로 삼아
+  // 직선거리+방향을 안내했다. 그런데 실제로는 두 가지 경우가 더 있다:
+  //   (1) GPS를 켠 순간 이미 경로 위에 있는 경우 — 이땐 접근 모드 자체가
+  //       불필요하다(사용자 지시: "산행경로에 들어서 있다면 들머리
+  //       찾기 기능이 필요없지").
+  //   (2) 들머리는 멀지만 경로 중간의 다른 지점이 더 가까운 경우 —
+  //       이때는 들머리가 아니라 그 가까운 지점으로 안내해야 한다
+  //       (사용자 지시: "가까운 경로상의 좌표를 지시").
+  // 그래서 목표 지점을 더 이상 points[0](들머리) 고정이 아니라, 호출부
+  // (updateNavigationToast)가 이미 nearestPointOnTrail로 계산해둔 "경로
+  // 전체에서 가장 가까운 지점"으로 받는다 — 여기서 다시 계산하면
+  // 탐색 윈도우(lastNearestIdx)가 한 프레임에 두 번 갱신되는 중복이
+  // 생기므로 피한다.
+  //
+  // 거리 구간별 동작(사용자 확정값):
+  //   - 온트레일(OFFTRAIL_BASE_ENTER_M, 20m) 이내: 이미 경로 위이므로
+  //     접근 모드 자체를 켜지 않고 곧바로 일반 안내로 넘어간다.
+  //   - 20m ~ TRAIL_APPROACH_MAX_M(100m): 방향 안내(화면 회전+녹색선)
+  //     시작.
+  //   - 100m 초과: 방향 안내는 하지 않고 "경로까지 Nm"처럼 거리만 표시.
+  //
+  // 종료 조건은 거리가 아니라 "GPS 이동방향이 경로 진행방향과 2~3회
+  // 연속 일치해 원점(currentRotationOriginDist)이 확정됐는가"이며, 이는
+  // 기존 FIRST_ORIGIN_MIN_FIXES/방향 검증 로직이 이미 수행 중이므로
+  // 여기서는 그 확정 여부(currentRotationOriginDist !== null)만 참조한다
+  // (들머리 진입/경로 중간 진입 모두 동일 기준 — 사용자 확정).
   //
   // 🧭 화면 회전(2026-09-22 추가, 사용자 지시): "가는 방향과 일치하면
   // 쉽게 찾겠다 — 녹색선이 내 정면으로 오게 회전하면 GPS 신호만으로
@@ -3653,28 +3726,49 @@
   // 이동방향)을 화면 정면(12시)으로 두고 회전시킨다 — 몇 걸음만 걸으면
   // 이 값이 나오므로 "실시간"에 가깝게 갱신된다. applySegmentRotation을
   // 그대로 재사용해 산행 중 heading-up 회전과 동일한 방식으로 돈다.
-  let isApproachingTrailhead = false;
-  function updateTrailheadApproach(lat, lon) {
-    if (!currentPoints || currentPoints.length === 0) { isApproachingTrailhead = false; return; }
-    const trailhead = currentPoints[0]; // GPX[0] = 들머리 (지시사항 1항)
-    const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
-    isApproachingTrailhead = distToTrailhead > TRAILHEAD_ENTRY_DISTANCE_M && currentRotationOriginDist === null;
-    if (isApproachingTrailhead) {
-      // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
-      // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
-      // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
-      if (gpsMovementHeading !== null) {
-        applySegmentRotation(gpsMovementHeading);
-      }
+  let isApproachingTrailhead = false; // 온트레일 초과 ~ 100m: 방향 안내(회전+녹색선) 활성
+  let isTrailTooFar = false;          // 100m 초과: 거리만 표시, 방향 안내는 하지 않음
+  function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint) {
+    isApproachingTrailhead = false;
+    isTrailTooFar = false;
+    if (!currentPoints || currentPoints.length === 0 || !nearestPoint) return;
 
-      const toast = document.getElementById('gpsToast');
+    // 방향이 이미 확정됐으면(currentRotationOriginDist !== null) 접근
+    // 모드를 켜지 않는다 — 이미 정상 경로 안내로 넘어간 상태.
+    if (currentRotationOriginDist !== null) return;
+
+    // 이미 경로 위(온트레일)라면 접근 모드 자체가 필요 없다 — 새 반경을
+    // 만들지 않고 기존 이탈판정 진입 기준(OFFTRAIL_BASE_ENTER_M)을
+    // 그대로 재사용한다(사용자 확정: 별도 반경 안 만듦).
+    if (minDistanceM <= OFFTRAIL_BASE_ENTER_M) return;
+
+    const toast = document.getElementById('gpsToast');
+    const distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+
+    if (minDistanceM > TRAIL_APPROACH_MAX_M) {
+      // 100m 초과 — 방향 안내(회전/녹색선) 없이 거리만 표시.
+      isTrailTooFar = true;
       if (toast) {
-        const heading = computeGuidanceHeading(lat, lon, trailhead.lat, trailhead.lon);
-        const distStr = distToTrailhead >= 1000 ? (distToTrailhead / 1000).toFixed(2) + 'km' : Math.round(distToTrailhead) + 'm';
         toast.style.display = 'block';
         toast.className = 'gps-toast';
-        toast.innerText = `🚩 들머리까지 ${distStr} · 녹색선을 따라 가세요`;
+        toast.innerText = `📡 경로까지 ${distStr}`;
       }
+      return;
+    }
+
+    // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(들머리일 수도,
+    // 경로 중간 지점일 수도 있다)을 향해 방향 안내를 시작한다.
+    isApproachingTrailhead = true;
+    // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
+    // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
+    // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
+    if (gpsMovementHeading !== null) {
+      applySegmentRotation(gpsMovementHeading);
+    }
+    if (toast) {
+      toast.style.display = 'block';
+      toast.className = 'gps-toast';
+      toast.innerText = `🚩 경로까지 ${distStr} · 녹색선을 따라 가세요`;
     }
   }
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
@@ -4041,14 +4135,18 @@
   window.resetOriginNow = resetOriginNow;
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
-    // 🚩 들머리(GPX[0]) 접근 모드 — 아직 트랙에서 멀리 떨어져 있으면
-    // (예: 산행 시작 직후 집/주차장) 트랙 기반 이탈판정·갈림길 안내·
-    // 구간회전을 전부 건너뛰고 들머리까지 거리/방향만 안내한다. 트랙
-    // 근처(TRAILHEAD_ENTRY_DISTANCE_M 이내)로 들어오면 자동으로 false가
-    // 되어 아래 기존 로직으로 자연스럽게 넘어간다.
+    // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 경로(온트레일 기준)
+    // 밖에 있으면(산행 시작 직후 집/주차장, 또는 경로 중간으로 바로
+    // 진입하는 경우 모두 포함) 트랙 기반 이탈판정·갈림길 안내·구간회전을
+    // 건너뛰고 가장 가까운 경로 지점까지 거리/방향만 안내한다.
+    //   - 100m 초과: 거리만 표시(isTrailTooFar)
+    //   - 온트레일(20m)~100m: 방향 안내 시작(isApproachingTrailhead)
+    // GPS 이동방향이 경로 방향과 2~3회 연속 일치해 원점
+    // (currentRotationOriginDist)이 확정되는 순간 자동으로 꺼지고 아래
+    // 기존 로직(갈림길 안내 등)으로 넘어간다.
     if (lastKnownPos) {
-      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon);
-      if (isApproachingTrailhead) return;
+      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon, minDistanceM, nearestPoint);
+      if (isApproachingTrailhead || isTrailTooFar) return;
     }
 
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
@@ -4440,6 +4538,23 @@
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
 
+        // 🔧 왕복(원점회귀) 트랙 매칭/역주행/이탈 판정 상태도 함께
+        // 초기화한다 — 여기가 빠져 있으면, 백그라운드에서 돌아온 직후
+        // 옛날(화면 끄기 전) 위치 기준으로 남아있던 lastNearestIdx가
+        // 엉뚱한 트랙 가닥(왕복 구간이면 반대편 선분)을 계속 우선
+        // 탐색하게 되고, isReversingOnTrail도 옛 상태 그대로 남아
+        // 화살표가 반대로 나오는 원인이 되었다(resetOriginNow()의
+        // 리셋 목록과 동일하게 맞춘다).
+        resetTrailSearchWindow();
+        isOffTrailState = false;
+        offTrailStreakCount = 0;
+        returnStreakCount = 0;
+        isReversingOnTrail = false;
+        lastTraveledDistForReverse = null;
+        reverseDecreaseStreak = 0;
+        lastAlertedMilestoneKey = null;
+        remainingBeepThresholds = null;
+
         // 🧭 지도 중심/회전 상태를 완전히 리셋해 "새로 시작하는 것"처럼
         // 만든다(2026-09-21, 이슈 #5) — 안 그러면 userGpsMarker가 남아있어
         // handleGpsPositionUpdate의 "첫 픽스" 재중심 분기(!userGpsMarker)를
@@ -4502,7 +4617,7 @@
     const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead);
+    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -5257,7 +5372,7 @@
         // 계산한다. 정지 중에도(result.isStopped 여부와 무관) 항상 호출한다 —
         // 선분 자체가 안 바뀌면 같은 값이 나오므로 "이전 방향 유지"와
         // 결과적으로 동일하다.
-        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead);
+        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
         }
