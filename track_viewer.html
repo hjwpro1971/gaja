@@ -2156,6 +2156,7 @@
   // 비효율적이므로, drawRoute에서 한 번만 만들어 캐시해둔다.
   let cumulativeDistances = [];
   let currentMilestones = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
+  let currentSegmentBearings = []; // currentSegmentBearings[i] = points[i]->points[i+1] 방향(도) — 내 위치 화살표 전용
 
   
   // GPX 경유지/지명을 경로상 누적거리(distanceM)에 매핑
@@ -2483,6 +2484,37 @@
       dists.push(dists[i-1] + d);
     }
     return dists;
+  }
+
+  // 🧭 내 위치 화살표 전용 방향 계산(2026-09-23 재설계) — 나침반/자이로/
+  // GPS 이동방위각(raw.heading, GpsFilterEngine의 결과)을 전혀 쓰지 않고,
+  // 오직 "현재 매칭된 GPX 선분이 원래 향하는 방향"만 화살표에 쓴다.
+  // 코스 로드 시점에 모든 선분(points[i]->points[i+1])의 방향을 미리
+  // 계산해두면, 정지 중에도 매번 재계산할 필요 없이 배열 조회만 하면
+  // 되고 GPS 튐의 영향을 전혀 받지 않는다(선분 자체가 안 바뀌면 방향도
+  // 안 바뀜).
+  function buildSegmentBearings(points) {
+    const bearings = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      bearings.push(calculateBearing(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+    }
+    return bearings;
+  }
+
+  // 🧭 내 위치 화살표 방향의 단일 진입점(2026-09-23) — 나침반/자이로/
+  // GPS 이동방위각을 전혀 참조하지 않는다. 상태는 오직 두 가지뿐이다:
+  //   ① TRAILHEAD_SEARCH: 아직 트랙에 진입 전 — 현재GPS → GPX[0] 방향
+  //   ② TRACK_NAVIGATION: 트랙 진입 후 — 매칭된 선분의 미리 계산된
+  //      bearing(currentSegmentBearings[nearestIdx]), 역주행 중이면 180도 반전
+  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow) {
+    if (isNearTrailheadNow) {
+      if (!currentPoints || currentPoints.length === 0) return null;
+      const trailhead = currentPoints[0];
+      return calculateBearing(lat, lon, trailhead.lat, trailhead.lon);
+    }
+    if (!currentSegmentBearings || nearestIdx < 0 || nearestIdx >= currentSegmentBearings.length) return null;
+    const segBearing = currentSegmentBearings[nearestIdx];
+    return isReversingOnTrail ? (segBearing + 180) % 360 : segBearing;
   }
 
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
@@ -3190,6 +3222,7 @@
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
+    currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
 
@@ -3295,6 +3328,11 @@
     // 복원하지 않는다 — 안 그러면 버튼이 안 보이는데도 화면을 끄면
     // 실제로는 저전력 폴링이 도는 모순이 생긴다. 버튼을 되돌릴 때 이
     // 복원 로직도 함께 되돌릴 것.
+    // 저전력 모드 완전 비활성화(2026-09-23) — 예약값이 남아있어도 무시
+    lowPowerModeEnabled = false;
+    isLowPowerPolling = false;
+    try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
+
     if (watchId === null && !isLowPowerPolling) {
       startGpsTracking();
     }
@@ -3735,16 +3773,7 @@
         const distStr = distToTrailhead >= 1000 ? (distToTrailhead / 1000).toFixed(2) + 'km' : Math.round(distToTrailhead) + 'm';
         toast.style.display = 'block';
         toast.className = 'gps-toast';
-        if (heading !== null) {
-          // "몇 시 방향"은 화면이 이미 가리키는 방향(mapRotationDeg) 대비
-          // 상대각이어야 정확하다(angleDiffToClockDirection 정의부 참고) —
-          // 절대 방위(heading)를 그대로 넘기면 지도가 북쪽 기준일 때 틀린다.
-          const relativeAngle = shortestAngleDiff(heading, mapRotationDeg);
-          const clockDir = angleDiffToClockDirection(relativeAngle);
-          toast.innerText = `🚩 들머리까지 ${distStr} · ${clockDir.clock}`;
-        } else {
-          toast.innerText = `🚩 들머리까지 ${distStr}`;
-        }
+        toast.innerText = `🚩 들머리까지 ${distStr} · 녹색선을 따라 가세요`;
       }
     }
   }
@@ -4558,10 +4587,21 @@
     const lat = pt.lat;
     const lon = pt.lon;
 
+    // 🧭 시뮬레이션도 실제 GPS와 동일한 방향 로직 사용(2026-09-23) —
+    // nearestPointOnTrail로 이 프레임 좌표가 매칭되는 선분을 찾고,
+    // computeArrowHeading으로 TRAILHEAD_SEARCH/TRACK_NAVIGATION 방향을
+    // 계산한다. gpsMovementHeading(GPS 이동방위각)은 화살표용으로 더 이상
+    // 쓰지 않는다 — 단, 지도 회전(applySegmentRotation 등 다른 로직)이
+    // 참조할 수 있으니 계산 자체는 유지한다.
     const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
     if (aheadPt) {
       gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
     }
+
+    const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
+    const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
+    const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
+    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -4569,7 +4609,7 @@
     if (!simMarker) {
       const icon = L.divIcon({
         className: 'custom-gps-icon',
-        html: createGpsIconHtml(gpsMovementHeading),
+        html: createGpsIconHtml(simArrowHeading),
         iconSize: [80, 80],
         iconAnchor: [40, 40]
       });
@@ -4577,7 +4617,7 @@
     } else {
       simMarker.setLatLng([lat, lon]);
     }
-    if (gpsMovementHeading !== null) renderGpsArrow(gpsMovementHeading);
+    if (simArrowHeading !== null) renderGpsArrow(simArrowHeading);
 
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
@@ -5297,20 +5337,18 @@
         // 미리 계산된 회전각)는 updateNavigationToast가 전담한다.
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
-          // 내 위치 마커(userGpsMarker)는 Leaflet 마커라 #map의 자식
-          // 레이어 안에 있다 — 구간 heading-up이 켜져 #map이
-          // rotate(-mapRotationDeg)만큼 이미 돌아가 있으면, 화살표도
-          // 그 회전을 부모로부터 그대로 물려받는다(자식 DOM 회전은 부모
-          // 회전에 "더해지는" 방식으로 합산된다).
-          // 화면상 최종 회전 = 부모(-mapRotationDeg) + 자식(적용할 값).
-          // 우리가 원하는 최종 화면 회전은 절대방위 gpsMovementHeading이
-          // "지도가 mapRotationDeg만큼 회전한 만큼" 어긋나 보이는 것이므로
-          // (gpsMovementHeading - mapRotationDeg)이고, 이를 만족하는
-          // 자식 회전값을 역산하면 정확히 gpsMovementHeading 그 자체가
-          // 나온다(부모의 -mapRotationDeg와 상쇄됨) — 즉 renderGpsArrow에
-          // 넘길 값은 회전 모드 여부와 무관하게 항상 result.bearing으로
-          // 동일하다. 순수 계산으로 검증 완료(scratchpad/verify_headingup_rotation.js).
-          renderGpsArrow(result.bearing);
+        }
+
+        // 🧭 화살표 방향(2026-09-23 재설계): 나침반/자이로/GPS 이동방위각
+        // (result.bearing)은 더 이상 화살표에 쓰지 않는다. computeArrowHeading이
+        // TRAILHEAD_SEARCH(현재GPS→GPX[0]) 또는 TRACK_NAVIGATION(매칭된
+        // 선분의 미리 계산된 bearing, 역주행 시 180도 반전) 둘 중 하나로만
+        // 계산한다. 정지 중에도(result.isStopped 여부와 무관) 항상 호출한다 —
+        // 선분 자체가 안 바뀌면 같은 값이 나오므로 "이전 방향 유지"와
+        // 결과적으로 동일하다.
+        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead);
+        if (arrowHeading !== null) {
+          renderGpsArrow(arrowHeading);
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
