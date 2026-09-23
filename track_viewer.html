@@ -77,7 +77,7 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v142';
+    const CACHE_NAME = 'gaja-trail-cache-v143';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
@@ -776,7 +776,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=142', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=143', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2063,6 +2063,11 @@
   // 비교하는가"만 GPS 방위각 → GPX 이력으로 교체했다.
   const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
   const REVERSE_SEGMENT_PENALTY_M = 30;
+  // 이 길이(m)보다 짧은 세그먼트는 GPS가 한 자리에서 서성이며 찍힌 노이즈로
+  // 보고, 그 방위각을 왕복구간 방향 페널티 판별에 쓰지 않는다
+  // (findNearestInRange 참고). 실측: 남덕유산 서봉 왕복구간에서 반경
+  // 1~2m 안에 방위각이 0~360도로 요동하는 포인트가 다수 있었다.
+  const MIN_SEGMENT_LEN_FOR_BEARING_M = 3;
 
   // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
   function findNearestInRange(lat, lon, points, startIdx, endIdx) {
@@ -3396,7 +3401,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v142';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v143';
 
   function getTileSaveStatus(courseKey) {
     try {
