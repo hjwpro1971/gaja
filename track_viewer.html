@@ -2007,7 +2007,21 @@
   let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
   const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
   const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
-  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 진행방향을 판별할 때 쓰는 최신 이동방향
+
+  // 🧭 매칭 전용 "장기 추세"(matchingTrend) — isReversingOnTrail(사용자
+  // 안내용, 1회만 증가해도 즉시 해제되는 민감한 히스테리시스)를 그대로
+  // 페널티 판별에 쓰면 순환(findNearestInRange가 정한 nearestIdx →
+  // traveledDist → isReversingOnTrail → 다시 findNearestInRange) 구조가
+  // 되어, 촘촘한 구간에서 true/false가 매 갱신마다 뒤집히며 오히려 매칭이
+  // 불안정해지는 문제가 실측 시뮬레이션(계룡산 5봉코스 GPX)에서 확인됐다.
+  // idxTrendBuffer는 "이미 확정된 과거 nearestIdx들"만 쌓으므로 이번
+  // 갱신의 매칭 결과와 무관하게 결정되어 순환이 끊긴다. 폭
+  // (IDX_TREND_CONFIRM_DELTA) 이상 벌어져야만 추세를 바꾸고, 그 사이는
+  // 이전 추세를 유지해 민감도를 크게 낮춘다.
+  const IDX_TREND_WINDOW = 10; // 최근 몇 번의 확정 nearestIdx를 볼지
+  const IDX_TREND_CONFIRM_DELTA = 5; // 이 폭(index 개수) 이상 벌어져야 추세 전환
+  let idxTrendBuffer = [];
+  let matchingTrend = null; // 'forward' | 'backward' | null(미확정 — 페널티 없음)
 
   // 실제로 걷는 방향은 항상 하나뿐이다 — GPX 상에 막다른 길을 왕복하는
   // 구간이 있어 "가는 길"과 "오는 길" 좌표가 거의 겹치더라도, 사용자
@@ -2035,6 +2049,18 @@
   // (거리 차가 페널티보다 작으므로), 편도 트랙 역방향처럼 "가장 가까운
   // 게 사실 방향만 반대인 바로 그 트랙"인 경우에도 페널티를 더해도
   // 다른 먼 세그먼트보다는 가까우므로 정상적으로 선택된다.
+  //
+  // 🧭 가자맵 대원칙(원칙 2·3·4) 재정렬: 이 페널티의 판별 재료였던
+  // latestMovementBearingForTrailMatch(GPS 순간 이동방위각/heading 기반
+  // 값)를 제거했다. 대원칙상 방향은 "GPS가 어디를 보는가"가 아니라
+  // "GPX index가 어느 방향으로 이동하는가"로만 판단해야 하는데, 기존
+  // 방식은 GPS 방위각을 세그먼트 매칭에 직접 섞어 쓰고 있었다.
+  // 대신 이미 GPX index/누적거리 이력만으로 산출되는 isReversingOnTrail
+  // (updateReversingState가 관리하는, "직전까지 확정된" 순방향/역방향
+  // 이력)과, 각 세그먼트 고유의 진행방향(currentSegmentBearings[i], GPX
+  // 점 순서 자체에서 나온 값)을 비교 재료로 쓴다. 판정 로직(페널티 방식,
+  // 90도 임계값)은 과거 실패를 피하기 위해 그대로 유지하고, "무엇과
+  // 비교하는가"만 GPS 방위각 → GPX 이력으로 교체했다.
   const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
   const REVERSE_SEGMENT_PENALTY_M = 30;
 
@@ -2055,10 +2081,39 @@
 
       const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
       let score = d;
-      if (latestMovementBearingForTrailMatch !== null) {
-        const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
-        const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
-        if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
+      // 왕복 겹침 구간에서 "가는 길"과 "오는 길" 세그먼트를 구분하는
+      // 기준을 GPS 방위각(latestMovementBearingForTrailMatch)에서 →
+      // matchingTrend(idxTrendBuffer로 안정화된 GPX index 이력)로
+      // 교체했다. isReversingOnTrail(사용자 안내용, 1회 증가로 즉시
+      // 해제되는 민감한 히스테리시스)을 그대로 쓰면 findNearestInRange가
+      // 정한 nearestIdx가 다시 isReversingOnTrail에 영향을 주는 순환이
+      // 생겨 촘촘한 구간에서 매칭이 오히려 불안정해졌다(실측: 계룡산
+      // 5봉코스 GPX 시뮬레이션). matchingTrend는 이미 확정된 과거
+      // nearestIdx들만 보고 완만하게(IDX_TREND_CONFIRM_DELTA 이상 벌어질
+      // 때만) 전환되므로 이번 계산 결과가 이번 판별에 섞이지 않는다.
+      if (lastNearestIdx >= 0 && matchingTrend !== null) {
+        // 🧭 정상/갈림길 등에서 GPS가 잠시 서성이며 찍힌 극단적으로 짧은
+        // 세그먼트는 방위각이 사실상 무작위다(실측: 남덕유산 서봉 왕복구간
+        // 시뮬레이션에서 확인 — 반경 1~2m 안에 방위각이 0~360도 전 범위로
+        // 요동치는 30개 포인트가 있었음). 직전 확정 세그먼트나 이번 비교
+        // 대상 세그먼트 둘 중 하나라도 이렇게 짧으면, 그 방위각은 "GPX
+        // index가 가리키는 방향"이 아니라 노이즈이므로 페널티 판별
+        // 재료로 쓰지 않는다(순수 거리로만 비교) — 대원칙(GPX index
+        // 이동방향 기준 판단)을 지키려면, 애초에 방향이 정의되지 않는
+        // 구간에서는 방향 판단 자체를 하지 않는 게 맞다.
+        const lastSegTooShort = segmentLengths[lastNearestIdx] < MIN_SEGMENT_LEN_FOR_BEARING_M;
+        const currentSegTooShort = segmentLengths[i] < MIN_SEGMENT_LEN_FOR_BEARING_M;
+        if (!lastSegTooShort && !currentSegTooShort) {
+          const lastSegBearing = currentSegmentBearings[lastNearestIdx];
+          if (lastSegBearing !== undefined && lastSegBearing !== null) {
+            const expectedBearing = matchingTrend === 'backward'
+              ? (lastSegBearing + 180) % 360
+              : lastSegBearing;
+            const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+            const mismatch = Math.abs(shortestAngleDiff(segBearing, expectedBearing));
+            if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
+          }
+        }
       }
 
       if (score < minScore) {
@@ -2114,6 +2169,19 @@
     }
 
     lastNearestIdx = result.index;
+
+    // 🧭 matchingTrend 갱신 — 이번에 "확정된" lastNearestIdx를 과거 이력
+    // 버퍼에 쌓는다. 이 버퍼는 다음 호출부터 페널티 계산에 쓰이므로,
+    // 이번 호출의 결과가 이번 호출의 판단에 영향을 주는 순환이 없다.
+    idxTrendBuffer.push(lastNearestIdx);
+    if (idxTrendBuffer.length > IDX_TREND_WINDOW) idxTrendBuffer.shift();
+    if (idxTrendBuffer.length === IDX_TREND_WINDOW) {
+      const idxDelta = idxTrendBuffer[idxTrendBuffer.length - 1] - idxTrendBuffer[0];
+      if (idxDelta >= IDX_TREND_CONFIRM_DELTA) matchingTrend = 'forward';
+      else if (idxDelta <= -IDX_TREND_CONFIRM_DELTA) matchingTrend = 'backward';
+      // 그 사이 폭이면 matchingTrend는 이전 값을 그대로 유지(뒤집지 않음)
+    }
+
     return result;
   }
 
@@ -2123,6 +2191,7 @@
   let cumulativeDistances = [];
   let currentMilestones = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
   let currentSegmentBearings = []; // currentSegmentBearings[i] = points[i]->points[i+1] 방향(도) — 내 위치 화살표 전용
+  let segmentLengths = []; // segmentLengths[i] = points[i]->points[i+1] 실제 거리(m) — 방향 페널티에서 "방향 미정의 구간" 판별용
 
   
   // GPX 경유지/지명을 경로상 누적거리(distanceM)에 매핑
@@ -2468,8 +2537,15 @@
   // 안 바뀜).
   function buildSegmentBearings(points) {
     const bearings = [];
+    // 🧭 세그먼트 길이도 함께 계산해 segmentLengths에 캐시한다 — 정상/갈림길
+    // 등에서 GPS가 잠시 서성이며 찍힌 극단적으로 짧은 세그먼트는 방위각이
+    // 사실상 무작위(실측: 남덕유산 서봉 왕복구간, 반경 1~2m 안에 30개
+    // 포인트가 몰려 방위각이 0~360도 전 범위로 요동함)이므로, 왕복구간
+    // 방향 페널티(findNearestInRange) 계산에서 이 길이를 참조해 걸러낸다.
+    segmentLengths = [];
     for (let i = 0; i < points.length - 1; i++) {
       bearings.push(calculateBearing(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+      segmentLengths.push(haversineMeters(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
     }
     return bearings;
   }
@@ -2907,6 +2983,10 @@
   // 탐색하게 되어 엉뚱한 결과가 나올 수 있다.
   function resetTrailSearchWindow() {
     lastNearestIdx = -1;
+    // matchingTrend/idxTrendBuffer도 함께 초기화 — 이전 코스의 이력이
+    // 새 코스의 방향 페널티 판별에 섞여 들어가면 안 된다.
+    idxTrendBuffer = [];
+    matchingTrend = null;
   }
 
   // 타일 좌표 계산 함수
@@ -4570,25 +4650,6 @@
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
 
-        // 🧭 #map의 실제 CSS 회전값도 JS 변수(mapRotationDeg,
-        // appliedMapRotationDeg)와 함께 0으로 되돌린다 — JS 변수만
-        // 리셋하고 DOM에 실제로 적용된 transform은 그대로 두면, 복귀
-        // 직후 새로 계산되는 회전각이 "백그라운드 진입 전의 낡은 화면
-        // 회전" 위에 겹쳐져 화살표(내 위치 마커)가 실제 진행 방향과
-        // 반대로 보이는 원인이 된다(사용자 재현: "포그라운드로 가져올
-        // 때 화살표가 진행방향과 반대"). 대원칙(어떤 경로로 들어오든
-        // GPS를 처음 잡는 것처럼 재계산)을 지키려면 화면(DOM)도 함께
-        // 원점으로 되돌려야 한다.
-        const mapElOnResume = document.getElementById('map');
-        if (mapElOnResume) {
-          mapElOnResume.style.transition = 'none';
-          mapElOnResume.style.transform = mapElOnResume.classList.contains('heading-up')
-            ? 'translate(-50%, -50%) rotate(0deg)'
-            : '';
-          void mapElOnResume.offsetHeight; // 리플로우 강제 — transform이 이 시점에 확실히 반영되도록 함
-          requestAnimationFrame(() => { mapElOnResume.style.transition = ''; }); // 다음 프레임부터 부드러운 회전 트랜지션 복원
-        }
-
         startGpsTracking(); // 항상 일반 GPS로 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
       }
     }
@@ -5343,11 +5404,10 @@
         // 흔들려 오히려 혼란을 줬다. 화면의 확대/축소 버튼으로 사용자가
         // 직접 조절한다. 나중에 별도로 다시 설계할 수 있다.
 
-        // 왕복 겹침 구간에서 올바른 트랙 세그먼트를 찾을 때(nearestPointOnTrail
-        // 내부의 방향 하드필터) 쓸 최신 이동 방향.
-        latestMovementBearingForTrailMatch = (!result.isStopped && result.bearing !== null)
-          ? result.bearing
-          : gpsMovementHeading;
+        // 🧭 대원칙 재정렬: 왕복 겹침 구간 판별은 이제 findNearestInRange
+        // 내부에서 isReversingOnTrail(GPX 인덱스 이력)과 currentSegmentBearings
+        // (GPX 점 순서)만으로 이뤄지므로, 여기서 GPS 이동방위각(result.bearing)을
+        // 별도로 넘겨줄 필요가 없어졌다.
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
