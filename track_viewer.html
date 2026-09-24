@@ -3951,13 +3951,23 @@
   // 🧭 화면 회전(2026-09-22 추가, 사용자 지시): "가는 방향과 일치하면
   // 쉽게 찾겠다 — 녹색선이 내 정면으로 오게 회전하면 GPS 신호만으로
   // 방향을 잡을 수 있을 것 같다." 트랙 진입 전이라 코스 방향 기준이
-  // 없으므로, 실제 걷는 방향(gpsMovementHeading, GPS 연속 픽스로 추정된
-  // 이동방향)을 화면 정면(12시)으로 두고 회전시킨다 — 몇 걸음만 걸으면
-  // 이 값이 나오므로 "실시간"에 가깝게 갱신된다. applySegmentRotation을
-  // 그대로 재사용해 산행 중 heading-up 회전과 동일한 방식으로 돈다.
+  // 없으므로, "가장 가까운 경로 지점" 방향(arrowHeading, computeArrowHeading
+  // 결과 — 화살표와 동일 소스)을 화면 정면(12시)으로 두고 회전시킨다.
+  // applySegmentRotation을 그대로 재사용해 산행 중 heading-up 회전과
+  // 동일한 방식으로 돈다. (2026-09-24: gpsMovementHeading 대신
+  // arrowHeading으로 교체 — 아래 함수 주석 참고)
   let isApproachingTrailhead = false; // 온트레일 초과 ~ 100m: 방향 안내(회전+녹색선) 활성
   let isTrailTooFar = false;          // 100m 초과: 거리만 표시, 방향 안내는 하지 않음
-  function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint) {
+  // 🐛 2026-09-24 수정(사용자 지시: "경로가 12시 방향으로 오게 해. 내
+  // 위치 화살표도 12시 방향으로 오게 해. 즉 2개가 일치해야 해") — 이
+  // 함수가 예전엔 gpsMovementHeading(GPS 이동방위각, GpsFilterEngine이
+  // raw.heading/좌표로 추정한 값)으로 지도를 돌렸는데, 화살표
+  // (renderGpsArrow)는 computeArrowHeading(GPX 트랙 좌표 기준, 나침반/
+  // GPS heading 전혀 안 씀)로 그려진다 — 서로 다른 소스라 들머리 접근
+  // 구간(원점 미확정, 100m 이내)에서 지도 회전 방향과 화살표 방향이
+  // 어긋났다. 호출부(handleGpsPositionUpdate)가 이미 계산해둔
+  // arrowHeading을 그대로 받아써서 두 값을 하나로 통일한다.
+  function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint, arrowHeading) {
     isApproachingTrailhead = false;
     isTrailTooFar = false;
     if (!currentPoints || currentPoints.length === 0 || !nearestPoint) return;
@@ -3988,11 +3998,12 @@
     // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(들머리일 수도,
     // 경로 중간 지점일 수도 있다)을 향해 방향 안내를 시작한다.
     isApproachingTrailhead = true;
-    // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
-    // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
-    // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
-    if (gpsMovementHeading !== null) {
-      applySegmentRotation(gpsMovementHeading);
+    // 화살표(renderGpsArrow)와 항상 같은 값(arrowHeading, GPX 기준
+    // computeArrowHeading 결과)으로 회전 — 가만히 서 있어 아직 방향이
+    // 안 나온 최초 순간(arrowHeading===null)에는 회전을 시도하지 않고
+    // 마지막 상태(보통 북쪽 고정)를 유지한다.
+    if (arrowHeading !== null && arrowHeading !== undefined) {
+      applySegmentRotation(arrowHeading);
     }
     if (toast) {
       toast.style.display = 'block';
@@ -4309,7 +4320,7 @@
   }
   window.resetOriginNow = resetOriginNow;
 
-  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
+  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading) {
     // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 경로(온트레일 기준)
     // 밖에 있으면(산행 시작 직후 집/주차장, 또는 경로 중간으로 바로
     // 진입하는 경우 모두 포함) 트랙 기반 이탈판정·갈림길 안내·구간회전을
@@ -4320,7 +4331,7 @@
     // (currentRotationOriginDist)이 확정되는 순간 자동으로 꺼지고 아래
     // 기존 로직(갈림길 안내 등)으로 넘어간다.
     if (lastKnownPos) {
-      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon, minDistanceM, nearestPoint);
+      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon, minDistanceM, nearestPoint, arrowHeading);
       if (isApproachingTrailhead || isTrailTooFar) return;
     }
 
@@ -4829,7 +4840,7 @@
 
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
     // 기존 순서를 그대로 유지(하단 경로 알람/원점 확정 로직 때문).
-    updateNavigationToast(5, 0, idx, pt);
+    updateNavigationToast(5, 0, idx, pt, simArrowHeading);
 
     if (currentRotationOriginDist !== null && currentRotationOriginDist !== originBeforeToast) {
       const rotationLookaheadM = isSimulationMode ? SIM_ROTATION_TARGET_LOOKAHEAD_M : undefined;
@@ -5644,7 +5655,7 @@
         // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로
         // 갱신하는데, 순서가 반대이면 화살표 보정 등이 옛 값(한 프레임
         // 지연)을 참조하게 된다.
-        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint);
+        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading);
 
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
