@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_locked_index_tracking';
+      const APP_BUILD = 'v20260925_arrow_direction_sign_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2417,7 +2417,17 @@
       lon: chosenA.lon + (chosenB.lon - chosenA.lon) * chosenT
     };
 
-    return { index: chosenIdx, distance: chosenDist, bestOfTwo, point };
+    // advanced: 이번 픽스에 N에서 N+1로 실제로 전진했는지 — 이 함수는
+    // 구조상 "머무름" 또는 "전진"만 판정하고 절대 후진 신호를 내지
+    // 않는다(사용자 지시: 다음 index로만 전진). moveDirectionSign은
+    // 이제 이 판정을 그대로 쓴다(아래 nearestPointOnTrail 참고) — 예전
+    // 처럼 "직전 확정 index와의 delta"로 재계산하면, 코스 최초 진입이나
+    // SEARCHING→LOCKED 재획득 직후처럼 "직전 값"이 없거나 신뢰할 수
+    // 없는 시점에 moveDirectionSign이 갱신되지 않고 스테일 값(초기값
+    // 1 또는 이전 상태)으로 남아, 실제 진행 방향과 반대로 화살표가
+    // 나오는 버그가 있었다(사용자 재현: "index는 잘 잡는데 화살표가
+    // 진행 반대방향으로 나옴").
+    return { index: chosenIdx, distance: chosenDist, bestOfTwo, point, advanced };
   }
 
   // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
@@ -2512,10 +2522,40 @@
     //     지연 없이 즉시 반영 — "역방향 판정 없이 실제 이동 방향만".
     //     화면에 보이는 안정화된 위치(lastNearestIdx)를 그대로 쓴다.
     //     단, 이번 픽스에 SEARCHING→LOCKED 재획득이 막 일어났으면
-    //     (justReacquired) index가 옛 위치에서 새 위치로 크게 점프한
-    //     것일 수 있어 방향 판정을 1픽스 보류한다.
+    //     (justReacquired) 직전 확정 index와의 delta 계산 대신, 재탐색
+    //     결과가 곧바로 신뢰할 수 있는 기준점이 되므로 그 자리에서
+    //     새로 시작한다(updateMoveDirection이 처리).
+    //
+    // 🐛 2026-09-25 수정(사용자 재현: "index는 잘 잡는데 화살표가 진행
+    // 반대방향으로 나옴") — LOCKED 결과(result.advanced가 존재)는
+    // trackFromLockedIndex가 이미 "N에 머물렀는지, N+1로 전진했는지"를
+    // 직접 판정해뒀다(이 함수는 구조상 후진을 절대 반환하지 않는다).
+    // 예전처럼 이 정보를 버리고 "직전 확정 lastMoveDirectionIdx와의
+    // delta"를 다시 계산하면, 코스 최초 진입/재획득 직후처럼 "직전
+    // 값"이 아직 없거나 신뢰 못 할 시점엔 moveDirectionSign이 갱신되지
+    // 않고 초기값(1) 또는 스테일 값으로 남아 실제 진행 방향과 반대로
+    // 나올 수 있었다. LOCKED로 매칭된 이상(result.advanced가 존재)
+    // trackFromLockedIndex가 절대 후진을 반환하지 않으므로, 머무름/
+    // 전진 여부와 무관하게 항상 +1(다음 index 방향)로 고정한다(아래
+    // 2026-09-25 추가 수정 참고 — 처음엔 "전진일 때만 교정"으로
+    // 했다가, 머무름이 몇 픽스 이어지는 동안 스테일 값이 남는 걸
+    // 실행 검증으로 확인해 무조건 고정으로 강화했다). SEARCHING
+    // (재탐색) 결과는 정의상 직접 판정이 없으므로 기존 delta 기반
+    // 로직을 그대로 쓴다.
     updateTrackDirection(result.rawIndex !== undefined ? result.rawIndex : result.index);
-    updateMoveDirection(lastNearestIdx, justReacquired);
+    if (result.advanced !== undefined) {
+      // 🐛 2026-09-25 추가 수정 — "전진(advanced)"일 때만 +1로 교정하면,
+      // 세그먼트 초반(머무름, t<0.5)에 머무는 몇 픽스 동안은 스테일 값이
+      // 그대로 남아 화살표가 계속 반대로 보일 수 있었다(실행 검증으로
+      // 확인). trackFromLockedIndex는 구조상 N→N+1 전진 또는 N 머무름만
+      // 반환하고 절대 후진을 반환하지 않으므로, LOCKED로 매칭된 이상
+      // moveDirectionSign이 -1일 이유가 아예 없다 — 전진 여부와 무관하게
+      // 항상 +1로 고정한다.
+      moveDirectionSign = 1;
+      lastMoveDirectionIdx = lastNearestIdx; // delta 기준점도 함께 동기화(다음 SEARCHING 전환 대비)
+    } else {
+      updateMoveDirection(lastNearestIdx, justReacquired);
+    }
 
     return result;
   }
