@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v160';
+    const CACHE_NAME = 'gaja-trail-cache-v161';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_launch_handler_navigate_existing';
+      const APP_BUILD = 'v20260925_peak_arrow_simplify';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2662,11 +2662,20 @@
 
         let icon = '📍';
         let color = '#2e7d32';
+        // 🐛 2026-09-25 수정(사용자 재현: "남덕유산 서봉 왕복 GPX 실제
+        // 재생 검증 — 서봉 정상부에서 화면 회전이 125도까지 어긋남" →
+        // "거긴 내가 여기저기 들러봐서 그래. 서봉에선 그냥 유턴 단순하게
+        // 해") — 정상류 지점은 실측 GPS 궤적이 정상석 주변을 배회하며
+        // 찍혀(짧은 지그재그 구간) computeArrowHeading의 15m 앞보기가
+        // 급격히 흔들릴 수 있다. isPeak 플래그를 마일스톤에 남겨,
+        // computeArrowHeading이 이 지점 근처에서는 세밀한 방향 대신
+        // "진행방향이 반대로 바뀌었는지"만 보는 단순 유턴 모드로 전환한다.
+        const isPeak = n.endsWith('봉') || n.endsWith('산') || n.includes('정상') || n.includes('최고지점');
         if (n.includes('들머리') || n.includes('출발')) {
           icon = '🚩'; color = '#1976d2';
         } else if (n.includes('날머리') || n.includes('도착')) {
           icon = '🏁'; color = '#d32f2f';
-        } else if (n.endsWith('봉') || n.endsWith('산') || n.includes('정상') || n.includes('최고지점')) {
+        } else if (isPeak) {
           icon = '⛰️'; color = '#e65100';
         } else if (n.endsWith('재') || n.endsWith('령') || n.endsWith('고개')) {
           icon = '🏔️'; color = '#00838f';
@@ -2688,7 +2697,7 @@
           const trailPt = points[nearestIdx];
           list.push({
             name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
-            trailLat: trailPt.lat, trailLon: trailPt.lon,
+            trailLat: trailPt.lat, trailLon: trailPt.lon, isPeak,
           });
         });
       });
@@ -2720,6 +2729,7 @@
           color: '#e65100',
           trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
           trailLon: peak.lon,
+          isPeak: true,
         });
       }
     }
@@ -2977,6 +2987,22 @@
   // 계산해둔 값)를 넘겨받아 그 지점을 향하도록 통일한다 — 넘기지 않으면
   // (레거시 호출부 호환) currentPoints[0]로 폴백한다.
   const ARROW_LOOKAHEAD_M = 15;
+  // 🐛 2026-09-25 수정(사용자 재현: "남덕유산 서봉 왕복 GPX 실제 재생
+  // 검증 — 서봉 정상부에서 화면 회전이 최대 125도까지 어긋남" → "거긴
+  // 내가 여기저기 들러봐서 그래. 서봉에선 그냥 유턴 단순하게 해") —
+  // 정상류 지점은 실측 GPS 궤적이 정상석/전망대 주변을 배회하며 찍혀
+  // (실측: 남덕유산 서봉 반경 30m 안에 5개 넘는 점이 지그재그로 몰림)
+  // ARROW_LOOKAHEAD_M(15m)이 그 짧고 혼란스러운 구간 안의 좌표를
+  // 가리키면서 화면 회전이 급변했다. 정상류 마일스톤(isPeak) 근처
+  // (PEAK_SIMPLIFY_RADIUS_M 이내)에서는 15m 대신 PEAK_LOOKAHEAD_M
+  // (50m)로 훨씬 더 앞을 보게 해, 정상부의 국지적 배회를 건너뛰고
+  // "전체적으로 어느 방향으로 이어지는가"(사실상 유턴 여부)만 반영한다.
+  const PEAK_SIMPLIFY_RADIUS_M = 40; // 이 거리 안에서는 단순화 모드
+  const PEAK_LOOKAHEAD_M = 50; // 정상 근처 전용 lookahead(15m 대신)
+  function isNearPeakMilestone(traveledDist) {
+    if (!currentMilestones || currentMilestones.length === 0) return false;
+    return currentMilestones.some(m => m.isPeak && Math.abs(traveledDist - m.distanceM) <= PEAK_SIMPLIFY_RADIUS_M);
+  }
   function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
     if (isNearTrailheadNow) {
       const target = nearestOnTrailPoint || (currentPoints && currentPoints.length > 0 ? currentPoints[0] : null);
@@ -2985,7 +3011,8 @@
     }
     if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
     const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
-    const targetDist = dist + moveDirectionSign * ARROW_LOOKAHEAD_M;
+    const lookahead = isNearPeakMilestone(dist) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
+    const targetDist = dist + moveDirectionSign * lookahead;
     const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
     if (!aheadPt) return null;
     return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
