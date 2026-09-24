@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_lowacc_track_match_fix';
+      const APP_BUILD = 'v20260925_hiking_session_persist';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -693,6 +693,11 @@
   <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
   <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
   <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
+  <!-- 🏁 등산 완료(2026-09-25, 사용자 지시) — 산행 세션을 명시적으로
+       끝내는 유일한 버튼. 이걸 누르기 전까지는 GPS를 껐다 켜거나 앱을
+       재진입해도 같은 산행으로 취급되어 "등산 시작" 확인 버튼이 다시
+       뜨지 않는다(hikingSession 정의부 주석 참고). -->
+  <button class="fab-btn" onclick="confirmEndHike()" title="등산 완료 (이번 산행을 종료합니다)">🏁</button>
 </div>
 
 <!-- 🧭 하단 대형 방향 화살표 — 다음 갈림길이 가까워지면(showUpcomingTurnAlert)
@@ -1202,6 +1207,50 @@
   let isProgrammaticZoomInProgress = false;
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
+
+  // ════════════════════════════════════════════════════════════════
+  // 🏁 산행 세션(hikingSession, 2026-09-25 사용자 지시) — "바로가기
+  // 아이콘 클릭하면 항상 등산시작 버튼을 클릭해야 함. 등산 시작은
+  // 한번 하면 돼. 매번 왜 해? 등산 중에 수신로 아이콘을 클릭할텐데
+  // 이것 어떻게 구분을 하지... 그래서 등산완료 버튼이 필요해".
+  //
+  // 예전엔 "GPS 켜짐(watchId!==null)"만으로 산행 진행 여부를 판단해,
+  // 산행 도중 GPS를 껐다 켜거나(배터리 절약, 실수) 앱을 재진입할 때마다
+  // "등산 시작" 확인 버튼이 매번 다시 떴다 — watchId는 "지금 이 순간
+  // GPS 하드웨어가 연결돼 있는가"만 나타낼 뿐, "이번 산행이 아직 끝나지
+  // 않았는가"와는 다른 개념인데 둘을 하나로 취급한 것이 원인이었다.
+  //
+  // hikingSession은 이 둘을 분리한다:
+  //   - GPS on/off(watchId) = 지금 이 순간 위치 수신 여부(임시로 꺼도 됨)
+  //   - hikingSession.active = 이번 산행이 아직 끝나지 않았는가(사용자가
+  //     "🏁 등산 완료"를 명시적으로 누르기 전까지는 계속 true)
+  // 앱 재진입(바로가기 아이콘, 화면 꺼짐→켜짐, 브라우저 재시작 등)은
+  // 전부 "세션 복구"로 처리하고, 오직 명시적 종료 버튼만 세션을 끝낸다.
+  const HIKING_SESSION_KEY = 'gajago_hiking_session_v1';
+  function loadHikingSession() {
+    try {
+      const raw = localStorage.getItem(HIKING_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return (s && s.active) ? s : null;
+    } catch(e) { return null; }
+  }
+  // routeKey: 코스를 구분하는 키(courseName+sourceUrl 조합) — 다른 코스를
+  // 새로 열면 이전 세션과 다른 산행이므로 자동 복귀 대상에서 제외한다.
+  function startHikingSession(routeKey) {
+    try {
+      localStorage.setItem(HIKING_SESSION_KEY, JSON.stringify({
+        active: true, routeKey, startedAt: Date.now()
+      }));
+    } catch(e) {}
+  }
+  function endHikingSession() {
+    try { localStorage.removeItem(HIKING_SESSION_KEY); } catch(e) {}
+  }
+  function makeRouteKey(courseName, sourceUrl) {
+    return `${courseName || ''}::${sourceUrl || ''}`;
+  }
+  let currentRouteKey = null; // drawRoute()가 열릴 때마다 갱신 — confirmStartHike()가 세션 생성 시 참조
 
   // 🧭 구간(갈림길↔갈림길) heading-up 지도 회전 — track_viewer.html과
   // 달리 이 실험판(track_viewer2.html)만의 기능. isHeadingUp(GPS 켜짐
@@ -3512,7 +3561,20 @@
     isLowPowerPolling = false;
     try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
 
-    if (watchId === null && !isLowPowerPolling) {
+    // 🏁 산행 세션 자동 복귀(2026-09-25, 사용자 지시: "등산 시작은 한번
+    // 하면 돼. 매번 왜 해? ... 그래서 등산완료 버튼이 필요해") — 같은
+    // 코스로 진행 중인 산행 세션이 이미 있으면(바로가기 아이콘 재클릭,
+    // 앱 재진입 등) "등산 시작" 확인 버튼을 다시 띄우지 않고 곧바로
+    // GPS를 재개한다. 다른 코스를 새로 열었거나 세션이 없으면(진짜 첫
+    // 시작) 기존처럼 확인 버튼을 띄운다.
+    const routeKey = makeRouteKey(courseName, sourceUrl);
+    currentRouteKey = routeKey;
+    const session = loadHikingSession();
+    if (session && session.routeKey === routeKey) {
+      if (watchId === null && !isLowPowerPolling) {
+        startGpsTracking();
+      }
+    } else if (watchId === null && !isLowPowerPolling) {
       showStartHikeOverlay();
     }
   }
@@ -4488,6 +4550,10 @@
         // 한다. GPS 오차(보통 ±10~15m)를 감안해 20m 이내를 "도착"으로 본다.
         if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
           showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
+          // 🏁 산행 세션도 함께 종료한다 — 안 하면 다음에 같은 코스를
+          // 다시 열었을 때 "이전 세션 복귀"로 잘못 처리되어(등산 시작
+          // 확인 버튼 없이 곧바로 GPS가 켜짐) 새 산행을 시작 못 한다.
+          endHikingSession();
           stopGpsTracking();
         }
         return;
@@ -5194,14 +5260,33 @@
     if (watchId !== null || isLowPowerPolling) {
       stopGpsTracking();
     } else {
-      // 🚀 GPS가 꺼진 상태에서 🎯(내 위치) 버튼을 누르면, 바로 GPS를
-      // 켜지 않고 "등산 시작" 확인 버튼을 다시 띄운다(사용자 지시:
-      // "gps 아이콘 클릭하면 등산시작 버튼이 보이게 해 줘"). GPS가
-      // 이미 켜져 있을 때(위 분기)는 기존처럼 바로 꺼진다 — 토글 동작
-      // 자체는 그대로 유지.
-      showStartHikeOverlay();
+      // 🏁 산행 세션이 이미 진행 중이면(사용자가 "🏁 등산 완료"를 아직
+      // 안 눌렀으면) "등산 시작" 확인 버튼을 다시 띄우지 않고 곧바로
+      // GPS를 재개한다 — 등산 중 GPS를 잠깐 껐다 켜는 것은 새 산행이
+      // 아니다(사용자 지시: "등산 시작은 한번 하면 돼. 매번 왜 해?").
+      // 세션이 없을 때만(진짜 첫 시작, 또는 이미 등산 완료를 누른 뒤)
+      // 기존처럼 확인 버튼을 띄운다.
+      const session = loadHikingSession();
+      if (session && session.routeKey === currentRouteKey) {
+        startGpsTracking();
+      } else {
+        showStartHikeOverlay();
+      }
     }
   }
+
+  // 🏁 등산 완료(사용자가 명시적으로 눌렀을 때만 호출) — 산행 세션을
+  // 끝내고 GPS도 함께 끈다. 실수로 누르는 걸 막기 위해 확인창을 띄운다
+  // — 되돌릴 방법이 없는(다음에 같은 코스를 열면 새 산행으로 처리되는)
+  // 조작이므로, 손 닿는 곳에 있는 다른 FAB 버튼들과 달리 확인이
+  // 필요하다.
+  function confirmEndHike() {
+    if (!confirm('🏁 이번 산행을 종료할까요?\n\n다음에 이 코스를 다시 열면 새 산행으로 시작됩니다.')) return;
+    endHikingSession();
+    stopGpsTracking();
+    showToastBadge('🏁 산행을 종료했습니다. 수고하셨습니다!');
+  }
+  window.confirmEndHike = confirmEndHike;
 
   function stopGpsTracking() {
     const btn = document.getElementById('gpsBtn');
@@ -5401,6 +5486,10 @@
   // 사용자가 "🚀 등산 시작" 버튼을 실제로 눌렀을 때만 호출된다.
   function confirmStartHike() {
     hideStartHikeOverlay();
+    // 🏁 산행 세션 시작 — 이 버튼을 누른 순간부터 "🏁 등산 완료"를
+    // 명시적으로 누르기 전까지는 같은 코스 재진입 시 이 확인 버튼을
+    // 다시 띄우지 않는다(drawRoute()의 세션 복귀 분기 참고).
+    startHikingSession(currentRouteKey);
     startGpsTracking();
   }
   window.confirmStartHike = confirmStartHike;
