@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v145';
+    const CACHE_NAME = 'gaja-trail-cache-v146';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_rotation_reacquire_fix';
+      const APP_BUILD = 'v20260925_nearest_tie_break_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -776,7 +776,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=145', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=146', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2175,8 +2175,27 @@
       const b = points[i + 1];
 
       const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
-      if (d < rawMinDist) {
-        rawMinDist = d;
+      // 🐛 오프바이원(off-by-one) 매칭 지연 수정(사용자 재현: "시뮬레이션
+      // 해도 내 위치 화살표가 가는 방향 반대로 나와") — GPS 좌표가 GPX
+      // 트랙포인트와 정확히(또는 거의) 일치하면, 그 점은 "들어오는
+      // 선분(index-1, 끝점)"과 "나가는 선분(index, 시작점)" 양쪽에서
+      // 거리가 사실상 0으로 동점이 된다. i를 오름차순으로 스캔하며
+      // "완전히 더 작을 때만(<)" 갱신하면 먼저 만나는 들어오는 선분이
+      // 계속 유지되고 나가는 선분으로 절대 안 넘어간다 — nearestIdx가
+      // 실제 위치보다 항상 한 칸 뒤처지는 구조적 지연이 생겼다. 이
+      // 지연된 위치를 기준으로 computeArrowHeading이 "15m 앞"을 계산하면,
+      // 코스가 급하게 꺾이는 구간(스위치백)에서는 그 15m 앞이 방금
+      // 지나온 급커브 반대편(뒤쪽)을 가리켜 화살표가 90~180도 반대로
+      // 튀었다(실측 검증: 계룡산 5봉코스 idx=12에서 오차 179.7도).
+      // 정확히 같은 지점(EPSILON_M 이내 동점)일 때는 "나가는 선분"
+      // (더 큰 index, 진행방향)을 우선하도록 허용오차 비교로 고친다 —
+      // i가 오름차순으로 증가하므로, "명확히 더 가깝거나(<)" 또는
+      // "동점 범위 안(<=  d + EPSILON)"이면 갱신해 더 큰 index가
+      // 이기도록 한다. 일반적인(거리 차이가 뚜렷한) 경우는 기존처럼
+      // 더 가까운 쪽이 그대로 선택되므로 다른 동작에 영향이 없다.
+      const RAW_TIE_EPSILON_M = 0.01;
+      if (d < rawMinDist + RAW_TIE_EPSILON_M) {
+        rawMinDist = Math.min(d, rawMinDist);
         rawNearestIdx = i;
       }
       let score = d;
@@ -2212,8 +2231,13 @@
         }
       }
 
-      if (score < minScore) {
-        minScore = score;
+      // 위 rawNearestIdx와 동일한 이유로 동점(EPSILON_M 이내) 허용 비교 —
+      // 방향 페널티가 섞인 score라도, 각 세그먼트 자체의 페널티 유무는
+      // 이 작은 오차 범위로 뒤집히지 않으므로(페널티 단위가 30m로 훨씬
+      // 크다) 안전하다.
+      const SCORE_TIE_EPSILON_M = 0.01;
+      if (score < minScore + SCORE_TIE_EPSILON_M) {
+        minScore = Math.min(score, minScore);
         nearestActualDist = d;
         nearestIdx = i;
         const dA = haversineMeters(lat, lon, a.lat, a.lon);
@@ -3508,7 +3532,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v145';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v146';
 
   function getTileSaveStatus(courseKey) {
     try {
