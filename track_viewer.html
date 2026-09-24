@@ -77,7 +77,7 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v142';
+    const CACHE_NAME = 'gaja-trail-cache-v143';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
@@ -514,61 +514,27 @@
     .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
     .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
 
-    /* 🧭 길찾기 모드 — 지도를 가리지 않는 오버레이 방식. 지도(빨간
-       경로선 포함)는 그대로 보이는 상태에서, 화면 중앙에 반투명
-       나침반 링만 얹는다. 링의 기준선(위쪽 ▲)이 나침반(또는 손가락
-       회전)으로 방향을 가리키고, 그 방향과 화면상 빨간 경로선이
-       겹치는지 보면서 실제로 가야 할 방향을 직관적으로 찾는다. */
-    .wayfind-overlay {
-      position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+    /* 🧭 WAYFINDING_MODE(2026-09-23 전면 재설계) — GPX 위에 등록된
+       주요 지점(갈림길/봉우리/지명)까지 녹색 안내선으로 안내한다.
+       나침반/자이로/손가락 회전 다이얼은 전혀 쓰지 않는다. 화면
+       하단에 목적지명/거리/복귀 버튼만 얹는 단순한 패널이다. */
+    .wayfinding-panel {
+      position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 1000;
+      background: rgba(255,255,255,0.96); backdrop-filter: blur(8px);
+      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); border: 2px solid #2e7d32;
+      padding: 12px 16px; display: none; align-items: center; justify-content: space-between; gap: 10px;
     }
-    .wayfind-overlay-close, .wayfind-overlay-mode-btn {
-      position: absolute; z-index: 9999; pointer-events: auto;
-      background: rgba(255,255,255,0.95); border: 1px solid #c8e6c9; border-radius: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.18); cursor: pointer;
+    .wayfinding-panel.active { display: flex; }
+    .wayfinding-panel-info { flex: 1; min-width: 0; }
+    .wayfinding-panel-target { font-size: 15px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wayfinding-panel-dist { font-size: 12.5px; color: #558b2f; margin-top: 2px; }
+    .wayfinding-panel-btns { display: flex; gap: 6px; flex-shrink: 0; }
+    .wayfinding-btn-return, .wayfinding-btn-close {
+      border-radius: 10px; padding: 8px 10px; font-size: 12.5px; font-weight: 800;
+      cursor: pointer; white-space: nowrap;
     }
-    .wayfind-overlay-close {
-      top: 70px; right: 14px; width: 38px; height: 38px; font-size: 18px; color: #555;
-    }
-    .wayfind-overlay-mode-btn {
-      top: 70px; left: 14px; padding: 8px 14px; font-size: 13px; font-weight: 700; color: #2e7d32;
-    }
-    /* 🧭 길찾기 모드 전면 재설계(v78, 사용자 설계): "링이 도는" 방식을
-       버리고, 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시 방향)
-       시킨 채 지도(#map) 자체가 폰이 향한 방향의 반대로 회전한다.
-       나침반 표준 "헤딩업" 지도와 동일한 원리 — 화살표가 항상 실제
-       목표 방향을 가리키는 결과가 된다(순수 계산 검증:
-       scratchpad/verify_wayfind_map_rotate.js). 화살표 꼬리는 내 위치가
-       실제로 표시되는 화면 좌표(세로 70% 지점, #map.heading-up의
-       top:70% 앵커와 동일 — v69 참고)에 맞춘다. */
-    .wayfind-arrow-wrap {
-      /* ⚠️ margin-top:-58vh(고정 CSS 값)로 위로 당기면, height가
-         max-height:420px에 걸려 실제로는 더 작게 렌더링되는 화면(세로가
-         긴 폰)에서 마진과 실제 높이가 서로 어긋나 화살표 꼬리(=내 위치
-         기준점)가 top:70%보다 한참 위로 떠 버렸다(사용자 스크린샷
-         재현). transform: translateY(-100%)는 "그 요소의 실제 렌더링된
-         높이" 기준으로 퍼센트를 계산하므로, height가 58vh든 420px로
-         클램핑되든 항상 정확히 요소 전체 높이만큼만 위로 당겨져
-         꼬리가 top:70%에 정확히 고정된다. */
-      position: absolute; top: 70%; left: 50%; width: 2px; height: 58vh;
-      max-height: 420px; min-height: 260px;
-      margin-left: -1px; transform: translateY(-100%);
-      pointer-events: none; display: flex; flex-direction: column; align-items: center;
-    }
-    .wayfind-arrow-shaft {
-      flex: 1; width: 4px; background: linear-gradient(to top, rgba(211,47,47,0.35), #d32f2f 55%);
-      border-radius: 2px;
-    }
-    .wayfind-arrow-head {
-      font-size: 40px; line-height: 1; color: #d32f2f; margin-top: -4px;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
-    }
-    .wayfind-hint-badge {
-      position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
-      max-width: 85vw; text-align: center; pointer-events: none;
-      background: rgba(27,94,32,0.92); color: #fff; font-size: 13px; font-weight: 700;
-      padding: 10px 18px; border-radius: 16px; line-height: 1.5;
-    }
+    .wayfinding-btn-return { background: #fff3e0; border: 1.5px solid #ffb74d; color: #e65100; }
+    .wayfinding-btn-close { background: #ffebee; border: 1.5px solid #ef9a9a; color: #c62828; }
 
     /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
     .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
@@ -694,9 +660,14 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
-  <!-- 길찾기 모드 버튼 숨김(사용자 요청: "필요 없을걸 같아") — 기능/로직은
-       그대로 남겨두고 UI에서만 제거. 필요해지면 style="display:none"만 지우면 됨. -->
-  <button class="fab-btn" id="wayfindBtn" onclick="openWayfindMode()" title="길찾기 (방향 맞추기)" style="display:none;">🧭</button>
+  <!-- 🔍 길찾기 모드 토글 버튼(2026-09-23 변경) — 예전엔 이 버튼이 ON만
+       담당하고, 끌 때는 하단 wayfindingPanel의 작은 ✕ 버튼(엄지로 누르기
+       어려운 위치)을 따로 눌러야 했다(사용자 신고: "하단에 중지 버튼이
+       나와. 클릭하기 힘들어"). 이제 이 버튼 하나로 ON/OFF를 토글한다
+       (toggleWayfindingMode). 아이콘도 나침반(🧭)에서 돋보기(🔍)로
+       변경(사용자 요청) — 켜짐 여부는 .fab-btn.active(진한 배경)로
+       표시된다(다른 토글 버튼과 동일 패턴). -->
+  <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)">🔍</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <!-- 🔔 저전력 알림 모드(2026-09-21) — GPS를 자동으로 켜고 5초 간격
        폴링으로 전환, 기존 갈림길 접근 비프음/화살표 안내는 그대로 유지.
@@ -731,19 +702,18 @@
   <div class="gps-waiting-text">📡 GPS 수신 중...</div>
 </div>
 
-<!-- 🧭 길찾기 모드 — 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시)
-     되어 있고, 폰을 돌리면(또는 손가락으로 화면을 돌리면) 그 반대
-     방향으로 지도 자체가 회전해 화살표가 실제 목표 방향을 계속
-     가리키게 한다(표준 헤딩업 지도 원리). 확정 개념 없이 사용자가
-     원할 때 닫기(✕)만 누르면 된다. -->
-<div class="wayfind-overlay" id="wayfindOverlay" style="display:none;">
-  <button type="button" class="wayfind-overlay-close" onclick="closeWayfindMode()" title="닫기">✕</button>
-  <button type="button" class="wayfind-overlay-mode-btn" id="wayfindModeToggleBtn" onclick="toggleWayfindInputMode()">✋ 손으로 돌리기</button>
-  <div class="wayfind-arrow-wrap" id="wayfindArrowWrap">
-    <div class="wayfind-arrow-shaft"></div>
-    <div class="wayfind-arrow-head">▲</div>
+<!-- 🧭 WAYFINDING_MODE(2026-09-23) — GPX 위 주요지점(갈림길/봉우리/지명)
+     까지 녹색선(guideLine 재사용)으로 안내한다. 나침반/자이로/손가락
+     회전 없음. 목적지명·거리·복귀 버튼만 하단에 표시. -->
+<div class="wayfinding-panel" id="wayfindingPanel">
+  <div class="wayfinding-panel-info">
+    <div class="wayfinding-panel-target" id="wayfindingTargetName">-</div>
+    <div class="wayfinding-panel-dist" id="wayfindingTargetDist">-</div>
   </div>
-  <div class="wayfind-hint-badge" id="wayfindHintBadge">화살표가 가리키는 방향으로 가면 됩니다</div>
+  <div class="wayfinding-panel-btns">
+    <button type="button" class="wayfinding-btn-return" onclick="startReturnToOrigin()" title="들머리로 복귀">🔄 복귀</button>
+    <button type="button" class="wayfinding-btn-close" onclick="closeWayfindingMode()" title="길찾기 종료">✕</button>
+  </div>
 </div>
 
 <!-- 지도 레이어 선택 메뉴 -->
@@ -806,7 +776,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=142', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=143', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -1837,14 +1807,10 @@
     }
 
     function startManualMapDrag(clientX, clientY) {
-      // 🧭 길찾기 모드(나침반 입력 중)에서는 wayfindOverlay의 pointer-events
-      // 를 none으로 꺼두기 때문에(오버레이가 손가락 회전 조작을 하지
-      // 않을 때는 지도를 그대로 보여줘야 하므로) 터치가 그대로 아래
-      // #map까지 전달돼 일반 드래그(panBy로 지도 중심 이동)가 함께
-      // 발동했다 — "내 위치와 화살표 시작점이 지도를 만지면 어긋난다"
-      // 버그의 원인. 길찾기 모드 중에는 지도 중심이 완전히 고정돼야
-      // 하므로(applyMapViewWithOffset이 이미 isWayfindActive면 setView를
-      // 건너뜀), 일반 드래그 자체를 시작하지 않는다.
+      // 🧭 WAYFINDING_MODE 활성 중에는 지도 중심이 완전히 고정돼야 한다
+      // (applyMapViewWithOffset이 isWayfindActive면 setView를 건너뜀) —
+      // 손가락으로 지도를 건드려도 안내선/목적지 기준이 흔들리지 않게
+      // 일반 드래그 자체를 시작하지 않는다.
       if (isWayfindActive) return;
       manualDragActive = true;
       manualDragLastX = clientX;
@@ -2041,7 +2007,21 @@
   let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
   const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
   const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
-  let latestMovementBearingForTrailMatch = null; // findNearestInRange가 왕복 겹침 구간에서 진행방향을 판별할 때 쓰는 최신 이동방향
+
+  // 🧭 매칭 전용 "장기 추세"(matchingTrend) — isReversingOnTrail(사용자
+  // 안내용, 1회만 증가해도 즉시 해제되는 민감한 히스테리시스)를 그대로
+  // 페널티 판별에 쓰면 순환(findNearestInRange가 정한 nearestIdx →
+  // traveledDist → isReversingOnTrail → 다시 findNearestInRange) 구조가
+  // 되어, 촘촘한 구간에서 true/false가 매 갱신마다 뒤집히며 오히려 매칭이
+  // 불안정해지는 문제가 실측 시뮬레이션(계룡산 5봉코스 GPX)에서 확인됐다.
+  // idxTrendBuffer는 "이미 확정된 과거 nearestIdx들"만 쌓으므로 이번
+  // 갱신의 매칭 결과와 무관하게 결정되어 순환이 끊긴다. 폭
+  // (IDX_TREND_CONFIRM_DELTA) 이상 벌어져야만 추세를 바꾸고, 그 사이는
+  // 이전 추세를 유지해 민감도를 크게 낮춘다.
+  const IDX_TREND_WINDOW = 10; // 최근 몇 번의 확정 nearestIdx를 볼지
+  const IDX_TREND_CONFIRM_DELTA = 5; // 이 폭(index 개수) 이상 벌어져야 추세 전환
+  let idxTrendBuffer = [];
+  let matchingTrend = null; // 'forward' | 'backward' | null(미확정 — 페널티 없음)
 
   // 실제로 걷는 방향은 항상 하나뿐이다 — GPX 상에 막다른 길을 왕복하는
   // 구간이 있어 "가는 길"과 "오는 길" 좌표가 거의 겹치더라도, 사용자
@@ -2069,8 +2049,25 @@
   // (거리 차가 페널티보다 작으므로), 편도 트랙 역방향처럼 "가장 가까운
   // 게 사실 방향만 반대인 바로 그 트랙"인 경우에도 페널티를 더해도
   // 다른 먼 세그먼트보다는 가까우므로 정상적으로 선택된다.
+  //
+  // 🧭 가자맵 대원칙(원칙 2·3·4) 재정렬: 이 페널티의 판별 재료였던
+  // latestMovementBearingForTrailMatch(GPS 순간 이동방위각/heading 기반
+  // 값)를 제거했다. 대원칙상 방향은 "GPS가 어디를 보는가"가 아니라
+  // "GPX index가 어느 방향으로 이동하는가"로만 판단해야 하는데, 기존
+  // 방식은 GPS 방위각을 세그먼트 매칭에 직접 섞어 쓰고 있었다.
+  // 대신 이미 GPX index/누적거리 이력만으로 산출되는 isReversingOnTrail
+  // (updateReversingState가 관리하는, "직전까지 확정된" 순방향/역방향
+  // 이력)과, 각 세그먼트 고유의 진행방향(currentSegmentBearings[i], GPX
+  // 점 순서 자체에서 나온 값)을 비교 재료로 쓴다. 판정 로직(페널티 방식,
+  // 90도 임계값)은 과거 실패를 피하기 위해 그대로 유지하고, "무엇과
+  // 비교하는가"만 GPS 방위각 → GPX 이력으로 교체했다.
   const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
   const REVERSE_SEGMENT_PENALTY_M = 30;
+  // 이 길이(m)보다 짧은 세그먼트는 GPS가 한 자리에서 서성이며 찍힌 노이즈로
+  // 보고, 그 방위각을 왕복구간 방향 페널티 판별에 쓰지 않는다
+  // (findNearestInRange 참고). 실측: 남덕유산 서봉 왕복구간에서 반경
+  // 1~2m 안에 방위각이 0~360도로 요동하는 포인트가 다수 있었다.
+  const MIN_SEGMENT_LEN_FOR_BEARING_M = 3;
 
   // 주어진 인덱스 범위 [startIdx, endIdx) 안에서만 최근접 선분을 찾는 내부 함수
   function findNearestInRange(lat, lon, points, startIdx, endIdx) {
@@ -2089,10 +2086,39 @@
 
       const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
       let score = d;
-      if (latestMovementBearingForTrailMatch !== null) {
-        const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
-        const mismatch = Math.abs(shortestAngleDiff(segBearing, latestMovementBearingForTrailMatch));
-        if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
+      // 왕복 겹침 구간에서 "가는 길"과 "오는 길" 세그먼트를 구분하는
+      // 기준을 GPS 방위각(latestMovementBearingForTrailMatch)에서 →
+      // matchingTrend(idxTrendBuffer로 안정화된 GPX index 이력)로
+      // 교체했다. isReversingOnTrail(사용자 안내용, 1회 증가로 즉시
+      // 해제되는 민감한 히스테리시스)을 그대로 쓰면 findNearestInRange가
+      // 정한 nearestIdx가 다시 isReversingOnTrail에 영향을 주는 순환이
+      // 생겨 촘촘한 구간에서 매칭이 오히려 불안정해졌다(실측: 계룡산
+      // 5봉코스 GPX 시뮬레이션). matchingTrend는 이미 확정된 과거
+      // nearestIdx들만 보고 완만하게(IDX_TREND_CONFIRM_DELTA 이상 벌어질
+      // 때만) 전환되므로 이번 계산 결과가 이번 판별에 섞이지 않는다.
+      if (lastNearestIdx >= 0 && matchingTrend !== null) {
+        // 🧭 정상/갈림길 등에서 GPS가 잠시 서성이며 찍힌 극단적으로 짧은
+        // 세그먼트는 방위각이 사실상 무작위다(실측: 남덕유산 서봉 왕복구간
+        // 시뮬레이션에서 확인 — 반경 1~2m 안에 방위각이 0~360도 전 범위로
+        // 요동치는 30개 포인트가 있었음). 직전 확정 세그먼트나 이번 비교
+        // 대상 세그먼트 둘 중 하나라도 이렇게 짧으면, 그 방위각은 "GPX
+        // index가 가리키는 방향"이 아니라 노이즈이므로 페널티 판별
+        // 재료로 쓰지 않는다(순수 거리로만 비교) — 대원칙(GPX index
+        // 이동방향 기준 판단)을 지키려면, 애초에 방향이 정의되지 않는
+        // 구간에서는 방향 판단 자체를 하지 않는 게 맞다.
+        const lastSegTooShort = segmentLengths[lastNearestIdx] < MIN_SEGMENT_LEN_FOR_BEARING_M;
+        const currentSegTooShort = segmentLengths[i] < MIN_SEGMENT_LEN_FOR_BEARING_M;
+        if (!lastSegTooShort && !currentSegTooShort) {
+          const lastSegBearing = currentSegmentBearings[lastNearestIdx];
+          if (lastSegBearing !== undefined && lastSegBearing !== null) {
+            const expectedBearing = matchingTrend === 'backward'
+              ? (lastSegBearing + 180) % 360
+              : lastSegBearing;
+            const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+            const mismatch = Math.abs(shortestAngleDiff(segBearing, expectedBearing));
+            if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
+          }
+        }
       }
 
       if (score < minScore) {
@@ -2148,6 +2174,19 @@
     }
 
     lastNearestIdx = result.index;
+
+    // 🧭 matchingTrend 갱신 — 이번에 "확정된" lastNearestIdx를 과거 이력
+    // 버퍼에 쌓는다. 이 버퍼는 다음 호출부터 페널티 계산에 쓰이므로,
+    // 이번 호출의 결과가 이번 호출의 판단에 영향을 주는 순환이 없다.
+    idxTrendBuffer.push(lastNearestIdx);
+    if (idxTrendBuffer.length > IDX_TREND_WINDOW) idxTrendBuffer.shift();
+    if (idxTrendBuffer.length === IDX_TREND_WINDOW) {
+      const idxDelta = idxTrendBuffer[idxTrendBuffer.length - 1] - idxTrendBuffer[0];
+      if (idxDelta >= IDX_TREND_CONFIRM_DELTA) matchingTrend = 'forward';
+      else if (idxDelta <= -IDX_TREND_CONFIRM_DELTA) matchingTrend = 'backward';
+      // 그 사이 폭이면 matchingTrend는 이전 값을 그대로 유지(뒤집지 않음)
+    }
+
     return result;
   }
 
@@ -2156,6 +2195,8 @@
   // 비효율적이므로, drawRoute에서 한 번만 만들어 캐시해둔다.
   let cumulativeDistances = [];
   let currentMilestones = []; // cumulativeDistances[i] = 시작점부터 points[i]까지의 누적 거리(m)
+  let currentSegmentBearings = []; // currentSegmentBearings[i] = points[i]->points[i+1] 방향(도) — 내 위치 화살표 전용
+  let segmentLengths = []; // segmentLengths[i] = points[i]->points[i+1] 실제 거리(m) — 방향 페널티에서 "방향 미정의 구간" 판별용
 
   
   // GPX 경유지/지명을 경로상 누적거리(distanceM)에 매핑
@@ -2457,11 +2498,18 @@
     const grace = (graceM === undefined) ? 15 : graceM;
     let prevM = source[0];
     let nextM = source[source.length - 1];
+    // ⚠️ 수정(2026-09-24): nextM(다음에 안내해야 할 지명)은 grace 여유
+    // 없이 "내 위치보다 뒤에 있는 첫 지명"으로 찾는다 — grace를 그대로
+    // 쓰면 지명 간 거리가 grace(15m)보다 짧거나 비슷할 때, 그 사이에
+    // 있는 지명이 nextM으로 한 번도 선택되지 못하고 통째로 건너뛰어져
+    // 50/30/10m 안내(showUpcomingTurnAlert)와 화살표가 그 지명에 대해
+    // 아예 안 뜨는 문제가 있었다. prevM("방금 지나온 지점" 표시용)만
+    // 기존 grace 로직을 유지해 화면 텍스트 전환은 매끄럽게 둔다.
     for (let i = 0; i < source.length; i++) {
       if (source[i].distanceM <= traveledDist + grace) {
         prevM = source[i];
       }
-      if (source[i].distanceM > traveledDist + grace) {
+      if (source[i].distanceM > traveledDist) {
         nextM = source[i];
         break;
       }
@@ -2483,6 +2531,53 @@
       dists.push(dists[i-1] + d);
     }
     return dists;
+  }
+
+  // 🧭 내 위치 화살표 전용 방향 계산(2026-09-23 재설계) — 나침반/자이로/
+  // GPS 이동방위각(raw.heading, GpsFilterEngine의 결과)을 전혀 쓰지 않고,
+  // 오직 "현재 매칭된 GPX 선분이 원래 향하는 방향"만 화살표에 쓴다.
+  // 코스 로드 시점에 모든 선분(points[i]->points[i+1])의 방향을 미리
+  // 계산해두면, 정지 중에도 매번 재계산할 필요 없이 배열 조회만 하면
+  // 되고 GPS 튐의 영향을 전혀 받지 않는다(선분 자체가 안 바뀌면 방향도
+  // 안 바뀜).
+  function buildSegmentBearings(points) {
+    const bearings = [];
+    // 🧭 세그먼트 길이도 함께 계산해 segmentLengths에 캐시한다 — 정상/갈림길
+    // 등에서 GPS가 잠시 서성이며 찍힌 극단적으로 짧은 세그먼트는 방위각이
+    // 사실상 무작위(실측: 남덕유산 서봉 왕복구간, 반경 1~2m 안에 30개
+    // 포인트가 몰려 방위각이 0~360도 전 범위로 요동함)이므로, 왕복구간
+    // 방향 페널티(findNearestInRange) 계산에서 이 길이를 참조해 걸러낸다.
+    segmentLengths = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      bearings.push(calculateBearing(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+      segmentLengths.push(haversineMeters(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+    }
+    return bearings;
+  }
+
+  // 🧭 내 위치 화살표 방향의 단일 진입점(2026-09-23 → 2026-09-24 수정) —
+  // 나침반/자이로/GPS 이동방위각을 전혀 참조하지 않는 원칙은 그대로
+  // 유지한다. 다만 화살표 방향을 "매칭된 선분 자체의 원래 방향"
+  // (currentSegmentBearings[nearestIdx])이 아니라 "현재 내 GPS 좌표 →
+  // 코스를 따라 ARROW_LOOKAHEAD_M 앞 지점"으로 바꾼다 — 매칭 인덱스가
+  // (왕복 구간 등에서) 살짝 흔들려도 화살표는 항상 "지금 서 있는 곳
+  // 기준"으로 계산되므로 실제 위치와 무관하게 튀는 문제가 없다.
+  //   ① TRAILHEAD_SEARCH: 아직 트랙에 진입 전 — 현재GPS → GPX[0] 방향
+  //   ② TRACK_NAVIGATION: 트랙 진입 후 — 현재GPS → 코스를 따라 앞선
+  //      지점 방향, 역주행 중이면 반대 방향(뒤쪽)의 앞선 지점을 본다
+  const ARROW_LOOKAHEAD_M = 15;
+  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist) {
+    if (isNearTrailheadNow) {
+      if (!currentPoints || currentPoints.length === 0) return null;
+      const trailhead = currentPoints[0];
+      return calculateBearing(lat, lon, trailhead.lat, trailhead.lon);
+    }
+    if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
+    const targetDist = isReversingOnTrail ? (dist - ARROW_LOOKAHEAD_M) : (dist + ARROW_LOOKAHEAD_M);
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
+    if (!aheadPt) return null;
+    return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
   }
 
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
@@ -2712,225 +2807,191 @@
   }
 
   // ===================================================================
-  // 🧭 길찾기 모드 — 화살표는 항상 화면에 고정(꼬리=내 위치, 머리=12시)
-  // 되어 있고, 지도(#map) 자체가 폰이 향한 방향(또는 손가락으로 지정한
-  // 방향)으로 회전한다(표준 헤딩업 지도 원리 — applySegmentRotation을
-  // 그대로 재사용). 결과적으로 화살표가 항상 실제 목표 방향을 계속
-  // 가리키게 된다. 입력 방식은 나침반(자동)과 손가락 회전(수동) 두
-  // 가지를 토글로 전환한다. 확정 버튼/모달 없이 실시간으로 계속
-  // 반영하다가 사용자가 닫기(✕)를 누르면 종료(원래 회전값 복원).
+  // 🧭 WAYFINDING_MODE(2026-09-23 전면 재설계) — 명세 8~11번.
+  // 나침반/자이로/손가락 회전 다이얼을 전혀 쓰지 않는다. GPX 위에
+  // 이미 등록된 주요지점(currentMilestones — 갈림길/봉우리/지명)만을
+  // 목적지 후보로 쓴다. "GPX 전체에서 가장 가까운 좌표"로 직선 안내하는
+  // 방식은 절벽/계곡 건너편을 가리킬 수 있어 금지(명세 16번 금지1).
+  //
+  // 목적지 선택: 현재 누적거리(traveledDist)보다 앞서 있는 주요지점 중
+  // 가장 가까운 것 — 기존 findNextMilestone과 동일한 방식(사용자 확정).
+  // 도착하면 자동으로 그 다음 주요지점으로 넘어간다.
+  //
+  // isWayfindActive는 기존 파일 전역에서 "지도 중심을 고정할지"를
+  // 판단하는 플래그로 이미 여러 곳(applyMapViewWithOffset,
+  // updateSegmentRotationTrigger)에서 참조되고 있어 이름을 그대로
+  // 재사용한다 — WAYFINDING_MODE 진입/종료와 동일한 생명주기를 갖는다.
   let isWayfindActive = false;
-  let wayfindInputMode = 'compass'; // 'compass' | 'manual'
+  let wayfindingTargetMilestone = null; // 현재 안내 중인 목적지 주요지점 객체
+  let isReturnToOriginMode = false; // RETURN_TO_ORIGIN 상태 — true면 목적지가 항상 GPX[0](들머리)로 고정
+  const WAYFINDING_ARRIVAL_RADIUS_M = 15; // 목적지 도착 판정 거리
 
-  // 지도(#map)를 phoneHeadingDeg(폰이 향한 절대 방위, 또는 손가락으로
-  // 지정한 방위)가 화면 위쪽을 향하도록 회전시킨다 — applySegmentRotation
-  // 과 완전히 동일한 CSS 회전 대상/부호 관례를 그대로 재사용한다(부호는
-  // 그 함수 한 곳에서만 결정한다는 이 파일의 원칙을 따름). 화살표는
-  // 화면에 고정(항상 12시)이므로, 이렇게 지도만 돌리면 화살표가 실제
-  // 목표 방향(현재는 "폰이 보는 방향 = 화면 위")을 계속 가리키는
-  // 결과가 된다. 순수 계산 검증: scratchpad/verify_wayfind_map_rotate.js.
-  function renderWayfindMapRotation(phoneHeadingDeg) {
-    applySegmentRotation(phoneHeadingDeg);
+  // 현재 누적거리(traveledDist)보다 앞서 있는 주요지점 중 가장 가까운
+  // 것을 찾는다 — findNextMilestone과 동일한 "누적거리 기준" 원칙을
+  // 따르되, WAYFINDING 전용으로 별도 구현한다(findNextMilestone은 화면
+  // 상단 토스트의 prevM/nextM 쌍을 반환하는 다른 용도라 그대로 재사용하면
+  // 혼선이 생긴다).
+  function findNextWaypointMilestone(traveledDist) {
+    if (!currentMilestones || currentMilestones.length === 0) return null;
+    let best = null;
+    currentMilestones.forEach(m => {
+      if (m.distanceM > traveledDist) {
+        if (!best || m.distanceM < best.distanceM) best = m;
+      }
+    });
+    return best;
   }
 
-  function handleWayfindOrientation(e) {
+  // RETURN_TO_ORIGIN 상태의 목적지는 항상 GPX[0](들머리)이다 — 날머리는
+  // 절대 쓰지 않는다(명세 12번, 16번 금지4).
+  function getWayfindingTargetPoint() {
+    if (isReturnToOriginMode) {
+      if (!currentPoints || currentPoints.length === 0) return null;
+      const start = currentPoints[0];
+      return { name: '들머리(GPX[0])', lat: start.lat, lon: start.lon, distanceM: 0 };
+    }
+    return wayfindingTargetMilestone;
+  }
+
+  // 현재 위치 기준으로 목적지를 갱신하고, 도착했으면 다음 주요지점으로
+  // 자동 전환한다. handleGpsPositionUpdate에서 매 픽스마다 호출한다.
+  function updateWayfindingProgress(lat, lon, nearestIdx) {
     if (!isWayfindActive) return;
-    if (e.alpha === null || isNaN(e.alpha)) return;
 
-    let phoneAbsHeading = e.webkitCompassHeading;
-    if (phoneAbsHeading === undefined || phoneAbsHeading === null) {
-      phoneAbsHeading = (360 - e.alpha) % 360;
+    if (!isReturnToOriginMode && !wayfindingTargetMilestone) {
+      // 최초 진입 시 첫 목적지를 정한다.
+      const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
+      wayfindingTargetMilestone = findNextWaypointMilestone(traveledDist);
     }
 
-    renderWayfindMapRotation(phoneAbsHeading);
-  }
+    const target = getWayfindingTargetPoint();
+    const panel = document.getElementById('wayfindingPanel');
+    const nameEl = document.getElementById('wayfindingTargetName');
+    const distEl = document.getElementById('wayfindingTargetDist');
 
-  function startWayfindCompassSensor() {
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
-        .then(state => {
-          if (state === 'granted') {
-            window.addEventListener('deviceorientation', handleWayfindOrientation, true);
-          } else {
-            alert('나침반 권한이 허용되지 않았어요.\n상단 "손으로 돌리기" 버튼을 눌러 수동으로 맞춰주세요.');
-          }
-        })
-        .catch(() => {});
+    if (!target) {
+      // 더 이상 안내할 주요지점이 없음(날머리를 지났거나 마지막 지점) —
+      // 패널에 안내 문구만 남기고 녹색선은 지운다.
+      if (nameEl) nameEl.textContent = '더 이상 안내할 지점이 없습니다';
+      if (distEl) distEl.textContent = '';
+      if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+      return;
+    }
+
+    const distToTarget = haversineMeters(lat, lon, target.lat, target.lon);
+
+    if (panel) panel.classList.add('active');
+    if (nameEl) nameEl.textContent = (isReturnToOriginMode ? '🔄 ' : '🧭 ') + target.name;
+    if (distEl) {
+      const distStr = distToTarget >= 1000 ? (distToTarget / 1000).toFixed(2) + 'km' : Math.round(distToTarget) + 'm';
+      distEl.textContent = `${distStr} 남음`;
+    }
+
+    // 목적지까지 녹색 안내선(명세 10번) — 기존 guideLine(이탈 시 등산로
+    // 복귀용 점선)을 그대로 재사용한다. 용도는 다르지만 "현재 위치 →
+    // 목표 좌표"를 잇는 녹색 점선이라는 모양은 동일하다.
+    const guideCoords = [[lat, lon], [target.lat, target.lon]];
+    if (!guideLine) {
+      guideLine = L.polyline(guideCoords, {
+        color: '#00e676', weight: 3.5, dashArray: '6, 8', opacity: 0.95
+      }).addTo(map);
     } else {
-      window.addEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
-      window.addEventListener('deviceorientation', handleWayfindOrientation, true);
+      guideLine.setLatLngs(guideCoords);
+    }
+
+    // 도착 판정 → 다음 목적지 자동 전환(명세 11번). RETURN_TO_ORIGIN
+    // 중에는 GPX[0] 도착이 곧 복귀 완료이므로 모드 자체를 종료한다.
+    if (distToTarget <= WAYFINDING_ARRIVAL_RADIUS_M) {
+      if (isReturnToOriginMode) {
+        showToastBadge('🏁 들머리(GPX[0])에 도착했습니다.');
+        closeWayfindingMode();
+        return;
+      }
+      const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
+      const nextTarget = findNextWaypointMilestone(traveledDist);
+      if (nextTarget && nextTarget !== wayfindingTargetMilestone) {
+        showToastBadge(`✅ ${wayfindingTargetMilestone ? wayfindingTargetMilestone.name : ''} 도착 — 다음: ${nextTarget.name}`);
+      }
+      wayfindingTargetMilestone = nextTarget;
     }
   }
 
-  function stopWayfindCompassSensor() {
-    window.removeEventListener('deviceorientation', handleWayfindOrientation, true);
-    window.removeEventListener('deviceorientationabsolute', handleWayfindOrientation, true);
-  }
-
-  // --- 손으로 돌리기(수동) — 나침반/자기장 센서를 전혀 쓰지 않는다.
-  // MagSafe 자석, 금속 거치대의 자력계 간섭을 피하고 싶을 때 쓴다.
-  // 화면을 손가락으로 좌우로 끄는 만큼 지도를 직접 회전시킨다 — 화살표는
-  // 항상 화면 고정이므로, 이 조작은 "화살표가 가리키는 실제 방향을
-  // 손으로 맞춘다"는 뜻이 된다.
-  let wayfindManualRotation = 0; // 현재 지도에 적용 중인 회전각(도) — renderWayfindMapRotation에 넘기는 절대값
-  let wayfindDialDragging = false;
-  let wayfindDialDragStartX = 0;
-  let wayfindDialDragStartRotation = 0;
-  const WAYFIND_MANUAL_DRAG_DEG_PER_PX = 0.5; // 화면을 1px 끌 때 지도가 회전하는 각도
-
-  function wayfindDragClientX(evt) {
-    const point = evt.touches ? evt.touches[0] : evt;
-    return point.clientX;
-  }
-
-  function handleWayfindDialDragStart(evt) {
-    // ⚠️ 닫기(✕)/모드 전환 버튼도 wayfindOverlay의 자식이라, 오버레이
-    // 전체에 건 드래그 리스너가 버튼 위에서도 함께 발동해 evt.preventDefault()
-    // 가 버튼의 클릭(특히 touchstart 이후의 합성 클릭)을 막아버렸다 —
-    // "손으로 돌리기 모드에서 버튼이 먹통" 버그. 이벤트 타겟이 버튼
-    // 안이면 드래그를 시작하지 않고 그대로 통과시켜 버튼 클릭이
-    // 정상 동작하게 한다.
-    if (evt.target.closest('.wayfind-overlay-close, .wayfind-overlay-mode-btn')) return;
-    wayfindDialDragging = true;
-    wayfindDialDragStartX = wayfindDragClientX(evt);
-    wayfindDialDragStartRotation = wayfindManualRotation;
-    evt.preventDefault();
-  }
-
-  function handleWayfindDialDragMove(evt) {
-    if (!wayfindDialDragging) return;
-    const dx = wayfindDragClientX(evt) - wayfindDialDragStartX;
-    // 화면을 오른쪽으로 끌면(dx>0) 지도가 반시계 방향(-)으로 도는 관례 —
-    // 일반 지도 드래그(moveManualMapDrag)와 동일하게 "손가락으로 지형을
-    // 미는" 감각을 유지한다.
-    wayfindManualRotation = ((wayfindDialDragStartRotation - dx * WAYFIND_MANUAL_DRAG_DEG_PER_PX) % 360 + 360) % 360;
-    renderWayfindMapRotation(wayfindManualRotation);
-    evt.preventDefault();
-  }
-
-  function handleWayfindDialDragEnd() {
-    wayfindDialDragging = false;
-  }
-
-  function initWayfindDialEvents() {
-    const overlay = document.getElementById('wayfindOverlay');
-    if (!overlay || overlay._wayfindDragBound) return;
-    overlay._wayfindDragBound = true;
-    overlay.style.pointerEvents = 'auto';
-    overlay.addEventListener('mousedown', handleWayfindDialDragStart);
-    window.addEventListener('mousemove', handleWayfindDialDragMove);
-    window.addEventListener('mouseup', handleWayfindDialDragEnd);
-    overlay.addEventListener('touchstart', handleWayfindDialDragStart, { passive: false });
-    window.addEventListener('touchmove', handleWayfindDialDragMove, { passive: false });
-    window.addEventListener('touchend', handleWayfindDialDragEnd);
-  }
-
-  function stopWayfindDialEvents() {
-    const overlay = document.getElementById('wayfindOverlay');
-    if (overlay) {
-      overlay.style.pointerEvents = 'none';
-      overlay._wayfindDragBound = false;
+  // 우측 하단 🔍 버튼 — 사용자가 직접 눌러야 진입(수동 진입, 사용자 확정).
+  function openWayfindingMode() {
+    if (!currentMilestones || currentMilestones.length === 0) {
+      alert('이 코스에는 안내할 주요 지점(갈림길/봉우리/지명)이 없습니다.');
+      return;
     }
-  }
-
-  // --- 입력 방식 전환 ---
-  function toggleWayfindInputMode() {
-    wayfindInputMode = (wayfindInputMode === 'compass') ? 'manual' : 'compass';
-    const btn = document.getElementById('wayfindModeToggleBtn');
-    const hint = document.getElementById('wayfindHintBadge');
-    if (wayfindInputMode === 'manual') {
-      stopWayfindCompassSensor();
-      wayfindManualRotation = mapRotationDeg;
-      wayfindDialDragStartRotation = wayfindManualRotation;
-      initWayfindDialEvents();
-      if (btn) btn.textContent = '🧭 나침반으로 맞추기';
-      if (hint) hint.textContent = '화면을 손가락으로 좌우로 끌어 화살표 방향을 맞춰보세요';
-    } else {
-      stopWayfindDialEvents();
-      startWayfindCompassSensor();
-      if (btn) btn.textContent = '✋ 손으로 돌리기';
-      if (hint) hint.textContent = '화살표가 가리키는 방향으로 가면 됩니다';
-    }
-  }
-
-  // 길찾기 모드에 들어가기 전, 원래(구간회전 등에 의해) 걸려 있던 지도
-  // 회전값/줌/중심을 기억해뒀다가 나갈 때 그대로 복원한다 — 길찾기
-  // 모드는 그 자체로 지도 회전(#map)을 나침반/손가락 값으로 직접
-  // 덮어쓰고, 진입 시 현재 위치로 강제 확대(setView)까지 하므로,
-  // 복원하지 않으면 종료 후에도 회전이 옛 각도로 남거나(GPS가 다음
-  // 픽스까지 회전을 갱신 못해 잠깐 어긋나 보임) 사용자가 보던 줌
-  // 레벨/화면 위치가 유실된다(다른 구간을 미리 살펴보던 중이었을 수
-  // 있음).
-  let wayfindSavedMapRotationDeg = null;
-  let wayfindSavedZoom = null;
-  let wayfindSavedCenter = null;
-
-  function openWayfindMode() {
     if (!lastKnownPos) {
       alert('현재 위치를 아직 확인할 수 없어요.\n[내 위치] 버튼을 먼저 눌러주세요.');
       return;
     }
-
-    wayfindSavedZoom = map.getZoom();
-    wayfindSavedCenter = map.getCenter();
-
-    // 현재 위치로 확대 — 실제 걸어야 할 길(빨간 경로선)이 화면에 크게
-    // 보여야 화살표와 맞춰보는 의미가 있다.
-    map.setView([lastKnownPos.lat, lastKnownPos.lon], Math.max(map.getZoom(), 18), { animate: true });
-
-    // applySegmentRotation은 #map이 heading-up 클래스(120vh 정사각형,
-    // top:70% 앵커)를 갖고 있다는 전제로 회전을 건다 — 구간회전이 아직
-    // 한 번도 안 걸린 상태(예: 첫 원점이 v75의 방향 일치 검사로 보류
-    // 중)라면 이 클래스가 없을 수 있으므로 길찾기 모드 진입 시 직접
-    // 보장한다.
-    const mapElForWayfind = document.getElementById('map');
-    if (mapElForWayfind && !mapElForWayfind.classList.contains('heading-up')) {
-      mapElForWayfind.classList.add('heading-up');
-      map.invalidateSize({ animate: false });
-    }
-
-    const overlay = document.getElementById('wayfindOverlay');
-    if (overlay) overlay.style.display = 'block';
-
-    wayfindInputMode = 'compass';
-    const btn = document.getElementById('wayfindModeToggleBtn');
-    if (btn) btn.textContent = '✋ 손으로 돌리기';
-    const hint = document.getElementById('wayfindHintBadge');
-    if (hint) hint.textContent = '화살표가 가리키는 방향으로 가면 됩니다';
-
-    wayfindSavedMapRotationDeg = mapRotationDeg;
     isWayfindActive = true;
-    startWayfindCompassSensor();
+    isReturnToOriginMode = false;
+    wayfindingTargetMilestone = null; // updateWayfindingProgress가 다음 픽스에서 첫 목적지를 정함
+    const panel = document.getElementById('wayfindingPanel');
+    if (panel) panel.classList.add('active');
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.add('active');
+    showToastBadge('🔍 길찾기 모드 시작\n다음 주요 지점까지 녹색선으로 안내합니다.');
   }
+  window.openWayfindingMode = openWayfindingMode;
 
-  function closeWayfindMode() {
-    isWayfindActive = false;
-    stopWayfindCompassSensor();
-    stopWayfindDialEvents();
-    const overlay = document.getElementById('wayfindOverlay');
-    if (overlay) overlay.style.display = 'none';
-    // 길찾기 진입 전 줌/중심을 먼저 복원한 뒤 회전을 적용한다 —
-    // setView(줌/중심)와 applySegmentRotation(회전)은 서로 다른 속성을
-    // 건드리므로 순서가 결과에 영향을 주지는 않지만, 회전이 걸린
-    // #map 위에서 setView가 자연스럽게 이어지도록 줌/중심을 먼저
-    // 되돌린다.
-    if (wayfindSavedZoom !== null && wayfindSavedCenter !== null) {
-      map.setView(wayfindSavedCenter, wayfindSavedZoom, { animate: true });
-      wayfindSavedZoom = null;
-      wayfindSavedCenter = null;
-    }
-    // 길찾기 중 돌아갔던 지도 회전을 원래(구간회전 등) 값으로 복원.
-    if (wayfindSavedMapRotationDeg !== null) {
-      applySegmentRotation(wayfindSavedMapRotationDeg);
-      wayfindSavedMapRotationDeg = null;
+  // 🔍 길찾기 버튼 토글(2026-09-23 추가) — 꺼진 상태에서 누르면 열고,
+  // 켜진 상태에서 누르면 닫는다. openWayfindingMode/closeWayfindingMode
+  // 각각의 기존 검증·정리 로직은 그대로 두고, 이 함수는 현재
+  // isWayfindActive 값만 보고 둘 중 하나로 분기한다.
+  function toggleWayfindingMode() {
+    if (isWayfindActive) {
+      closeWayfindingMode();
+    } else {
+      openWayfindingMode();
     }
   }
+  window.toggleWayfindingMode = toggleWayfindingMode;
+
+  // 패널의 "🔄 복귀" 버튼 — RETURN_TO_ORIGIN 진입(명세 12번). 왕복 코스의
+  // 자동 역주행 감지(isReversingOnTrail)와는 별개로, 사용자가 명시적으로
+  // "들머리로 돌아가고 싶다"고 요청했을 때만 쓰는 상태다(사용자 확정).
+  function startReturnToOrigin() {
+    if (!currentPoints || currentPoints.length === 0) return;
+    isWayfindActive = true;
+    isReturnToOriginMode = true;
+    wayfindingTargetMilestone = null;
+    const panel = document.getElementById('wayfindingPanel');
+    if (panel) panel.classList.add('active');
+    const btnRet = document.getElementById('wayfindBtn');
+    if (btnRet) btnRet.classList.add('active');
+    showToastBadge('🔄 들머리로 복귀 안내를 시작합니다.');
+  }
+  window.startReturnToOrigin = startReturnToOrigin;
+
+  function closeWayfindingMode() {
+    isWayfindActive = false;
+    isReturnToOriginMode = false;
+    wayfindingTargetMilestone = null;
+    const panel = document.getElementById('wayfindingPanel');
+    if (panel) panel.classList.remove('active');
+    // 🔍 상단 토글 버튼도 함께 꺼진 상태(비활성 배경)로 되돌린다 —
+    // 이 함수가 (1)버튼 재클릭으로 토글되거나 (2)날머리/들머리 자동
+    // 도착으로 호출되거나 어느 경로로 닫히든 버튼 표시가 항상 실제
+    // 상태(isWayfindActive)와 일치하게 한다.
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.remove('active');
+    if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+  }
+  window.closeWayfindingMode = closeWayfindingMode;
+
 
   // 코스를 새로 열거나 바꿀 때 윈도우 기준점을 초기화한다.
   // 이걸 안 하면 이전 코스에서 남은 인덱스를 기준으로 새 코스를 윈도우
   // 탐색하게 되어 엉뚱한 결과가 나올 수 있다.
   function resetTrailSearchWindow() {
     lastNearestIdx = -1;
+    // matchingTrend/idxTrendBuffer도 함께 초기화 — 이전 코스의 이력이
+    // 새 코스의 방향 페널티 판별에 섞여 들어가면 안 된다.
+    idxTrendBuffer = [];
+    matchingTrend = null;
   }
 
   // 타일 좌표 계산 함수
@@ -3190,6 +3251,7 @@
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
+    currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
 
@@ -3295,6 +3357,11 @@
     // 복원하지 않는다 — 안 그러면 버튼이 안 보이는데도 화면을 끄면
     // 실제로는 저전력 폴링이 도는 모순이 생긴다. 버튼을 되돌릴 때 이
     // 복원 로직도 함께 되돌릴 것.
+    // 저전력 모드 완전 비활성화(2026-09-23) — 예약값이 남아있어도 무시
+    lowPowerModeEnabled = false;
+    isLowPowerPolling = false;
+    try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
+
     if (watchId === null && !isLowPowerPolling) {
       startGpsTracking();
     }
@@ -3334,7 +3401,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v142';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v143';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -3701,12 +3768,41 @@
   const TRAILHEAD_ENTER_M = 60;
   const TRAILHEAD_MAX_ENTER_M = 80;
 
-  // 🚩 들머리(GPX[0]) 접근 모드 — 산행 시작 시 현재 위치가 아직 트랙에서
-  // 멀리(집, 주차장, 차 안 등) 떨어져 있으면, 트랙 기반 이탈판정/갈림길
-  // 안내 대신 "들머리까지 직선거리 + 방향"만 안내한다. 트랙 근처(30m
-  // 이내, TRAILHEAD_ENTRY_DISTANCE_M 재사용)로 들어오면 자동으로 꺼지고
-  // 기존 트랙 안내 로직으로 넘어간다. 날머리는 이 판단에 관여하지 않는다
-  // (지시사항: "원점 회귀에서는 날머리를 판단하지 않는다").
+  // 🚩 경로 접근 모드(2026-09-23 재설계) 전용 상수 — 위
+  // TRAILHEAD_ENTRY_DISTANCE_M(30m, 이탈경고 완화/보조 문구용으로 다른
+  // 두 곳에서 계속 쓰임)과는 별개다. "이미 경로 위(온트레일)인가"는
+  // 새 반경을 만들지 않고 기존 OFFTRAIL_BASE_ENTER_M(20m)을 그대로
+  // 재사용한다(사용자 확정 — 아래 updateTrailheadApproach 참고).
+  const TRAIL_APPROACH_MAX_M = 100; // 이 거리 이내면 방향 안내 시작, 벗어나면 거리만 표시
+
+  // 🚩 경로 접근 모드(2026-09-23 전면 재설계) — 예전엔 "들머리(GPX[0])
+  // 접근 모드"로, 산행 시작 시 현재 위치가 트랙에서 멀리(집, 주차장,
+  // 차 안 등) 떨어져 있을 때 오직 1번 점(들머리)만 목표로 삼아
+  // 직선거리+방향을 안내했다. 그런데 실제로는 두 가지 경우가 더 있다:
+  //   (1) GPS를 켠 순간 이미 경로 위에 있는 경우 — 이땐 접근 모드 자체가
+  //       불필요하다(사용자 지시: "산행경로에 들어서 있다면 들머리
+  //       찾기 기능이 필요없지").
+  //   (2) 들머리는 멀지만 경로 중간의 다른 지점이 더 가까운 경우 —
+  //       이때는 들머리가 아니라 그 가까운 지점으로 안내해야 한다
+  //       (사용자 지시: "가까운 경로상의 좌표를 지시").
+  // 그래서 목표 지점을 더 이상 points[0](들머리) 고정이 아니라, 호출부
+  // (updateNavigationToast)가 이미 nearestPointOnTrail로 계산해둔 "경로
+  // 전체에서 가장 가까운 지점"으로 받는다 — 여기서 다시 계산하면
+  // 탐색 윈도우(lastNearestIdx)가 한 프레임에 두 번 갱신되는 중복이
+  // 생기므로 피한다.
+  //
+  // 거리 구간별 동작(사용자 확정값):
+  //   - 온트레일(OFFTRAIL_BASE_ENTER_M, 20m) 이내: 이미 경로 위이므로
+  //     접근 모드 자체를 켜지 않고 곧바로 일반 안내로 넘어간다.
+  //   - 20m ~ TRAIL_APPROACH_MAX_M(100m): 방향 안내(화면 회전+녹색선)
+  //     시작.
+  //   - 100m 초과: 방향 안내는 하지 않고 "경로까지 Nm"처럼 거리만 표시.
+  //
+  // 종료 조건은 거리가 아니라 "GPS 이동방향이 경로 진행방향과 2~3회
+  // 연속 일치해 원점(currentRotationOriginDist)이 확정됐는가"이며, 이는
+  // 기존 FIRST_ORIGIN_MIN_FIXES/방향 검증 로직이 이미 수행 중이므로
+  // 여기서는 그 확정 여부(currentRotationOriginDist !== null)만 참조한다
+  // (들머리 진입/경로 중간 진입 모두 동일 기준 — 사용자 확정).
   //
   // 🧭 화면 회전(2026-09-22 추가, 사용자 지시): "가는 방향과 일치하면
   // 쉽게 찾겠다 — 녹색선이 내 정면으로 오게 회전하면 GPS 신호만으로
@@ -3715,37 +3811,49 @@
   // 이동방향)을 화면 정면(12시)으로 두고 회전시킨다 — 몇 걸음만 걸으면
   // 이 값이 나오므로 "실시간"에 가깝게 갱신된다. applySegmentRotation을
   // 그대로 재사용해 산행 중 heading-up 회전과 동일한 방식으로 돈다.
-  let isApproachingTrailhead = false;
-  function updateTrailheadApproach(lat, lon) {
-    if (!currentPoints || currentPoints.length === 0) { isApproachingTrailhead = false; return; }
-    const trailhead = currentPoints[0]; // GPX[0] = 들머리 (지시사항 1항)
-    const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
-    isApproachingTrailhead = distToTrailhead > TRAILHEAD_ENTRY_DISTANCE_M && currentRotationOriginDist === null;
-    if (isApproachingTrailhead) {
-      // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
-      // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
-      // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
-      if (gpsMovementHeading !== null) {
-        applySegmentRotation(gpsMovementHeading);
-      }
+  let isApproachingTrailhead = false; // 온트레일 초과 ~ 100m: 방향 안내(회전+녹색선) 활성
+  let isTrailTooFar = false;          // 100m 초과: 거리만 표시, 방향 안내는 하지 않음
+  function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint) {
+    isApproachingTrailhead = false;
+    isTrailTooFar = false;
+    if (!currentPoints || currentPoints.length === 0 || !nearestPoint) return;
 
-      const toast = document.getElementById('gpsToast');
+    // 방향이 이미 확정됐으면(currentRotationOriginDist !== null) 접근
+    // 모드를 켜지 않는다 — 이미 정상 경로 안내로 넘어간 상태.
+    if (currentRotationOriginDist !== null) return;
+
+    // 이미 경로 위(온트레일)라면 접근 모드 자체가 필요 없다 — 새 반경을
+    // 만들지 않고 기존 이탈판정 진입 기준(OFFTRAIL_BASE_ENTER_M)을
+    // 그대로 재사용한다(사용자 확정: 별도 반경 안 만듦).
+    if (minDistanceM <= OFFTRAIL_BASE_ENTER_M) return;
+
+    const toast = document.getElementById('gpsToast');
+    const distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+
+    if (minDistanceM > TRAIL_APPROACH_MAX_M) {
+      // 100m 초과 — 방향 안내(회전/녹색선) 없이 거리만 표시.
+      isTrailTooFar = true;
       if (toast) {
-        const heading = computeGuidanceHeading(lat, lon, trailhead.lat, trailhead.lon);
-        const distStr = distToTrailhead >= 1000 ? (distToTrailhead / 1000).toFixed(2) + 'km' : Math.round(distToTrailhead) + 'm';
         toast.style.display = 'block';
         toast.className = 'gps-toast';
-        if (heading !== null) {
-          // "몇 시 방향"은 화면이 이미 가리키는 방향(mapRotationDeg) 대비
-          // 상대각이어야 정확하다(angleDiffToClockDirection 정의부 참고) —
-          // 절대 방위(heading)를 그대로 넘기면 지도가 북쪽 기준일 때 틀린다.
-          const relativeAngle = shortestAngleDiff(heading, mapRotationDeg);
-          const clockDir = angleDiffToClockDirection(relativeAngle);
-          toast.innerText = `🚩 들머리까지 ${distStr} · ${clockDir.clock}`;
-        } else {
-          toast.innerText = `🚩 들머리까지 ${distStr}`;
-        }
+        toast.innerText = `📡 경로까지 ${distStr}`;
       }
+      return;
+    }
+
+    // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(들머리일 수도,
+    // 경로 중간 지점일 수도 있다)을 향해 방향 안내를 시작한다.
+    isApproachingTrailhead = true;
+    // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
+    // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
+    // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
+    if (gpsMovementHeading !== null) {
+      applySegmentRotation(gpsMovementHeading);
+    }
+    if (toast) {
+      toast.style.display = 'block';
+      toast.className = 'gps-toast';
+      toast.innerText = `🚩 경로까지 ${distStr} · 녹색선을 따라 가세요`;
     }
   }
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
@@ -3899,8 +4007,9 @@
     // 유예까지 지나면(!isMapBeingDragged && !isMapDragReturnPending)
     // 다음 픽스에서 정상적으로 재판정된다 — 기준점을 갱신하지 않으므로
     // 갈림길을 지난 사실 자체는 유실되지 않는다.
-    // 🧭 길찾기 모드 중에는 지도 회전을 전적으로 나침반/손가락 값이
-    // 담당한다(closeWayfindMode에서 원래 구간회전 값으로 복원) —
+    // 🧭 WAYFINDING_MODE 중에는 지도 회전을 손대지 않는다(구간회전과
+    // 별개로 동작 — closeWayfindingMode가 종료해도 구간회전 값은 그대로
+    // 유지된다, 나침반/손가락 회전 방식은 2026-09-23 완전히 제거됨) —
     // 그 동안 구간회전이 끼어들면 나침반 회전과 충돌해 지도가 제멋대로
     // 움직이는 것처럼 보인다.
     // ⚠️ forceOriginReset(resetOriginNow() 명시적 클릭)은 드래그 유예
@@ -4111,14 +4220,18 @@
   window.resetOriginNow = resetOriginNow;
 
   function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint) {
-    // 🚩 들머리(GPX[0]) 접근 모드 — 아직 트랙에서 멀리 떨어져 있으면
-    // (예: 산행 시작 직후 집/주차장) 트랙 기반 이탈판정·갈림길 안내·
-    // 구간회전을 전부 건너뛰고 들머리까지 거리/방향만 안내한다. 트랙
-    // 근처(TRAILHEAD_ENTRY_DISTANCE_M 이내)로 들어오면 자동으로 false가
-    // 되어 아래 기존 로직으로 자연스럽게 넘어간다.
+    // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 경로(온트레일 기준)
+    // 밖에 있으면(산행 시작 직후 집/주차장, 또는 경로 중간으로 바로
+    // 진입하는 경우 모두 포함) 트랙 기반 이탈판정·갈림길 안내·구간회전을
+    // 건너뛰고 가장 가까운 경로 지점까지 거리/방향만 안내한다.
+    //   - 100m 초과: 거리만 표시(isTrailTooFar)
+    //   - 온트레일(20m)~100m: 방향 안내 시작(isApproachingTrailhead)
+    // GPS 이동방향이 경로 방향과 2~3회 연속 일치해 원점
+    // (currentRotationOriginDist)이 확정되는 순간 자동으로 꺼지고 아래
+    // 기존 로직(갈림길 안내 등)으로 넘어간다.
     if (lastKnownPos) {
-      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon);
-      if (isApproachingTrailhead) return;
+      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon, minDistanceM, nearestPoint);
+      if (isApproachingTrailhead || isTrailTooFar) return;
     }
 
     // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
@@ -4510,6 +4623,23 @@
         gpsMovementHeading = null;
         isCurrentlyStopped = false;
 
+        // 🔧 왕복(원점회귀) 트랙 매칭/역주행/이탈 판정 상태도 함께
+        // 초기화한다 — 여기가 빠져 있으면, 백그라운드에서 돌아온 직후
+        // 옛날(화면 끄기 전) 위치 기준으로 남아있던 lastNearestIdx가
+        // 엉뚱한 트랙 가닥(왕복 구간이면 반대편 선분)을 계속 우선
+        // 탐색하게 되고, isReversingOnTrail도 옛 상태 그대로 남아
+        // 화살표가 반대로 나오는 원인이 되었다(resetOriginNow()의
+        // 리셋 목록과 동일하게 맞춘다).
+        resetTrailSearchWindow();
+        isOffTrailState = false;
+        offTrailStreakCount = 0;
+        returnStreakCount = 0;
+        isReversingOnTrail = false;
+        lastTraveledDistForReverse = null;
+        reverseDecreaseStreak = 0;
+        lastAlertedMilestoneKey = null;
+        remainingBeepThresholds = null;
+
         // 🧭 지도 중심/회전 상태를 완전히 리셋해 "새로 시작하는 것"처럼
         // 만든다(2026-09-21, 이슈 #5) — 안 그러면 userGpsMarker가 남아있어
         // handleGpsPositionUpdate의 "첫 픽스" 재중심 분기(!userGpsMarker)를
@@ -4558,10 +4688,21 @@
     const lat = pt.lat;
     const lon = pt.lon;
 
+    // 🧭 시뮬레이션도 실제 GPS와 동일한 방향 로직 사용(2026-09-23) —
+    // nearestPointOnTrail로 이 프레임 좌표가 매칭되는 선분을 찾고,
+    // computeArrowHeading으로 TRAILHEAD_SEARCH/TRACK_NAVIGATION 방향을
+    // 계산한다. gpsMovementHeading(GPS 이동방위각)은 화살표용으로 더 이상
+    // 쓰지 않는다 — 단, 지도 회전(applySegmentRotation 등 다른 로직)이
+    // 참조할 수 있으니 계산 자체는 유지한다.
     const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
     if (aheadPt) {
       gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
     }
+
+    const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
+    const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
+    const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
+    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -4569,7 +4710,7 @@
     if (!simMarker) {
       const icon = L.divIcon({
         className: 'custom-gps-icon',
-        html: createGpsIconHtml(gpsMovementHeading),
+        html: createGpsIconHtml(simArrowHeading),
         iconSize: [80, 80],
         iconAnchor: [40, 40]
       });
@@ -4577,7 +4718,7 @@
     } else {
       simMarker.setLatLng([lat, lon]);
     }
-    if (gpsMovementHeading !== null) renderGpsArrow(gpsMovementHeading);
+    if (simArrowHeading !== null) renderGpsArrow(simArrowHeading);
 
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
@@ -5268,11 +5409,10 @@
         // 흔들려 오히려 혼란을 줬다. 화면의 확대/축소 버튼으로 사용자가
         // 직접 조절한다. 나중에 별도로 다시 설계할 수 있다.
 
-        // 왕복 겹침 구간에서 올바른 트랙 세그먼트를 찾을 때(nearestPointOnTrail
-        // 내부의 방향 하드필터) 쓸 최신 이동 방향.
-        latestMovementBearingForTrailMatch = (!result.isStopped && result.bearing !== null)
-          ? result.bearing
-          : gpsMovementHeading;
+        // 🧭 대원칙 재정렬: 왕복 겹침 구간 판별은 이제 findNearestInRange
+        // 내부에서 isReversingOnTrail(GPX 인덱스 이력)과 currentSegmentBearings
+        // (GPX 점 순서)만으로 이뤄지므로, 여기서 GPS 이동방위각(result.bearing)을
+        // 별도로 넘겨줄 필요가 없어졌다.
 
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
@@ -5281,6 +5421,16 @@
         const minDistanceM = nearest.distance;
         const nearestPoint = nearest.point;
         const nearestIdx = nearest.index;
+
+        // 🧭 WAYFINDING_MODE 진행 갱신(2026-09-23) — 활성 중이면 목적지
+        // 거리/도착 판정/녹색선을 여기서 전담한다. 이탈 판정
+        // (updateOffTrailHysteresis)이나 갈림길 자동 안내
+        // (updateNavigationToast, 아래에서 호출됨)와 동시에 화면에 뜨면
+        // 서로 다른 안내가 겹쳐 혼란스러우므로, WAYFINDING 활성 중에는
+        // 그 둘을 건드리지 않고 이 함수만 진행시킨다.
+        if (isWayfindActive) {
+          updateWayfindingProgress(lat, lon, nearestIdx);
+        }
 
         // 코스 시작(들머리) 근처인지 — 첫 원점이 아직 한 번도 안 잡힌
         // 상태(currentRotationOriginDist===null, v75의 "방향 일치 전
@@ -5297,20 +5447,18 @@
         // 미리 계산된 회전각)는 updateNavigationToast가 전담한다.
         if (!result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
-          // 내 위치 마커(userGpsMarker)는 Leaflet 마커라 #map의 자식
-          // 레이어 안에 있다 — 구간 heading-up이 켜져 #map이
-          // rotate(-mapRotationDeg)만큼 이미 돌아가 있으면, 화살표도
-          // 그 회전을 부모로부터 그대로 물려받는다(자식 DOM 회전은 부모
-          // 회전에 "더해지는" 방식으로 합산된다).
-          // 화면상 최종 회전 = 부모(-mapRotationDeg) + 자식(적용할 값).
-          // 우리가 원하는 최종 화면 회전은 절대방위 gpsMovementHeading이
-          // "지도가 mapRotationDeg만큼 회전한 만큼" 어긋나 보이는 것이므로
-          // (gpsMovementHeading - mapRotationDeg)이고, 이를 만족하는
-          // 자식 회전값을 역산하면 정확히 gpsMovementHeading 그 자체가
-          // 나온다(부모의 -mapRotationDeg와 상쇄됨) — 즉 renderGpsArrow에
-          // 넘길 값은 회전 모드 여부와 무관하게 항상 result.bearing으로
-          // 동일하다. 순수 계산으로 검증 완료(scratchpad/verify_headingup_rotation.js).
-          renderGpsArrow(result.bearing);
+        }
+
+        // 🧭 화살표 방향(2026-09-23 재설계): 나침반/자이로/GPS 이동방위각
+        // (result.bearing)은 더 이상 화살표에 쓰지 않는다. computeArrowHeading이
+        // TRAILHEAD_SEARCH(현재GPS→GPX[0]) 또는 TRACK_NAVIGATION(매칭된
+        // 선분의 미리 계산된 bearing, 역주행 시 180도 반전) 둘 중 하나로만
+        // 계산한다. 정지 중에도(result.isStopped 여부와 무관) 항상 호출한다 —
+        // 선분 자체가 안 바뀌면 같은 값이 나오므로 "이전 방향 유지"와
+        // 결과적으로 동일하다.
+        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry);
+        if (arrowHeading !== null) {
+          renderGpsArrow(arrowHeading);
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
@@ -5360,8 +5508,12 @@
         }
         isFirstFix = false;
 
-        // 갈 방향 안내 (등산로 복귀 가이드 점선)
-        if (nearestPoint && minDistanceM > 12) {
+        // 갈 방향 안내 (등산로 복귀 가이드 점선) — WAYFINDING_MODE가
+        // 활성 중이면 guideLine은 updateWayfindingProgress가 전담하므로
+        // 여기서는 건드리지 않는다(서로 다른 목적지를 그리는 충돌 방지).
+        if (isWayfindActive) {
+          // no-op — updateWayfindingProgress가 이미 위에서 처리함
+        } else if (nearestPoint && minDistanceM > 12) {
           const guideCoords = [[lat, lon], [nearestPoint.lat, nearestPoint.lon]];
           if (!guideLine) {
             guideLine = L.polyline(guideCoords, {
