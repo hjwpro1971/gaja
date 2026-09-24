@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v150';
+    const CACHE_NAME = 'gaja-trail-cache-v151';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_midcourse_start_arrow_fix';
+      const APP_BUILD = 'v20260925_live_map_rotation_redesign';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -812,7 +812,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=150', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=151', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2939,6 +2939,39 @@
     updateRouteBadgeRotation();
   }
 
+  // 🧭 지도 실시간 회전(2026-09-25 재설계) — 화살표와 완전히 같은 값
+  // (computeArrowHeading 결과)으로 매 GPS 픽스마다 즉시 회전시킨다.
+  // 대원칙: "내가 지금 어디서 어디로 가는지"는 GPX index만으로 이미
+  // 확정되므로, 방향점 도착이나 재확인 스트릭을 기다릴 이유가 없다
+  // (사용자 지시: "이 알림과 내가 가는 방향의 지도가 일치하게 하면
+  // 돼... 내가 어디로 가는지 모르는 경우가 있나?").
+  //
+  // 국지적으로 굽는 구간(지그재그, 스위치백)에서 매 픽스 즉시 회전이
+  // 지도를 계속 흔드는 부작용은, "직전 회전 판정 지점(lastLiveRotationDist)
+  // 이후 실제로 ROTATION_MIN_MOVE_M 이상 이동했을 때만 갱신"하는 최소
+  // 이동거리 안전장치로 억제한다 — 제자리 서성임이나 GPS 노이즈로
+  // traveledDist가 거의 안 바뀌면 직전 회전값을 그대로 유지하고, 실제로
+  // 의미 있게 이동했을 때만 다시 돈다.
+  const ROTATION_MIN_MOVE_M = 5;
+  let lastLiveRotationDist = null;
+  function applyLiveMapRotation(bearingDeg, traveledDist) {
+    if (traveledDist === undefined || traveledDist === null) {
+      applySegmentRotation(bearingDeg);
+      return;
+    }
+    if (lastLiveRotationDist !== null && Math.abs(traveledDist - lastLiveRotationDist) < ROTATION_MIN_MOVE_M) {
+      return; // 아직 충분히 이동하지 않음 — 직전 회전값 유지(떨림 방지)
+    }
+    lastLiveRotationDist = traveledDist;
+    applySegmentRotation(bearingDeg);
+  }
+  // GPS 재시작/코스 재로드 시 이 기준점도 함께 초기화해야, 재개 직후
+  // "이전 세션의 traveledDist"와 비교해 첫 회전이 부당하게 억제되지
+  // 않는다(resetLiveMapRotationState 정의부 호출 지점 참고).
+  function resetLiveMapRotationState() {
+    lastLiveRotationDist = null;
+  }
+
   // routeBadgeEls의 모든 라벨 DOM에 현재 appliedMapRotationDeg만큼
   // 역회전을 다시 적용한다 — applySegmentRotation이 회전할 때, 그리고
   // 구간회전 모드가 꺼져 지도가 북쪽 고정(0도)으로 복귀할 때 둘 다
@@ -3429,10 +3462,7 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
-    // 새 코스를 열면 "이 코스에서 GPS를 아직 한 번도 안 켰다"로 되돌려,
-    // 다음 startGpsTracking()이 재획득 게이트가 아니라 최초 시작으로
-    // 취급되게 한다(hasStartedGpsOnceThisRoute 선언부 주석 참고).
-    hasStartedGpsOnceThisRoute = false;
+    resetLiveMapRotationState(); // 새 코스이므로 지도 회전 기준점(lastLiveRotationDist)도 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
@@ -3581,7 +3611,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v150';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v151';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4134,31 +4164,14 @@
   // 기능을 추가하거나 리팩터링할 때, 이 원리(경로가 항상 화면 정면에
   // 오게 한다)를 깨뜨리지 않는지 항상 먼저 확인할 것.
   // ════════════════════════════════════════════════════════════════
-  // 🧭 GPS 재획득 직후 회전 보류 게이트(산길샘 방식, 사용자 지시: "GPS
-  // 2~3개가 연속으로 이동으로 확인되면 그때만 applySegmentRotation()
-  // 호출") — GPS를 껐다 켜거나 백그라운드에서 복귀하는 등 재획득
-  // 시나리오 직후에는 화면에 이미 걸려있는 회전값을 그대로 유지하고
-  // (startGpsTracking에서 mapRotationDeg를 리셋하지 않는다), 이 카운터가
-  // GPS_REACQUIRE_CONFIRM_STREAK만큼 채워질 때까지는
-  // updateSegmentRotationTrigger가 회전 자체를 호출하지 않는다. 재획득
-  // 직후 첫 판정은 GPS 오차로 흔들리기 쉬운데, 회전값을 그대로 둔 채로
-  // 기다리면 "잘못된 값으로 일단 스냅했다가 다시 스냅"하는 이중 튐 없이,
-  // 이동방향이 확실해진 뒤 한 번만 정확히 회전한다.
-  const GPS_REACQUIRE_CONFIRM_STREAK = 3;
-  let gpsReacquireConfirmStreak = GPS_REACQUIRE_CONFIRM_STREAK; // 시작 시 이미 충분(평소엔 게이트가 막지 않음) — GPS 재획득 시점에만 0으로 낮춘다
-  let gpsReacquireLastIdx = null;
-  // 🐛 "산행 시작" 버튼으로 GPS를 맨 처음 켜는 것도 startGpsTracking()을
-  // 거치는데, 게이트를 구분 없이 항상 0으로 낮추면 이 가장 흔한
-  // 시나리오에도 재획득 게이트가 걸려버린다(사용자 재현: "갈림길1로
-  // 가는 길인데 화살표가 반대로 나왔어" — 원인 추적 결과, firstOrigin
-  // 확정(FIRST_ORIGIN_MIN_FIXES 3픽스)에 재획득 게이트(3픽스)가 겹쳐
-  // 원점 확정이 예상보다 오래 지연되고, 그동안 화살표가 계속
-  // "들머리(GPX[0]) 방향"을 가리켜 실제 진행방향과 반대로 보였다).
-  // 재획득 게이트는 "이미 화면에 걸려있는 낡은 회전값을 성급히 스냅하지
-  // 않기 위함"인데, 이 코스에서 GPS를 처음 켜는 순간은 애초에 걸려있는
-  // 회전값 자체가 없으므로 게이트가 막아야 할 대상이 없다 — 이 경우
-  // 게이트를 즉시 통과 상태로 둔다.
-  let hasStartedGpsOnceThisRoute = false;
+  // 🧭 2026-09-25: 지도 회전(applySegmentRotation 직접 호출)은 이 함수
+  // 밖으로 완전히 옮겨졌다(handleGpsPositionUpdate의 applyLiveMapRotation
+  // — 화살표와 동일한 값으로 매 픽스 즉시 회전). 그래서 "GPS 재획득
+  // 직후 회전 보류 게이트"(gpsReacquireConfirmStreak, hasStartedGpsOnceThisRoute)
+  // 도 더 이상 필요 없어 제거했다 — 회전은 이제 국지적 안전장치
+  // (ROTATION_MIN_MOVE_M) 하나만으로 떨림을 억제한다. 이 함수
+  // (updateSegmentRotationTrigger)는 이제 오직 "원점(currentRotationOriginDist,
+  // 하단 경로 알람 기준점) 확정"과 "방향점 통과 비프음"만 담당한다.
   function updateSegmentRotationTrigger(traveledDist, nearestIdx) {
     if (!isSegmentRotationMode) return;
     // ⚠️ 손가락으로 지도를 드래그하는 도중(isMapBeingDragged)에 갈림길을
@@ -4206,33 +4219,14 @@
     //
     // ⚠️ 2026-09-21 수정: 예전엔 "이탈 중 회전 동결" 때문에 지명(방향점)
     // 통과 알림까지 통째로 스킵되는 문제가 있어 "통과 여부 확인 + 통과
-    // 비프음"과 "회전"을 분리했다. 이 함수는 방향점 도착 판정(비프음),
-    // 원점 확정(하단 알람용 기준점), 그리고 도착이 확정되는 순간의 지도
-    // 회전(applySegmentRotation)까지 함께 담당한다(구간회전 방식).
+    // 비프음"과 "회전"을 분리했다. 2026-09-25부터 이 함수는 방향점 도착
+    // 판정(비프음)과 원점 확정(하단 알람용 기준점)만 담당한다 — 지도
+    // 회전은 handleGpsPositionUpdate의 applyLiveMapRotation이 매 픽스
+    // 즉시 전담한다(위 GPS_REACQUIRE_CONFIRM_STREAK 제거 관련 주석 참고).
     // trackDirection(isReversingOnTrail)은 nearestPointOnTrail이 매
     // 픽스마다 자동으로 갱신하므로(updateTrackDirection), 여기서 별도로
     // 다시 갱신하지 않는다.
     if (!lastKnownPos) return;
-
-    // 🧭 GPS 재획득 직후 회전 보류 게이트 — nearestIdx가 이전 픽스와
-    // 실제로 다르게(=이동으로) 확인될 때마다 스트릭을 쌓고, 아직
-    // GPS_REACQUIRE_CONFIRM_STREAK에 못 미치면 이번 픽스에서는 판정
-    // 자체를 건너뛴다(회전은 물론, 원점 갱신도 함께 보류 — 불확실한
-    // 위치를 새 원점으로 확정하지 않기 위함). 게이트가 걸려있지 않은
-    // 평소(gpsReacquireConfirmStreak가 이미 목표치 이상)에는 아무
-    // 영향이 없다.
-    // forceOriginReset(resetOriginNow() 명시적 클릭)은 이 게이트도
-    // 우회한다 — 사용자가 지금 위치 기준으로 즉시 재설정을 요청한
-    // 것이므로 재확인 대기 없이 바로 반영하는 게 맞다.
-    if (!forceOriginReset && gpsReacquireConfirmStreak < GPS_REACQUIRE_CONFIRM_STREAK) {
-      if (nearestIdx !== undefined && nearestIdx !== null) {
-        if (gpsReacquireLastIdx !== null && nearestIdx !== gpsReacquireLastIdx) {
-          gpsReacquireConfirmStreak++;
-        }
-        gpsReacquireLastIdx = nearestIdx;
-      }
-      if (gpsReacquireConfirmStreak < GPS_REACQUIRE_CONFIRM_STREAK) return;
-    }
 
     const isFirstRotation = currentRotationOriginDist === null;
     // 시뮬레이션 중에는 항상 500m, 실제 GPS는 기본값(100m) — 사용자
@@ -4278,40 +4272,25 @@
       // 마지막으로 도착한 방향점을 새 기준점으로 삼는다 — 통과 사실
       // 자체(및 비프음)는 이탈 여부와 무관하게 이미 위 while 루프에서
       // 보장됐으므로, 원점 갱신도 그대로 진행해 다음 방향점이 중복
-      // 판정되지 않게 한다.
-      // 🧭 2026-09-24: 지도 회전을 방향점 도착 시에만 재계산하는 예전
-      // 방식으로 복원(사용자 신고: "지도회전이 심하게 움직여.. 앞에
-      // 지명점하고 현재 위치하고 90도 하는 로직" — 매 픽스 즉시 회전은
-      // 코스가 국지적으로 굽는 구간마다 지도가 계속 흔들리는 부작용이
-      // 있었다). 이번에 새로 확정된 다음 목표(finalTarget)를 향해,
-      // 지금 GPS 위치를 기준으로 회전각을 계산해 즉시 반영한다.
+      // 판정되지 않게 한다. 지도 회전은 2026-09-25부터 이 함수가 하지
+      // 않는다(handleGpsPositionUpdate의 applyLiveMapRotation 전담) —
+      // 여기서는 하단 알람 기준점(currentRotationOriginDist)만 갱신한다.
       currentRotationOriginDist = finalTarget.distanceM;
-      if (lastKnownPos) {
-        const nextTarget = findNextRotationTarget(currentRotationOriginDist, isReversingOnTrail, rotationLookaheadM);
-        if (nextTarget) {
-          const bearing = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, nextTarget.lat, nextTarget.lon);
-          if (bearing !== null) applySegmentRotation(bearing);
-        }
-      }
       return;
     }
 
-    // 🧭 첫 원점(들머리) — 방향점 도착 기반 구간회전 방식(예전 버전)으로
-    // 복원. 원점(currentRotationOriginDist)을 확정함과 동시에, 그
-    // 원점에서 찾은 다음 목표를 향해 현재 GPS 위치 기준 회전각을 계산해
-    // 지도를 한 번 회전시킨다 — 이후에는 다음 방향점에 도착하기 전까지
-    // 이 회전값을 그대로 유지한다.
+    // 🧭 첫 원점(들머리, 하단 경로 알람 전용) — 지도 회전과 무관하게,
+    // "GPX 이동방향이 안정된 뒤에야 하단 알람 기준점을 잡는다"는 의미로
+    // firstOriginFixCount(3픽스) 대기만 유지한다. 지도/화살표는 이
+    // 대기와 무관하게 이미 handleGpsPositionUpdate에서 매 픽스 즉시
+    // 갱신되고 있다.
     firstOriginFixCount++;
-    if (firstOriginFixCount < FIRST_ORIGIN_MIN_FIXES) return; // 아직 이동방향 미확정 — 화면은 그대로 유지
+    if (firstOriginFixCount < FIRST_ORIGIN_MIN_FIXES) return; // 아직 이동방향 미확정 — 하단 알람 원점은 대기
 
     const target = findNextRotationTarget(traveledDist, isReversingOnTrail, rotationLookaheadM);
     if (!target) return;
 
     currentRotationOriginDist = traveledDist;
-    if (lastKnownPos) {
-      const bearing = computeGuidanceHeading(lastKnownPos.lat, lastKnownPos.lon, target.lat, target.lon);
-      if (bearing !== null) applySegmentRotation(bearing);
-    }
     return;
   }
 
@@ -4351,31 +4330,28 @@
     resetTrackDirectionState();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
-    // 🧭 지도 회전각도 GPS 재시작(startGpsTracking)과 동일하게 리셋한다
-    // — 리셋하지 않으면 applySegmentRotation이 "이전 회전값 → 새로
-    // 계산된 값"의 최단 경로로 돌아버려, 원점을 다시 잡아도 엉뚱한
-    // 방향으로 도는 문제가 있었다.
-    mapRotationDeg = 0;
-    appliedMapRotationDeg = 0;
+    // 🧭 지도 회전각(mapRotationDeg/appliedMapRotationDeg)은 리셋하지
+    // 않는다 — applyLiveMapRotation이 최단경로(shortestAngleDiff) 기준
+    // 으로 새 값을 계산하므로, 리셋 없이도 다음 회전이 정확한 방향으로
+    // 스냅된다. lastLiveRotationDist만 초기화해 "직전 회전 판정 이후
+    // 충분히 이동하지 않았다"는 안전장치가 이번 수동 재설정을 막지
+    // 않게 한다.
+    resetLiveMapRotationState();
 
     currentRotationOriginDist = null;
     firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; // 수동 재설정은 대기 없이 즉시 확정
     forceOriginReset = true;
     const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
     const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
-    // 🧭 지도 회전(구간회전 방식 복원)은 updateSegmentRotationTrigger가
-    // 원점 확정과 동시에 이미 처리한다(방향점 도착/첫 원점 확정 블록
-    // 내부에서 applySegmentRotation 호출). 여기서는 내 위치 화살표만
-    // 별도로 즉시 갱신한다 — 화살표는 매 픽스 즉시 반영이 유지된다.
+    // 하단 경로 알람 원점(currentRotationOriginDist) 확정만 이 호출이
+    // 담당한다 — 지도 회전은 아래에서 직접 즉시 처리한다.
     updateSegmentRotationTrigger(traveledDist, nearest ? nearest.index : undefined);
     forceOriginReset = false;
-    // 수동 재설정은 재확인 게이트를 우회했으니, 이후 GPS 픽스는 정상
-    // 판정으로 바로 이어지도록 게이트를 즉시 통과 상태로 맞춰둔다.
-    gpsReacquireConfirmStreak = GPS_REACQUIRE_CONFIRM_STREAK;
     if (nearest && nearest.index >= 0) {
-      const arrowHeading = computeArrowHeading(lastKnownPos.lat, lastKnownPos.lon, nearest.index, false, traveledDist);
+      const arrowHeading = computeArrowHeading(lastKnownPos.lat, lastKnownPos.lon, nearest.index, false, traveledDist, nearest.point);
       if (arrowHeading !== null) {
         renderGpsArrow(arrowHeading);
+        applyLiveMapRotation(arrowHeading, traveledDist);
       }
     }
     showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
@@ -4397,12 +4373,12 @@
       if (isApproachingTrailhead || isTrailTooFar) return;
     }
 
-    // 회전 판정은 텍스트 안내(이탈/온트레일 분기, 토스트 표시 여부)와
-    // 무관하게 토스트 표시 여부(toast.style.display==='none')와는
-    // 상관없이 항상 먼저 실행한다. 단 이탈 상태(isOffTrailState) 중에는
-    // updateSegmentRotationTrigger 내부에서 회전 자체를 동결한다 —
-    // 이탈 중에는 회전보다 복귀 방향 안내가 우선이어야 한다는 지적
-    // 참고(updateSegmentRotationTrigger 정의부).
+    // 하단 경로 알람 원점(currentRotationOriginDist) 확정 판정은 텍스트
+    // 안내(이탈/온트레일 분기, 토스트 표시 여부)와 무관하게 토스트 표시
+    // 여부(toast.style.display==='none')와는 상관없이 항상 먼저
+    // 실행한다. 지도 회전 자체는 이 함수가 아니라
+    // handleGpsPositionUpdate의 applyLiveMapRotation이 매 픽스 즉시
+    // 전담한다(2026-09-25).
     if (currentMilestones && currentMilestones.length >= 2 && nearestIdx >= 0 && cumulativeDistances) {
       updateSegmentRotationTrigger(cumulativeDistances[nearestIdx] || 0, nearestIdx);
     }
@@ -4888,10 +4864,11 @@
     isCurrentlyStopped = false;
     isOffTrailState = false;
 
-    // 🧭 지도 회전은 실제 GPS와 동일하게 구간회전 방식(방향점 도착
-    // 시에만 재계산)을 쓴다 — 아래 updateNavigationToast 내부에서
-    // updateSegmentRotationTrigger가 처리하므로 여기서 따로 호출하지
-    // 않는다.
+    // 🧭 지도 회전도 실제 GPS와 동일하게 화살표와 같은 값으로 매 프레임
+    // 즉시 반영한다(applyLiveMapRotation, 2026-09-25 재설계).
+    if (simArrowHeading !== null && !simIsNearTrailhead) {
+      applyLiveMapRotation(simArrowHeading, simTraveledDist);
+    }
 
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
     // 기존 순서를 그대로 유지(하단 경로 알람/원점 확정 로직 때문).
@@ -5475,26 +5452,11 @@
     // 이어져 방향이 어긋날 수 있었다.
     resetTrackDirectionState();
     resetTrailSearchWindow();
-    // 🧭 지도 회전값(mapRotationDeg/appliedMapRotationDeg)은 여기서
-    // 리셋하지 않는다(산길샘 방식, 사용자 지시: "GPS를 껐다 켜도 회전을
-    // 초기화하지 말고 마지막 회전값을 유지할 것") — 화면에 이미 걸려
-    // 있는 회전은 그대로 두고, 재획득 직후 아직 불확실한 첫 판정으로
-    // 바로 스냅하지 않는다. 대신 아래 gpsReacquireConfirmStreak 게이트로
-    // "몇 번 연속 이동이 확인될 때까지 applySegmentRotation 호출 자체를
-    // 보류"해 튈 재료(불확실한 판정) 자체를 걸러낸다.
-    // 🐛 단, 이 코스에서 GPS를 맨 처음 켜는 시작이면(hasStartedGpsOnceThisRoute
-    // ===false) 게이트를 걸지 않는다 — 걸려있는 낡은 회전값 자체가 없어
-    // 게이트가 막을 대상이 없고, 오히려 firstOrigin 확정(3픽스)에 이
-    // 게이트(3픽스)가 겹쳐 원점 확정이 불필요하게 늦어지던 버그가 있었다
-    // (GPS_REACQUIRE_CONFIRM_STREAK 선언부 주석 참고).
-    if (hasStartedGpsOnceThisRoute) {
-      gpsReacquireConfirmStreak = 0;
-      gpsReacquireLastIdx = null;
-    } else {
-      gpsReacquireConfirmStreak = GPS_REACQUIRE_CONFIRM_STREAK;
-      gpsReacquireLastIdx = null;
-    }
-    hasStartedGpsOnceThisRoute = true;
+    // 🧭 지도 회전(2026-09-25부터 매 픽스 즉시, applyLiveMapRotation)도
+    // GPS 재시작 시 기준점만 초기화한다 — mapRotationDeg/appliedMapRotationDeg
+    // 자체는 리셋하지 않아도 최단경로 계산으로 다음 픽스에서 바로 정확한
+    // 방향으로 스냅된다(shortestAngleDiff 기준).
+    resetLiveMapRotationState();
 
     // 🧭 구간회전 모드를 여기서 미리 켜둔다(2026-09-21, #11). 원래는
     // handleGpsPositionUpdate의 첫 마커 생성 시점(setHeadingUpMode 호출)
@@ -5674,29 +5636,33 @@
           gpsMovementHeading = result.bearing;
         }
 
-        // 🧭 화살표 방향(2026-09-23 재설계): 나침반/자이로/GPS 이동방위각
-        // (result.bearing)은 더 이상 화살표에 쓰지 않는다. computeArrowHeading이
-        // TRAILHEAD_SEARCH(현재GPS→가장 가까운 경로 지점) 또는
-        // TRACK_NAVIGATION(매칭된 선분의 미리 계산된 bearing) 둘 중
-        // 하나로만 계산한다. 정지 중에도(result.isStopped 여부와 무관)
-        // 항상 호출한다 — 선분 자체가 안 바뀌면 같은 값이 나오므로
-        // "이전 방향 유지"와 결과적으로 동일하다. nearestPoint를 함께
-        // 넘겨 들머리가 아닌 코스 중간 지점에서 시작해도 화살표가
-        // 그 가까운 지점을 정확히 가리키게 한다.
+        // 🧭 화살표 방향 + 지도 전체 회전 — 2026-09-25 재설계(사용자
+        // 지시: "이 알림과 내가 가는 방향의 지도가 일치하게 하면 돼...
+        // 위치 화살표도 항상 내 앞으로 나와야 해"). 대원칙: GPX index를
+        // 이미 알고 있으므로 "내가 지금 어디서 어디로 가는지"는 매 픽스
+        // 즉시 확정된다(moveDirectionSign) — 방향점 도착까지 기다리거나
+        // (구간회전), 재확인 스트릭을 쌓거나(재획득 게이트) 할 이유가
+        // 없다. 화살표와 지도 회전은 항상 computeArrowHeading의 같은
+        // 반환값 하나를 공유한다(대원칙: 지도와 화살표는 동일한 방향
+        // 데이터를 쓴다). nearestPoint를 함께 넘겨 들머리가 아닌 코스
+        // 중간 지점에서 시작해도 정확한 지점을 가리키게 한다.
+        //
+        // ⚠️ 예전(2026-09-24)엔 "매 픽스 즉시 회전"이 국지적으로 굽는
+        // 구간(지그재그, 스위치백)마다 지도를 계속 흔든다는 문제가
+        // 있어 구간회전(방향점 도착 시에만)으로 되돌렸었다. 그런데
+        // 그 대안이 "원점 확정까지 3픽스 대기 + GPS 재획득 게이트"를
+        // 낳아 오히려 "언제 회전하는지 예측 불가능"이라는 더 큰 문제를
+        // 만들었다(사용자 재현: "들머리 지나서 다음 지점으로 가는데
+        // 지도가 회전이 안 되고 그냥 옆으로 가는 거군"). 이번엔 떨림
+        // 자체를 최소 이동거리 안전장치로만 억제한다 — applySegmentRotation
+        // 은 직전 회전 판정 이후 실제로 ROTATION_MIN_MOVE_M 이상
+        // 이동했을 때만 새로 호출되고, 그보다 짧으면(제자리 서성임,
+        // GPS 노이즈) 직전 회전값을 그대로 유지한다.
         const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry, nearestPoint);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
+          if (!isNearTrailhead) applyLiveMapRotation(arrowHeading, traveledDistForEntry);
         }
-
-        // 🧭 지도 전체 회전 — 2026-09-24 재설계(매 픽스 즉시 회전)를
-        // 사용자 신고("지도회전이 심하게 움직여.. 앞에 지명점하고 현재
-        // 위치하고 90도 하는 로직")로 다시 예전 방식(구간회전, 방향점
-        // 통과 시에만 재계산)으로 되돌린다. 매 픽스 즉시 회전은 코스가
-        // 국지적으로 굽는 구간(지그재그, 스위치백)마다 지도가 계속
-        // 흔들리는 부작용이 있었다 — 화살표(내 위치 방향 표시)는 여전히
-        // 매 픽스 즉시 갱신하되, 지도 전체 CSS 회전은 여기서 손대지
-        // 않고 updateSegmentRotationTrigger(방향점 도착 판정 시에만
-        // applySegmentRotation 호출)가 전담한다.
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
         // 호출해야 한다 — 구간이 바뀌는 프레임에 이 함수 내부에서
