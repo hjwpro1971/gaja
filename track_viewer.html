@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v147';
+    const CACHE_NAME = 'gaja-trail-cache-v148';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_first_start_gate_fix';
+      const APP_BUILD = 'v20260925_start_hike_confirm_button';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -313,6 +313,36 @@
     }
     @media (prefers-reduced-motion: reduce) {
       .gps-waiting-spinner { animation: none; border-top-color: rgba(255,255,255,0.35); }
+    }
+
+    /* 🚀 등산 시작 확인 버튼 — 코스를 열면(drawRoute 직후, 진입 경로
+       무관) 자동으로 뜨고, 5초 안에 누르지 않으면 조용히 사라진다
+       (사용자 지시: "등산시작 버튼이 나타나고 이게 클릭이되면 등산이
+       시작이 되는거야. 5초안에 클릭안하면 화면에서 사라지게해"). GPS가
+       꺼진 상태에서 🎯(내 위치) 버튼을 눌러도 같은 버튼이 다시 뜬다. */
+    .start-hike-overlay {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 1200; display: none; flex-direction: column; align-items: center;
+      gap: 10px;
+    }
+    .start-hike-btn {
+      display: flex; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #ffffff;
+      font-size: 19px; font-weight: 800; border: none; border-radius: 30px;
+      padding: 18px 34px; box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+      cursor: pointer; animation: startHikePulse 1.6s ease-in-out infinite;
+    }
+    .start-hike-btn:active { transform: scale(0.96); }
+    @keyframes startHikePulse {
+      0%, 100% { box-shadow: 0 8px 28px rgba(27,94,32,0.4); }
+      50% { box-shadow: 0 8px 32px rgba(46,125,50,0.75); }
+    }
+    .start-hike-timer {
+      color: #ffffff; font-size: 13px; font-weight: 600;
+      background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 12px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .start-hike-btn { animation: none; }
     }
 
     /* 📌 화면 하단 구석 버전 표시 — 지도를 가리지 않도록 아주 작게,
@@ -702,6 +732,12 @@
   <div class="gps-waiting-text">📡 GPS 수신 중...</div>
 </div>
 
+<!-- 🚀 등산 시작 확인 버튼 — showStartHikeOverlay()가 열고 닫는다. -->
+<div class="start-hike-overlay" id="startHikeOverlay">
+  <button type="button" class="start-hike-btn" id="startHikeBtn" onclick="confirmStartHike()">🚀 등산 시작</button>
+  <div class="start-hike-timer" id="startHikeTimer"></div>
+</div>
+
 <!-- 🧭 WAYFINDING_MODE(2026-09-23) — GPX 위 주요지점(갈림길/봉우리/지명)
      까지 녹색선(guideLine 재사용)으로 안내한다. 나침반/자이로/손가락
      회전 없음. 목적지명·거리·복귀 버튼만 하단에 표시. -->
@@ -776,7 +812,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=147', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=148', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3479,26 +3515,22 @@
     const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
     autoSaveOfflineMap(points, tileCourseKey);
 
-    // 등산로 코스가 열리면 길찾기(내 위치 추적)를 기본으로 바로 시작한다.
-    // 매번 GPS 버튼을 눌러야 시작되던 이전 방식 대신, 산에서 지도만 켜면
-    // 곧바로 방향 안내가 되도록 opt-out 대신 opt-in을 뒤집었다. 이미 GPS가
-    // 켜져 있으면(코스를 다시 불러온 경우 등) 중복 시작하지 않는다.
+    // 🚀 등산 시작 확인 버튼(2026-09-25, 사용자 지시): 코스가 열리면
+    // GPS를 곧바로 자동 시작하던 이전 방식(opt-in 자동시작) 대신, "등산
+    // 시작" 버튼을 띄워 사용자가 직접 눌러야 GPS가 켜지도록 되돌렸다.
+    // 진입 경로(외부 링크로 바로 옴 / 메뉴에서 코스 선택)와 무관하게
+    // drawRoute()가 호출되는 모든 지점에서 공통으로 뜬다. 5초 안에
+    // 누르지 않으면 GPS를 켜지 않은 채 조용히 사라진다(showStartHikeOverlay
+    // 정의부 주석 참고). 이미 GPS가 켜져 있으면(코스를 다시 불러온 경우
+    // 등) 뜨지 않는다.
     //
-    // 🔔 항상 일반 GPS로 시작한다(2026-09-21 전면 재설계) — 화면이 켜져
-    // 있는 이 시점엔 저전력 모드가 아니라 일반 GPS로 보여야 하기 때문
-    // (사용자 지시: "화면이 켜지면 보통 gps 모드로 전환이 되어야 해").
-    // ⚠️ 2026-09-22: 저전력 모드 버튼 자체를 숨긴 김에, 예전에 켜둔
-    // 예약(localStorage 'gajago_low_power_mode')이 남아있어도 자동
-    // 복원하지 않는다 — 안 그러면 버튼이 안 보이는데도 화면을 끄면
-    // 실제로는 저전력 폴링이 도는 모순이 생긴다. 버튼을 되돌릴 때 이
-    // 복원 로직도 함께 되돌릴 것.
     // 저전력 모드 완전 비활성화(2026-09-23) — 예약값이 남아있어도 무시
     lowPowerModeEnabled = false;
     isLowPowerPolling = false;
     try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
 
     if (watchId === null && !isLowPowerPolling) {
-      startGpsTracking();
+      showStartHikeOverlay();
     }
   }
 
@@ -3536,7 +3568,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v147';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v148';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5189,7 +5221,12 @@
     if (watchId !== null || isLowPowerPolling) {
       stopGpsTracking();
     } else {
-      startGpsTracking();
+      // 🚀 GPS가 꺼진 상태에서 🎯(내 위치) 버튼을 누르면, 바로 GPS를
+      // 켜지 않고 "등산 시작" 확인 버튼을 다시 띄운다(사용자 지시:
+      // "gps 아이콘 클릭하면 등산시작 버튼이 보이게 해 줘"). GPS가
+      // 이미 켜져 있을 때(위 분기)는 기존처럼 바로 꺼진다 — 토글 동작
+      // 자체는 그대로 유지.
+      showStartHikeOverlay();
     }
   }
 
@@ -5366,6 +5403,49 @@
   // "이번이 GPS 시작 후 첫 픽스인가" 플래그 — 콜백을 이름 붙은 함수로
   // 분리하면서 함수 지역변수였던 것을 모듈 스코프로 옮겼다.
   let isFirstFix = true;
+
+  // 🚀 등산 시작 확인 버튼(사용자 지시): 코스를 열면(drawRoute 직후,
+  // 외부 링크 진입/메뉴 선택 진입 모두 공통) 자동으로 뜨고, GPS가
+  // 꺼진 상태에서 🎯(내 위치) 버튼을 눌러도 같은 버튼이 다시 뜬다.
+  // 5초 안에 누르지 않으면 GPS를 켜지 않은 채 조용히 사라진다. GPS가
+  // 이미 켜져 있을 때(산행 중)는 이 오버레이를 띄우지 않고 기존
+  // toggleGPS 동작(끄기)을 그대로 유지한다.
+  const START_HIKE_TIMEOUT_S = 5;
+  let startHikeCountdownTimer = null;
+  let startHikeHideTimer = null;
+
+  function showStartHikeOverlay() {
+    const overlay = document.getElementById('startHikeOverlay');
+    const timerEl = document.getElementById('startHikeTimer');
+    if (!overlay) return;
+    hideStartHikeOverlay(); // 이전 타이머가 남아있으면 먼저 정리하고 새로 시작
+    overlay.style.display = 'flex';
+    let remaining = START_HIKE_TIMEOUT_S;
+    if (timerEl) timerEl.innerText = `${remaining}초 안에 누르지 않으면 사라져요`;
+    startHikeCountdownTimer = setInterval(() => {
+      remaining--;
+      if (timerEl) timerEl.innerText = `${remaining}초 안에 누르지 않으면 사라져요`;
+      if (remaining <= 0) clearInterval(startHikeCountdownTimer);
+    }, 1000);
+    startHikeHideTimer = setTimeout(() => {
+      hideStartHikeOverlay(); // 시간 초과 — GPS는 켜지 않고 버튼만 사라짐
+    }, START_HIKE_TIMEOUT_S * 1000);
+  }
+  window.showStartHikeOverlay = showStartHikeOverlay;
+
+  function hideStartHikeOverlay() {
+    const overlay = document.getElementById('startHikeOverlay');
+    if (overlay) overlay.style.display = 'none';
+    if (startHikeCountdownTimer) { clearInterval(startHikeCountdownTimer); startHikeCountdownTimer = null; }
+    if (startHikeHideTimer) { clearTimeout(startHikeHideTimer); startHikeHideTimer = null; }
+  }
+
+  // 사용자가 "🚀 등산 시작" 버튼을 실제로 눌렀을 때만 호출된다.
+  function confirmStartHike() {
+    hideStartHikeOverlay();
+    startGpsTracking();
+  }
+  window.confirmStartHike = confirmStartHike;
 
   function startGpsTracking() {
     const btn = document.getElementById('gpsBtn');
