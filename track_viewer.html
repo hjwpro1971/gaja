@@ -3811,77 +3811,49 @@
   // 이동방향)을 화면 정면(12시)으로 두고 회전시킨다 — 몇 걸음만 걸으면
   // 이 값이 나오므로 "실시간"에 가깝게 갱신된다. applySegmentRotation을
   // 그대로 재사용해 산행 중 heading-up 회전과 동일한 방식으로 돈다.
-  let isApproachingTrailhead = false; // GPX[0] 들머리에서 30m 초과 ~ 100m 이내일 때만 활성
-  let isTrailTooFar = false;          // 들머리에서 100m 초과: 방향 회전 없이 거리만 표시
-
-  // 🚩 들머리 접근 단계의 단일 기준
-  //   - 목표는 항상 GPX[0] = 등록된 들머리 좌표
-  //   - 100m 초과: 거리만 표시
-  //   - 30m 초과 ~ 100m: GPS 이동방향을 화면 정면으로 회전하고 들머리로 안내
-  //   - 30m 이하: 접근 모드 즉시 종료 → 아래 기존 GPX 트랙 구간회전으로 인계
-  //
-  // 중요: 기존 코드는 "가장 가까운 GPX 선분까지의 거리"와
-  // currentRotationOriginDist 확정 여부를 종료 조건처럼 사용했다.
-  // 그 결과 들머리에서 30m 이내에 들어와도 접근 모드가 계속 살아 있거나,
-  // 반대로 경로 중간 지점에 가까워진 것만으로 접근 단계가 끝나는 문제가 있었다.
-  // 이제 종료 기준은 오직 "현재 GPS → GPX[0] 들머리" 실제 거리 30m이다.
+  let isApproachingTrailhead = false; // 온트레일 초과 ~ 100m: 방향 안내(회전+녹색선) 활성
+  let isTrailTooFar = false;          // 100m 초과: 거리만 표시, 방향 안내는 하지 않음
   function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint) {
     isApproachingTrailhead = false;
     isTrailTooFar = false;
-    if (!currentPoints || currentPoints.length === 0) return;
+    if (!currentPoints || currentPoints.length === 0 || !nearestPoint) return;
 
-    const trailhead = currentPoints[0];
-    if (!trailhead || trailhead.lat === undefined || trailhead.lon === undefined) return;
-
-    const distToTrailhead = haversineMeters(lat, lon, trailhead.lat, trailhead.lon);
-    const distStr = distToTrailhead >= 1000
-      ? (distToTrailhead / 1000).toFixed(2) + 'km'
-      : Math.round(distToTrailhead) + 'm';
-
-    // 이미 첫 원점이 확정된 경우에는 정상 GPX 구간회전만 사용한다.
+    // 방향이 이미 확정됐으면(currentRotationOriginDist !== null) 접근
+    // 모드를 켜지 않는다 — 이미 정상 경로 안내로 넘어간 상태.
     if (currentRotationOriginDist !== null) return;
 
-    // ★ 핵심 종료 조건: 들머리 30m 이내에 들어오는 순간 접근 모드 종료.
-    // 이 함수가 false를 남기고 반환하면 같은 GPS 프레임의 아래
-    // updateSegmentRotationTrigger()가 즉시 GPX 트랙 방향으로 인계한다.
-    if (distToTrailhead <= TRAILHEAD_ENTRY_DISTANCE_M) {
-      if (guideLine) {
-        map.removeLayer(guideLine);
-        guideLine = null;
-      }
-      return;
-    }
+    // 이미 경로 위(온트레일)라면 접근 모드 자체가 필요 없다 — 새 반경을
+    // 만들지 않고 기존 이탈판정 진입 기준(OFFTRAIL_BASE_ENTER_M)을
+    // 그대로 재사용한다(사용자 확정: 별도 반경 안 만듦).
+    if (minDistanceM <= OFFTRAIL_BASE_ENTER_M) return;
 
-    if (distToTrailhead > TRAIL_APPROACH_MAX_M) {
-      // 들머리에서 100m보다 멀면 방향 회전은 하지 않고 거리만 표시한다.
+    const toast = document.getElementById('gpsToast');
+    const distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+
+    if (minDistanceM > TRAIL_APPROACH_MAX_M) {
+      // 100m 초과 — 방향 안내(회전/녹색선) 없이 거리만 표시.
       isTrailTooFar = true;
-      const toast = document.getElementById('gpsToast');
       if (toast) {
         toast.style.display = 'block';
         toast.className = 'gps-toast';
-        toast.innerText = `📡 들머리까지 ${distStr}`;
-      }
-      if (guideLine) {
-        map.removeLayer(guideLine);
-        guideLine = null;
+        toast.innerText = `📡 경로까지 ${distStr}`;
       }
       return;
     }
 
-    // 들머리 30~100m: 이때만 "들머리 찾기" 회전 적용.
+    // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(들머리일 수도,
+    // 경로 중간 지점일 수도 있다)을 향해 방향 안내를 시작한다.
     isApproachingTrailhead = true;
-
-    // 실제 걷는 방향이 확보된 경우에만 지도 회전.
-    // 정지/방향 미확정이면 현재 회전값을 유지한다.
+    // 걷는 방향이 나왔으면(gpsMovementHeading) 그 방향을 화면 정면으로
+    // 회전 — 가만히 서 있어 아직 방향이 안 나온 최초 순간에는 회전을
+    // 시도하지 않고 마지막 상태(보통 북쪽 고정)를 유지한다.
     if (gpsMovementHeading !== null) {
       applySegmentRotation(gpsMovementHeading);
     }
-
-    const toast = document.getElementById('gpsToast');
     if (toast) {
       toast.style.display = 'block';
       toast.className = 'gps-toast';
-      toast.innerText = `🚩 들머리 진입 중 · 들머리까지 ${distStr}`;
+      toast.innerText = `🚩 경로까지 ${distStr} · 녹색선을 따라 가세요`;
     }
   }
   function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
@@ -4289,13 +4261,8 @@
       // 아니라 "들머리 진입 중"으로 안내한다 — GPS 이동방향이 아직
       // 안정되지 않은 상태에서 갑자기 "이탈했다"는 경고만 뜨면
       // 사용자가 어디로 가야 할지 판단하기 어렵다는 지적(개선 제안).
-      const trailheadForNotice = currentPoints && currentPoints.length ? currentPoints[0] : null;
-      const distToTrailheadForNotice = trailheadForNotice
-        ? haversineMeters(lastKnownPos.lat, lastKnownPos.lon, trailheadForNotice.lat, trailheadForNotice.lon)
-        : Infinity;
-      const isNearTrailheadNotice = isSegmentRotationMode &&
-        currentRotationOriginDist === null &&
-        distToTrailheadForNotice <= TRAILHEAD_ENTRY_DISTANCE_M;
+      const traveledDistForNotice = cumulativeDistances[nearestIdx] || 0;
+      const isNearTrailheadNotice = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForNotice < TRAILHEAD_ENTRY_DISTANCE_M;
       if (isNearTrailheadNotice) {
         toast.className = 'gps-toast';
         let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
@@ -4734,13 +4701,7 @@
 
     const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
-    const simTrailhead = currentPoints[0];
-    const simDistToTrailhead = simTrailhead
-      ? haversineMeters(lat, lon, simTrailhead.lat, simTrailhead.lon)
-      : Infinity;
-    const simIsNearTrailhead = isSegmentRotationMode &&
-      currentRotationOriginDist === null &&
-      simDistToTrailhead <= TRAILHEAD_ENTRY_DISTANCE_M;
+    const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
     const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
@@ -5475,19 +5436,9 @@
         // 상태(currentRotationOriginDist===null, v75의 "방향 일치 전
         // 보류"와 같은 개념)이고 누적거리도 짧으면, 아직 GPS 이동방향이
         // 안정되지 않은 구간으로 보고 이탈 판정 기준을 완화한다.
-        const trailheadForEntry = currentPoints && currentPoints.length ? currentPoints[0] : null;
-        const distToTrailheadForEntry = trailheadForEntry
-          ? haversineMeters(lat, lon, trailheadForEntry.lat, trailheadForEntry.lon)
-          : Infinity;
-        const isNearTrailhead = isSegmentRotationMode &&
-          currentRotationOriginDist === null &&
-          distToTrailheadForEntry <= TRAILHEAD_ENTRY_DISTANCE_M;
+        const traveledDistForEntry = cumulativeDistances[nearestIdx] || 0;
+        const isNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
         updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead);
-
-        // 화살표의 들머리 단계도 동일한 "현재 위치 → GPX[0]" 30m 기준을 사용한다.
-        const isNearTrailheadForArrow = isSegmentRotationMode &&
-          currentRotationOriginDist === null &&
-          distToTrailheadForEntry <= TRAILHEAD_ENTRY_DISTANCE_M;
 
         // ⭐ 전면 재설계(2026-09-14): GPX가 경로 전체를 이미 알고 있으므로
         // "내가 지금 어느 방향을 보는가"는 더 이상 필요 없다. 정지/이동
@@ -5505,10 +5456,7 @@
         // 계산한다. 정지 중에도(result.isStopped 여부와 무관) 항상 호출한다 —
         // 선분 자체가 안 바뀌면 같은 값이 나오므로 "이전 방향 유지"와
         // 결과적으로 동일하다.
-        const arrowHeading = computeArrowHeading(
-          lat, lon, nearestIdx, isNearTrailheadForArrow,
-          cumulativeDistances[nearestIdx] || 0
-        );
+        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
         }
@@ -5565,19 +5513,6 @@
         // 여기서는 건드리지 않는다(서로 다른 목적지를 그리는 충돌 방지).
         if (isWayfindActive) {
           // no-op — updateWayfindingProgress가 이미 위에서 처리함
-        } else if (isApproachingTrailhead && currentPoints && currentPoints.length > 0) {
-          const trailhead = currentPoints[0];
-          const guideCoords = [[lat, lon], [trailhead.lat, trailhead.lon]];
-          if (!guideLine) {
-            guideLine = L.polyline(guideCoords, {
-              color: '#00e676',
-              weight: 3.5,
-              dashArray: '6, 8',
-              opacity: 0.95
-            }).addTo(map);
-          } else {
-            guideLine.setLatLngs(guideCoords);
-          }
         } else if (nearestPoint && minDistanceM > 12) {
           const guideCoords = [[lat, lon], [nearestPoint.lat, nearestPoint.lon]];
           if (!guideLine) {
