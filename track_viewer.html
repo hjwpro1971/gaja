@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v155';
+    const CACHE_NAME = 'gaja-trail-cache-v156';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_arrow_direction_sign_fix';
+      const APP_BUILD = 'v20260925_sim_searching_mode_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2454,12 +2454,26 @@
     let result;
     let justReacquired = false; // 이번 픽스에 SEARCHING→LOCKED 전환이 막 일어났는지
 
-    // 🧭 LOCKED: 정상 추적 중 — N/N+1 두 후보만 본다(trackFromLockedIndex
-    // 정의부 주석 참고). 둘 다 비정상적으로 멀어진 상태가 LOCK_REACQUIRE_
-    // STREAK(3픽스) 연속되면 SEARCHING으로 전환한다 — 1회성 GPS 튐에는
-    // 반응하지 않기 위한 완충이다(이 3픽스 동안은 이전 LOCKED 결과를
-    // 그대로 쓰므로, "즉시 튐"은 막아도 "몇 초간 튐"까지는 못 막는다).
-    if (trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
+    // 🐛 2026-09-25 수정(사용자 재현: "따라가기 시뮬레이션 했는데 화살표가
+    // 반대로 나왔어 → 그럼 실제도 반대로 나오겠지") — LOCKED 모드(N,
+    // N+1만 후보)는 "실제 GPS는 초당 1회 픽스, 보행속도(초속 1~1.3m)라
+    // index가 거의 항상 0~1칸만 움직인다"는 전제로 설계됐다. 시뮬레이션은
+    // 배속(최대 5x, 250ms당 최대 80m 이동, startSimInterval 정의부 참고)
+    // 재생이라 한 프레임에 GPX index가 5~15칸 이상 건너뛸 수 있다 — 그럼
+    // 실제 좌표는 이미 N+10 근처인데 LOCKED 후보는 N/N+1뿐이라 "머무름"
+    // 으로만 판정되고, 이 어긋남이 이어지는 동안 moveDirectionSign이
+    // 정상 갱신되지 못해 화살표가 반대로 보일 수 있다. 시뮬레이션 중
+    // (isSimulationMode)에는 LOCKED를 쓰지 않고 항상 SEARCHING(전역
+    // 최근접 탐색)으로 강제한다 — 실제 GPS 추적(LOCKED, "다음 index로만
+    // 전진")은 이 변경과 무관하게 그대로 유지된다.
+    //
+    // 🧭 LOCKED: 정상 추적 중(실제 GPS 전용) — N/N+1 두 후보만 본다
+    // (trackFromLockedIndex 정의부 주석 참고). 둘 다 비정상적으로
+    // 멀어진 상태가 LOCK_REACQUIRE_STREAK(3픽스) 연속되면 SEARCHING으로
+    // 전환한다 — 1회성 GPS 튐에는 반응하지 않기 위한 완충이다(이 3픽스
+    // 동안은 이전 LOCKED 결과를 그대로 쓰므로, "즉시 튐"은 막아도
+    // "몇 초간 튐"까지는 못 막는다).
+    if (!isSimulationMode && trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
       const locked = trackFromLockedIndex(lat, lon, points, lastNearestIdx);
       if (locked.bestOfTwo > LOCK_REACQUIRE_DIST_M) {
         offCandidateStreak++;
@@ -5327,6 +5341,12 @@
     pauseBtn.style.display = 'flex';
     speedOpts.style.display = 'flex';
     simIndex = 0;
+    // 🧭 낡은 트랙 매칭 상태 초기화 — 직전에 실제 GPS(LOCKED)나 다른
+    // 코스 시뮬레이션을 하던 lastNearestIdx가 남아있으면, SEARCHING의
+    // 윈도우 우선 탐색(lastNearestIdx±60개)이 엉뚱한 낡은 지점 근처만
+    // 먼저 보게 된다. 시뮬레이션은 항상 idx=0(들머리)부터 다시 시작하니
+    // 매칭 상태도 함께 리셋한다.
+    resetTrailSearchWindow();
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
     // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
     // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
