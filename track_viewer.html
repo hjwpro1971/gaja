@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v152';
+    const CACHE_NAME = 'gaja-trail-cache-v153';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_sim_rotation_revert';
+      const APP_BUILD = 'v20260925_wayfinding_panel_removed';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -544,27 +544,11 @@
     .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
     .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
 
-    /* 🧭 WAYFINDING_MODE(2026-09-23 전면 재설계) — GPX 위에 등록된
-       주요 지점(갈림길/봉우리/지명)까지 녹색 안내선으로 안내한다.
-       나침반/자이로/손가락 회전 다이얼은 전혀 쓰지 않는다. 화면
-       하단에 목적지명/거리/복귀 버튼만 얹는 단순한 패널이다. */
-    .wayfinding-panel {
-      position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 1000;
-      background: rgba(255,255,255,0.96); backdrop-filter: blur(8px);
-      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.2); border: 2px solid #2e7d32;
-      padding: 12px 16px; display: none; align-items: center; justify-content: space-between; gap: 10px;
-    }
-    .wayfinding-panel.active { display: flex; }
-    .wayfinding-panel-info { flex: 1; min-width: 0; }
-    .wayfinding-panel-target { font-size: 15px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .wayfinding-panel-dist { font-size: 12.5px; color: #558b2f; margin-top: 2px; }
-    .wayfinding-panel-btns { display: flex; gap: 6px; flex-shrink: 0; }
-    .wayfinding-btn-return, .wayfinding-btn-close {
-      border-radius: 10px; padding: 8px 10px; font-size: 12.5px; font-weight: 800;
-      cursor: pointer; white-space: nowrap;
-    }
-    .wayfinding-btn-return { background: #fff3e0; border: 1.5px solid #ffb74d; color: #e65100; }
-    .wayfinding-btn-close { background: #ffebee; border: 1.5px solid #ef9a9a; color: #c62828; }
+    /* 🧭 WAYFINDING_MODE(2026-09-23 전면 재설계, 2026-09-25 패널 제거) —
+       GPX 위에 등록된 주요 지점(갈림길/봉우리/지명)까지 녹색 안내선으로
+       안내한다. 나침반/자이로/손가락 회전 다이얼은 전혀 쓰지 않는다.
+       화면 하단에 계속 떠있던 목적지명/거리/복귀 버튼 패널은 사용자
+       지시로 제거했다 — on/off는 🔍 버튼(#wayfindBtn) 재클릭으로만. */
 
     /* 저장된 코스 목록 (오프라인일 때도 그대로 보여야 하는 화면) */
     .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
@@ -690,13 +674,12 @@
 
 <!-- 우측 플로팅 버튼 -->
 <div class="fab-col">
-  <!-- 🔍 길찾기 모드 토글 버튼(2026-09-23 변경) — 예전엔 이 버튼이 ON만
-       담당하고, 끌 때는 하단 wayfindingPanel의 작은 ✕ 버튼(엄지로 누르기
-       어려운 위치)을 따로 눌러야 했다(사용자 신고: "하단에 중지 버튼이
-       나와. 클릭하기 힘들어"). 이제 이 버튼 하나로 ON/OFF를 토글한다
-       (toggleWayfindingMode). 아이콘도 나침반(🧭)에서 돋보기(🔍)로
-       변경(사용자 요청) — 켜짐 여부는 .fab-btn.active(진한 배경)로
-       표시된다(다른 토글 버튼과 동일 패턴). -->
+  <!-- 🔍 길찾기 모드 토글 버튼 — 이 버튼 하나로 ON/OFF를 토글한다
+       (toggleWayfindingMode). 켜짐 여부는 .fab-btn.active(진한 배경)로
+       표시된다(다른 토글 버튼과 동일 패턴). 2026-09-25: 예전엔 하단에
+       목적지명/거리/복귀 버튼을 보여주는 별도 패널(wayfindingPanel)이
+       계속 떠있었는데, 사용자 지시로 완전히 제거했다 — 이제 켜짐
+       표시는 이 아이콘 자체와 지도 위 녹색 안내선(guideLine)뿐이다. -->
   <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)">🔍</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <!-- 🔔 저전력 알림 모드(2026-09-21) — GPS를 자동으로 켜고 5초 간격
@@ -740,18 +723,9 @@
 
 <!-- 🧭 WAYFINDING_MODE(2026-09-23) — GPX 위 주요지점(갈림길/봉우리/지명)
      까지 녹색선(guideLine 재사용)으로 안내한다. 나침반/자이로/손가락
-     회전 없음. 목적지명·거리·복귀 버튼만 하단에 표시. -->
-<div class="wayfinding-panel" id="wayfindingPanel">
-  <div class="wayfinding-panel-info">
-    <div class="wayfinding-panel-target" id="wayfindingTargetName">-</div>
-    <div class="wayfinding-panel-dist" id="wayfindingTargetDist">-</div>
-  </div>
-  <div class="wayfinding-panel-btns">
-    <button type="button" class="wayfinding-btn-return" onclick="startReturnToOrigin()" title="들머리로 복귀">🔄 복귀</button>
-    <button type="button" class="wayfinding-btn-close" onclick="closeWayfindingMode()" title="길찾기 종료">✕</button>
-  </div>
-</div>
-
+     회전 없음. 2026-09-25: 하단에 계속 떠있던 패널(목적지명·거리·복귀
+     버튼)은 사용자 지시로 제거했다 — on/off는 이제 🔍 버튼(#wayfindBtn)
+     재클릭만으로 토글한다(closeWayfindingMode 정의부 참고). -->
 <!-- 지도 레이어 선택 메뉴 -->
 <div class="layer-menu" id="layerMenu">
   <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도(등고선)</div>
@@ -812,7 +786,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=152', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=153', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3037,7 +3011,6 @@
   // 재사용한다 — WAYFINDING_MODE 진입/종료와 동일한 생명주기를 갖는다.
   let isWayfindActive = false;
   let wayfindingTargetMilestone = null; // 현재 안내 중인 목적지 주요지점 객체
-  let isReturnToOriginMode = false; // RETURN_TO_ORIGIN 상태 — true면 목적지가 항상 GPX[0](들머리)로 고정
   const WAYFINDING_ARRIVAL_RADIUS_M = 15; // 목적지 도착 판정 거리
 
   // 현재 누적거리(traveledDist)보다 앞서 있는 주요지점 중 가장 가까운
@@ -3056,50 +3029,30 @@
     return best;
   }
 
-  // RETURN_TO_ORIGIN 상태의 목적지는 항상 GPX[0](들머리)이다 — 날머리는
-  // 절대 쓰지 않는다(명세 12번, 16번 금지4).
-  function getWayfindingTargetPoint() {
-    if (isReturnToOriginMode) {
-      if (!currentPoints || currentPoints.length === 0) return null;
-      const start = currentPoints[0];
-      return { name: '들머리(GPX[0])', lat: start.lat, lon: start.lon, distanceM: 0 };
-    }
-    return wayfindingTargetMilestone;
-  }
-
   // 현재 위치 기준으로 목적지를 갱신하고, 도착했으면 다음 주요지점으로
   // 자동 전환한다. handleGpsPositionUpdate에서 매 픽스마다 호출한다.
+  // 🐛 2026-09-25: 하단 패널(wayfindingPanel, 목적지명·거리·복귀 버튼)을
+  // 제거하면서, 그 패널 전용이던 RETURN_TO_ORIGIN(들머리 복귀) 진입점도
+  // 함께 제거했다 — getWayfindingTargetPoint/isReturnToOriginMode 분기,
+  // 패널 DOM 텍스트 갱신 코드도 함께 정리. 녹색 안내선(guideLine) 자체는
+  // 그대로 유지된다.
   function updateWayfindingProgress(lat, lon, nearestIdx) {
     if (!isWayfindActive) return;
 
-    if (!isReturnToOriginMode && !wayfindingTargetMilestone) {
+    if (!wayfindingTargetMilestone) {
       // 최초 진입 시 첫 목적지를 정한다.
       const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
       wayfindingTargetMilestone = findNextWaypointMilestone(traveledDist);
     }
 
-    const target = getWayfindingTargetPoint();
-    const panel = document.getElementById('wayfindingPanel');
-    const nameEl = document.getElementById('wayfindingTargetName');
-    const distEl = document.getElementById('wayfindingTargetDist');
-
+    const target = wayfindingTargetMilestone;
     if (!target) {
-      // 더 이상 안내할 주요지점이 없음(날머리를 지났거나 마지막 지점) —
-      // 패널에 안내 문구만 남기고 녹색선은 지운다.
-      if (nameEl) nameEl.textContent = '더 이상 안내할 지점이 없습니다';
-      if (distEl) distEl.textContent = '';
+      // 더 이상 안내할 주요지점이 없음(날머리를 지났거나 마지막 지점).
       if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
       return;
     }
 
     const distToTarget = haversineMeters(lat, lon, target.lat, target.lon);
-
-    if (panel) panel.classList.add('active');
-    if (nameEl) nameEl.textContent = (isReturnToOriginMode ? '🔄 ' : '🧭 ') + target.name;
-    if (distEl) {
-      const distStr = distToTarget >= 1000 ? (distToTarget / 1000).toFixed(2) + 'km' : Math.round(distToTarget) + 'm';
-      distEl.textContent = `${distStr} 남음`;
-    }
 
     // 목적지까지 녹색 안내선(명세 10번) — 기존 guideLine(이탈 시 등산로
     // 복귀용 점선)을 그대로 재사용한다. 용도는 다르지만 "현재 위치 →
@@ -3113,14 +3066,8 @@
       guideLine.setLatLngs(guideCoords);
     }
 
-    // 도착 판정 → 다음 목적지 자동 전환(명세 11번). RETURN_TO_ORIGIN
-    // 중에는 GPX[0] 도착이 곧 복귀 완료이므로 모드 자체를 종료한다.
+    // 도착 판정 → 다음 목적지 자동 전환(명세 11번).
     if (distToTarget <= WAYFINDING_ARRIVAL_RADIUS_M) {
-      if (isReturnToOriginMode) {
-        showToastBadge('🏁 들머리(GPX[0])에 도착했습니다.');
-        closeWayfindingMode();
-        return;
-      }
       const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
       const nextTarget = findNextWaypointMilestone(traveledDist);
       if (nextTarget && nextTarget !== wayfindingTargetMilestone) {
@@ -3131,6 +3078,15 @@
   }
 
   // 우측 하단 🔍 버튼 — 사용자가 직접 눌러야 진입(수동 진입, 사용자 확정).
+  // 🐛 2026-09-25 수정(사용자 지시: "길찾기모드 돋보기 아이콘 클릭하면
+  // 하단에 나오는 메세지 없애줘" → "계속 떠있는 하단 패널 전체" →
+  // "아이콘 on off 기능"): 하단에 계속 떠있던 wayfindingPanel(다음
+  // 목표 거리 + 복귀/종료 버튼)을 완전히 제거했다. on/off 표시는
+  // 기존처럼 🔍 버튼 자체의 .active 클래스(진한 배경)만으로 하고,
+  // 켜기/끄기 모두 이 아이콘 재클릭으로 토글한다(toggleWayfindingMode).
+  // 패널에만 있던 "🔄 복귀"(들머리로 되돌아가기) 버튼은 이 패널과 함께
+  // 제거됐다 — 쓸 UI 자리가 없어졌고, 왕복 코스의 자동 역주행 감지
+  // (isReversingOnTrail)가 방향 안내는 별도로 계속 담당한다.
   function openWayfindingMode() {
     if (!currentMilestones || currentMilestones.length === 0) {
       alert('이 코스에는 안내할 주요 지점(갈림길/봉우리/지명)이 없습니다.');
@@ -3141,10 +3097,7 @@
       return;
     }
     isWayfindActive = true;
-    isReturnToOriginMode = false;
     wayfindingTargetMilestone = null; // updateWayfindingProgress가 다음 픽스에서 첫 목적지를 정함
-    const panel = document.getElementById('wayfindingPanel');
-    if (panel) panel.classList.add('active');
     const btn = document.getElementById('wayfindBtn');
     if (btn) btn.classList.add('active');
     showToastBadge('🔍 길찾기 모드 시작\n다음 주요 지점까지 녹색선으로 안내합니다.');
@@ -3164,28 +3117,9 @@
   }
   window.toggleWayfindingMode = toggleWayfindingMode;
 
-  // 패널의 "🔄 복귀" 버튼 — RETURN_TO_ORIGIN 진입(명세 12번). 왕복 코스의
-  // 자동 역주행 감지(isReversingOnTrail)와는 별개로, 사용자가 명시적으로
-  // "들머리로 돌아가고 싶다"고 요청했을 때만 쓰는 상태다(사용자 확정).
-  function startReturnToOrigin() {
-    if (!currentPoints || currentPoints.length === 0) return;
-    isWayfindActive = true;
-    isReturnToOriginMode = true;
-    wayfindingTargetMilestone = null;
-    const panel = document.getElementById('wayfindingPanel');
-    if (panel) panel.classList.add('active');
-    const btnRet = document.getElementById('wayfindBtn');
-    if (btnRet) btnRet.classList.add('active');
-    showToastBadge('🔄 들머리로 복귀 안내를 시작합니다.');
-  }
-  window.startReturnToOrigin = startReturnToOrigin;
-
   function closeWayfindingMode() {
     isWayfindActive = false;
-    isReturnToOriginMode = false;
     wayfindingTargetMilestone = null;
-    const panel = document.getElementById('wayfindingPanel');
-    if (panel) panel.classList.remove('active');
     // 🔍 상단 토글 버튼도 함께 꺼진 상태(비활성 배경)로 되돌린다 —
     // 이 함수가 (1)버튼 재클릭으로 토글되거나 (2)날머리/들머리 자동
     // 도착으로 호출되거나 어느 경로로 닫히든 버튼 표시가 항상 실제
@@ -3611,7 +3545,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v152';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v153';
 
   function getTileSaveStatus(courseKey) {
     try {
