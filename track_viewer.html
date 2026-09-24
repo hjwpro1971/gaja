@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v156';
+    const CACHE_NAME = 'gaja-trail-cache-v157';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_sim_searching_mode_fix';
+      const APP_BUILD = 'v20260925_search_mode_direction_debounce';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2241,14 +2241,27 @@
   // true — index가 옛 위치에서 새 위치로 (오매칭 수정으로) 크게 점프한
   // 것일 수 있으므로, 그 delta를 "실제 이동 방향"으로 오인하지 않도록
   // 이번 한 번은 방향 판정을 건너뛰고 기준점만 새로 잡는다.
+  //
+  // 🐛 2026-09-25 수정(사용자 재현: "🧪 오차 주입하면 화살표가 가끔
+  // 180도까지 회전") — 이 함수는 SEARCHING(예외 경로/시뮬레이션 전용,
+  // LOCKED는 별도 경로에서 항상 +1로 고정됨)에서만 쓰이는데, delta
+  // 부호 1회만으로 즉시 반영해 완충이 전혀 없었다. GPS 오차(또는 🧪
+  // 주입 오차)가 매칭 index를 1~2칸 정도 순간적으로 흔들면(점 간격이
+  // 좁은 구간에서 흔함), 그 노이즈만으로 moveDirectionSign이 즉시
+  // 반전돼 화살표가 180도 튀었다. delta가 MOVE_DIRECTION_NOISE_IDX
+  // (2칸) 이하인 역방향 흔들림은 노이즈로 보고 무시하고, 실제 이동에
+  // 해당하는 크기(3칸 이상)만 방향 전환으로 인정한다 — 진짜 turnaround
+  // (정상 도착 후 반대로 돌아서는 등)는 실제로 여러 칸 연속 이동하므로
+  // 여전히 즉시 반영된다.
+  const MOVE_DIRECTION_NOISE_IDX = 2;
   function updateMoveDirection(nearestIdx, justReacquired) {
     if (lastMoveDirectionIdx === null || justReacquired) {
       lastMoveDirectionIdx = nearestIdx;
       return;
     }
     const delta = nearestIdx - lastMoveDirectionIdx;
+    if (Math.abs(delta) <= MOVE_DIRECTION_NOISE_IDX) return; // 노이즈 — 기준점도 직전 값 유지, 다음 픽스와 계속 비교
     lastMoveDirectionIdx = nearestIdx;
-    if (delta === 0) return; // 제자리 — 직전 방향 유지
     moveDirectionSign = delta > 0 ? 1 : -1;
   }
 
