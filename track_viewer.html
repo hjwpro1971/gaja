@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_hiking_session_persist';
+      const APP_BUILD = 'v20260925_sim_gps_noise_debug';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -669,6 +669,11 @@
   <div style="display: flex; flex-direction: row; gap: 8px;">
     <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
     <button class="fab-btn" id="simPauseBtn" onclick="toggleSimulationPause()" title="일시정지" style="background: rgba(255,255,255,0.9); display: none;">⏸️</button>
+    <!-- 🧪 GPS 오차 주입 토글(2026-09-25) — 실외에 나가지 않고도 GPS
+         오차(±25m)가 섞인 상황에서 트랙 매칭/회전이 왜 어긋나는지 PC에서
+         관찰하기 위한 디버그용 버튼. 켜면 시뮬레이션 위치에 무작위
+         오차가 섞이고, 회색 점으로 진짜 GPX 위치가 함께 표시된다. -->
+    <button class="fab-btn" id="simNoiseBtn" onclick="toggleSimNoise(event)" title="GPS 오차 주입 시뮬레이션 (±25m, 회색 점=진짜 위치)" style="background: rgba(255,255,255,0.9);">🧪</button>
   </div>
 </div>
 
@@ -4844,6 +4849,47 @@
   // 참조한다(toggleSimulation 시작/종료 지점에서 설정).
   let isSimulationMode = false;
 
+  // 🧪 GPS 오차 주입 시뮬레이션(2026-09-25, 사용자 지시: "index 된
+  // 좌표값이 있고 내 위치가 항상 이 좌표값을 기준으로 어떤게 경로를
+  // 잡는지.. 왜 어긋나게 결과가 나오는지 궁금해서") — 기존 시뮬레이션은
+  // GPX 좌표를 오차 없이 그대로 재생해, 실외에서 겪는 "GPS 오차가 섞인
+  // 위치에서 트랙 매칭이 왜 엉뚱해지는지"를 재현하지 못했다. 이 옵션을
+  // 켜면 각 프레임마다 진짜 GPX 좌표에 랜덤 오차(반경 SIM_NOISE_RADIUS_M
+  // 이내, accuracy도 함께 그럴듯하게 요동)를 섞어 nearestPointOnTrail에
+  // 넘기고, 화면에는 "진짜 GPX 위치"(회색 점)와 "오차 섞인 내 위치"(기존
+  // 파란 화살표)를 동시에 표시해 나가지 않고도 비교 관찰할 수 있게 한다.
+  let simNoiseEnabled = false;
+  const SIM_NOISE_RADIUS_M = 25; // 실외 재현 시나리오(아파트 단지 등)와 맞춘 반경
+  let simTrueMarker = null; // "진짜 GPX 위치" 표시용(오차 없는 원본 좌표)
+
+  function toggleSimNoise(event) {
+    simNoiseEnabled = !simNoiseEnabled;
+    const btn = event && event.target;
+    if (btn) btn.classList.toggle('active', simNoiseEnabled);
+    if (!simNoiseEnabled && simTrueMarker) {
+      map.removeLayer(simTrueMarker);
+      simTrueMarker = null;
+    }
+    showToastBadge(simNoiseEnabled
+      ? `🧪 GPS 오차 주입 ON (±${SIM_NOISE_RADIUS_M}m) — 회색 점=진짜 GPX 위치`
+      : '🧪 GPS 오차 주입 OFF');
+  }
+  window.toggleSimNoise = toggleSimNoise;
+
+  // 반경 radiusM 이내에서 균등분포로 무작위 오프셋을 섞은 좌표를 만든다
+  // (2050행 근처 pointToSegmentMeters와 동일한 등장방형 근사 사용).
+  function jitterLatLon(lat, lon, radiusM) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * radiusM; // 원 안에서 균등하지는 않지만(중심 밀집), 오차 재현 목적엔 충분
+    const latRef = lat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+    return {
+      lat: lat + (Math.sin(angle) * dist) / mPerDegLat,
+      lon: lon + (Math.cos(angle) * dist) / mPerDegLon
+    };
+  }
+
   function setSimSpeed(speed, event) {
     simSpeed = speed;
     if (event) {
@@ -4859,8 +4905,28 @@
   function renderSimFrame(idx, mapViewOpts) {
     if (!currentPoints || idx < 0 || idx >= currentPoints.length) return;
     const pt = currentPoints[idx];
-    const lat = pt.lat;
-    const lon = pt.lon;
+    // 🧪 GPS 오차 주입이 꺼져 있으면 기존과 동일하게 진짜 GPX 좌표를
+    // 그대로 쓴다. 켜져 있으면 이 프레임의 "내 위치"에만 무작위 오차를
+    // 섞고(jitterLatLon), 진짜 좌표(pt.lat/pt.lon)는 회색 점 마커로
+    // 별도 표시해 둘을 한 화면에서 비교할 수 있게 한다 — 아래 트랙
+    // 매칭(nearestPointOnTrail)·회전·화살표는 전부 이 오차 섞인 lat/lon
+    // 기준으로 계산되므로, 실외에서 겪는 "GPS 오차 상황"을 그대로 재현한다.
+    const simLoc = simNoiseEnabled ? jitterLatLon(pt.lat, pt.lon, SIM_NOISE_RADIUS_M) : { lat: pt.lat, lon: pt.lon };
+    const lat = simLoc.lat;
+    const lon = simLoc.lon;
+
+    if (simNoiseEnabled) {
+      if (!simTrueMarker) {
+        simTrueMarker = L.circleMarker([pt.lat, pt.lon], {
+          radius: 6, color: '#555', weight: 2, fillColor: '#bbb', fillOpacity: 0.9
+        }).addTo(map).bindTooltip('진짜 GPX 위치', { permanent: false });
+      } else {
+        simTrueMarker.setLatLng([pt.lat, pt.lon]);
+      }
+    } else if (simTrueMarker) {
+      map.removeLayer(simTrueMarker);
+      simTrueMarker = null;
+    }
 
     // 🧭 시뮬레이션도 실제 GPS와 동일한 방향 로직 사용(2026-09-23) —
     // nearestPointOnTrail로 이 프레임 좌표가 매칭되는 선분을 찾고,
@@ -5018,6 +5084,10 @@
       if (simMarker) {
         map.removeLayer(simMarker);
         simMarker = null;
+      }
+      if (simTrueMarker) {
+        map.removeLayer(simTrueMarker);
+        simTrueMarker = null;
       }
       showHeadingArrow = false;
       const toast = document.getElementById('gpsToast');
