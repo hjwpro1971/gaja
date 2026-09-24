@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v157';
+    const CACHE_NAME = 'gaja-trail-cache-v158';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_search_mode_direction_debounce';
+      const APP_BUILD = 'v20260925_sim_gps_full_isolation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -669,11 +669,6 @@
   <div style="display: flex; flex-direction: row; gap: 8px;">
     <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
     <button class="fab-btn" id="simPauseBtn" onclick="toggleSimulationPause()" title="일시정지" style="background: rgba(255,255,255,0.9); display: none;">⏸️</button>
-    <!-- 🧪 GPS 오차 주입 토글(2026-09-25) — 실외에 나가지 않고도 GPS
-         오차(±25m)가 섞인 상황에서 트랙 매칭/회전이 왜 어긋나는지 PC에서
-         관찰하기 위한 디버그용 버튼. 켜면 시뮬레이션 위치에 무작위
-         오차가 섞이고, 회색 점으로 진짜 GPX 위치가 함께 표시된다. -->
-    <button class="fab-btn" id="simNoiseBtn" onclick="toggleSimNoise(event)" title="GPS 오차 주입 시뮬레이션 (±25m, 회색 점=진짜 위치)" style="background: rgba(255,255,255,0.9);">🧪</button>
   </div>
 </div>
 
@@ -2114,9 +2109,9 @@
   // 더 큼)보다 작거나 비슷해서, "지금 좌표에서 가장 가까운 선분"을 매
   // 픽스 앞뒤 TRAIL_WINDOW_RADIUS(60개 점) 범위에서 다시 찾는 기존
   // 방식은 오차가 조금만 섞여도 엉뚱한(특히 왕복 코스의 반대편) 지점을
-  // 고를 수 있다. 사용자가 🧪 GPS 오차 주입 시뮬레이션(SIM_NOISE_RADIUS_M
-  // =25)으로 직접 재현해 "가장 가까운 점까지 510m" 같은 명백한 오매칭을
-  // 확인했다.
+  // 고를 수 있다. 사용자가 (당시) GPS 오차 주입 디버그 시뮬레이션(±25m,
+  // 이후 제거됨 — 시뮬레이션/실제 GPS 완전 분리 참고)으로 직접 재현해
+  // "가장 가까운 점까지 510m" 같은 명백한 오매칭을 확인했다.
   //
   // 해법: 정상 추적 중(LOCKED)에는 다음 픽스의 후보를 "지금 있는 index
   // N"과 "바로 다음 점 N+1"뿐으로 강하게 제한한다 — 왕복 코스의 반대편
@@ -2467,18 +2462,12 @@
     let result;
     let justReacquired = false; // 이번 픽스에 SEARCHING→LOCKED 전환이 막 일어났는지
 
-    // 🐛 2026-09-25 수정(사용자 재현: "따라가기 시뮬레이션 했는데 화살표가
-    // 반대로 나왔어 → 그럼 실제도 반대로 나오겠지") — LOCKED 모드(N,
-    // N+1만 후보)는 "실제 GPS는 초당 1회 픽스, 보행속도(초속 1~1.3m)라
-    // index가 거의 항상 0~1칸만 움직인다"는 전제로 설계됐다. 시뮬레이션은
-    // 배속(최대 5x, 250ms당 최대 80m 이동, startSimInterval 정의부 참고)
-    // 재생이라 한 프레임에 GPX index가 5~15칸 이상 건너뛸 수 있다 — 그럼
-    // 실제 좌표는 이미 N+10 근처인데 LOCKED 후보는 N/N+1뿐이라 "머무름"
-    // 으로만 판정되고, 이 어긋남이 이어지는 동안 moveDirectionSign이
-    // 정상 갱신되지 못해 화살표가 반대로 보일 수 있다. 시뮬레이션 중
-    // (isSimulationMode)에는 LOCKED를 쓰지 않고 항상 SEARCHING(전역
-    // 최근접 탐색)으로 강제한다 — 실제 GPS 추적(LOCKED, "다음 index로만
-    // 전진")은 이 변경과 무관하게 그대로 유지된다.
+    // 🧭 이 함수는 실제 GPS 추적 전용이다(2026-09-25, 사용자 지시:
+    // "시뮬레이션과 실제 GPS는 완전히 분리해줘" — 이전엔 isSimulationMode
+    // 분기로 시뮬레이션도 이 함수를 공유했으나, "따라가기 배속 재생 중
+    // 화살표가 반대로 나온다"는 재현 이후 시뮬레이션 전용 사본
+    // (nearestPointOnTrailForSim, 아래 별도 정의)으로 완전히 분리했다.
+    // 이제 이 함수를 수정해도 시뮬레이션에는 전혀 영향을 주지 않는다.
     //
     // 🧭 LOCKED: 정상 추적 중(실제 GPS 전용) — N/N+1 두 후보만 본다
     // (trackFromLockedIndex 정의부 주석 참고). 둘 다 비정상적으로
@@ -2486,7 +2475,7 @@
     // 전환한다 — 1회성 GPS 튐에는 반응하지 않기 위한 완충이다(이 3픽스
     // 동안은 이전 LOCKED 결과를 그대로 쓰므로, "즉시 튐"은 막아도
     // "몇 초간 튐"까지는 못 막는다).
-    if (!isSimulationMode && trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
+    if (trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
       const locked = trackFromLockedIndex(lat, lon, points, lastNearestIdx);
       if (locked.bestOfTwo > LOCK_REACQUIRE_DIST_M) {
         offCandidateStreak++;
@@ -5068,45 +5057,125 @@
   // 참조한다(toggleSimulation 시작/종료 지점에서 설정).
   let isSimulationMode = false;
 
-  // 🧪 GPS 오차 주입 시뮬레이션(2026-09-25, 사용자 지시: "index 된
-  // 좌표값이 있고 내 위치가 항상 이 좌표값을 기준으로 어떤게 경로를
-  // 잡는지.. 왜 어긋나게 결과가 나오는지 궁금해서") — 기존 시뮬레이션은
-  // GPX 좌표를 오차 없이 그대로 재생해, 실외에서 겪는 "GPS 오차가 섞인
-  // 위치에서 트랙 매칭이 왜 엉뚱해지는지"를 재현하지 못했다. 이 옵션을
-  // 켜면 각 프레임마다 진짜 GPX 좌표에 랜덤 오차(반경 SIM_NOISE_RADIUS_M
-  // 이내, accuracy도 함께 그럴듯하게 요동)를 섞어 nearestPointOnTrail에
-  // 넘기고, 화면에는 "진짜 GPX 위치"(회색 점)와 "오차 섞인 내 위치"(기존
-  // 파란 화살표)를 동시에 표시해 나가지 않고도 비교 관찰할 수 있게 한다.
-  let simNoiseEnabled = false;
-  const SIM_NOISE_RADIUS_M = 25; // 실외 재현 시나리오(아파트 단지 등)와 맞춘 반경
-  let simTrueMarker = null; // "진짜 GPX 위치" 표시용(오차 없는 원본 좌표)
+  // ════════════════════════════════════════════════════════════════
+  // 🎬 시뮬레이션 전용 트랙 매칭(2026-09-25, 사용자 지시: "시뮬레이션과
+  // 실제 하곤 다른 코드지? 내가 실제 코드를 수정하면 시뮬레이션에
+  // 영향을 주면 안 돼는데" → "분리해줘. 시뮬레이션 전용 복사본 함수를
+  // 만들고 오차 주입버튼은 제거해줘") — 예전엔 시뮬레이션도 실제 GPS와
+  // 같은 nearestPointOnTrail()/updateMoveDirection()/lastNearestIdx/
+  // moveDirectionSign을 공유했다. 그래서 "시뮬레이션에서 재현된 버그를
+  // 고치려고 이 공유 함수를 손보면 실제 GPS 동작도 함께 바뀌는" 구조였고
+  // (실제로 배속 재생 중 화살표가 반대로 나오는 문제를 고치다 실제 GPS
+  // 쪽 로직까지 여러 차례 건드리게 됐다), 반대로 실제 코드를 고치면
+  // 시뮬레이션 검증 결과가 달라질 수도 있었다.
+  //
+  // 이제 둘을 완전히 분리한다: 이 아래 Sim 접두사가 붙은 함수/변수는
+  // 시뮬레이션(renderSimFrame)만 사용하고, 실제 GPS 경로
+  // (handleGpsPositionUpdate 등)가 쓰는 nearestPointOnTrail/
+  // updateMoveDirection/updateTrackDirection/lastNearestIdx/
+  // moveDirectionSign/trailTrackingMode는 전혀 건드리지 않는다.
+  // 시뮬레이션 매칭은 원래 GPX 좌표를 오차 없이 그대로 재생하므로(🧪
+  // GPS 오차 주입 디버그 기능은 목적을 다해 제거했다 — 실제 GPS 코드가
+  // 이제 시뮬레이션과 분리됐으니, GPS 오차 상황은 실기기로 직접
+  // 테스트/셋팅해야 한다는 것이 사용자 판단), 매 프레임 단순 전역
+  // 최근접 탐색이면 충분하고 LOCKED/SEARCHING 같은 이중 모드나 방향
+  // 페널티가 필요 없다.
+  let simLastNearestIdx = -1;
+  let simMoveDirectionSign = 1;
+  let simLastMoveDirectionIdx = null;
 
-  function toggleSimNoise(event) {
-    simNoiseEnabled = !simNoiseEnabled;
-    const btn = event && event.target;
-    if (btn) btn.classList.toggle('active', simNoiseEnabled);
-    if (!simNoiseEnabled && simTrueMarker) {
-      map.removeLayer(simTrueMarker);
-      simTrueMarker = null;
+  // 🧭 하단 경로 알람(updateNavigationToast/findNextMilestone/
+  // findNextRotationTarget)의 "왕복 코스 올라가는중/내려가는중" 판정도
+  // 완전히 분리한다 — updateTrackDirection과 동일한 상태 구조
+  // (lastConfirmedTrackIdx/trackDirectionCandidate/trackDirectionCandidateStreak)
+  // 를 시뮬레이션 전용으로 복제했다. 다만 그 소비처(updateNavigationToast
+  // 등)는 전역 isReversingOnTrail 변수를 직접 참조하는 구조라 매개변수화
+  // 하지 않았다 — 대신 renderSimFrame이 프레임을 렌더하는 그 순간에만
+  // 전역 변수를 시뮬레이션 값으로 잠깐 바꿔 쓰고 끝나면 실제 GPS 값으로
+  // 되돌린다(시뮬레이션과 실제 GPS는 동시에 실행되지 않으므로 안전).
+  let simTrackDirectionCandidate = null;
+  let simTrackDirectionCandidateStreak = 0;
+  let simLastConfirmedTrackIdx = null;
+  let simIsReversingOnTrail = false;
+
+  function updateTrackDirectionForSim(nearestIdx) {
+    if (simLastConfirmedTrackIdx === null) {
+      simLastConfirmedTrackIdx = nearestIdx;
+      return;
     }
-    showToastBadge(simNoiseEnabled
-      ? `🧪 GPS 오차 주입 ON (±${SIM_NOISE_RADIUS_M}m) — 회색 점=진짜 GPX 위치`
-      : '🧪 GPS 오차 주입 OFF');
+    const rawDelta = nearestIdx - simLastConfirmedTrackIdx;
+    simLastConfirmedTrackIdx = nearestIdx;
+    if (Math.abs(rawDelta) < MIN_INDEX_DELTA) return;
+    const candidate = rawDelta > 0 ? 'forward' : 'backward';
+    if (candidate === simTrackDirectionCandidate) {
+      simTrackDirectionCandidateStreak++;
+    } else {
+      simTrackDirectionCandidate = candidate;
+      simTrackDirectionCandidateStreak = 1;
+    }
+    if (simTrackDirectionCandidateStreak >= TRACK_DIRECTION_CONFIRM_STREAK) {
+      simIsReversingOnTrail = (simTrackDirectionCandidate === 'backward');
+    }
   }
-  window.toggleSimNoise = toggleSimNoise;
+  function resetSimTrackDirectionState() {
+    simIsReversingOnTrail = false;
+    simTrackDirectionCandidate = null;
+    simTrackDirectionCandidateStreak = 0;
+    simLastConfirmedTrackIdx = null;
+  }
 
-  // 반경 radiusM 이내에서 균등분포로 무작위 오프셋을 섞은 좌표를 만든다
-  // (2050행 근처 pointToSegmentMeters와 동일한 등장방형 근사 사용).
-  function jitterLatLon(lat, lon, radiusM) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * radiusM; // 원 안에서 균등하지는 않지만(중심 밀집), 오차 재현 목적엔 충분
-    const latRef = lat * Math.PI / 180;
-    const mPerDegLat = 111320;
-    const mPerDegLon = 111320 * Math.cos(latRef);
-    return {
-      lat: lat + (Math.sin(angle) * dist) / mPerDegLat,
-      lon: lon + (Math.cos(angle) * dist) / mPerDegLon
-    };
+  // 실제 GPS용 findNearestInRange와 달리 방향 페널티가 없는 순수 최단
+  // 거리 탐색 — 시뮬레이션은 배속 재생으로 index가 크게 건너뛸 수 있어
+  // "직전 위치 근처만 우선 탐색"하는 윈도우 최적화도 필요 없다(코스가
+  // 길어야 수 km라 매 프레임 전역 탐색해도 성능에 문제없음, 기존
+  // findNearestInRange도 동일 규모를 이미 전역으로 돌리고 있었다).
+  function nearestPointOnTrailForSim(lat, lon, points) {
+    if (!points || points.length < 2) {
+      simLastNearestIdx = points && points.length === 1 ? 0 : -1;
+      return { distance: points && points.length === 1 ? haversineMeters(lat, lon, points[0].lat, points[0].lon) : 999999, point: points && points[0] || null, index: simLastNearestIdx };
+    }
+    let bestIdx = 0, bestDist = Infinity, bestPoint = points[0];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+        const dA = haversineMeters(lat, lon, a.lat, a.lon);
+        const dB = haversineMeters(lat, lon, b.lat, b.lon);
+        bestPoint = dA <= dB ? a : b;
+      }
+    }
+    // 방향 판정: 직전 확정 index와의 delta 부호를 그대로 반영 —
+    // 시뮬레이션은 오차 없는 좌표라 흔들릴 일이 없으므로 완충 불필요.
+    if (simLastMoveDirectionIdx === null) {
+      simLastMoveDirectionIdx = bestIdx;
+    } else {
+      const delta = bestIdx - simLastMoveDirectionIdx;
+      simLastMoveDirectionIdx = bestIdx;
+      if (delta !== 0) simMoveDirectionSign = delta > 0 ? 1 : -1;
+    }
+    simLastNearestIdx = bestIdx;
+    return { distance: bestDist, point: bestPoint, index: bestIdx };
+  }
+
+  // 실제 GPS용 computeArrowHeading은 전역 moveDirectionSign을 참조한다
+  // — 시뮬레이션은 simMoveDirectionSign을 쓰므로 그대로 재사용할 수
+  // 없어 동일한 계산을 시뮬레이션 전용 부호로 다시 수행하는 얇은
+  // 사본을 둔다(findPointAheadByDistance/calculateBearing 등 순수
+  // 헬퍼는 그대로 공유 — 상태가 없는 함수라 분리할 이유가 없다).
+  function computeArrowHeadingForSim(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
+    if (isNearTrailheadNow) {
+      const target = nearestOnTrailPoint || (currentPoints && currentPoints.length > 0 ? currentPoints[0] : null);
+      if (!target) return null;
+      return calculateBearing(lat, lon, target.lat, target.lon);
+    }
+    if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
+    const targetDist = dist + simMoveDirectionSign * ARROW_LOOKAHEAD_M;
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
+    if (!aheadPt) return null;
+    return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
   }
 
   function setSimSpeed(speed, event) {
@@ -5124,44 +5193,23 @@
   function renderSimFrame(idx, mapViewOpts) {
     if (!currentPoints || idx < 0 || idx >= currentPoints.length) return;
     const pt = currentPoints[idx];
-    // 🧪 GPS 오차 주입이 꺼져 있으면 기존과 동일하게 진짜 GPX 좌표를
-    // 그대로 쓴다. 켜져 있으면 이 프레임의 "내 위치"에만 무작위 오차를
-    // 섞고(jitterLatLon), 진짜 좌표(pt.lat/pt.lon)는 회색 점 마커로
-    // 별도 표시해 둘을 한 화면에서 비교할 수 있게 한다 — 아래 트랙
-    // 매칭(nearestPointOnTrail)·회전·화살표는 전부 이 오차 섞인 lat/lon
-    // 기준으로 계산되므로, 실외에서 겪는 "GPS 오차 상황"을 그대로 재현한다.
-    const simLoc = simNoiseEnabled ? jitterLatLon(pt.lat, pt.lon, SIM_NOISE_RADIUS_M) : { lat: pt.lat, lon: pt.lon };
-    const lat = simLoc.lat;
-    const lon = simLoc.lon;
+    // 시뮬레이션은 항상 GPX 원본 좌표를 오차 없이 그대로 재생한다
+    // (2026-09-25, 사용자 지시: 시뮬레이션/실제 GPS 완전 분리 — 이전에
+    // 있던 🧪 GPS 오차 주입 디버그 토글은 목적을 다해 제거했다. GPS
+    // 오차가 섞인 상황은 이제 실기기로 직접 테스트/셋팅한다).
+    const lat = pt.lat;
+    const lon = pt.lon;
 
-    if (simNoiseEnabled) {
-      if (!simTrueMarker) {
-        simTrueMarker = L.circleMarker([pt.lat, pt.lon], {
-          radius: 6, color: '#555', weight: 2, fillColor: '#bbb', fillOpacity: 0.9
-        }).addTo(map).bindTooltip('진짜 GPX 위치', { permanent: false });
-      } else {
-        simTrueMarker.setLatLng([pt.lat, pt.lon]);
-      }
-    } else if (simTrueMarker) {
-      map.removeLayer(simTrueMarker);
-      simTrueMarker = null;
-    }
-
-    // 🧭 시뮬레이션도 실제 GPS와 동일한 방향 로직 사용(2026-09-23) —
-    // nearestPointOnTrail로 이 프레임 좌표가 매칭되는 선분을 찾고,
-    // computeArrowHeading으로 TRAILHEAD_SEARCH/TRACK_NAVIGATION 방향을
-    // 계산한다. gpsMovementHeading(GPS 이동방위각)은 화살표용으로 더 이상
-    // 쓰지 않는다 — 단, 지도 회전(applySegmentRotation 등 다른 로직)이
-    // 참조할 수 있으니 계산 자체는 유지한다.
-    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, idx, 20);
-    if (aheadPt) {
-      gpsMovementHeading = calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
-    }
-
-    const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
+    // 🧭 시뮬레이션 전용 매칭/방향 함수 사용(nearestPointOnTrailForSim/
+    // computeArrowHeadingForSim, 위 정의부 주석 참고) — 실제 GPS가 쓰는
+    // nearestPointOnTrail/moveDirectionSign과 완전히 분리된 상태
+    // (simLastNearestIdx/simMoveDirectionSign)를 쓰므로, 어느 한쪽을
+    // 고쳐도 다른 쪽에 영향을 주지 않는다.
+    const simNearest = nearestPointOnTrailForSim(lat, lon, currentPoints);
+    updateTrackDirectionForSim(simNearest.index); // 시뮬레이션 전용 상태만 갱신(simIsReversingOnTrail) — 실제 GPS의 isReversingOnTrail은 안 건드림
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
+    const simArrowHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -5195,6 +5243,16 @@
     // 향해 회전시킨다.
     const originBeforeToast = currentRotationOriginDist;
 
+    // 🧭 하단 경로 알람(updateNavigationToast)과 findNextRotationTarget은
+    // 전역 isReversingOnTrail을 직접 참조하는 기존 구조를 그대로 둔 채
+    // (호출 체인 전체를 매개변수화하는 대공사 대신), 이 프레임을 렌더하는
+    // 짧은 구간에만 시뮬레이션 전용 값(simIsReversingOnTrail)으로 잠깐
+    // 바꿔 쓰고 끝나면 실제 GPS 값으로 되돌린다 — 시뮬레이션과 실제 GPS
+    // 추적은 동시에 실행되지 않으므로(하나를 켜면 다른 하나는 꺼짐,
+    // toggleSimulation/startGpsTracking 참고) 안전하다.
+    const realIsReversingOnTrailBeforeSim = isReversingOnTrail;
+    isReversingOnTrail = simIsReversingOnTrail;
+
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
     // 기존 순서를 그대로 유지(하단 경로 알람/원점 확정 로직 때문).
     updateNavigationToast(5, 0, idx, pt, simArrowHeading);
@@ -5207,6 +5265,8 @@
         if (bearing !== null) applySegmentRotation(bearing);
       }
     }
+
+    isReversingOnTrail = realIsReversingOnTrailBeforeSim; // 실제 GPS 값 복원
 
     const currentZoom = Math.max(map.getZoom(), 15);
     applyMapViewWithOffset(lat, lon, currentZoom, mapViewOpts);
@@ -5304,10 +5364,6 @@
         map.removeLayer(simMarker);
         simMarker = null;
       }
-      if (simTrueMarker) {
-        map.removeLayer(simTrueMarker);
-        simTrueMarker = null;
-      }
       showHeadingArrow = false;
       const toast = document.getElementById('gpsToast');
       toast.style.display = 'none';
@@ -5354,12 +5410,17 @@
     pauseBtn.style.display = 'flex';
     speedOpts.style.display = 'flex';
     simIndex = 0;
-    // 🧭 낡은 트랙 매칭 상태 초기화 — 직전에 실제 GPS(LOCKED)나 다른
-    // 코스 시뮬레이션을 하던 lastNearestIdx가 남아있으면, SEARCHING의
-    // 윈도우 우선 탐색(lastNearestIdx±60개)이 엉뚱한 낡은 지점 근처만
-    // 먼저 보게 된다. 시뮬레이션은 항상 idx=0(들머리)부터 다시 시작하니
-    // 매칭 상태도 함께 리셋한다.
-    resetTrailSearchWindow();
+    // 🧭 시뮬레이션 전용 매칭/방향 상태 초기화(2026-09-25, 실제 GPS와
+    // 완전 분리 이후) — 이전 시뮬레이션 세션의 simLastNearestIdx가
+    // 남아있으면 새 재생이 엉뚱한 지점부터 시작된 것처럼 보일 수 있다.
+    // 실제 GPS 상태(lastNearestIdx/trailTrackingMode)는 시뮬레이션과
+    // 더 이상 무관하므로 건드리지 않는다 — 예전엔 resetTrailSearchWindow()
+    // 를 호출해 실제 GPS 추적 중에 시뮬레이션 버튼을 누르면 실제 GPS
+    // 상태까지 함께 리셋되는 부작용이 있었다.
+    simLastNearestIdx = -1;
+    simMoveDirectionSign = 1;
+    simLastMoveDirectionIdx = null;
+    resetSimTrackDirectionState(); // 시뮬레이션 전용 isReversingOnTrail(simIsReversingOnTrail)도 함께 초기화 — 실제 GPS 상태는 건드리지 않음
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
     // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
     // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
