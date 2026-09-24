@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_sim_gps_noise_debug';
+      const APP_BUILD = 'v20260925_locked_index_tracking';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2070,13 +2070,69 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  // 🧭 "다음 index로만 전진" 트랙 매칭(2026-09-25, 사용자 지시)의
+  // trackFromLockedIndex()가 "이 점이 세그먼트의 몇 %(t) 지점에
+  // 투영되는가"를 함께 필요로 해서, pointToSegmentMeters와 동일한 계산을
+  // 중복하지 않고 { distance, t }를 함께 반환하는 버전을 별도로 둔다.
+  // 기존 pointToSegmentMeters(숫자 하나만 반환)의 호출부는 전혀 건드리지
+  // 않는다 — findNearestInRange(SEARCHING 전용, 수정 없음)가 그대로 쓴다.
+  function pointToSegmentMetersWithT(plat, plon, alat, alon, blat, blon) {
+    const latRef = plat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+
+    const px = (plon - alon) * mPerDegLon;
+    const py = (plat - alat) * mPerDegLat;
+    const bx = (blon - alon) * mPerDegLon;
+    const by = (blat - alat) * mPerDegLat;
+
+    const segLenSq = bx * bx + by * by;
+    let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = bx * t;
+    const closestY = by * t;
+    const dx = px - closestX;
+    const dy = py - closestY;
+    return { distance: Math.sqrt(dx * dx + dy * dy), t };
+  }
+
   // 왕복(원점회귀) 코스에서는 같은 좌표 부근에 "갈 때"와 "올 때" 두 개의
   // 선분이 겹쳐 있어, 매번 전역 탐색을 하면 엉뚱하게 반대쪽(이미 지나온
   // 반대 방향 구간)이 최근접점으로 잡힐 수 있다. 직전에 찾은 인덱스
   // 근처만 우선 탐색하면 이 문제가 없고, 계산량도 크게 줄어든다.
   let lastNearestIdx = -1; // 슬라이딩 윈도우의 중심 — GPS 갱신마다 갱신됨
-  const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색
-  const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색
+  const TRAIL_WINDOW_RADIUS = 60; // 직전 인덱스 앞뒤 60개 포인트 범위만 우선 탐색(SEARCHING 모드 전용)
+  const TRAIL_FALLBACK_THRESHOLD_M = 50; // 윈도우 내 최단거리가 이보다 크면 전역 재탐색(SEARCHING 모드 전용)
+
+  // ════════════════════════════════════════════════════════════════
+  // 🧭 "다음 index로만 전진" 트랙 매칭 재설계(2026-09-25, 사용자 지시:
+  // "누적거리 때문에 문제가 되는게 아니야? 그냥 좌표값을 기준으로 하면
+  // 안 돼? 들머리 0 다음 좌표1 다음좌표2,... 이런식으로 하면 돼잖아" →
+  // "다음 index로만 전진 규칙을 강하게 건다") — 근본 원인: GPX 점 간격
+  // (실측 중앙값 7m, 평균 15m)이 실제 GPS 오차(15~30m, 건물/숲/계곡은
+  // 더 큼)보다 작거나 비슷해서, "지금 좌표에서 가장 가까운 선분"을 매
+  // 픽스 앞뒤 TRAIL_WINDOW_RADIUS(60개 점) 범위에서 다시 찾는 기존
+  // 방식은 오차가 조금만 섞여도 엉뚱한(특히 왕복 코스의 반대편) 지점을
+  // 고를 수 있다. 사용자가 🧪 GPS 오차 주입 시뮬레이션(SIM_NOISE_RADIUS_M
+  // =25)으로 직접 재현해 "가장 가까운 점까지 510m" 같은 명백한 오매칭을
+  // 확인했다.
+  //
+  // 해법: 정상 추적 중(LOCKED)에는 다음 픽스의 후보를 "지금 있는 index
+  // N"과 "바로 다음 점 N+1"뿐으로 강하게 제한한다 — 왕복 코스의 반대편
+  // 세그먼트는 index 자체가 전혀 다르므로 애초에 후보에 들지 못해
+  // 오매칭이 구조적으로 사라진다. 코스 진입 전이나 GPS가 크게 튀어
+  // N/N+1 둘 다에서 멀어진 예외 상황(SEARCHING)에서만 기존 윈도우→전역
+  // 탐색(방향 페널티 포함, findNearestInRange)을 그대로 재사용한다 —
+  // 그 로직은 삭제하지 않고 "예외 경로"로 격하시킨 것뿐이다.
+  let trailTrackingMode = 'SEARCHING'; // 'SEARCHING'(재탐색) | 'LOCKED'(N/N+1만 추적)
+  let offCandidateStreak = 0; // LOCKED 상태에서 N/N+1 둘 다 비정상적으로 멀었던 연속 픽스 수
+  const LOCK_REACQUIRE_DIST_M = TRAIL_FALLBACK_THRESHOLD_M; // 이 거리(m) 넘으면 재탐색 후보로 — 기존 50m 폴백값 재사용(이미 실측 튜닝된 값)
+  const LOCK_REACQUIRE_STREAK = 3; // 1회성 GPS 튐에 반응하지 않기 위한 연속 확인 횟수(약 3초, TRACK_DIRECTION_CONFIRM_STREAK와 동일 철학)
+  // N → N+1로 "확정 전진"했다고 인정하는 두 조건(실측 근거 없는 추정치 —
+  // 🧪 GPS 오차 주입 시뮬레이션의 왕복 turnaround 지점 검증으로 조정 필요할 수 있음):
+  const SEGMENT_ADVANCE_MIN_T = 0.5; // N 세그먼트를 이 비율 이상 지나감
+  const SEGMENT_ADVANCE_MIN_MARGIN_M = 3; // 또는 N+1 세그먼트가 N보다 이만큼 더 가까움
 
   // ════════════════════════════════════════════════════════════════
   // 🧭 가자맵 대원칙 재통합(2026-09-24) — track_viewer.html과 같은
@@ -2181,8 +2237,12 @@
   // 없는(제자리 정지) 픽스에서는 직전 값을 그대로 유지한다.
   let moveDirectionSign = 1; // 1(index 증가 방향) | -1(index 감소 방향)
   let lastMoveDirectionIdx = null;
-  function updateMoveDirection(nearestIdx) {
-    if (lastMoveDirectionIdx === null) {
+  // justReacquired: SEARCHING→LOCKED 재획득이 이번 픽스에 막 일어났으면
+  // true — index가 옛 위치에서 새 위치로 (오매칭 수정으로) 크게 점프한
+  // 것일 수 있으므로, 그 delta를 "실제 이동 방향"으로 오인하지 않도록
+  // 이번 한 번은 방향 판정을 건너뛰고 기준점만 새로 잡는다.
+  function updateMoveDirection(nearestIdx, justReacquired) {
+    if (lastMoveDirectionIdx === null || justReacquired) {
       lastMoveDirectionIdx = nearestIdx;
       return;
     }
@@ -2319,6 +2379,47 @@
     return { distance: nearestActualDist, point: nearestPoint, index: nearestIdx, rawIndex: rawNearestIdx };
   }
 
+  // 🧭 LOCKED 모드 전용 — 현재 확정 index N에서 "N에 머무는가, N+1로
+  // 넘어갔는가"만 판단한다. findNearestInRange와 달리 방향 페널티를
+  // 전혀 쓰지 않는다 — 후보가 N/N+1 두 개뿐이라 왕복 코스의 반대편
+  // 세그먼트(페널티가 원래 막으려던 대상)가 애초에 후보에 들 수 없기
+  // 때문이다. N이 트랙의 마지막 세그먼트면(N+1 세그먼트가 없음) N에만
+  // 머문다.
+  function trackFromLockedIndex(lat, lon, points, N) {
+    const maxIdx = points.length - 2;
+    const a = points[N], b = points[N + 1];
+    const segN = pointToSegmentMetersWithT(lat, lon, a.lat, a.lon, b.lat, b.lon);
+
+    let segNext = null;
+    if (N + 1 <= maxIdx) {
+      const c = points[N + 1], d = points[N + 2];
+      segNext = pointToSegmentMetersWithT(lat, lon, c.lat, c.lon, d.lat, d.lon);
+    }
+
+    let chosenIdx = N;
+    let chosenDist = segN.distance;
+    let chosenT = segN.t;
+
+    const advanced = segNext && (
+      segN.t >= SEGMENT_ADVANCE_MIN_T ||
+      segNext.distance + SEGMENT_ADVANCE_MIN_MARGIN_M < segN.distance
+    );
+    if (advanced) {
+      chosenIdx = N + 1;
+      chosenDist = segNext.distance;
+      chosenT = segNext.t;
+    }
+
+    const bestOfTwo = Math.min(segN.distance, segNext ? segNext.distance : Infinity);
+    const chosenA = points[chosenIdx], chosenB = points[chosenIdx + 1];
+    const point = {
+      lat: chosenA.lat + (chosenB.lat - chosenA.lat) * chosenT,
+      lon: chosenA.lon + (chosenB.lon - chosenA.lon) * chosenT
+    };
+
+    return { index: chosenIdx, distance: chosenDist, bestOfTwo, point };
+  }
+
   // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
   // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
   // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
@@ -2331,6 +2432,7 @@
   function nearestPointOnTrail(lat, lon, points) {
     if (!points || points.length === 0) {
       lastNearestIdx = -1;
+      trailTrackingMode = 'SEARCHING';
       return { distance: 999999, point: null, index: -1 };
     }
     if (points.length === 1) {
@@ -2340,22 +2442,55 @@
 
     const maxIdx = points.length - 2; // 선분 시작 인덱스의 최댓값 (i, i+1 쌍이므로)
     let result;
+    let justReacquired = false; // 이번 픽스에 SEARCHING→LOCKED 전환이 막 일어났는지
 
-    if (lastNearestIdx >= 0) {
-      // 1차: 직전 위치 주변 윈도우만 탐색 (빠르고, 왕복 구간 혼선 방지)
-      const startIdx = Math.max(0, lastNearestIdx - TRAIL_WINDOW_RADIUS);
-      const endIdx = Math.min(maxIdx, lastNearestIdx + TRAIL_WINDOW_RADIUS);
-      result = findNearestInRange(lat, lon, points, startIdx, endIdx);
+    // 🧭 LOCKED: 정상 추적 중 — N/N+1 두 후보만 본다(trackFromLockedIndex
+    // 정의부 주석 참고). 둘 다 비정상적으로 멀어진 상태가 LOCK_REACQUIRE_
+    // STREAK(3픽스) 연속되면 SEARCHING으로 전환한다 — 1회성 GPS 튐에는
+    // 반응하지 않기 위한 완충이다(이 3픽스 동안은 이전 LOCKED 결과를
+    // 그대로 쓰므로, "즉시 튐"은 막아도 "몇 초간 튐"까지는 못 막는다).
+    if (trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
+      const locked = trackFromLockedIndex(lat, lon, points, lastNearestIdx);
+      if (locked.bestOfTwo > LOCK_REACQUIRE_DIST_M) {
+        offCandidateStreak++;
+      } else {
+        offCandidateStreak = 0;
+      }
+      if (offCandidateStreak >= LOCK_REACQUIRE_STREAK) {
+        trailTrackingMode = 'SEARCHING'; // 아래 SEARCHING 분기로 폴스루
+      } else {
+        result = { distance: locked.distance, point: locked.point, index: locked.index, rawIndex: locked.index };
+      }
+    }
 
-      // 2차: 윈도우 안에서 찾은 결과가 너무 멀면(50m 초과) 안전장치로
-      // 전역 탐색으로 재전환 — 사용자가 크게 이탈했다가 다른 지점으로
-      // 복귀했거나, 처음 GPS를 켠 시점일 수 있다.
-      if (result.distance > TRAIL_FALLBACK_THRESHOLD_M) {
+    // 🧭 SEARCHING: 코스 진입 전(lastNearestIdx===-1) 또는 LOCKED에서
+    // 방금 이탈 판정된 경우 — 기존 윈도우→전역 탐색(방향 페널티 포함)을
+    // 그대로 재사용한다. 삭제하지 않고 "예외 경로"로 남겨둔 것뿐이다.
+    if (!result) {
+      if (lastNearestIdx >= 0) {
+        // 1차: 직전 위치 주변 윈도우만 탐색 (빠르고, 왕복 구간 혼선 방지)
+        const startIdx = Math.max(0, lastNearestIdx - TRAIL_WINDOW_RADIUS);
+        const endIdx = Math.min(maxIdx, lastNearestIdx + TRAIL_WINDOW_RADIUS);
+        result = findNearestInRange(lat, lon, points, startIdx, endIdx);
+
+        // 2차: 윈도우 안에서 찾은 결과가 너무 멀면(50m 초과) 안전장치로
+        // 전역 탐색으로 재전환 — 사용자가 크게 이탈했다가 다른 지점으로
+        // 복귀했거나, 처음 GPS를 켠 시점일 수 있다.
+        if (result.distance > TRAIL_FALLBACK_THRESHOLD_M) {
+          result = findNearestInRange(lat, lon, points, 0, maxIdx);
+        }
+      } else {
+        // 최초 1회는 윈도우 기준점이 없으므로 전역 탐색
         result = findNearestInRange(lat, lon, points, 0, maxIdx);
       }
-    } else {
-      // 최초 1회는 윈도우 기준점이 없으므로 전역 탐색
-      result = findNearestInRange(lat, lon, points, 0, maxIdx);
+
+      // 재탐색 결과가 다시 신뢰할 만한 거리(LOCK_REACQUIRE_DIST_M) 이내로
+      // 들어오면 즉시 LOCKED로 복귀한다.
+      if (result.distance <= LOCK_REACQUIRE_DIST_M) {
+        trailTrackingMode = 'LOCKED';
+        offCandidateStreak = 0;
+        justReacquired = true;
+      }
     }
 
     lastNearestIdx = result.index;
@@ -2370,12 +2505,17 @@
     //     넘긴다 — isReversingOnTrail 자체가 그 페널티의 입력이므로,
     //     페널티가 반영된 결과로 방향을 재판정하면 한 번 잘못 뒤집힌
     //     값이 스스로를 계속 강화하는 폐루프가 된다(findNearestInRange
-    //     정의부 rawNearestIdx 주석 참고).
+    //     정의부 rawNearestIdx 주석 참고). LOCKED 결과는 rawIndex가
+    //     없으므로 index를 그대로 쓴다(페널티 자체가 없어 오염 문제가
+    //     없음).
     //   - updateMoveDirection(moveDirectionSign): 지도 회전/화살표용,
     //     지연 없이 즉시 반영 — "역방향 판정 없이 실제 이동 방향만".
     //     화면에 보이는 안정화된 위치(lastNearestIdx)를 그대로 쓴다.
-    updateTrackDirection(result.rawIndex);
-    updateMoveDirection(lastNearestIdx);
+    //     단, 이번 픽스에 SEARCHING→LOCKED 재획득이 막 일어났으면
+    //     (justReacquired) index가 옛 위치에서 새 위치로 크게 점프한
+    //     것일 수 있어 방향 판정을 1픽스 보류한다.
+    updateTrackDirection(result.rawIndex !== undefined ? result.rawIndex : result.index);
+    updateMoveDirection(lastNearestIdx, justReacquired);
 
     return result;
   }
@@ -3196,6 +3336,11 @@
   // 탐색하게 되어 엉뚱한 결과가 나올 수 있다.
   function resetTrailSearchWindow() {
     lastNearestIdx = -1;
+    // 🧭 LOCKED 상태로 남아있으면 다음 nearestPointOnTrail 호출이 옛
+    // 코스/옛 위치 기준 N/N+1만 계속 보게 된다 — 반드시 SEARCHING으로
+    // 되돌려 전역 재탐색부터 다시 시작하게 한다.
+    trailTrackingMode = 'SEARCHING';
+    offCandidateStreak = 0;
     // trackDirection 상태도 함께 초기화 — 이전 코스/이전 위치의 이력이
     // 새 코스의 방향 판별에 섞여 들어가면 안 된다.
     resetTrackDirectionState();
@@ -4345,7 +4490,14 @@
     isOffTrailState = false;
     offTrailStreakCount = 0;
     returnStreakCount = 0;
-    resetTrackDirectionState();
+    // 🐛 2026-09-25 수정 — 예전엔 resetTrackDirectionState()만 호출해
+    // lastNearestIdx/trailTrackingMode(LOCKED일 수 있음)가 리셋되지
+    // 않았다. "다음 index로만 전진" 설계에서는 이 빈틈이 더 크게
+    // 작용한다 — LOCKED로 남아있으면 원점 재설정을 눌러도 옛 index
+    // 기준 N/N+1만 계속 보게 된다. resetTrailSearchWindow()가 내부에서
+    // resetTrackDirectionState()도 함께 호출하므로 중복 호출을 없애고
+    // 이걸로 교체한다.
+    resetTrailSearchWindow();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
     // 🧭 지도 회전각(mapRotationDeg/appliedMapRotationDeg)은 리셋하지
