@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_arrow_map_rotation_sync';
+      const APP_BUILD = 'v20260925_lowacc_track_match_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -757,6 +757,12 @@
      스크립트가 세팅)에서 버전 문자열만 뽑아 항상 작게 표시한다 —
      지도를 가리지 않도록 구석에, 클릭 시 배포 시각도 함께 안내. -->
 <div id="appVersionBadge" onclick="showVersionDetail()"></div>
+
+<!-- 🐛 2026-09-25 임시 디버그 오버레이 — "이동해도 이동거리가 0.00km로
+     고정되고 지도/화살표가 회전 안 함" 증상 재현을 위해, 원격 디버깅 없이
+     핸드폰 화면에서 바로 nearestIdx/traveledDist/arrowHeading 등을 볼 수
+     있게 한다. 문제 원인이 확정되면 이 블록은 제거한다. -->
+<div id="gpsDebugOverlay" style="display:none; position:fixed; top:4px; left:4px; z-index:99999; background:rgba(0,0,0,0.75); color:#0f0; font:11px/1.4 monospace; padding:6px 8px; border-radius:6px; max-width:92vw; white-space:pre-wrap; pointer-events:none;"></div>
 
 <script>
   // 1. PWA 서비스 워커 등록 (산속 오프라인 지도 캐싱 지원 및 최신 자동 새로고침)
@@ -5552,20 +5558,31 @@
           timestamp: Date.now()
         });
 
-        if (!result) {
-          // 신뢰할 수 없는 픽스 — 방향/거리 갱신 없이 다음 수신을 기다린다.
-          return;
-        }
+        // 🐛 2026-09-25 수정(사용자 재현: "아파트 단지에서 내 위치는
+        // 움직이는데 지도 회전/이동거리가 0.00km에 계속 고정됨") — 예전엔
+        // result가 null이면(accuracy가 MAX_ACCURACY=15m 초과, 또는 너무
+        // 빠른 중복 수신) 이 아래 트랙 매칭(nearestPointOnTrail)·지도
+        // 회전·이동거리 계산 전체를 통째로 return해 건너뛰었다. 건물
+        // 밀집 지역은 GPS 오차가 15m를 자주 넘어(실측 재현: 도심
+        // 아파트단지) 이 조기 return이 사실상 상시 발동해, 화면 마커
+        // (lastKnownPos, 필터 결과와 무관하게 항상 갱신됨)만 움직이고
+        // 트랙 매칭 이하 전부가 영구히 멈춰 보였다. GpsFilterEngine은
+        // "정지/이동 판정"과 "방위각 스무딩"(다른 로직, 예: 절전 타이머,
+        // isReversingOnTrail 왕복 판정 등)에만 쓰는 보조 신호로 좁히고,
+        // 트랙 매칭·지도 회전·이동거리는 항상 원시 좌표(lat, lon)로
+        // 계속 진행한다 — 정확도가 나쁠수록 위치가 다소 흔들릴 수는
+        // 있지만, "전혀 안 움직이는 것"보다는 낫다(사용자 확정).
+        if (result) {
+          const wasStoppedBefore = isCurrentlyStopped;
+          isCurrentlyStopped = result.isStopped;
 
-        const wasStoppedBefore = isCurrentlyStopped;
-        isCurrentlyStopped = result.isStopped;
-
-        // 🔋 정지 진입/해제 시각 추적 — 절전 모드 진입 타이머(handleSleepTimerTick)
-        // 가 이 시각 기준으로 5분 경과를 판정한다.
-        if (isCurrentlyStopped && !wasStoppedBefore) {
-          stopEnteredAt = Date.now();
-        } else if (!isCurrentlyStopped) {
-          stopEnteredAt = null;
+          // 🔋 정지 진입/해제 시각 추적 — 절전 모드 진입 타이머(handleSleepTimerTick)
+          // 가 이 시각 기준으로 5분 경과를 판정한다.
+          if (isCurrentlyStopped && !wasStoppedBefore) {
+            stopEnteredAt = Date.now();
+          } else if (!isCurrentlyStopped) {
+            stopEnteredAt = null;
+          }
         }
 
         // 줌 자동 전환(정지/이동 상태에 따른 확대/축소)은 제거했다 —
@@ -5609,7 +5626,7 @@
         // 여부와 무관하게 GPS 이동방향(result.bearing)이 나올 때만 내 위치
         // 마커 화살표를 갱신하고, 갈림길 안내(다음 갈림길까지 거리 +
         // 미리 계산된 회전각)는 updateNavigationToast가 전담한다.
-        if (!result.isStopped && result.bearing !== null) {
+        if (result && !result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
         }
 
