@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v146';
+    const CACHE_NAME = 'gaja-trail-cache-v147';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_nearest_tie_break_fix';
+      const APP_BUILD = 'v20260925_first_start_gate_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -776,7 +776,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=146', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=147', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3380,6 +3380,10 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
+    // 새 코스를 열면 "이 코스에서 GPS를 아직 한 번도 안 켰다"로 되돌려,
+    // 다음 startGpsTracking()이 재획득 게이트가 아니라 최초 시작으로
+    // 취급되게 한다(hasStartedGpsOnceThisRoute 선언부 주석 참고).
+    hasStartedGpsOnceThisRoute = false;
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
@@ -3532,7 +3536,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v146';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v147';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4098,6 +4102,18 @@
   const GPS_REACQUIRE_CONFIRM_STREAK = 3;
   let gpsReacquireConfirmStreak = GPS_REACQUIRE_CONFIRM_STREAK; // 시작 시 이미 충분(평소엔 게이트가 막지 않음) — GPS 재획득 시점에만 0으로 낮춘다
   let gpsReacquireLastIdx = null;
+  // 🐛 "산행 시작" 버튼으로 GPS를 맨 처음 켜는 것도 startGpsTracking()을
+  // 거치는데, 게이트를 구분 없이 항상 0으로 낮추면 이 가장 흔한
+  // 시나리오에도 재획득 게이트가 걸려버린다(사용자 재현: "갈림길1로
+  // 가는 길인데 화살표가 반대로 나왔어" — 원인 추적 결과, firstOrigin
+  // 확정(FIRST_ORIGIN_MIN_FIXES 3픽스)에 재획득 게이트(3픽스)가 겹쳐
+  // 원점 확정이 예상보다 오래 지연되고, 그동안 화살표가 계속
+  // "들머리(GPX[0]) 방향"을 가리켜 실제 진행방향과 반대로 보였다).
+  // 재획득 게이트는 "이미 화면에 걸려있는 낡은 회전값을 성급히 스냅하지
+  // 않기 위함"인데, 이 코스에서 GPS를 처음 켜는 순간은 애초에 걸려있는
+  // 회전값 자체가 없으므로 게이트가 막아야 할 대상이 없다 — 이 경우
+  // 게이트를 즉시 통과 상태로 둔다.
+  let hasStartedGpsOnceThisRoute = false;
   function updateSegmentRotationTrigger(traveledDist, nearestIdx) {
     if (!isSegmentRotationMode) return;
     // ⚠️ 손가락으로 지도를 드래그하는 도중(isMapBeingDragged)에 갈림길을
@@ -5388,8 +5404,19 @@
     // 바로 스냅하지 않는다. 대신 아래 gpsReacquireConfirmStreak 게이트로
     // "몇 번 연속 이동이 확인될 때까지 applySegmentRotation 호출 자체를
     // 보류"해 튈 재료(불확실한 판정) 자체를 걸러낸다.
-    gpsReacquireConfirmStreak = 0;
-    gpsReacquireLastIdx = null;
+    // 🐛 단, 이 코스에서 GPS를 맨 처음 켜는 시작이면(hasStartedGpsOnceThisRoute
+    // ===false) 게이트를 걸지 않는다 — 걸려있는 낡은 회전값 자체가 없어
+    // 게이트가 막을 대상이 없고, 오히려 firstOrigin 확정(3픽스)에 이
+    // 게이트(3픽스)가 겹쳐 원점 확정이 불필요하게 늦어지던 버그가 있었다
+    // (GPS_REACQUIRE_CONFIRM_STREAK 선언부 주석 참고).
+    if (hasStartedGpsOnceThisRoute) {
+      gpsReacquireConfirmStreak = 0;
+      gpsReacquireLastIdx = null;
+    } else {
+      gpsReacquireConfirmStreak = GPS_REACQUIRE_CONFIRM_STREAK;
+      gpsReacquireLastIdx = null;
+    }
+    hasStartedGpsOnceThisRoute = true;
 
     // 🧭 구간회전 모드를 여기서 미리 켜둔다(2026-09-21, #11). 원래는
     // handleGpsPositionUpdate의 첫 마커 생성 시점(setHeadingUpMode 호출)
