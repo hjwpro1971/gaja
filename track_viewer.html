@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v158';
+    const CACHE_NAME = 'gaja-trail-cache-v159';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_sim_gps_full_isolation';
+      const APP_BUILD = 'v20260925_sim_no_rematch';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5124,30 +5124,27 @@
     simLastConfirmedTrackIdx = null;
   }
 
-  // 실제 GPS용 findNearestInRange와 달리 방향 페널티가 없는 순수 최단
-  // 거리 탐색 — 시뮬레이션은 배속 재생으로 index가 크게 건너뛸 수 있어
-  // "직전 위치 근처만 우선 탐색"하는 윈도우 최적화도 필요 없다(코스가
-  // 길어야 수 km라 매 프레임 전역 탐색해도 성능에 문제없음, 기존
-  // findNearestInRange도 동일 규모를 이미 전역으로 돌리고 있었다).
-  function nearestPointOnTrailForSim(lat, lon, points) {
-    if (!points || points.length < 2) {
-      simLastNearestIdx = points && points.length === 1 ? 0 : -1;
-      return { distance: points && points.length === 1 ? haversineMeters(lat, lon, points[0].lat, points[0].lon) : 999999, point: points && points[0] || null, index: simLastNearestIdx };
+  // 🐛 2026-09-25 수정(사용자 재현: "시뮬레이션 해보면 화살표가 반대로
+  // 가는 경우가 많이 생겨") — 근본 원인은 "가장 가까운 점을 다시
+  // 찾는 재매칭 자체"였다. 시뮬레이션은 GPX 원본 좌표를 오차 없이
+  // 그대로 재생하므로, 재생 중인 idx가 이미 정확한 트랙 위치다(
+  // currentPoints[idx] 그 자체가 코스 데이터). 그런데도 "가장 가까운
+  // 점 찾기"를 다시 수행하면, 코스가 급하게 꺾이는 구간이나 왕복
+  // (원점회귀) 코스에서 좌표가 트랙포인트와 정확히 일치할 때 반대편
+  // (들어오는/나가는 선분, 또는 가는 길/오는 길)이 우연히 더 가깝다고
+  // 判정될 수 있다 — 이건 GPS 오차와 무관하게 재매칭 로직 자체가
+  // 만드는 구조적 문제다. 해법은 애초에 재매칭을 하지 않는 것 —
+  // 재생 idx를 그대로 트랙 위치로 신뢰한다.
+  function nearestPointOnTrailForSim(idx, points) {
+    if (!points || points.length === 0) {
+      simLastNearestIdx = -1;
+      return { distance: 0, point: null, index: -1 };
     }
-    let bestIdx = 0, bestDist = Infinity, bestPoint = points[0];
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i], b = points[i + 1];
-      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-        const dA = haversineMeters(lat, lon, a.lat, a.lon);
-        const dB = haversineMeters(lat, lon, b.lat, b.lon);
-        bestPoint = dA <= dB ? a : b;
-      }
-    }
+    const maxIdx = points.length - 2;
+    const bestIdx = Math.max(0, Math.min(idx, Math.max(maxIdx, 0)));
+
     // 방향 판정: 직전 확정 index와의 delta 부호를 그대로 반영 —
-    // 시뮬레이션은 오차 없는 좌표라 흔들릴 일이 없으므로 완충 불필요.
+    // idx는 재생 순서 그 자체이므로 반대편으로 튈 일이 구조적으로 없다.
     if (simLastMoveDirectionIdx === null) {
       simLastMoveDirectionIdx = bestIdx;
     } else {
@@ -5156,7 +5153,7 @@
       if (delta !== 0) simMoveDirectionSign = delta > 0 ? 1 : -1;
     }
     simLastNearestIdx = bestIdx;
-    return { distance: bestDist, point: bestPoint, index: bestIdx };
+    return { distance: 0, point: points[bestIdx], index: bestIdx };
   }
 
   // 실제 GPS용 computeArrowHeading은 전역 moveDirectionSign을 참조한다
@@ -5204,8 +5201,9 @@
     // computeArrowHeadingForSim, 위 정의부 주석 참고) — 실제 GPS가 쓰는
     // nearestPointOnTrail/moveDirectionSign과 완전히 분리된 상태
     // (simLastNearestIdx/simMoveDirectionSign)를 쓰므로, 어느 한쪽을
-    // 고쳐도 다른 쪽에 영향을 주지 않는다.
-    const simNearest = nearestPointOnTrailForSim(lat, lon, currentPoints);
+    // 고쳐도 다른 쪽에 영향을 주지 않는다. 재생 idx를 그대로 트랙
+    // 위치로 신뢰하므로(재매칭 없음), lat/lon이 아니라 idx를 넘긴다.
+    const simNearest = nearestPointOnTrailForSim(idx, currentPoints);
     updateTrackDirectionForSim(simNearest.index); // 시뮬레이션 전용 상태만 갱신(simIsReversingOnTrail) — 실제 GPS의 isReversingOnTrail은 안 건드림
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
