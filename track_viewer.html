@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v153';
+    const CACHE_NAME = 'gaja-trail-cache-v154';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_wayfinding_panel_removed';
+      const APP_BUILD = 'v20260925_trailhead_rotation_gate_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -786,7 +786,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=153', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=154', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -3545,7 +3545,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v153';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v154';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4282,10 +4282,27 @@
     updateSegmentRotationTrigger(traveledDist, nearest ? nearest.index : undefined);
     forceOriginReset = false;
     if (nearest && nearest.index >= 0) {
-      const arrowHeading = computeArrowHeading(lastKnownPos.lat, lastKnownPos.lon, nearest.index, false, traveledDist, nearest.point);
+      // 🐛 2026-09-25 수정(사용자 재현: "원점 다시 잡기 하니 가야할
+      // 곳이 6시 방향으로 회전, 계속 그대로야 지도가 전혀 회전을
+      // 안해") — 두 가지 결함을 함께 고친다:
+      //  1) isNearTrailheadNow를 하드코딩 false로 넘기던 것을 실제
+      //     들머리 접근 여부(isSegmentRotationMode/currentRotationOriginDist
+      //     는 이 함수가 방금 확정했으니 실제로는 항상 false지만,
+      //     handleGpsPositionUpdate와 동일한 계산식을 명시적으로 써서
+      //     두 호출부의 인자 계산 방식을 통일한다)로 바꾼다.
+      //  2) applyLiveMapRotation(5m 최소이동거리 게이트) 대신
+      //     applySegmentRotation을 직접 호출한다 — 사용자가 명시적으로
+      //     "지금 위치 기준 즉시 재설정"을 요청한 것이므로, 그 직후
+      //     lastLiveRotationDist가 현재 위치로 고정되어 정지 상태에서
+      //     다음 회전이 막히는 문제(게이트가 이 즉시성 요청과 충돌)를
+      //     피한다. resetLiveMapRotationState()로 이미 게이트 자체는
+      //     초기화해뒀으니, 다음 실제 이동(5m)부터는 정상적으로 다시
+      //     게이트가 작동한다.
+      const isNearTrailheadNow = currentRotationOriginDist === null && traveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
+      const arrowHeading = computeArrowHeading(lastKnownPos.lat, lastKnownPos.lon, nearest.index, isNearTrailheadNow, traveledDist, nearest.point);
       if (arrowHeading !== null) {
         renderGpsArrow(arrowHeading);
-        applyLiveMapRotation(arrowHeading, traveledDist);
+        applySegmentRotation(arrowHeading);
       }
     }
     showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
@@ -5610,7 +5627,16 @@
         const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry, nearestPoint);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
-          if (!isNearTrailhead) applyLiveMapRotation(arrowHeading, traveledDistForEntry);
+          // 🐛 2026-09-25 수정(사용자 재현: "들머리에서 갈림길로 가는데
+          // 지도 회전이 전혀 안 돼", 순수 로직 검증으로 확정) — 예전엔
+          // isNearTrailhead(들머리 30m 이내 + 원점 미확정)일 때
+          // applyLiveMapRotation 호출 자체를 스킵했다. 그런데
+          // computeArrowHeading은 isNearTrailheadNow일 때도 이미
+          // "가장 가까운 경로 지점" 방향을 정확히 계산해주므로, 회전을
+          // 막을 이유가 없다 — 오히려 원점이 확정되기 전(들머리 근처
+          // 전체 구간)에는 지도가 영영 안 도는 결과를 낳았다. 조건 없이
+          // 항상 회전시킨다.
+          applyLiveMapRotation(arrowHeading, traveledDistForEntry);
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
