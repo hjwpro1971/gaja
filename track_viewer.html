@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v149';
+    const CACHE_NAME = 'gaja-trail-cache-v150';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_start_hike_button_reposition';
+      const APP_BUILD = 'v20260925_midcourse_start_arrow_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -812,7 +812,7 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=149', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./sw.js?v=150', { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
@@ -2730,15 +2730,28 @@
   // 방향, 왕복 시 올바른 다음 목표 탐색)은 이 변경과 무관하게
   // isReversingOnTrail을 그대로 쓴다(사용자 지시: "하단 경로 알람은
   // 현행 그대로 유지").
-  //   ① TRAILHEAD_SEARCH: 아직 트랙에 진입 전 — 현재GPS → GPX[0] 방향
+  //   ① TRAILHEAD_SEARCH: 아직 트랙에 진입 전 — 현재GPS → 가장 가까운
+  //      경로 지점(nearestOnTrailPoint) 방향
   //   ② TRACK_NAVIGATION: 트랙 진입 후 — 현재GPS → 코스를 따라
   //      moveDirectionSign 방향으로 앞선 지점 방향
+  //
+  // 🐛 2026-09-25 수정(사용자 지시로 예방적 점검 중 발견): ①번 분기가
+  // 예전엔 "가장 가까운 경로 지점" 대신 currentPoints[0](GPX 첫 점,
+  // 들머리)로 하드코딩돼 있었다. updateTrailheadApproach/토스트(녹색선
+  // 안내)는 이미 "코스 전체에서 가장 가까운 지점"(nearestPointOnTrail이
+  // 찾은 nearestPoint, 들머리일 수도 코스 중간 지점일 수도 있다)을
+  // 향해 안내하도록 재설계돼 있었는데(2026-09-23), 화살표만 여전히
+  // 들머리로 고정돼 있어 "등산을 코스 중간에서 시작하면 토스트는 가까운
+  // 지점을 가리키는데 화살표는 엉뚱하게 들머리를 가리키는" 불일치가
+  // 있었다. nearestOnTrailPoint(호출부가 nearestPointOnTrail로 이미
+  // 계산해둔 값)를 넘겨받아 그 지점을 향하도록 통일한다 — 넘기지 않으면
+  // (레거시 호출부 호환) currentPoints[0]로 폴백한다.
   const ARROW_LOOKAHEAD_M = 15;
-  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist) {
+  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
     if (isNearTrailheadNow) {
-      if (!currentPoints || currentPoints.length === 0) return null;
-      const trailhead = currentPoints[0];
-      return calculateBearing(lat, lon, trailhead.lat, trailhead.lon);
+      const target = nearestOnTrailPoint || (currentPoints && currentPoints.length > 0 ? currentPoints[0] : null);
+      if (!target) return null;
+      return calculateBearing(lat, lon, target.lat, target.lon);
     }
     if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
     const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
@@ -3568,7 +3581,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v149';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v150';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4853,7 +4866,7 @@
     const simNearest = nearestPointOnTrail(lat, lon, currentPoints);
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist);
+    const simArrowHeading = computeArrowHeading(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -5663,12 +5676,14 @@
 
         // 🧭 화살표 방향(2026-09-23 재설계): 나침반/자이로/GPS 이동방위각
         // (result.bearing)은 더 이상 화살표에 쓰지 않는다. computeArrowHeading이
-        // TRAILHEAD_SEARCH(현재GPS→GPX[0]) 또는 TRACK_NAVIGATION(매칭된
-        // 선분의 미리 계산된 bearing) 둘 중 하나로만 계산한다. 정지
-        // 중에도(result.isStopped 여부와 무관) 항상 호출한다 — 선분
-        // 자체가 안 바뀌면 같은 값이 나오므로 "이전 방향 유지"와
-        // 결과적으로 동일하다.
-        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry);
+        // TRAILHEAD_SEARCH(현재GPS→가장 가까운 경로 지점) 또는
+        // TRACK_NAVIGATION(매칭된 선분의 미리 계산된 bearing) 둘 중
+        // 하나로만 계산한다. 정지 중에도(result.isStopped 여부와 무관)
+        // 항상 호출한다 — 선분 자체가 안 바뀌면 같은 값이 나오므로
+        // "이전 방향 유지"와 결과적으로 동일하다. nearestPoint를 함께
+        // 넘겨 들머리가 아닌 코스 중간 지점에서 시작해도 화살표가
+        // 그 가까운 지점을 정확히 가리키게 한다.
+        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry, nearestPoint);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
         }
