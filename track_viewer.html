@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v171';
+    const CACHE_NAME = 'gaja-trail-cache-v172';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_poi_modal_replaces_top_toast';
+      const APP_BUILD = 'v20260926_poi_modal_visibility_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6370,21 +6370,22 @@
   // toast.style.display==='none'이면 텍스트 갱신만 건너뛰고 나머지 로직
   // (구간 회전 트리거 등)은 그대로 실행되므로, 잠깐 숨겨도 안내 로직
   // 자체에는 영향이 없다 — display만 토글하는 것으로 안전하다.
+  // 🐛 2026-09-26 수정(사용자 재현: "알림판 사라지고 난 후 상단토스트가
+  // 안 보여") — display:'none'으로 숨겼더니, updateNavigationToast가
+  // `if (!toast || toast.style.display === 'none') return;`로 display가
+  // 'none'인 동안은 텍스트 갱신 자체를 통째로 건너뛰고 있었다(단순히
+  // "화면 표시만 스킵"이 아니라 이후 로직 전체가 return되는 조기
+  // 종료문). 그 결과 이정표 모달이 떠 있던 동안 gpsToast의 내용이 전혀
+  // 갱신되지 않다가, 모달이 닫혀 display를 복원해도 오래된(또는
+  // 최초라면 비어있는) 텍스트만 보이거나 실질적으로 안 보이는 것처럼
+  // 느껴졌다. display 대신 visibility:hidden을 써서 "화면에만 안
+  // 보이게" 하고, updateNavigationToast의 display==='none' 체크는
+  // 통과시켜 내용 갱신은 계속 정상적으로 일어나게 한다 — 모달이 사라지는
+  // 순간엔 이미 최신 안내 문구가 그대로 채워져 있어 즉시 보인다.
   function setTopToastHiddenByPoi(hidden) {
     const toast = document.getElementById('gpsToast');
     if (!toast) return;
-    if (hidden) {
-      // 이정표 모달이 뜨는 동안 원래 있던 텍스트/스타일을 기억해뒀다가
-      // 모달이 닫히면 그대로 복원한다 — 다음 GPS 픽스가 오기 전까지도
-      // "빈 화면"이 아니라 직전 안내가 그대로 이어지게 하기 위함.
-      if (toast.style.display !== 'none') {
-        toast._poiSavedDisplay = toast.style.display;
-      }
-      toast.style.display = 'none';
-    } else {
-      toast.style.display = toast._poiSavedDisplay || '';
-      toast._poiSavedDisplay = null;
-    }
+    toast.style.visibility = hidden ? 'hidden' : '';
   }
 
   function showPoiProximityModal(poi) {
