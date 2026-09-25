@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v162';
+    const CACHE_NAME = 'gaja-trail-cache-v163';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_sw_register_url_fix';
+      const APP_BUILD = 'v20260925_locked_advance_abs_distance';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2100,7 +2100,7 @@
     const closestY = by * t;
     const dx = px - closestX;
     const dy = py - closestY;
-    return { distance: Math.sqrt(dx * dx + dy * dy), t };
+    return { distance: Math.sqrt(dx * dx + dy * dy), t, segLenM: Math.sqrt(segLenSq) };
   }
 
   // 왕복(원점회귀) 코스에서는 같은 좌표 부근에 "갈 때"와 "올 때" 두 개의
@@ -2135,10 +2135,35 @@
   let offCandidateStreak = 0; // LOCKED 상태에서 N/N+1 둘 다 비정상적으로 멀었던 연속 픽스 수
   const LOCK_REACQUIRE_DIST_M = TRAIL_FALLBACK_THRESHOLD_M; // 이 거리(m) 넘으면 재탐색 후보로 — 기존 50m 폴백값 재사용(이미 실측 튜닝된 값)
   const LOCK_REACQUIRE_STREAK = 3; // 1회성 GPS 튐에 반응하지 않기 위한 연속 확인 횟수(약 3초, TRACK_DIRECTION_CONFIRM_STREAK와 동일 철학)
-  // N → N+1로 "확정 전진"했다고 인정하는 두 조건(실측 근거 없는 추정치 —
-  // 🧪 GPS 오차 주입 시뮬레이션의 왕복 turnaround 지점 검증으로 조정 필요할 수 있음):
-  const SEGMENT_ADVANCE_MIN_T = 0.5; // N 세그먼트를 이 비율 이상 지나감
-  const SEGMENT_ADVANCE_MIN_MARGIN_M = 3; // 또는 N+1 세그먼트가 N보다 이만큼 더 가까움
+  // N → N+1로 "확정 전진"했다고 인정하는 두 조건.
+  //
+  // 🐛 2026-09-25 수정(사용자 재현: "들머리 잡았는데 이동해도 이동거리가
+  // 그대로 0이야" — 실제 GPX(test_수목원.gpx) 첫 세그먼트가 89m로 김)
+  // — 예전엔 "세그먼트를 50%(SEGMENT_ADVANCE_MIN_T) 이상 지나야 전진"
+  // 조건이 비율 기준이라, 세그먼트가 89m처럼 길면 "약 44.5m를 걸어야"로
+  // 해석됐다. Node.js 재현으로 실측: 89m 세그먼트에서 44m(49%)까지는
+  // advanced=false로 index가 0에 그대로 묶여 이동거리도 0.00km로 표시됨을
+  // 확인했다.
+  //
+  // ⚠️ 첫 시도로 비율 조건을 완전히 없애고 거리 마진(SEGMENT_ADVANCE_
+  // MIN_MARGIN_M) 조건만 남겼더니 더 심각한 결함이 나왔다 — 사용자가
+  // 경로 위(직선상)를 정확히 걸으면 segN.distance(현재 세그먼트까지
+  // 수직거리)가 항상 0이라 "segNext.distance + 3 < 0"이 수학적으로
+  // 절대 성립할 수 없어, 아예 영원히 전진을 못 하게 됐다(Node.js
+  // 재현으로 확인). 거리 마진 조건은 "경로에서 벗어나 있을 때"만
+  // 의미가 있고, "경로 위를 똑바로 걷는 정상 케이스"는 비율(정확히는
+  // 절대거리로 환산한 진행거리)로만 판정 가능하다는 것을 이 실패로
+  // 확인했다.
+  //
+  // 최종 해법: 비율(t) 대신 "세그먼트를 따라 실제로 걸은 절대거리"
+  // (t * segLenM, pointToSegmentMetersWithT가 함께 반환하는 세그먼트
+  // 실측 길이)가 SEGMENT_ADVANCE_MIN_ABS_M을 넘으면 전진 — 짧은
+  // 세그먼트(GPX 점 간격 중앙값 7m대)에서는 기존 50%와 비슷하게
+  // 여전히 민감하게 반응하고, 긴 세그먼트(89m 등)에서는 그 비율만큼
+  // 기다리지 않고 절대거리 기준으로 훨씬 빨리 전진한다. 거리 마진
+  // 조건은 "경로에서 벗어난 상태"의 보조 판정으로 그대로 유지한다.
+  const SEGMENT_ADVANCE_MIN_ABS_M = 15; // 세그먼트를 따라 이만큼(m) 걸으면 전진(GPX 점 간격 실측 중앙값의 약 2배)
+  const SEGMENT_ADVANCE_MIN_MARGIN_M = 3; // 또는 N+1 세그먼트가 N보다 이만큼 더 가까움(경로 이탈 시 보조 판정)
 
   // ════════════════════════════════════════════════════════════════
   // 🧭 가자맵 대원칙 재통합(2026-09-24) — track_viewer.html과 같은
@@ -2419,8 +2444,16 @@
     let chosenDist = segN.distance;
     let chosenT = segN.t;
 
+    // 짧은 세그먼트(GPX 점 간격이 촘촘한 구간, 실측 중앙값 7m대)에서는
+    // SEGMENT_ADVANCE_MIN_ABS_M(15m)이 세그먼트 길이보다 커서 끝까지
+    // 걸어도 전진 못 하는 회귀가 있었다(Node.js 재현으로 확인) —
+    // 세그먼트 자체보다 긴 절대거리를 요구할 수 없으므로, 임계값을
+    // 세그먼트 길이의 90%로 캡을 씌운다. 짧은 세그먼트는 사실상 "거의
+    // 끝(90%)까지 가면 전진"으로, 긴 세그먼트(89m 등)는 기존대로 15m
+    // 걸으면 전진으로 동작한다.
+    const advanceThresholdM = Math.min(SEGMENT_ADVANCE_MIN_ABS_M, segN.segLenM * 0.9);
     const advanced = segNext && (
-      segN.t >= SEGMENT_ADVANCE_MIN_T ||
+      segN.t * segN.segLenM >= advanceThresholdM ||
       segNext.distance + SEGMENT_ADVANCE_MIN_MARGIN_M < segN.distance
     );
     if (advanced) {
