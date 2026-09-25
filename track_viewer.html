@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v161';
+    const CACHE_NAME = 'gaja-trail-cache-v162';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_peak_arrow_simplify';
+      const APP_BUILD = 'v20260925_sw_register_url_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -797,7 +797,18 @@
       // 'none'은 서비스워커 등록/갱신 시 이 스크립트에 대해서만 브라우저
       // HTTP 캐시를 완전히 배제하도록 강제하는 표준 API — 항상 네트워크
       // 조건부 요청(304 포함)을 거쳐 최신 여부를 확인한다.
-      navigator.serviceWorker.register('./sw.js?v=154', { updateViaCache: 'none' })
+      // 🐛 2026-09-25 수정(사용자 재현: "v153 그대로야, 변경된게 없어" —
+      // 최신 코드가 GitHub Pages에는 배포됐는데 기기에는 전혀 반영이
+      // 안 됨) — 이 쿼리스트링(?v=154)이 c801692 커밋(v153→v154) 이후
+      // 15개 커밋(v155~v161) 동안 단 한 번도 갱신되지 않고 방치돼
+      // 있었다. CACHE_NAME/APP_BUILD는 매 배포마다 올렸지만 이 값만
+      // 빠뜨린 것 — 서비스워커 등록 URL 자체가 안 바뀌면 브라우저가
+      // "이미 최신"으로 오판해 새 sw.js(그 안의 새 CACHE_NAME)를 아예
+      // 안 받아오는 경우가 있어, 그 사이 모든 배포가 이 기기에는 전혀
+      // 반영되지 않았다. 매번 손으로 올리다 또 빠뜨리는 실수를 막기
+      // 위해, 별도 상수 대신 CACHE_NAME에서 버전 숫자를 그대로 뽑아
+      // 쓴다 — CACHE_NAME만 올리면 이 값도 자동으로 함께 갱신된다.
+      navigator.serviceWorker.register('./sw.js?v=' + (((window.__GAJA_CACHE_NAME || '').match(/\d+$/)) || ['0'])[0], { updateViaCache: 'none' })
         .then(reg => {
           // 이미 대기 중인(설치는 됐지만 아직 활성화 안 된) 서비스워커가
           // 있으면 즉시 활성화를 요청한다 — 페이지가 백그라운드에 오래
