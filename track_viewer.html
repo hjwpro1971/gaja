@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v169';
+    const CACHE_NAME = 'gaja-trail-cache-v170';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_gajamap_bearing_investigation';
+      const APP_BUILD = 'v20260926_gajamap_initial_fix_arrow_lookahead';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3473,11 +3473,39 @@
   }
 
   function updateGajaMapCore(section, proj, gpsLat, gpsLon) {
-    if (!shouldRecenterBy100m(proj.routeDistance)) {
+    // 🐛 2026-09-26 수정(사용자 지적: "등산시작 버튼 클릭 후 GPS가 연결
+    // 되고 내가 어디에서 어디로 가고 있는지 판정이 나면 그때가 시작점이야.
+    // 그 점하고 다음 구간 시작점하고 12시 방향으로 경로가 오게 해야
+    // 해.. 그래야 100m 이동전까지 방향을 바꾸지 않는다에 대한 왜곡이
+    // 해소가 될 것 같아" → 이어서 "다음 구간 시작점"의 의미를 확인 질문한
+    // 결과: "눈앞 진행방향"으로 확정됨, 먼 마일스톤 지명이 아님) —
+    // 최초 GPS 확정(lastRecenterDistance===null) 시점에도 그 이후와
+    // 똑같이 "100m 앞 한 점"을 목표로 삼고 있었다. 코스 시작 직후엔
+    // 아직 100m를 걷지도 않았는데 100m나 떨어진 먼 목표를 보고 방향을
+    // 정하다 보니, 첫 화면부터 눈앞 경로와 어긋나 보였다(들머리 근처는
+    // 특히 방향이 자주 꺾여 이 어긋남이 더 크게 드러남).
+    //
+    // 🐛 1차 시도(section.toMilestone 방향)의 실패: 목표를 "구간의 최종
+    // 목표 지명"으로 잡았더니, 계룡산 검증에서 목표 지명이 1469m나 멀리
+    // 있어 실제 눈앞 10m 방향과 136도나 어긋났다 — 사용자 확인 결과
+    // "다음 구간 시작점"은 먼 마일스톤이 아니라 "눈앞 진행방향"을
+    // 뜻했다. computeArrowHeadingV2(화살표)가 이미 쓰는 ARROW_LOOKAHEAD_M
+    // (15m, 정상류는 PEAK_LOOKAHEAD_M 50m)과 같은 가까운 lookahead로
+    // 최초 확정 목표를 잡는다 — 화살표와 지도 회전이 최초 확정 순간부터
+    // 같은 값을 공유해(명세 §23 "지도=GPX방향, 화살표=GPX방향") 자연히
+    // 일치한다. 최초 이후(100m 경과로 재중심하는 매 시점)는 원래대로
+    // "100m 앞"을 그대로 유지한다 — §3/§8의 100m 목표는 "코스 중간을
+    // 안정적으로 걷는 동안"에 대한 규칙이지, 시작 순간까지 포함하는
+    // 규칙이 아니었다는 재해석이다.
+    const isInitialFix = lastRecenterDistance === null;
+    if (!isInitialFix && !shouldRecenterBy100m(proj.routeDistance)) {
       return { section, proj, recentered: false };
     }
 
-    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + RECENTER_DISTANCE_M);
+    const lookaheadM = isInitialFix
+      ? (isNearPeakMilestone(proj.routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M)
+      : RECENTER_DISTANCE_M;
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + lookaheadM);
     if (!targetPt) return { section, proj, recentered: false };
     const bearing = calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
     applySegmentRotation(bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
