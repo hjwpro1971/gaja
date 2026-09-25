@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v166';
+    const CACHE_NAME = 'gaja-trail-cache-v169';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_gajamap_advance_section_wired';
+      const APP_BUILD = 'v20260926_gajamap_bearing_investigation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3291,6 +3291,26 @@
     return findPointAheadByDistance(points, distances, 0, targetDistM);
   }
 
+  // 🐛 2026-09-26 조사(사용자 재현: gps_replay.html로 계룡산 5봉코스
+  // idx=43 근처 재생 — 화면에 적용된 회전(235.8°)과 실제 눈앞 10~30m
+  // GPX 방향(201~205°)이 30도 넘게 어긋나 "경로가 12시가 아니라 11시로
+  // 보인다"). 처음엔 updateGajaMapCore가 "현재 위치 → 100m 앞 딱 한 점"
+  // 만으로 bearing을 계산하는 게 원인이라 보고, 30m 간격 표본의 대표
+  // 방향(단순 원형평균 → 거리 역가중 원형평균)으로 두 차례 교체를
+  // 시도했으나, 둘 다 코스 전체 재검증(1495개 포인트)에서 오히려
+  // 어긋남이 커졌다(단순평균 15.6°→44.5°, 가중평균 →64.0°). 코스
+  // 전체를 "재중심 직후 화면 방향 vs 실제 다음 10m 방향" 기준으로
+  // 측정한 결과, 심각한 어긋남(30도 초과)은 1495프레임 중 단 1개
+  // 구간(idx=1440~1443, 약 60~70도, 그마저 급커브가 아니라 완만한
+  // 곡선 도로에서 재중심 주기가 살짝 늦게 걸린 경우)뿐이었고, 나머지는
+  // 재중심 직후 0~5도로 정확했다가 100m 이동하는 동안 서서히 벌어져
+  // (평균 25도, 중앙값 17도) 다음 재중심에서 다시 맞춰지는 정상적인
+  // 진동 패턴이었다 — "100m 이동 전까지는 방향을 바꾸지 않는다"는
+  // 대원칙(§5) 자체가 만드는 트레이드오프이지 결함이 아니다. 대표방향
+  // 계산 함수를 별도로 만들었다가 원복했으므로, 아래 §3/§8이 명시한
+  // "100m 앞 한 점 → 방위각" 단일점 방식(updateGajaMapCore)을 그대로
+  // 유지한다.
+  //
   // 🧭 진행방향 계산의 단일 소스 — GPX 좌표만 사용, 센서 없음.
   // "원점"의 정의: 내 현재 위치에서, 실제로 걸어야 할 다음 목표 지점
   // (findNextRotationTarget이 반환)을 향한 직선 방향이 화면 위(12시)를
@@ -5510,6 +5530,11 @@
     isCurrentlyStopped = false;
     isOffTrailState = false;
 
+    // 이정표 근접 모달은 실제 GPS 콜백(handleGpsPositionUpdate)과 동일하게
+    // 시뮬레이션(따라가기 재생) 중에도 떠야 한다 — fire-and-forget으로
+    // 호출해 시뮬레이션 프레임 진행을 막지 않는다.
+    updatePoiProximity(lat, lon);
+
     // 🧭 지도 회전(시뮬레이션 전용, 2026-09-25 재조정) — 사용자 지시:
     // "시뮬레이션에는 속도가 빨라서 지도가 춤을 추어. 시뮬레이션만
     // 따로 기존 로직 적용하게 해". 실제 GPS는 매 픽스 즉시 회전
@@ -5939,6 +5964,7 @@
     stopCompass();
     if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
     if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+    hidePoiProximityModalOnExit(); // GPS를 끄면 떠 있던 이정표 모달도 함께 정리
     btn.innerText = '📍';
     btn.classList.remove('active');
     toast.style.display = 'none';
@@ -6262,11 +6288,160 @@
     handleGpsPositionUpdate(fakePos);
   };
 
+  // ===================================================================
+  // 🪧 이정표 안내판 근접 모달 (2026-09-26)
+  //
+  // 왜 만들었나: 갈림길 등 이정표 지점의 라벨은 지도 마커에 짧게만
+  // 표시되는데("삼불봉고개" 한 단어), 실제 산행 중엔 그 안내판에 실제로
+  // 적힌 전체 목적지 문구를 폰 화면에서 크게 보고 싶다는 요청 — GPS가
+  // 이정표 좌표 10m 이내로 들어오면 화면 상단에 모달로 자세히 표시하고,
+  // 25m 밖으로 벗어나면 자동으로 사라진다(들쭉날쭉한 GPS로 깜빡이는 것
+  // 방지 — hideThreshold와 같은 원리로 진입/이탈 임계값을 다르게 둠).
+  //
+  // 데이터 출처: nas-tools의 mountain_poi.db(산림청 100대명산 실측 GPX의
+  // wpt 중 category=SIGN). 산 이름으로 먼저 좁히지 않고 이정표 전체를
+  // 가져와 좌표 거리만으로 판정한다 — "밀양_재약산_A코스"처럼 파일명이
+  // 산 이름으로 시작하지 않는 코스도 항상 동작하게 하기 위함(gpx-map.html
+  // 의 fetchAllSignpostsFromDB()와 같은 이유).
+  //
+  // https 페이지에서 http 전용 nas-tools를 직접 부르면 Mixed Content로
+  // 막히므로 상대경로 "/api/poi"만 쓴다(Y:\.gaja-conf\tls.conf의
+  // ProxyPass /api/ 를 거치게 한다). GitHub Pages처럼 이 프록시가 없는
+  // 배포본에서는 fetch가 실패하며, catch에서 조용히 넘어가 GPS 안내 자체
+  // (구간회전, 방향 화살표 등 이 기능과 무관한 다른 기능)에는 영향이
+  // 없도록 만들었다.
+  // ===================================================================
+  const POI_PROXIMITY_ENTER_M = 10; // 이 거리 이내로 들어오면 모달 표시
+  const POI_PROXIMITY_EXIT_M = 25;  // 이 거리보다 멀어지면 모달 닫힘
+  let _poiSignpostCache = null; // 전체 이정표 목록(1회 조회 후 재사용)
+  let _poiSignpostFetchAttempted = false;
+  let _activeProximityPoi = null; // 현재 모달이 떠 있는 이정표(진입/이탈 판정용)
+  let _poiModalManuallyDismissedKey = null; // ✕로 방금 닫은 지점 — 같은 진입 동안 재등장 안 함
+
+  async function fetchCoursePoiSignposts() {
+    if (_poiSignpostFetchAttempted) return _poiSignpostCache;
+    _poiSignpostFetchAttempted = true;
+    try {
+      const res = await fetch('/api/poi?category=SIGN');
+      if (!res.ok) return null;
+      const data = await res.json();
+      _poiSignpostCache = data.items || [];
+      return _poiSignpostCache;
+    } catch (e) {
+      return null; // 서버가 잠깐 안 떠 있어도 GPS 안내 자체는 계속 동작해야 한다
+    }
+  }
+
+  function showPoiProximityModal(poi) {
+    let modal = document.getElementById('poiProximityModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'poiProximityModal';
+      // 하단 방향 화살표(.bottom-direction-arrow, bottom:100px) 바로
+      // 아래쪽에 둔다 — 화살표 밑에 이미 12시 방향 라벨(arrow-label,
+      // 화살표 기준 -30px 더 아래)이 있으므로, 이정표 모달은 그보다도
+      // 더 아래에 배치해 두 안내가 겹치지 않게 한다(2026-09-26, 사용자
+      // 지시: "위치도 아래쪽 화살표 밑으로 하기로 했는데").
+      modal.style.cssText = 'position:fixed; bottom:20px; left:12px; right:12px; z-index:999; background:rgba(17,24,20,0.96); color:#fff; border-radius:14px; padding:14px 16px; box-shadow:0 6px 20px rgba(0,0,0,0.35); backdrop-filter:blur(6px); display:flex; align-items:flex-start; gap:10px;';
+      document.body.appendChild(modal);
+    }
+
+    const destinations = [poi.signpost1, poi.signpost2, poi.signpost3, poi.signpost4]
+      .map(s => (s || '').split(';')[0].trim())
+      .filter(Boolean)
+      .filter(d => d !== 'NA'); // 원본 데이터에 목적지가 비어 "NA"로만 채워진 항목은 제외
+    const bodyText = destinations.length > 0 ? destinations.join(' · ') : '안내판';
+
+    modal.innerHTML = `
+      <div style="font-size:22px; line-height:1; margin-top:2px;">🪧</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:11px; font-weight:700; color:#a5d6a7; margin-bottom:3px;">이정표 안내판</div>
+        <div style="font-size:15px; font-weight:700; line-height:1.4; word-break:keep-all;">${bodyText}</div>
+      </div>
+      <button onclick="window.__dismissPoiProximityModal && window.__dismissPoiProximityModal()"
+        style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:26px; height:26px; border-radius:50%; font-size:14px; cursor:pointer; flex-shrink:0;">✕</button>
+    `;
+    modal.style.display = 'flex';
+  }
+
+  // GPS가 이 지점을 벗어나서(POI_PROXIMITY_EXIT_M 밖으로) 자동으로 닫히는
+  // 경우. 완전히 벗어났다가 다시 들어오면(왕복 코스 등) 다시 떠야 하므로
+  // 수동 닫기 기록(_poiModalManuallyDismissedKey)도 함께 초기화한다.
+  function hidePoiProximityModalOnExit() {
+    const modal = document.getElementById('poiProximityModal');
+    if (modal) modal.style.display = 'none';
+    _activeProximityPoi = null;
+    _poiModalManuallyDismissedKey = null;
+  }
+
+  // ✕ 버튼으로 사용자가 직접 닫는 경우. 화면만 숨기고 _activeProximityPoi는
+  // 일부러 그대로 둔다 — updatePoiProximity의 이탈 판정(아래 if문)이 계속
+  // 그 지점과의 거리를 추적해야, 실제로 벗어나는 순간
+  // hidePoiProximityModalOnExit()가 자동으로 불려 dismiss 기록도 함께
+  // 풀린다. 여기서 _activeProximityPoi까지 지워버리면 "아직 반경 안에
+  // 있다"는 사실 자체를 잃어버려, 벗어난 적이 없는데도 dismiss 기록이
+  // 영영 안 풀리는 버그가 생긴다.
+  function dismissPoiProximityModal() {
+    const modal = document.getElementById('poiProximityModal');
+    if (modal) modal.style.display = 'none';
+    if (_activeProximityPoi) {
+      _poiModalManuallyDismissedKey = _activeProximityPoi.id != null
+        ? String(_activeProximityPoi.id) : (_activeProximityPoi.lat + ',' + _activeProximityPoi.lon);
+    }
+  }
+  window.__dismissPoiProximityModal = dismissPoiProximityModal;
+
+  // GPS 콜백(handleGpsPositionUpdate)과 시뮬레이션(renderSimFrame) 양쪽에서
+  // 매 위치 갱신마다 호출한다. await 없이 fire-and-forget으로 불러도 안전
+  // 하도록, 호출부에서는 결과를 기다리지 않는다.
+  async function updatePoiProximity(lat, lon) {
+    const signs = await fetchCoursePoiSignposts();
+    if (!signs || signs.length === 0) return;
+
+    // 이미 모달이 떠 있는 지점이 있으면 그 지점과의 거리부터 확인 —
+    // 매번 전체를 다시 훑는 대신 "이탈했는지"만 먼저 본다.
+    if (_activeProximityPoi) {
+      const d = haversineMeters(lat, lon, _activeProximityPoi.lat, _activeProximityPoi.lon);
+      if (d > POI_PROXIMITY_EXIT_M) {
+        hidePoiProximityModalOnExit();
+      } else {
+        return; // 아직 그 지점 근처 — 다시 그릴 필요 없음(깜빡임 방지)
+      }
+    }
+
+    // 새로 진입할 지점을 찾는다. 여러 지점이 동시에 10m 이내일 가능성은
+    // 낮지만, 있다면 더 가까운 쪽을 우선한다.
+    let nearest = null, nearestD = Infinity;
+    for (const s of signs) {
+      const d = haversineMeters(lat, lon, s.lat, s.lon);
+      if (d <= POI_PROXIMITY_ENTER_M && d < nearestD) {
+        nearest = s; nearestD = d;
+      }
+    }
+    if (!nearest) return;
+
+    const key = nearest.id != null ? String(nearest.id) : (nearest.lat + ',' + nearest.lon);
+    if (key === _poiModalManuallyDismissedKey) return; // 사용자가 방금 ✕로 닫은 지점은 같은 진입 동안 재등장 안 함
+
+    _activeProximityPoi = nearest;
+    showPoiProximityModal(nearest);
+  }
+
+  // 거리 계산은 이 파일에 이미 있는 haversineMeters(아래 2044행 부근)를
+  // 그대로 재사용한다 — 새로 선언하지 않음(중복 방지).
+
   function handleGpsPositionUpdate(pos) {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
         lastKnownPos = { lat, lon }; // 화면 표시·이탈판정용 — 지연 없는 원시 좌표를 그대로 사용
+
+        // 이정표 근접 모달은 화면 회전/정지판정 파이프라인과 무관하게
+        // "GPS가 실제로 그 좌표 10m 이내에 왔는지"만 보면 되므로, 아래
+        // 필터링 전의 원시 좌표를 그대로 쓴다. await 없이 fire-and-forget
+        // 으로 호출해 GPS 콜백 자체를 막지 않는다 — 실패해도 화면 회전 등
+        // 나머지 안내 기능에는 영향이 없다.
+        updatePoiProximity(lat, lon);
 
         // 📡 GpsFilterEngine에 원시 픽스를 넣으면, 표준 파이프라인이
         // (1)오차 필터 → (2)정지/이동 판정 → (3)좌표 스무딩+방위각
