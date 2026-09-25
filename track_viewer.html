@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v163';
+    const CACHE_NAME = 'gaja-trail-cache-v164';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_locked_advance_abs_distance';
+      const APP_BUILD = 'v20260925_gajamap_section_structs_added';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2828,6 +2828,122 @@
     return list;
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // 🗺️ 가자맵 대원칙 전면 재설계(2026-09-25, 사용자 제공 명세서
+  // gajamap_map_origin_redesign.md 기준) — "역방향 판정에 대한 것을
+  // 없애려고 해"(09-24)에서 한 걸음 더 나아가, "지도 방향은 GPS
+  // 이동방향이 아니라 GPX가 정의한 진행방향(지명 순서)만 따른다"는
+  // 원칙으로 재설계한다.
+  //
+  // 대원칙: A→B→C→B→A 코스에서 구간은 AB/BC/CB/BA 전부 "정상 진행
+  // 구간"이다 — "역방향"이라는 개념 자체를 지도 방향 결정에 쓰지
+  // 않는다. currentMilestones(2811행에서 distanceM 오름차순 정렬 —
+  // 즉 이 배열의 인덱스 순서 자체가 이미 "코스 진행 순서"다)의 인덱스
+  // 두 개(현재/다음)만으로 "지금 어느 구간을 걷고 있는지"와 "정방향인지
+  // 역방향인지"가 동시에 표현된다 — isReversingOnTrail 같은 별도
+  // 상태가 필요 없다. 왕복 코스는 buildMilestones가 이미 같은 이름의
+  // 웨이포인트(예: "갈림길5")를 가는 길/오는 길 양쪽에 서로 다른
+  // distanceM으로 각각 등록해두므로(2738-2746행 클러스터링 로직),
+  // 배열 인덱스만 앞뒤로 훑으면 A→B→...→(종점)→...→B→A가 자연히
+  // 표현된다.
+  //
+  // 이번 단계(1단계)에서는 아래 함수들을 신규로 추가만 하고, 기존
+  // handleGpsPositionUpdate 등 호출부는 아직 건드리지 않는다(계획의
+  // 3단계 커밋 중 1단계 — 구조만 먼저 추가해 Node.js로 단위 검증한
+  // 뒤, 다음 커밋에서 실제로 스위치한다).
+
+  let currentMilestoneIdx = 0; // 확정된 직전 지명의 currentMilestones 인덱스
+  let nextMilestoneIdx = 1;    // 다음 목표 지명의 인덱스(currentMilestoneIdx보다 크면 정방향, 작으면 역방향 — 이 부호 자체가 "구간"의 방향)
+
+  // 현재 지명 구간을 반환한다. currentMilestones가 비었거나 아직 구간이
+  // 확정 안 됐으면(코스 진입 전) null — 이때는 예외 경로(전역 탐색)를
+  // 쓴다(resolveInitialSection 참고).
+  function getCurrentSection() {
+    const A = currentMilestones[currentMilestoneIdx];
+    const B = currentMilestones[nextMilestoneIdx];
+    if (!A || !B) return null;
+    return { fromMilestone: A, toMilestone: B, isForward: nextMilestoneIdx > currentMilestoneIdx };
+  }
+
+  // 목표 지명(B)에 실제로 도착했을 때 호출 — 다음 구간으로 전진한다.
+  // 코스 양 끝(index 0 또는 length-1)에 닿으면 진행 부호가 자동으로
+  // 반전되어, 왕복 코스의 "되돌아가기"가 별도 판정 없이 자연스럽게
+  // 일어난다.
+  function advanceSection(arrivedAtIdx) {
+    const wasForward = nextMilestoneIdx > currentMilestoneIdx;
+    currentMilestoneIdx = arrivedAtIdx;
+    let dir = wasForward ? 1 : -1;
+    let next = currentMilestoneIdx + dir;
+    if (next < 0 || next >= currentMilestones.length) dir = -dir; // 종점 도달 → 자동 반전(왕복)
+    nextMilestoneIdx = currentMilestoneIdx + dir;
+  }
+
+  // 현재 구간(section)의 두 마일스톤 사이에 해당하는 points 배열
+  // 인덱스 범위를 구한다 — milestone.distanceM(이미 cumulativeDistances
+  // 기준)을 그 값 이하인 마지막 points 인덱스로 역산한다. 구간이
+  // 바뀔 때만 호출되므로 이분탐색 없이 선형탐색으로도 충분히 빠르다.
+  function findPointsIndexAtDistance(distances, targetDistM) {
+    let idx = 0;
+    for (let i = 0; i < distances.length; i++) {
+      if (distances[i] <= targetDistM) idx = i; else break;
+    }
+    return idx;
+  }
+  function getSectionIndexRange(section) {
+    const dFrom = section.fromMilestone.distanceM;
+    const dTo = section.toMilestone.distanceM;
+    const lo = Math.min(dFrom, dTo), hi = Math.max(dFrom, dTo);
+    const idxLo = findPointsIndexAtDistance(cumulativeDistances, lo);
+    const idxHi = Math.max(idxLo, findPointsIndexAtDistance(cumulativeDistances, hi));
+    return { idxLo, idxHi };
+  }
+
+  // 현재 GPS 좌표를 "현재 구간"의 GPX 선분들에만 투영한다 —
+  // pointToSegmentMetersWithT(기존, 변경 없음)를 구간 범위 안에서만
+  // 돌리므로, 왕복 코스의 반대편(가는 길 vs 오는 길) 세그먼트는 애초에
+  // 이 범위 밖이라 후보에 들 수 없다. 이게 예전에 isReversingOnTrail
+  // 방향 페널티(findNearestInRange)로 억지로 막던 문제를 구조적으로
+  // 없앤다 — 페널티 없이도 반대편으로 오매칭될 수가 없다.
+  function projectOntoCurrentSection(lat, lon, section) {
+    const { idxLo, idxHi } = getSectionIndexRange(section);
+    if (!currentPoints || idxHi <= idxLo) return null;
+    let best = null;
+    for (let i = idxLo; i < idxHi; i++) {
+      const a = currentPoints[i], b = currentPoints[i + 1];
+      if (!a || !b) continue;
+      const r = pointToSegmentMetersWithT(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      if (!best || r.distance < best.distance) best = { ...r, segmentIndex: i };
+    }
+    if (!best) return null;
+    const routeDistance = (cumulativeDistances[best.segmentIndex] || 0) + best.t * best.segLenM;
+    const a = currentPoints[best.segmentIndex], b = currentPoints[best.segmentIndex + 1];
+    return {
+      segmentIndex: best.segmentIndex,
+      projectionRatio: best.t,
+      projectedLat: a.lat + (b.lat - a.lat) * best.t,
+      projectedLon: a.lon + (b.lon - a.lon) * best.t,
+      routeDistance,
+      distance: best.distance,
+    };
+  }
+
+  // 구간이 아직 확정 안 된 상태(코스 진입 전, 또는 재획득 시)에서
+  // 최초 매칭 결과(전역 탐색으로 찾은 nearestIdx)로 "그 지점이 속한
+  // 첫 구간"을 역산해 currentMilestoneIdx/nextMilestoneIdx를 초기화한다.
+  function resolveInitialSection(nearestIdx) {
+    if (!currentMilestones || currentMilestones.length < 2) {
+      currentMilestoneIdx = 0;
+      nextMilestoneIdx = Math.min(1, Math.max(0, currentMilestones.length - 1));
+      return;
+    }
+    const dist = cumulativeDistances[nearestIdx] || 0;
+    // currentMilestones는 distanceM 오름차순 — dist 이하 중 가장 뒤(가까운) 것이 A
+    let i = 0;
+    while (i + 1 < currentMilestones.length && currentMilestones[i + 1].distanceM <= dist) i++;
+    currentMilestoneIdx = i;
+    nextMilestoneIdx = Math.min(i + 1, currentMilestones.length - 1);
+  }
+
   // 🧭 회전/안내 방향 목표 지점 계산 — "단일 진행방향 소스" 설계
   // (2026-09-17 전면 재설계).
   //
@@ -3062,6 +3178,24 @@
     return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
   }
 
+  // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — computeArrowHeading의 V2.
+  // moveDirectionSign(GPX index 증감 기반, 역방향 개념 의존)을 전혀
+  // 쓰지 않는다. 오직 projectOntoCurrentSection()이 반환한 routeDistance
+  // (현재 구간에 투영된 코스 진행거리) + lookahead만큼 "코스 시작점
+  // 기준 절대 누적거리"를 앞으로 더해 그 지점을 향한 방위각을 구한다 —
+  // 구간이 역방향(B→A)이어도 routeDistance 자체는 "코스 시작점부터"
+  // 이미 정방향으로 누적된 값이므로, findPointAheadByDistance가 항상
+  // 앞(코스 진행 방향, fromIdx 이후)으로만 찾는 것과 자연히 맞는다
+  // — 역방향 구간을 걸을 때도 "코스가 실제로 이어지는 다음 지점"을
+  // 정확히 가리킨다(음수 lookahead 처리가 필요 없다).
+  function computeArrowHeadingV2(gpsLat, gpsLon, routeDistance) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2 || routeDistance === null || routeDistance === undefined) return null;
+    const lookahead = isNearPeakMilestone(routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, routeDistance + lookahead);
+    if (!targetPt) return null;
+    return calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
+  }
+
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
   // 스플라인으로 점을 촘촘히 보간한다(#3). GPS 매칭/거리 계산에 쓰는
   // 원본 points/cumulativeDistances는 절대 건드리지 않는다 — 이 함수의
@@ -3271,6 +3405,60 @@
   // 않는다(resetLiveMapRotationState 정의부 호출 지점 참고).
   function resetLiveMapRotationState() {
     lastLiveRotationDist = null;
+  }
+
+  // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — applyLiveMapRotation(5m마다
+  // 사실상 즉시 회전)을 대체할 100m 갱신 게이트. 명세: "지도 원점을
+  // 매 GPS 업데이트마다 변경하지 않는다 — 최초 GPS 확정 / 약 100m
+  // 이동 / 지명 구간 변경 / 백그라운드 복귀 시에만 재설정한다."
+  // (이번 커밋은 함수만 추가 — 실제 handleGpsPositionUpdate 스위치는
+  // 다음 커밋에서 한다.)
+  let lastRecenterDistance = null;
+  const RECENTER_DISTANCE_M = 100;
+  function shouldRecenterBy100m(routeDistance) {
+    if (lastRecenterDistance === null) return true; // 최초 GPS 확정
+    return Math.abs(routeDistance - lastRecenterDistance) >= RECENTER_DISTANCE_M;
+  }
+
+  // 명세의 핵심 함수: 현재 GPS → 현재 구간 → 구간 투영 → 100m 앞
+  // 목표점 → 방위각 → 그 방향을 화면 12시로(applySegmentRotation).
+  // isOffTrailState/이탈 여부를 인자로도 클로저로도 전혀 참조하지
+  // 않는다 — 이탈 상태가 지도 방향에 영향을 주는 경로 자체가 이
+  // 함수의 시그니처 안에 존재할 수 없다(명세 "이탈 상태가 지도 방향을
+  // 변경하게 하지 않는다"를 구조적으로 보장).
+  function updateGajaMap(gpsLat, gpsLon) {
+    const section = getCurrentSection();
+    if (!section) return null; // 구간 미확정 — 호출부가 resolveInitialSection으로 먼저 확정해야 함
+    const proj = projectOntoCurrentSection(gpsLat, gpsLon, section);
+    if (!proj) return null;
+
+    if (!shouldRecenterBy100m(proj.routeDistance)) {
+      return { section, proj, recentered: false };
+    }
+
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + RECENTER_DISTANCE_M);
+    if (!targetPt) return { section, proj, recentered: false };
+    const bearing = calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
+    applySegmentRotation(bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
+    lastRecenterDistance = proj.routeDistance;
+    return { section, proj, recentered: true, bearing };
+  }
+
+  // 🗺️ 백그라운드/포그라운드 복귀·손가락 드래그 종료·홈 버튼을 하나로
+  // 통일하는 재계산 진입점(명세 19·21항: "기존 회전값을 그대로 신뢰
+  // 하지 않는다", "드래그 종료 후 자동복귀 시 새로 계산한다" — 예전
+  // 코드는 이 세 지점에서 각각 "기존 mapRotationDeg를 그대로 재적용"
+  // 하거나 개별적으로 리셋했는데, 그 패턴 자체가 명세 위반이었다).
+  // lastRecenterDistance를 강제로 리셋해 다음 updateGajaMap 호출이
+  // 무조건 재계산(recentered:true)하도록 만든다.
+  function recalculateGajaMapFromScratch(reason) {
+    if (!lastKnownPos) return;
+    lastRecenterDistance = null;
+    if (!getCurrentSection()) {
+      const nearest = findNearestInRange(lastKnownPos.lat, lastKnownPos.lon, currentPoints, 0, Math.max(0, (currentPoints ? currentPoints.length : 1) - 2));
+      if (nearest) resolveInitialSection(nearest.index);
+    }
+    updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
   }
 
   // routeBadgeEls의 모든 라벨 DOM에 현재 appliedMapRotationDeg만큼
