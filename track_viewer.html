@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v173';
+    const CACHE_NAME = 'gaja-trail-cache-v174';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_wayfind_button_hidden';
+      const APP_BUILD = 'v20260926_toast_big_landmark_only';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3062,6 +3062,56 @@
   // 실제로 다음에 만날 갈림길이므로, prevM/nextM을 뒤바꿔 반환한다.
   // 항상 currentMilestones(화면 안내용)를 쓴다 — 회전 트리거는 별도
   // 함수 findNextRotationTarget이 담당한다(2026-09-17 재설계 이후).
+  // 🐛 2026-09-26 수정(사용자 지적: "맵 상 갈림길이 너무 많아서.. 갈림길
+  // 에서 갈림길.. 이 좋을까? 큰 지명만 사용할까(들머리, 날머리, 산,
+  // 봉우리, 삼거리, 고개, 배재 등, 갈림길 빼고)" → "표시만 바꾸는
+  // 안(추천) 나도 이게 좋을것 같아") — 계룡산 5봉코스 실측 기준
+  // 마일스톤 26개 중 13개(절반)가 "갈림길"이라, 상단 알림판이 "갈림길
+  // → 갈림길 · 0.01km 남음"처럼 정보가 없는 안내를 자주 보여줬다.
+  // 방향/구간 판정(getCurrentSection/maybeAdvanceSection/findNextMilestone)
+  // 은 100m 게이트가 급커브를 놓치지 않도록 촘촘한 currentMilestones를
+  // 그대로 써야 하므로 절대 건드리지 않는다 — 상단 알림판 "표시"에서만
+  // 이름이 정확히 "갈림길"인 지점을 건너뛴 별도 목록을 쓴다. "삼거리/
+  // 사거리"는 buildMilestones에서 같은 🔀 아이콘으로 묶이지만 이름
+  // 자체는 다르므로(사용자 의도: 삼거리는 큰 지명으로 남김) 이름 문자열
+  // 로 "갈림길"만 정확히 걸러낸다.
+  function isBigLandmarkName(name) {
+    return (name || '').trim() !== '갈림길';
+  }
+  const bigLandmarkMilestonesCache = { source: null, list: null };
+  function getBigLandmarkMilestones() {
+    if (bigLandmarkMilestonesCache.source === currentMilestones) {
+      return bigLandmarkMilestonesCache.list;
+    }
+    const list = (currentMilestones || []).filter(m => isBigLandmarkName(m.name));
+    bigLandmarkMilestonesCache.source = currentMilestones;
+    bigLandmarkMilestonesCache.list = list;
+    return list;
+  }
+  // findNextMilestone과 완전히 같은 탐색 로직이지만, 입력 배열만
+  // "갈림길을 뺀 큰 지명 목록"으로 바꾼 표시 전용 버전 — 방향 계산에는
+  // 쓰지 않는다(updateNavigationToast의 안내 문구 조립에서만 호출).
+  function findNextBigLandmark(traveledDist, isReversing, graceM) {
+    const source = getBigLandmarkMilestones();
+    if (!source || source.length < 2) return null;
+    const grace = (graceM === undefined) ? 15 : graceM;
+    let prevM = source[0];
+    let nextM = source[source.length - 1];
+    for (let i = 0; i < source.length; i++) {
+      if (source[i].distanceM <= traveledDist + grace) {
+        prevM = source[i];
+      }
+      if (source[i].distanceM > traveledDist) {
+        nextM = source[i];
+        break;
+      }
+    }
+    if (isReversing) {
+      return { prevM: nextM, nextM: prevM };
+    }
+    return { prevM, nextM };
+  }
+
   function findNextMilestone(traveledDist, isReversing, graceM) {
     const source = currentMilestones;
     if (!source || source.length < 2) return null;
@@ -5081,7 +5131,22 @@
         // 목록의 safeName)와 동일하게 '<'를 이스케이프해 HTML 인젝션을
         // 막는다.
         const escName = s => String(s || '').replace(/</g, '&lt;');
-        toast.innerHTML = `🧭 ${escName(prevM.name)} → ${escName(nextM.name)} · ${fmtM(distToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
+        // 🐛 2026-09-26 수정 — 상단 알림판 표시에만 큰 지명(갈림길 제외)
+        // 목록을 쓴다. 방향/화살표(turnAngle, showUpcomingTurnAlert)는
+        // 위에서 이미 정밀한 findNextMilestone(갈림길 포함) 결과로 계산을
+        // 끝냈으므로 전혀 영향받지 않는다 — 여기서 표시용 이름/거리만
+        // 별도로 다시 찾는다. 코스에 큰 지명이 2개 미만이면(웨이포인트가
+        // 거의 없는 GPX) 표시용 결과가 없을 수 있으니 그때만 기존
+        // prevM/nextM으로 안전하게 폴백한다.
+        const bigResult = findNextBigLandmark(traveledDist, isReversingOnTrail);
+        const dispPrevM = bigResult ? bigResult.prevM : prevM;
+        const dispNextM = bigResult ? bigResult.nextM : nextM;
+        const dispDistToNextM = bigResult
+          ? (isReversingOnTrail
+              ? Math.max(0, traveledDist - dispNextM.distanceM)
+              : Math.max(0, dispNextM.distanceM - traveledDist))
+          : distToNextM;
+        toast.innerHTML = `🧭 ${escName(dispPrevM.name)} → ${escName(dispNextM.name)} · ${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
 
         // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
         // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
