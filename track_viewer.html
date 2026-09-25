@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v172';
+    const CACHE_NAME = 'gaja-trail-cache-v173';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_poi_modal_visibility_fix';
+      const APP_BUILD = 'v20260926_wayfind_button_hidden';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -679,8 +679,15 @@
        표시된다(다른 토글 버튼과 동일 패턴). 2026-09-25: 예전엔 하단에
        목적지명/거리/복귀 버튼을 보여주는 별도 패널(wayfindingPanel)이
        계속 떠있었는데, 사용자 지시로 완전히 제거했다 — 이제 켜짐
-       표시는 이 아이콘 자체와 지도 위 녹색 안내선(guideLine)뿐이다. -->
-  <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)">🔍</button>
+       표시는 이 아이콘 자체와 지도 위 녹색 안내선(guideLine)뿐이다.
+       ⚠️ 2026-09-26 사용자 지시로 버튼을 일단 숨김(비활성화) — "이건
+       다시 생각을 해 봐야겠어. 경로에서 이탈했을 때 그 경로도 다시
+       찾아가는건데.. 지금 이탈 시 나오는 그 로직으로 되지 않을까?"라는
+       재검토 의견에 따라, 기존 이탈판정(updateOffTrailHysteresis) 로직
+       재사용으로 대체할지 검토 중. toggleWayfindingMode/isWayfindActive
+       등 로직은 전혀 건드리지 않았으니, 버튼만 다시 노출하면 즉시
+       원상 복구된다. -->
+  <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)" style="display:none;">🔍</button>
   <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
   <!-- 🔔 저전력 알림 모드(2026-09-21) — GPS를 자동으로 켜고 5초 간격
        폴링으로 전환, 기존 갈림길 접근 비프음/화살표 안내는 그대로 유지.
