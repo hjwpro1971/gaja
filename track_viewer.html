@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v170';
+    const CACHE_NAME = 'gaja-trail-cache-v171';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_gajamap_initial_fix_arrow_lookahead';
+      const APP_BUILD = 'v20260926_poi_modal_replaces_top_toast';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6360,17 +6360,42 @@
     }
   }
 
+  // 🐛 2026-09-26 수정(사용자 지적: "이정표 안내판이 하단에 모달 형식으로
+  // 나타났다가.. 밑에 있으니 방향알림 화살표가 안 보여. 상단 알림판에
+  // 이정표 근처에 가면 나타나는 하단 모달을 상단 알림판 위치로 이동해서
+  // 이 모달이 나타날때 상단 알림판 대신 하게 해줘. 이 모달이 사라지면
+  // 상단 알림판이 다시 보이면 돼") — 하단 고정(bottom:20px)이던 위치를
+  // 상단 알림판(.gps-toast, top:68px)과 같은 자리로 옮기고, 이정표 모달이
+  // 떠 있는 동안은 상단 알림판(#gpsToast)을 숨긴다. updateNavigationToast는
+  // toast.style.display==='none'이면 텍스트 갱신만 건너뛰고 나머지 로직
+  // (구간 회전 트리거 등)은 그대로 실행되므로, 잠깐 숨겨도 안내 로직
+  // 자체에는 영향이 없다 — display만 토글하는 것으로 안전하다.
+  function setTopToastHiddenByPoi(hidden) {
+    const toast = document.getElementById('gpsToast');
+    if (!toast) return;
+    if (hidden) {
+      // 이정표 모달이 뜨는 동안 원래 있던 텍스트/스타일을 기억해뒀다가
+      // 모달이 닫히면 그대로 복원한다 — 다음 GPS 픽스가 오기 전까지도
+      // "빈 화면"이 아니라 직전 안내가 그대로 이어지게 하기 위함.
+      if (toast.style.display !== 'none') {
+        toast._poiSavedDisplay = toast.style.display;
+      }
+      toast.style.display = 'none';
+    } else {
+      toast.style.display = toast._poiSavedDisplay || '';
+      toast._poiSavedDisplay = null;
+    }
+  }
+
   function showPoiProximityModal(poi) {
     let modal = document.getElementById('poiProximityModal');
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'poiProximityModal';
-      // 하단 방향 화살표(.bottom-direction-arrow, bottom:100px) 바로
-      // 아래쪽에 둔다 — 화살표 밑에 이미 12시 방향 라벨(arrow-label,
-      // 화살표 기준 -30px 더 아래)이 있으므로, 이정표 모달은 그보다도
-      // 더 아래에 배치해 두 안내가 겹치지 않게 한다(2026-09-26, 사용자
-      // 지시: "위치도 아래쪽 화살표 밑으로 하기로 했는데").
-      modal.style.cssText = 'position:fixed; bottom:20px; left:12px; right:12px; z-index:999; background:rgba(17,24,20,0.96); color:#fff; border-radius:14px; padding:14px 16px; box-shadow:0 6px 20px rgba(0,0,0,0.35); backdrop-filter:blur(6px); display:flex; align-items:flex-start; gap:10px;';
+      // 상단 알림판(.gps-toast)과 같은 위치(top:68px, left/right:12px)에
+      // 표시해 상단 알림판을 완전히 대신한다 — 하단 방향 화살표를 가리던
+      // 문제를 없앤다.
+      modal.style.cssText = 'position:absolute; top:68px; left:12px; right:12px; z-index:999; background:rgba(17,24,20,0.96); color:#fff; border-radius:16px; padding:10px 16px; box-shadow:0 4px 16px rgba(0,0,0,0.18); backdrop-filter:blur(8px); display:flex; align-items:flex-start; gap:10px;';
       document.body.appendChild(modal);
     }
 
@@ -6390,6 +6415,7 @@
         style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:26px; height:26px; border-radius:50%; font-size:14px; cursor:pointer; flex-shrink:0;">✕</button>
     `;
     modal.style.display = 'flex';
+    setTopToastHiddenByPoi(true);
   }
 
   // GPS가 이 지점을 벗어나서(POI_PROXIMITY_EXIT_M 밖으로) 자동으로 닫히는
@@ -6400,6 +6426,7 @@
     if (modal) modal.style.display = 'none';
     _activeProximityPoi = null;
     _poiModalManuallyDismissedKey = null;
+    setTopToastHiddenByPoi(false);
   }
 
   // ✕ 버튼으로 사용자가 직접 닫는 경우. 화면만 숨기고 _activeProximityPoi는
@@ -6416,6 +6443,7 @@
       _poiModalManuallyDismissedKey = _activeProximityPoi.id != null
         ? String(_activeProximityPoi.id) : (_activeProximityPoi.lat + ',' + _activeProximityPoi.lon);
     }
+    setTopToastHiddenByPoi(false);
   }
   window.__dismissPoiProximityModal = dismissPoiProximityModal;
 
