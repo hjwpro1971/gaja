@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v164';
+    const CACHE_NAME = 'gaja-trail-cache-v165';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260925_gajamap_section_structs_added';
+      const APP_BUILD = 'v20260925_gajamap_actual_switch';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1782,7 +1782,10 @@
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           const z = map.getZoom();
           applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: true });
-          if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
+          // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "기존 mapRotationDeg를
+          // 그대로 재적용"(명세가 금지하는 패턴)하지 않고, 현재 GPS→
+          // 현재 구간→100m 목표→방향을 새로 계산한다.
+          if (isSegmentRotationMode) recalculateGajaMapFromScratch('zoomEnd');
         }
       }, DRAG_RETURN_DELAY_MS);
     });
@@ -1944,9 +1947,11 @@
         if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
           const z = map.getZoom();
           applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: true });
-          // 동결 중 쌓였을 수 있는 최신 회전각을 즉시 재적용 — 드래그
-          // 복귀 시 위치는 맞는데 회전만 옛 값으로 남는 것을 방지.
-          if (isSegmentRotationMode) applySegmentRotation(mapRotationDeg);
+          // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "동결 중 쌓였을 수
+          // 있는 최신 회전각을 즉시 재적용"(=기존 mapRotationDeg 재사용)
+          // 하지 않고, 새로 계산한다(명세: "드래그 종료 후 자동복귀 시
+          // 현재GPS→현재구간→100m목표→GPX방향→원점→12시 순서로 재계산").
+          if (isSegmentRotationMode) recalculateGajaMapFromScratch('dragEnd');
         }
       }, DRAG_RETURN_DELAY_MS);
     }
@@ -2372,38 +2377,16 @@
         rawMinDist = Math.min(d, rawMinDist);
         rawNearestIdx = i;
       }
-      let score = d;
-      // 왕복 겹침 구간에서 "가는 길"과 "오는 길" 세그먼트를 구분하는
-      // 재료는 isReversingOnTrail(updateTrackDirection이 관리하는 단일
-      // 방향 상태) — 이번 픽스의 매칭 결과가 이번 픽스의 방향 판정에
-      // 섞이지 않도록, updateTrackDirection은 nearestPointOnTrail이
-      // nearestIdx를 확정한 "이후"에만 호출된다(순환 차단). 아직 한
-      // 번도 방향이 확정된 적 없으면(trackDirectionCandidate===null,
-      // 코스 시작 직후) 페널티 없이 순수 거리로만 비교한다.
-      if (lastNearestIdx >= 0 && trackDirectionCandidate !== null) {
-        // 🧭 정상/갈림길 등에서 GPS가 잠시 서성이며 찍힌 극단적으로 짧은
-        // 세그먼트는 방위각이 사실상 무작위다(실측: 남덕유산 서봉 왕복구간
-        // 시뮬레이션에서 확인 — 반경 1~2m 안에 방위각이 0~360도 전 범위로
-        // 요동치는 30개 포인트가 있었음). 직전 확정 세그먼트나 이번 비교
-        // 대상 세그먼트 둘 중 하나라도 이렇게 짧으면, 그 방위각은 "GPX
-        // index가 가리키는 방향"이 아니라 노이즈이므로 페널티 판별
-        // 재료로 쓰지 않는다(순수 거리로만 비교) — 대원칙(GPX index
-        // 이동방향 기준 판단)을 지키려면, 애초에 방향이 정의되지 않는
-        // 구간에서는 방향 판단 자체를 하지 않는 게 맞다.
-        const lastSegTooShort = segmentLengths[lastNearestIdx] < MIN_SEGMENT_LEN_FOR_BEARING_M;
-        const currentSegTooShort = segmentLengths[i] < MIN_SEGMENT_LEN_FOR_BEARING_M;
-        if (!lastSegTooShort && !currentSegTooShort) {
-          const lastSegBearing = currentSegmentBearings[lastNearestIdx];
-          if (lastSegBearing !== undefined && lastSegBearing !== null) {
-            const expectedBearing = isReversingOnTrail
-              ? (lastSegBearing + 180) % 360
-              : lastSegBearing;
-            const segBearing = calculateBearing(a.lat, a.lon, b.lat, b.lon);
-            const mismatch = Math.abs(shortestAngleDiff(segBearing, expectedBearing));
-            if (mismatch >= REVERSE_SEGMENT_EXCLUDE_DEG) score += REVERSE_SEGMENT_PENALTY_M;
-          }
-        }
-      }
+      // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — 예전엔 여기서
+      // isReversingOnTrail(왕복 겹침 구간의 가는 길/오는 길 구분용)
+      // 기반 방향 페널티를 더했다. 이제 이 함수는 "구간 미확정 시(코스
+      // 진입 전) 전역 탐색 전용"으로만 쓰인다 — 구간이 확정된 이후의
+      // 정상 추적은 projectOntoCurrentSection이 애초에 현재 구간 범위
+      // 안에서만 탐색하므로 왕복 반대편이 후보에 들 수조차 없다(방향
+      // 페널티가 막던 문제가 구조적으로 사라짐). "역방향"이라는 개념
+      // 자체를 지도 방향 결정에서 없앤다는 대원칙에 따라 페널티 로직을
+      // 제거하고 순수 최단거리 비교만 남긴다.
+      const score = d;
 
       // 위 rawNearestIdx와 동일한 이유로 동점(EPSILON_M 이내) 허용 비교 —
       // 방향 페널티가 섞인 score라도, 각 세그먼트 자체의 페널티 유무는
@@ -2735,7 +2718,31 @@
         // 직선 방향을 계산했을 때 실제 등산로 진행 방향과 다른 방향을
         // 가리킬 수 있다. name/거리 표시용 lat/lon은 원본을 유지하되,
         // 방향 계산 전용 필드를 별도로 둔다.
-        clusters.forEach(cluster => {
+        //
+        // 🐛 2026-09-25 수정(가자맵 대원칙 재설계 2단계 검증 중 발견): 들머리/
+        // 날머리는 "코스의 시작"/"코스의 끝"을 뜻하는 유일한 지점이어야
+        // 하는데, 위 왕복 클러스터링은 이름 있는 지점이 가는 길/오는 길에
+        // 각각 나타나는 걸 전제로 한다. 날머리 좌표가 들머리와 가까우면
+        // (원점회귀 코스) 코스 진행 중 우연히 그 좌표 WAYPOINT_MATCH_RADIUS_M
+        // 이내를 스쳐가는 세그먼트가 시작 직후에도 잡혀, 진짜 종점과는
+        // 별개로 "가짜 날머리" 클러스터가 코스 초반에 생겼다(남덕유산 실측:
+        // 종점 8462m와 별도로 298m 지점에도 "날머리" 마일스톤이 잡힘).
+        // resolveInitialSection이 지명 순서로 다음 구간을 결정하는 새 구조
+        // (currentMilestoneIdx/nextMilestoneIdx)에서는 이 가짜 클러스터가
+        // 첫 구간 자체를 완전히 잘못 확정시켜 지도 방향이 영구히 고정되는
+        // 치명적 결과로 이어진다. 들머리/날머리는 클러스터링 없이 "코스
+        // 시작/끝에 가장 가까운 클러스터 단 하나"만 남긴다.
+        let selectedClusters = clusters;
+        if (n.includes('들머리') || n.includes('출발')) {
+          selectedClusters = clusters.length
+            ? [clusters.reduce((a, b) => (cumDistances[a.best.idx] || 0) <= (cumDistances[b.best.idx] || 0) ? a : b)]
+            : clusters;
+        } else if (n.includes('날머리') || n.includes('도착')) {
+          selectedClusters = clusters.length
+            ? [clusters.reduce((a, b) => (cumDistances[a.best.idx] || 0) >= (cumDistances[b.best.idx] || 0) ? a : b)]
+            : clusters;
+        }
+        selectedClusters.forEach(cluster => {
           const nearestIdx = cluster.best.idx;
           const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] : 0;
           const trailPt = points[nearestIdx];
@@ -3374,39 +3381,6 @@
     updateRouteBadgeRotation();
   }
 
-  // 🧭 지도 실시간 회전(2026-09-25 재설계) — 화살표와 완전히 같은 값
-  // (computeArrowHeading 결과)으로 매 GPS 픽스마다 즉시 회전시킨다.
-  // 대원칙: "내가 지금 어디서 어디로 가는지"는 GPX index만으로 이미
-  // 확정되므로, 방향점 도착이나 재확인 스트릭을 기다릴 이유가 없다
-  // (사용자 지시: "이 알림과 내가 가는 방향의 지도가 일치하게 하면
-  // 돼... 내가 어디로 가는지 모르는 경우가 있나?").
-  //
-  // 국지적으로 굽는 구간(지그재그, 스위치백)에서 매 픽스 즉시 회전이
-  // 지도를 계속 흔드는 부작용은, "직전 회전 판정 지점(lastLiveRotationDist)
-  // 이후 실제로 ROTATION_MIN_MOVE_M 이상 이동했을 때만 갱신"하는 최소
-  // 이동거리 안전장치로 억제한다 — 제자리 서성임이나 GPS 노이즈로
-  // traveledDist가 거의 안 바뀌면 직전 회전값을 그대로 유지하고, 실제로
-  // 의미 있게 이동했을 때만 다시 돈다.
-  const ROTATION_MIN_MOVE_M = 5;
-  let lastLiveRotationDist = null;
-  function applyLiveMapRotation(bearingDeg, traveledDist) {
-    if (traveledDist === undefined || traveledDist === null) {
-      applySegmentRotation(bearingDeg);
-      return;
-    }
-    if (lastLiveRotationDist !== null && Math.abs(traveledDist - lastLiveRotationDist) < ROTATION_MIN_MOVE_M) {
-      return; // 아직 충분히 이동하지 않음 — 직전 회전값 유지(떨림 방지)
-    }
-    lastLiveRotationDist = traveledDist;
-    applySegmentRotation(bearingDeg);
-  }
-  // GPS 재시작/코스 재로드 시 이 기준점도 함께 초기화해야, 재개 직후
-  // "이전 세션의 traveledDist"와 비교해 첫 회전이 부당하게 억제되지
-  // 않는다(resetLiveMapRotationState 정의부 호출 지점 참고).
-  function resetLiveMapRotationState() {
-    lastLiveRotationDist = null;
-  }
-
   // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — applyLiveMapRotation(5m마다
   // 사실상 즉시 회전)을 대체할 100m 갱신 게이트. 명세: "지도 원점을
   // 매 GPS 업데이트마다 변경하지 않는다 — 최초 GPS 확정 / 약 100m
@@ -3418,6 +3392,14 @@
   function shouldRecenterBy100m(routeDistance) {
     if (lastRecenterDistance === null) return true; // 최초 GPS 확정
     return Math.abs(routeDistance - lastRecenterDistance) >= RECENTER_DISTANCE_M;
+  }
+  // GPS 재시작/코스 재로드/백그라운드 복귀 시 이 기준점을 초기화해야,
+  // 다음 updateGajaMap 호출이 "이전 세션의 routeDistance"와 비교해
+  // 부당하게 억제되지 않고 무조건 재계산한다(옛 resetLiveMapRotationState
+  // 를 대체 — lastLiveRotationDist/ROTATION_MIN_MOVE_M은 죽은 코드가 되어
+  // 제거했고, 이제 지도 회전 기준점은 lastRecenterDistance 하나뿐이다).
+  function resetGajaMapRotationState() {
+    lastRecenterDistance = null;
   }
 
   // 명세의 핵심 함수: 현재 GPS → 현재 구간 → 구간 투영 → 100m 앞
@@ -3916,7 +3898,7 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
-    resetLiveMapRotationState(); // 새 코스이므로 지도 회전 기준점(lastLiveRotationDist)도 초기화
+    resetGajaMapRotationState(); // 새 코스이므로 지도 회전 기준점(lastRecenterDistance)도 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
@@ -4570,15 +4552,16 @@
     updateGpsMarkerWarningStyle();
   }
 
-  // 화면 안내(시계 방향/좌우 안내)에 쓸 "현재 향한 절대 방위"를 반환한다.
-  // 센서(나침반/자이로) 완전 배제 — GPS 좌표만으로 "내가 보는 방향"을
-  // 추정한다. 이동 중에는 방금 GPS로 측정된 진행 방향(gpsMovementHeading)을
-  // 쓰고, 정지 중에는 그 값을 그대로 유지한다(멈추기 직전 걷던 방향을
-  // 계속 "정면"으로 간주) — 정지 시 마지막 값을 지우지 않는 것이 이
-  // 함수의 핵심이므로 watchPosition 콜백에서 gpsMovementHeading을
-  // 정지 상태에서는 절대 덮어쓰지 않는다.
+  // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — GPS 마커 아이콘 회전도 화살표/
+  // 지도와 같은 값(computeArrowHeadingV2 결과)을 쓰도록 통일한다.
+  // gpsMovementHeading(GPS 이동 센서 기반, "절대 지도 방향 계산에
+  // 쓰면 안 되는 것" 목록에 있음)은 더 이상 여기서 반환하지 않는다.
+  // handleGpsPositionUpdate가 매 픽스 계산한 arrowHeading을 아래
+  // lastArrowHeadingForGuidance에 저장해두고, 정지 중에도(값을 갱신
+  // 안 하므로) 마지막 값이 자연히 유지된다.
+  let lastArrowHeadingForGuidance = null;
   function getCurrentAbsHeadingForGuidance() {
-    return gpsMovementHeading;
+    return lastArrowHeadingForGuidance;
   }
 
   // 🏁 날머리 도착 자동 GPS 종료 — updateNavigationToast에서 사용.
@@ -4816,12 +4799,11 @@
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
     // 🧭 지도 회전각(mapRotationDeg/appliedMapRotationDeg)은 리셋하지
-    // 않는다 — applyLiveMapRotation이 최단경로(shortestAngleDiff) 기준
+    // 않는다 — applySegmentRotation이 최단경로(shortestAngleDiff) 기준
     // 으로 새 값을 계산하므로, 리셋 없이도 다음 회전이 정확한 방향으로
-    // 스냅된다. lastLiveRotationDist만 초기화해 "직전 회전 판정 이후
-    // 충분히 이동하지 않았다"는 안전장치가 이번 수동 재설정을 막지
-    // 않게 한다.
-    resetLiveMapRotationState();
+    // 스냅된다. lastRecenterDistance만 초기화해 "100m 이내는 재중심 안
+    // 함"이라는 게이트가 이번 수동 재설정을 막지 않게 한다.
+    resetGajaMapRotationState();
 
     currentRotationOriginDist = null;
     firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; // 수동 재설정은 대기 없이 즉시 확정
@@ -4832,28 +4814,19 @@
     // 담당한다 — 지도 회전은 아래에서 직접 즉시 처리한다.
     updateSegmentRotationTrigger(traveledDist, nearest ? nearest.index : undefined);
     forceOriginReset = false;
-    if (nearest && nearest.index >= 0) {
-      // 🐛 2026-09-25 수정(사용자 재현: "원점 다시 잡기 하니 가야할
-      // 곳이 6시 방향으로 회전, 계속 그대로야 지도가 전혀 회전을
-      // 안해") — 두 가지 결함을 함께 고친다:
-      //  1) isNearTrailheadNow를 하드코딩 false로 넘기던 것을 실제
-      //     들머리 접근 여부(isSegmentRotationMode/currentRotationOriginDist
-      //     는 이 함수가 방금 확정했으니 실제로는 항상 false지만,
-      //     handleGpsPositionUpdate와 동일한 계산식을 명시적으로 써서
-      //     두 호출부의 인자 계산 방식을 통일한다)로 바꾼다.
-      //  2) applyLiveMapRotation(5m 최소이동거리 게이트) 대신
-      //     applySegmentRotation을 직접 호출한다 — 사용자가 명시적으로
-      //     "지금 위치 기준 즉시 재설정"을 요청한 것이므로, 그 직후
-      //     lastLiveRotationDist가 현재 위치로 고정되어 정지 상태에서
-      //     다음 회전이 막히는 문제(게이트가 이 즉시성 요청과 충돌)를
-      //     피한다. resetLiveMapRotationState()로 이미 게이트 자체는
-      //     초기화해뒀으니, 다음 실제 이동(5m)부터는 정상적으로 다시
-      //     게이트가 작동한다.
-      const isNearTrailheadNow = currentRotationOriginDist === null && traveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-      const arrowHeading = computeArrowHeading(lastKnownPos.lat, lastKnownPos.lon, nearest.index, isNearTrailheadNow, traveledDist, nearest.point);
+    // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "지금 위치 기준 즉시
+    // 재설정"을 옛 computeArrowHeading/applySegmentRotation 직접 호출
+    // 대신 recalculateGajaMapFromScratch로 통일한다(명세: 홈버튼은
+    // 현재GPS위치로 원점이동 + 현재구간→GPX위치→100m목표→GPX방향→12시를
+    // 다시 계산한다). 구간이 아직 없으면 이 함수가 nearest를 다시
+    // 계산해 자동으로 초기화하므로, 위에서 구한 nearest를 재사용하지
+    // 않고 내부에 맡긴다.
+    recalculateGajaMapFromScratch('homeButton');
+    if (getCurrentSection()) {
+      const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, cumulativeDistances[nearest ? nearest.index : 0] || 0);
       if (arrowHeading !== null) {
         renderGpsArrow(arrowHeading);
-        applySegmentRotation(arrowHeading);
+        lastArrowHeadingForGuidance = arrowHeading;
       }
     }
     showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
@@ -5300,6 +5273,16 @@
         firstOriginFixCount = 0;
         isFirstFix = true;
         hideBottomDirectionArrow(); // 낡은 방향 기준으로 떠 있던 하단 알림도 함께 지운다
+
+        // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "포그라운드 복귀 직후
+        // 기존 map rotation 값을 그대로 신뢰하지 않는다"는 명세에 따라,
+        // 새 구간 상태(currentMilestoneIdx/nextMilestoneIdx)와 100m
+        // 재중심 게이트(lastRecenterDistance)도 함께 리셋한다 — 다음
+        // GPS 픽스(startGpsTracking 이후 handleGpsPositionUpdate)가
+        // 구간 미확정 상태에서 자동으로 재탐색해 새로 구간을 확정한다.
+        currentMilestoneIdx = 0;
+        nextMilestoneIdx = 1;
+        lastRecenterDistance = null;
 
         startGpsTracking(); // 항상 일반 GPS로 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
       }
@@ -6137,11 +6120,11 @@
     // 이어져 방향이 어긋날 수 있었다.
     resetTrackDirectionState();
     resetTrailSearchWindow();
-    // 🧭 지도 회전(2026-09-25부터 매 픽스 즉시, applyLiveMapRotation)도
+    // 🧭 지도 회전(가자맵 대원칙 재설계, updateGajaMap/100m 게이트)도
     // GPS 재시작 시 기준점만 초기화한다 — mapRotationDeg/appliedMapRotationDeg
     // 자체는 리셋하지 않아도 최단경로 계산으로 다음 픽스에서 바로 정확한
     // 방향으로 스냅된다(shortestAngleDiff 기준).
-    resetLiveMapRotationState();
+    resetGajaMapRotationState();
 
     // 🧭 구간회전 모드를 여기서 미리 켜둔다(2026-09-21, #11). 원래는
     // handleGpsPositionUpdate의 첫 마커 생성 시점(setHeadingUpMode 호출)
@@ -6354,19 +6337,22 @@
         // 은 직전 회전 판정 이후 실제로 ROTATION_MIN_MOVE_M 이상
         // 이동했을 때만 새로 호출되고, 그보다 짧으면(제자리 서성임,
         // GPS 노이즈) 직전 회전값을 그대로 유지한다.
-        const arrowHeading = computeArrowHeading(lat, lon, nearestIdx, isNearTrailhead, traveledDistForEntry, nearestPoint);
+        // 🗺️ 가자맵 대원칙 재설계 2단계(2026-09-25) — 위 computeArrowHeading/
+        // applyLiveMapRotation(GPX index 증감 기반, 5m마다 사실상 즉시
+        // 회전)을 새 구조(computeArrowHeadingV2/updateGajaMap, 지명
+        // 구간 + 100m 갱신 게이트)로 교체한다. 구간이 아직 확정 안 됐으면
+        // (코스 진입 전) 위에서 이미 계산한 nearestIdx로 첫 구간을
+        // 역산한다 — 매 픽스 재역산하지 않도록 getCurrentSection()이
+        // null일 때만 수행.
+        if (!getCurrentSection()) {
+          resolveInitialSection(nearestIdx);
+        }
+        const gajaMapResult = updateGajaMap(lat, lon);
+        const routeDistanceForArrow = gajaMapResult && gajaMapResult.proj ? gajaMapResult.proj.routeDistance : traveledDistForEntry;
+        const arrowHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
-          // 🐛 2026-09-25 수정(사용자 재현: "들머리에서 갈림길로 가는데
-          // 지도 회전이 전혀 안 돼", 순수 로직 검증으로 확정) — 예전엔
-          // isNearTrailhead(들머리 30m 이내 + 원점 미확정)일 때
-          // applyLiveMapRotation 호출 자체를 스킵했다. 그런데
-          // computeArrowHeading은 isNearTrailheadNow일 때도 이미
-          // "가장 가까운 경로 지점" 방향을 정확히 계산해주므로, 회전을
-          // 막을 이유가 없다 — 오히려 원점이 확정되기 전(들머리 근처
-          // 전체 구간)에는 지도가 영영 안 도는 결과를 낳았다. 조건 없이
-          // 항상 회전시킨다.
-          applyLiveMapRotation(arrowHeading, traveledDistForEntry);
+          lastArrowHeadingForGuidance = arrowHeading; // GPS 마커 아이콘 회전도 이 값을 씀(getCurrentAbsHeadingForGuidance)
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
