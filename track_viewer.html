@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v180';
+    const CACHE_NAME = 'gaja-trail-cache-v181';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_portrait_lock';
+      const APP_BUILD = 'v20260926_nn1_removal_unified_section';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2251,30 +2251,14 @@
   // 갱신되는지 한눈에 보이게 한다.
   let isReversingOnTrail = false;
 
-  // nearestPointOnTrail이 이번 픽스의 nearestIdx를 확정한 "직후"에만
-  // 호출한다 — trackDirection이 이번 픽스의 매칭 결과에 영향을 주지
-  // 않도록(순환 차단) 순서를 지킨다.
-  function updateTrackDirection(nearestIdx) {
-    if (lastConfirmedTrackIdx === null) {
-      lastConfirmedTrackIdx = nearestIdx;
-      return;
-    }
-    const rawDelta = nearestIdx - lastConfirmedTrackIdx;
-    lastConfirmedTrackIdx = nearestIdx;
-    if (Math.abs(rawDelta) < MIN_INDEX_DELTA) return; // 노이즈(제자리 흔들림) — 후보에 반영하지 않음
-
-    const candidate = rawDelta > 0 ? 'forward' : 'backward';
-    if (candidate === trackDirectionCandidate) {
-      trackDirectionCandidateStreak++;
-    } else {
-      trackDirectionCandidate = candidate;
-      trackDirectionCandidateStreak = 1;
-    }
-    if (trackDirectionCandidateStreak >= TRACK_DIRECTION_CONFIRM_STREAK) {
-      isReversingOnTrail = (trackDirectionCandidate === 'backward');
-      updateGpsMarkerWarningStyle();
-    }
-  }
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — updateTrackDirection(구식,
+  // nearestPointOnTrail의 nearestIdx 증감으로만 갱신됨)을 삭제했다.
+  // 실제 GPS 경로는 더 이상 nearestPointOnTrail을 호출하지 않으므로
+  // (신 시스템의 currentSection.isForward가 방향을 이미 표현), 이
+  // 함수를 부르는 곳 자체가 없어졌다. isReversingOnTrail은 이제 항상
+  // false로 고정된다 — 시뮬레이션의 갈림길 자동 감속 로직(별도 트랙,
+  // simIsReversingOnTrail이 있어야 정확하지만 원래도 이 전역 변수를
+  // 참조하던 기존 동작)만 이 상수 취급 값을 계속 읽는다.
 
   // GPS 재획득/포그라운드 복귀 등 "새 GPS 상태에서 처음부터 다시
   // 계산해야 하는" 모든 지점에서 이 함수 하나만 호출한다(대원칙 6·7번:
@@ -2442,202 +2426,17 @@
     return { distance: nearestActualDist, point: nearestPoint, index: nearestIdx, rawIndex: rawNearestIdx };
   }
 
-  // 🧭 LOCKED 모드 전용 — 현재 확정 index N에서 "N에 머무는가, N+1로
-  // 넘어갔는가"만 판단한다. findNearestInRange와 달리 방향 페널티를
-  // 전혀 쓰지 않는다 — 후보가 N/N+1 두 개뿐이라 왕복 코스의 반대편
-  // 세그먼트(페널티가 원래 막으려던 대상)가 애초에 후보에 들 수 없기
-  // 때문이다. N이 트랙의 마지막 세그먼트면(N+1 세그먼트가 없음) N에만
-  // 머문다.
-  function trackFromLockedIndex(lat, lon, points, N) {
-    const maxIdx = points.length - 2;
-    const a = points[N], b = points[N + 1];
-    const segN = pointToSegmentMetersWithT(lat, lon, a.lat, a.lon, b.lat, b.lon);
-
-    let segNext = null;
-    if (N + 1 <= maxIdx) {
-      const c = points[N + 1], d = points[N + 2];
-      segNext = pointToSegmentMetersWithT(lat, lon, c.lat, c.lon, d.lat, d.lon);
-    }
-
-    let chosenIdx = N;
-    let chosenDist = segN.distance;
-    let chosenT = segN.t;
-
-    // 짧은 세그먼트(GPX 점 간격이 촘촘한 구간, 실측 중앙값 7m대)에서는
-    // SEGMENT_ADVANCE_MIN_ABS_M(15m)이 세그먼트 길이보다 커서 끝까지
-    // 걸어도 전진 못 하는 회귀가 있었다(Node.js 재현으로 확인) —
-    // 세그먼트 자체보다 긴 절대거리를 요구할 수 없으므로, 임계값을
-    // 세그먼트 길이의 90%로 캡을 씌운다. 짧은 세그먼트는 사실상 "거의
-    // 끝(90%)까지 가면 전진"으로, 긴 세그먼트(89m 등)는 기존대로 15m
-    // 걸으면 전진으로 동작한다.
-    const advanceThresholdM = Math.min(SEGMENT_ADVANCE_MIN_ABS_M, segN.segLenM * 0.9);
-    const advanced = segNext && (
-      segN.t * segN.segLenM >= advanceThresholdM ||
-      segNext.distance + SEGMENT_ADVANCE_MIN_MARGIN_M < segN.distance
-    );
-    if (advanced) {
-      chosenIdx = N + 1;
-      chosenDist = segNext.distance;
-      chosenT = segNext.t;
-    }
-
-    const bestOfTwo = Math.min(segN.distance, segNext ? segNext.distance : Infinity);
-    const chosenA = points[chosenIdx], chosenB = points[chosenIdx + 1];
-    const point = {
-      lat: chosenA.lat + (chosenB.lat - chosenA.lat) * chosenT,
-      lon: chosenA.lon + (chosenB.lon - chosenA.lon) * chosenT
-    };
-
-    // advanced: 이번 픽스에 N에서 N+1로 실제로 전진했는지 — 이 함수는
-    // 구조상 "머무름" 또는 "전진"만 판정하고 절대 후진 신호를 내지
-    // 않는다(사용자 지시: 다음 index로만 전진). moveDirectionSign은
-    // 이제 이 판정을 그대로 쓴다(아래 nearestPointOnTrail 참고) — 예전
-    // 처럼 "직전 확정 index와의 delta"로 재계산하면, 코스 최초 진입이나
-    // SEARCHING→LOCKED 재획득 직후처럼 "직전 값"이 없거나 신뢰할 수
-    // 없는 시점에 moveDirectionSign이 갱신되지 않고 스테일 값(초기값
-    // 1 또는 이전 상태)으로 남아, 실제 진행 방향과 반대로 화살표가
-    // 나오는 버그가 있었다(사용자 재현: "index는 잘 잡는데 화살표가
-    // 진행 반대방향으로 나옴").
-    return { index: chosenIdx, distance: chosenDist, bestOfTwo, point, advanced };
-  }
-
-  // 사용자 위치에서 GPX 트랙 전체(점들을 이은 선분들)까지의 최단거리와,
-  // 그 최단점이 속한 선분의 시작 인덱스를 함께 구한다. 점이 1개뿐이면
-  // 선분을 만들 수 없으므로 그 점까지의 거리로 대체한다.
-  //
-  // 탐색 전략: 직전 위치(lastNearestIdx) 주변 윈도우를 먼저 확인하고,
-  // 그 안에서 거리가 너무 멀면(50m 초과 — 갑자기 멀리 벗어났거나 이제
-  // 막 시작한 경우) 전체 트랙을 다시 훑는 전역 탐색으로 안전하게 전환한다.
-  // 이렇게 하면 왕복 코스에서 반대편 구간으로 잘못 붙는 문제를 막으면서도,
-  // 사용자가 크게 우회하거나 중간에 새로 진입해도 위치를 영영 놓치지 않는다.
-  function nearestPointOnTrail(lat, lon, points) {
-    if (!points || points.length === 0) {
-      lastNearestIdx = -1;
-      trailTrackingMode = 'SEARCHING';
-      return { distance: 999999, point: null, index: -1 };
-    }
-    if (points.length === 1) {
-      lastNearestIdx = 0;
-      return { distance: haversineMeters(lat, lon, points[0].lat, points[0].lon), point: points[0], index: 0 };
-    }
-
-    const maxIdx = points.length - 2; // 선분 시작 인덱스의 최댓값 (i, i+1 쌍이므로)
-    let result;
-    let justReacquired = false; // 이번 픽스에 SEARCHING→LOCKED 전환이 막 일어났는지
-
-    // 🧭 이 함수는 실제 GPS 추적 전용이다(2026-09-25, 사용자 지시:
-    // "시뮬레이션과 실제 GPS는 완전히 분리해줘" — 이전엔 isSimulationMode
-    // 분기로 시뮬레이션도 이 함수를 공유했으나, "따라가기 배속 재생 중
-    // 화살표가 반대로 나온다"는 재현 이후 시뮬레이션 전용 사본
-    // (nearestPointOnTrailForSim, 아래 별도 정의)으로 완전히 분리했다.
-    // 이제 이 함수를 수정해도 시뮬레이션에는 전혀 영향을 주지 않는다.
-    //
-    // 🧭 LOCKED: 정상 추적 중(실제 GPS 전용) — N/N+1 두 후보만 본다
-    // (trackFromLockedIndex 정의부 주석 참고). 둘 다 비정상적으로
-    // 멀어진 상태가 LOCK_REACQUIRE_STREAK(3픽스) 연속되면 SEARCHING으로
-    // 전환한다 — 1회성 GPS 튐에는 반응하지 않기 위한 완충이다(이 3픽스
-    // 동안은 이전 LOCKED 결과를 그대로 쓰므로, "즉시 튐"은 막아도
-    // "몇 초간 튐"까지는 못 막는다).
-    if (trailTrackingMode === 'LOCKED' && lastNearestIdx >= 0) {
-      const locked = trackFromLockedIndex(lat, lon, points, lastNearestIdx);
-      if (locked.bestOfTwo > LOCK_REACQUIRE_DIST_M) {
-        offCandidateStreak++;
-      } else {
-        offCandidateStreak = 0;
-      }
-      if (offCandidateStreak >= LOCK_REACQUIRE_STREAK) {
-        trailTrackingMode = 'SEARCHING'; // 아래 SEARCHING 분기로 폴스루
-      } else {
-        result = { distance: locked.distance, point: locked.point, index: locked.index, rawIndex: locked.index };
-      }
-    }
-
-    // 🧭 SEARCHING: 코스 진입 전(lastNearestIdx===-1) 또는 LOCKED에서
-    // 방금 이탈 판정된 경우 — 기존 윈도우→전역 탐색(방향 페널티 포함)을
-    // 그대로 재사용한다. 삭제하지 않고 "예외 경로"로 남겨둔 것뿐이다.
-    if (!result) {
-      if (lastNearestIdx >= 0) {
-        // 1차: 직전 위치 주변 윈도우만 탐색 (빠르고, 왕복 구간 혼선 방지)
-        const startIdx = Math.max(0, lastNearestIdx - TRAIL_WINDOW_RADIUS);
-        const endIdx = Math.min(maxIdx, lastNearestIdx + TRAIL_WINDOW_RADIUS);
-        result = findNearestInRange(lat, lon, points, startIdx, endIdx);
-
-        // 2차: 윈도우 안에서 찾은 결과가 너무 멀면(50m 초과) 안전장치로
-        // 전역 탐색으로 재전환 — 사용자가 크게 이탈했다가 다른 지점으로
-        // 복귀했거나, 처음 GPS를 켠 시점일 수 있다.
-        if (result.distance > TRAIL_FALLBACK_THRESHOLD_M) {
-          result = findNearestInRange(lat, lon, points, 0, maxIdx);
-        }
-      } else {
-        // 최초 1회는 윈도우 기준점이 없으므로 전역 탐색
-        result = findNearestInRange(lat, lon, points, 0, maxIdx);
-      }
-
-      // 재탐색 결과가 다시 신뢰할 만한 거리(LOCK_REACQUIRE_DIST_M) 이내로
-      // 들어오면 즉시 LOCKED로 복귀한다.
-      if (result.distance <= LOCK_REACQUIRE_DIST_M) {
-        trailTrackingMode = 'LOCKED';
-        offCandidateStreak = 0;
-        justReacquired = true;
-      }
-    }
-
-    lastNearestIdx = result.index;
-
-    // 🧭 두 방향 신호를 각각 갱신 — 둘 다 이번에 "확정된" lastNearestIdx를
-    // 넘기고, 이번 호출의 매칭 결과가 이번 호출의 방향 판단에 섞이지
-    // 않도록 매칭 이후에만 호출한다(순환 차단).
-    //   - updateTrackDirection(isReversingOnTrail): 왕복 안내용, 3회
-    //     연속 확인 후에만 전환(느리지만 안정적) — 하단 경로 알람에서 씀.
-    //     🐛 자기강화 루프 방지: result.index(방향 페널티가 반영된 값)가
-    //     아니라 result.rawIndex(페널티 없는 순수 최단거리 결과)를
-    //     넘긴다 — isReversingOnTrail 자체가 그 페널티의 입력이므로,
-    //     페널티가 반영된 결과로 방향을 재판정하면 한 번 잘못 뒤집힌
-    //     값이 스스로를 계속 강화하는 폐루프가 된다(findNearestInRange
-    //     정의부 rawNearestIdx 주석 참고). LOCKED 결과는 rawIndex가
-    //     없으므로 index를 그대로 쓴다(페널티 자체가 없어 오염 문제가
-    //     없음).
-    //   - updateMoveDirection(moveDirectionSign): 지도 회전/화살표용,
-    //     지연 없이 즉시 반영 — "역방향 판정 없이 실제 이동 방향만".
-    //     화면에 보이는 안정화된 위치(lastNearestIdx)를 그대로 쓴다.
-    //     단, 이번 픽스에 SEARCHING→LOCKED 재획득이 막 일어났으면
-    //     (justReacquired) 직전 확정 index와의 delta 계산 대신, 재탐색
-    //     결과가 곧바로 신뢰할 수 있는 기준점이 되므로 그 자리에서
-    //     새로 시작한다(updateMoveDirection이 처리).
-    //
-    // 🐛 2026-09-25 수정(사용자 재현: "index는 잘 잡는데 화살표가 진행
-    // 반대방향으로 나옴") — LOCKED 결과(result.advanced가 존재)는
-    // trackFromLockedIndex가 이미 "N에 머물렀는지, N+1로 전진했는지"를
-    // 직접 판정해뒀다(이 함수는 구조상 후진을 절대 반환하지 않는다).
-    // 예전처럼 이 정보를 버리고 "직전 확정 lastMoveDirectionIdx와의
-    // delta"를 다시 계산하면, 코스 최초 진입/재획득 직후처럼 "직전
-    // 값"이 아직 없거나 신뢰 못 할 시점엔 moveDirectionSign이 갱신되지
-    // 않고 초기값(1) 또는 스테일 값으로 남아 실제 진행 방향과 반대로
-    // 나올 수 있었다. LOCKED로 매칭된 이상(result.advanced가 존재)
-    // trackFromLockedIndex가 절대 후진을 반환하지 않으므로, 머무름/
-    // 전진 여부와 무관하게 항상 +1(다음 index 방향)로 고정한다(아래
-    // 2026-09-25 추가 수정 참고 — 처음엔 "전진일 때만 교정"으로
-    // 했다가, 머무름이 몇 픽스 이어지는 동안 스테일 값이 남는 걸
-    // 실행 검증으로 확인해 무조건 고정으로 강화했다). SEARCHING
-    // (재탐색) 결과는 정의상 직접 판정이 없으므로 기존 delta 기반
-    // 로직을 그대로 쓴다.
-    updateTrackDirection(result.rawIndex !== undefined ? result.rawIndex : result.index);
-    if (result.advanced !== undefined) {
-      // 🐛 2026-09-25 추가 수정 — "전진(advanced)"일 때만 +1로 교정하면,
-      // 세그먼트 초반(머무름, t<0.5)에 머무는 몇 픽스 동안은 스테일 값이
-      // 그대로 남아 화살표가 계속 반대로 보일 수 있었다(실행 검증으로
-      // 확인). trackFromLockedIndex는 구조상 N→N+1 전진 또는 N 머무름만
-      // 반환하고 절대 후진을 반환하지 않으므로, LOCKED로 매칭된 이상
-      // moveDirectionSign이 -1일 이유가 아예 없다 — 전진 여부와 무관하게
-      // 항상 +1로 고정한다.
-      moveDirectionSign = 1;
-      lastMoveDirectionIdx = lastNearestIdx; // delta 기준점도 함께 동기화(다음 SEARCHING 전환 대비)
-    } else {
-      updateMoveDirection(lastNearestIdx, justReacquired);
-    }
-
-    return result;
-  }
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — trackFromLockedIndex(LOCKED
+  // N/N+1 전진 판정)와 nearestPointOnTrail(LOCKED/SEARCHING 상태기계)을
+  // 완전히 삭제했다(사용자 확정: "N/N+1 좌표 배열 기반의 구형 시스템
+  // 자체를 폐기한다"). 이탈 판정은 v179에서, 상단판/몇시방향/화살표/
+  // 비프음/원점/초기구간확정은 이번 세션에서 전부 A→B 구간 시스템
+  // (getCurrentSection/projectOntoCurrentSection/resolveInitialSectionByProjection)
+  // 하나로 통합해, 이 함수들을 부르는 곳이 실제 GPS 경로에 더 이상
+  // 남지 않았다. lastNearestIdx/trailTrackingMode/offCandidateStreak
+  // 등 이 함수 전용 상태 변수도 함께 죽은 코드가 됐지만, 시뮬레이션
+  // 전용 사본(nearestPointOnTrailForSim 등)이 참조하는 상수 정의부
+  // (TRAIL_WINDOW_RADIUS 등)와 뒤섞여 있어 상수 자체는 그대로 둔다.
 
   // 코스별 전체 누적거리 배열 — currentPoints가 바뀔 때마다 다시 계산해둔다.
   // 매번 새로 계산하면 GPS 갱신마다(초당 1회) 전체 배열을 순회해야 해서
@@ -2683,7 +2482,8 @@
         // 묶어), 클러스터마다 마일스톤을 하나씩 만든다 — 올라갈 때도
         // 내려갈 때도 똑같이 안내 대상이 된다.
         const WAYPOINT_MATCH_RADIUS_M = 30;
-        const ROUNDTRIP_CLUSTER_GAP_M = 50; // 이 거리(코스 진행거리 기준) 이상 떨어지면 별개 왕복 구간으로 간주
+        // ROUNDTRIP_CLUSTER_GAP_M(거리 기준 분리)은 폐기 — 아래
+        // ROUNDTRIP_CLUSTER_INDEX_GAP(인덱스 기준 분리)로 교체됨.
 
         let globalMinD = Infinity;
         for (let i = 0; i < points.length - 1; i++) {
@@ -2698,28 +2498,83 @@
           return;
         }
 
-        // 후보 세그먼트 수집: globalMinD 대비 WAYPOINT_MATCH_RADIUS_M 이내로
-        // 근접한 모든 세그먼트(왕복이면 양쪽 다 여기 걸림).
-        const matchThreshold = Math.max(globalMinD, WAYPOINT_MATCH_RADIUS_M);
+        // 🐛 2026-09-26 수정(사용자 재현: "test 수목원" 편도 코스에서
+        // "갈림길1"이 마일스톤 2개(89.1m, 183.4m)로 중복 등록되어 상단
+        // 알림판이 "갈림길1→갈림길1"을 표시하는 근본 원인) — 예전엔
+        // matchThreshold를 globalMinD와 무관하게 항상 WAYPOINT_MATCH_
+        // RADIUS_M(30m)로 고정했다. 실제 최단거리(globalMinD)가 1m
+        // 안팎으로 명백히 한 지점에만 매칭되는데도, 30m 반경 안에
+        // 우연히 들어온 무관한 다른 지점(직선 구간의 이전/이후 포인트,
+        // 실측: 8.8m 떨어진 지점)까지 "후보"로 끌어들였다. 그 무관한
+        // 후보가 진짜 매치와 ROUNDTRIP_CLUSTER_GAP_M(50m) 이상 떨어져
+        // 있으면 별도 클러스터(=중복 마일스톤)로 잘못 나뉘었다.
+        // matchThreshold를 globalMinD 기준 여유값(WAYPOINT_MATCH_
+        // RADIUS_TOLERANCE_M)으로 좁혀, "진짜 최단거리에 근접한 후보만"
+        // 남긴다 — 진짜 왕복 구간(가는 길/오는 길 둘 다 거의 같은 최단
+        // 거리로 트랙에 인접)은 이 여유값 안에 둘 다 들어오므로 왕복
+        // 클러스터링 자체는 그대로 유지된다.
+        // ⚠️ 여유값(10m)으로도 부족했다(사용자 재현 GPX 실측: 진짜 매치
+        // 1.08m 옆에 8.79m 떨어진 무관한 지점이 있어 10m 여유로는
+        // 걸러지지 않음) — 3m로 좁혀 "사실상 같은 지점"만 후보로 남긴다.
+        // 진짜 왕복 구간(가는 길/오는 길)은 각 방향 트랙이 보통 수 m
+        // 이상 벌어져 있어 이 좁은 여유값 안에 어차피 둘 다 들어오지
+        // 않는 경우가 있을 수 있으므로, globalMinD 자체가 크면(코스가
+        // 웨이포인트에서 멀리 떨어져 지나가는 경우) 비례해 여유도 함께
+        // 넓힌다 — 정확히는 "globalMinD의 3배 또는 3m 중 큰 값"으로,
+        // 트랙에 딱 붙어있는(1m 안팎) 경우는 좁게, 다소 떨어진(10m대)
+        // 경우는 비례해 넓게 잡는다.
+        const WAYPOINT_MATCH_RADIUS_TOLERANCE_M = Math.max(3, globalMinD * 2);
+        const matchThreshold = Math.min(WAYPOINT_MATCH_RADIUS_M, globalMinD + WAYPOINT_MATCH_RADIUS_TOLERANCE_M);
+        // 🐛 2026-09-26 수정(N/N+1 전면 폐기 재설계 중 Node.js 검증으로
+        // 발견: "부산오뎅바"와 "갈림길6"처럼 서로 다른 실제 좌표를 가진
+        // 두 웨이포인트가 같은 긴 세그먼트(idx=30, 84.7m 길이)에 매칭될
+        // 때, distanceM을 세그먼트 시작점의 누적거리(cumDistances[idx])
+        // 만으로 계산해 t값(세그먼트 내 보간 비율)을 무시했다. 그 결과
+        // 두 마일스톤이 서로 다른 지점인데도 완전히 같은 distanceM을
+        // 갖게 되어, 그 사이 구간(A→B)의 길이가 0인 축퇴 구간이 되고
+        // projectOntoCurrentSection이 투영할 세그먼트를 하나도 못 찾아
+        // updateGajaMap이 그 구간에서 영원히 null만 반환했다(실측 재현:
+        // idx=30~88 전 구간이 null). pointToSegmentMetersWithT로 t를
+        // 함께 구해, 이후 distanceM 계산에 세그먼트 내 정확한 위치를
+        // 반영한다 — 같은 세그먼트 안의 서로 다른 지점이 더 이상 같은
+        // distanceM으로 뭉개지지 않는다.
         const candidates = [];
         for (let i = 0; i < points.length - 1; i++) {
           const a = points[i];
           const b = points[i + 1];
-          const d = pointToSegmentMeters(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
-          if (d <= matchThreshold) candidates.push({ idx: i, dist: d });
+          const r = pointToSegmentMetersWithT(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
+          if (r.distance <= matchThreshold) candidates.push({ idx: i, dist: r.distance, t: r.t, segLenM: r.segLenM });
         }
-        // 코스 진행거리(cumDistances) 기준으로 정렬 후, ROUNDTRIP_CLUSTER_GAP_M
-        // 이상 떨어진 지점끼리 별도 클러스터로 나눈다.
-        candidates.sort((c1, c2) => (cumDistances[c1.idx] || 0) - (cumDistances[c2.idx] || 0));
+        // 🐛 2026-09-26 수정(사용자 재현 GPX 실측: "수목원" 웨이포인트가
+        // 마일스톤 2개(1604.4m, 1689.1m)로 잘못 쪼개짐) — 클러스터 분리
+        // 기준을 "코스 진행거리(cumDistances) 차이"로 판단하면, GPX 점
+        // 간격이 넓은 구간(실측: 84.7m짜리 긴 세그먼트 하나)에서 그
+        // 세그먼트의 시작 인덱스(idx)와 다음 세그먼트의 시작 인덱스가
+        // 바로 인접한 idx(연속된 정수)인데도 진행거리 차이만으로는
+        // ROUNDTRIP_CLUSTER_GAP_M(50m)을 넘어버려 별도 클러스터(=중복
+        // 마일스톤)로 잘못 나뉘었다. "인덱스가 연속(또는 몇 개 이내로
+        // 인접)"이면 세그먼트가 아무리 길어도 물리적으로 같은 지점을
+        // 가리키는 것이므로, 분리 기준을 진행거리 차이가 아니라 **인덱스
+        // 차이**로 바꾼다 — 왕복 코스의 가는 길/오는 길은 인덱스 자체가
+        // 수백~수천 떨어져 있으므로 이 기준으로도 여전히 정상적으로
+        // 별도 클러스터로 나뉜다.
+        // 🐛 2026-09-26 추가 수정(사용자 재현 GPX 실측: 남덕유산 정상
+        // 배회 구간 — 정상석 주변 GPS 궤적이 촘촘히 지그재그돼 후보
+        // 인덱스가 1647~1669 사이에서 연속되지만 중간에 4칸(1654~1656)
+        // 비는 지점이 있었다) — 3은 너무 좁아 이런 정상적인 배회
+        // 구간까지 별도 마일스톤으로 쪼갰다. 10으로 넉넉히 늘린다.
+        // 왕복 코스의 진짜 별도 구간(가는 길/오는 길)은 인덱스 차이가
+        // 최소 수백~수천이므로 10 정도로는 절대 잘못 합쳐지지 않는다.
+        const ROUNDTRIP_CLUSTER_INDEX_GAP = 10; // 이 개수(포인트 수) 이상 idx가 벌어지면 별도 클러스터
+        candidates.sort((c1, c2) => c1.idx - c2.idx);
         const clusters = [];
         candidates.forEach(c => {
-          const cDist = cumDistances[c.idx] || 0;
           const lastCluster = clusters[clusters.length - 1];
-          if (lastCluster && (cDist - lastCluster.lastDist) <= ROUNDTRIP_CLUSTER_GAP_M) {
-            lastCluster.lastDist = cDist;
+          if (lastCluster && (c.idx - lastCluster.lastIdx) <= ROUNDTRIP_CLUSTER_INDEX_GAP) {
+            lastCluster.lastIdx = c.idx;
             if (c.dist < lastCluster.best.dist) lastCluster.best = c;
           } else {
-            clusters.push({ best: c, lastDist: cDist });
+            clusters.push({ best: c, lastIdx: c.idx });
           }
         });
 
@@ -2780,11 +2635,20 @@
         }
         selectedClusters.forEach(cluster => {
           const nearestIdx = cluster.best.idx;
-          const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] : 0;
-          const trailPt = points[nearestIdx];
+          const t = cluster.best.t || 0;
+          const segLenM = cluster.best.segLenM || 0;
+          // 세그먼트 시작점 누적거리 + 세그먼트 내 보간 위치(t * 세그먼트
+          // 길이)를 더해 정확한 진행거리를 구한다 — 세그먼트가 길수록
+          // (실측: 84.7m) 시작점만 쓰면 그 세그먼트 안의 서로 다른
+          // 지점들이 전부 같은 distanceM으로 뭉개지는 문제가 있었다.
+          const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] + t * segLenM : 0;
+          const segA = points[nearestIdx];
+          const segB = points[nearestIdx + 1] || segA;
+          const trailLat = segA.lat + (segB.lat - segA.lat) * t;
+          const trailLon = segA.lon + (segB.lon - segA.lon) * t;
           list.push({
             name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
-            trailLat: trailPt.lat, trailLon: trailPt.lon, isPeak,
+            trailLat, trailLon, isPeak,
           });
         });
       });
@@ -2908,6 +2772,26 @@
     return { fromMilestone: A, toMilestone: B, isForward: nextMilestoneIdx > currentMilestoneIdx };
   }
 
+  // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — "몇 시 방향" 안내용. 현재 구간의
+  // 목표(B)를 지난 직후 이어질 "다음 구간"(B→C)을 currentMilestoneIdx/
+  // nextMilestoneIdx를 건드리지 않고 순수 조회만 한다(구현 계약: 이
+  // 함수는 절대 currentMilestoneIdx/nextMilestoneIdx에 대입하지 않는다
+  // — 실제 구간 전진은 오직 maybeAdvanceSection만 수행). B가 코스
+  // 종점/시작점이면(다음 구간이 없으면) advanceSection과 동일한 왕복
+  // 반전 규칙(종점 도달 시 방향 반전)을 그대로 적용해 C를 구한다.
+  function peekNextSection(section) {
+    if (!section) return null;
+    const bIdx = currentMilestones.indexOf(section.toMilestone);
+    if (bIdx < 0) return null;
+    const dir = section.isForward ? 1 : -1;
+    let cIdx = bIdx + dir;
+    let nextDir = dir;
+    if (cIdx < 0 || cIdx >= currentMilestones.length) { nextDir = -dir; cIdx = bIdx + nextDir; }
+    const C = currentMilestones[cIdx];
+    if (!C) return null;
+    return { fromMilestone: section.toMilestone, toMilestone: C, isForward: nextDir > 0 };
+  }
+
   // 목표 지명(B)에 실제로 도착했을 때 호출 — 다음 구간으로 전진한다.
   // 코스 양 끝(index 0 또는 length-1)에 닿으면 진행 부호가 자동으로
   // 반전되어, 왕복 코스의 "되돌아가기"가 별도 판정 없이 자연스럽게
@@ -2932,12 +2816,22 @@
     }
     return idx;
   }
+  // 🐛 2026-09-26 수정(N/N+1 전면 폐기 재설계 중 Node.js 검증으로 발견:
+  // A/B 마일스톤이 같은 긴 세그먼트 안에 있을 때 — 예: "부산오뎅바"
+  // 709.1m, "갈림길6" 741.3m가 둘 다 세그먼트 idx=30(30~31, 길이
+  // 32.7m) 안에 있는 경우 — findPointsIndexAtDistance(hi)가 idxLo와
+  // 똑같이 30을 반환해 idxHi도 30이 됐다. projectOntoCurrentSection의
+  // `for (i=idxLo; i<idxHi; i++)` 루프 범위가 통째로 비어(30<30은
+  // 거짓) 투영할 세그먼트를 하나도 못 찾고, 그 구간에 진입한 순간부터
+  // updateGajaMap이 영원히 null만 반환했다(실측: idx=30~88 전 구간이
+  // null). idxHi를 최소 idxLo+1로 보장해, A/B가 같은 세그먼트 안에
+  // 있어도 그 세그먼트 자체는 항상 투영 대상에 포함되게 한다.
   function getSectionIndexRange(section) {
     const dFrom = section.fromMilestone.distanceM;
     const dTo = section.toMilestone.distanceM;
     const lo = Math.min(dFrom, dTo), hi = Math.max(dFrom, dTo);
     const idxLo = findPointsIndexAtDistance(cumulativeDistances, lo);
-    const idxHi = Math.max(idxLo, findPointsIndexAtDistance(cumulativeDistances, hi));
+    const idxHi = Math.max(idxLo + 1, findPointsIndexAtDistance(cumulativeDistances, hi));
     return { idxLo, idxHi };
   }
 
@@ -2970,21 +2864,49 @@
     };
   }
 
-  // 구간이 아직 확정 안 된 상태(코스 진입 전, 또는 재획득 시)에서
-  // 최초 매칭 결과(전역 탐색으로 찾은 nearestIdx)로 "그 지점이 속한
-  // 첫 구간"을 역산해 currentMilestoneIdx/nextMilestoneIdx를 초기화한다.
-  function resolveInitialSection(nearestIdx) {
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — 구간이 아직 확정 안 된
+  // 상태(코스 진입 전, 또는 재획득 시)에서 "그 지점이 속한 첫 구간"을
+  // 확정한다. 예전(resolveInitialSection)엔 nearestPointOnTrail(LOCKED
+  // N/N+1 전역탐색)이 먼저 찾은 nearestIdx를 받아 cumulativeDistances로
+  // 역산했는데, 이 경로 자체가 N/N+1 좌표쌍 개념에 의존했다(사용자 확정
+  // 원칙: "nearestIdx 또는 N/N+1 좌표쌍을 방향 판정이나 구간 판정의
+  // 기준으로 사용하지 않는다").
+  //
+  // 새 방식: GPS 좌표를 currentMilestones의 모든 인접 쌍(A→B 구간 후보)
+  // 각각에 직접 투영해, 그 구간 선분까지의 최단거리가 가장 작은 구간을
+  // 고른다. nearestIdx라는 중간 개념을 전혀 거치지 않는다.
+  //
+  // isForward는 항상 true로 둔다 — buildMilestones()가 함수 마지막에
+  // list.sort((a,b) => a.distanceM - b.distanceM)로 정렬하므로
+  // currentMilestones는 항상 distanceM 오름차순이고, 그래서 인접 쌍
+  // (i, i+1)은 배열 정렬 특성상 항상 distanceM(i) < distanceM(i+1)이다.
+  // 왕복(원점회귀) 코스도 "가는 길"과 "오는 길" 웨이포인트가 각각 더 큰
+  // distanceM을 가진 별도 마일스톤으로 등록되므로(buildMilestones의
+  // 왕복 클러스터링), 이 축 자체가 왕복이라고 방향이 뒤집히는 일이
+  // 없다 — Node.js 검증(verify_data_contract.js, 남덕유산 실측 + 편도
+  // "test 수목원")과 합성 왕복 시나리오(verify_roundtrip_clustering.js)
+  // 로 이 가정을 확인했다.
+  function resolveInitialSectionByProjection(lat, lon) {
     if (!currentMilestones || currentMilestones.length < 2) {
       currentMilestoneIdx = 0;
       nextMilestoneIdx = Math.min(1, Math.max(0, currentMilestones.length - 1));
       return;
     }
-    const dist = cumulativeDistances[nearestIdx] || 0;
-    // currentMilestones는 distanceM 오름차순 — dist 이하 중 가장 뒤(가까운) 것이 A
-    let i = 0;
-    while (i + 1 < currentMilestones.length && currentMilestones[i + 1].distanceM <= dist) i++;
-    currentMilestoneIdx = i;
-    nextMilestoneIdx = Math.min(i + 1, currentMilestones.length - 1);
+    let best = null;
+    for (let i = 0; i < currentMilestones.length - 1; i++) {
+      const candidateSection = { fromMilestone: currentMilestones[i], toMilestone: currentMilestones[i + 1], isForward: true };
+      const proj = projectOntoCurrentSection(lat, lon, candidateSection);
+      if (proj && (!best || proj.distance < best.proj.distance)) {
+        best = { idx: i, proj };
+      }
+    }
+    if (!best) {
+      currentMilestoneIdx = 0;
+      nextMilestoneIdx = Math.min(1, currentMilestones.length - 1);
+      return;
+    }
+    currentMilestoneIdx = best.idx;
+    nextMilestoneIdx = best.idx + 1;
   }
 
   // 🧭 회전/안내 방향 목표 지점 계산 — "단일 진행방향 소스" 설계
@@ -3117,25 +3039,37 @@
     bigLandmarkMilestonesCache.list = list;
     return list;
   }
-  // findNextMilestone과 완전히 같은 탐색 로직이지만, 입력 배열만
-  // "갈림길을 뺀 큰 지명 목록"으로 바꾼 표시 전용 버전 — 방향 계산에는
-  // 쓰지 않는다(updateNavigationToast의 안내 문구 조립에서만 호출).
-  function findNextBigLandmark(traveledDist, isReversing, graceM) {
+  // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — "구간 판정 대상"과 "상단 알림
+  // 표시 대상"을 분리한다(사용자 확정 원칙): currentSection(A/B, 갈림길
+  // 포함)은 지도회전/화살표/구간전환/이탈판정 전부의 기준으로 절대
+  // 바뀌지 않고, 이 함수는 오직 "그 구간을 표시할 때 보여줄 이름"만
+  // 큰 지명(갈림길 제외)으로 치환하는 순수 함수다.
+  //
+  // ⚠️ 구현 계약(반드시 지킬 것): 이 함수는 section의 실제 A/B(신
+  // 시스템, currentMilestoneIdx/nextMilestoneIdx가 가리키는 구간)와
+  // proj.routeDistance만 입력으로 받는다. currentMilestoneIdx/
+  // nextMilestoneIdx를 읽기만 하고 절대 쓰지 않으며, 이 함수의 반환값은
+  // 표시 텍스트 조립에만 쓰이고 currentSection/proj/구간전환/지도회전/
+  // 화살표/비프음/이탈판정 그 어디에도 역으로 흘러들지 않는다.
+  //
+  // section.isForward로 이미 진행 방향이 표현되므로(신 시스템), 예전
+  // findNextMilestone류처럼 traveledDist 하나로 배열을 매번 다시
+  // 선형탐색하며 grace(15m) 여유값을 두는 방식은 쓰지 않는다 — 그
+  // grace가 "갈림길1→갈림길1" 축퇴 표시 버그의 정확한 원인이었다(짧은
+  // 구간에서 도착 15m 전부터 prevM=nextM이 되어버림). 대신 routeDistance
+  // 기준으로 "그 지점 이전의 가장 가까운 큰 지명"과 "그 지점 이후의
+  // 가장 가까운 큰 지명"을 grace 없이 정확하게 찾는다.
+  function findNextBigLandmark(section, proj) {
     const source = getBigLandmarkMilestones();
-    if (!source || source.length < 2) return null;
-    const grace = (graceM === undefined) ? 15 : graceM;
+    if (!source || source.length < 2 || !section || !proj) return null;
+    const routeDistance = proj.routeDistance;
     let prevM = source[0];
     let nextM = source[source.length - 1];
     for (let i = 0; i < source.length; i++) {
-      if (source[i].distanceM <= traveledDist + grace) {
-        prevM = source[i];
-      }
-      if (source[i].distanceM > traveledDist) {
-        nextM = source[i];
-        break;
-      }
+      if (source[i].distanceM <= routeDistance) prevM = source[i];
+      if (source[i].distanceM > routeDistance) { nextM = source[i]; break; }
     }
-    if (isReversing) {
+    if (!section.isForward) {
       return { prevM: nextM, nextM: prevM };
     }
     return { prevM, nextM };
@@ -3256,20 +3190,11 @@
     if (!currentMilestones || currentMilestones.length === 0) return false;
     return currentMilestones.some(m => m.isPeak && Math.abs(traveledDist - m.distanceM) <= PEAK_SIMPLIFY_RADIUS_M);
   }
-  function computeArrowHeading(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
-    if (isNearTrailheadNow) {
-      const target = nearestOnTrailPoint || (currentPoints && currentPoints.length > 0 ? currentPoints[0] : null);
-      if (!target) return null;
-      return calculateBearing(lat, lon, target.lat, target.lon);
-    }
-    if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
-    const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
-    const lookahead = isNearPeakMilestone(dist) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
-    const targetDist = dist + moveDirectionSign * lookahead;
-    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
-    if (!aheadPt) return null;
-    return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
-  }
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — computeArrowHeading(V1,
+  // moveDirectionSign/nearestIdx 기반)을 삭제했다. 실제 GPS 경로는
+  // computeArrowHeadingV2(routeDistance 기반, N/N+1을 전혀 쓰지 않음)
+  // 만 사용한 지 오래고(2026-09-25부터), 이 V1 함수는 이미 호출부가
+  // 없는 죽은 코드였다.
 
   // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — computeArrowHeading의 V2.
   // moveDirectionSign(GPX index 증감 기반, 역방향 개념 의존)을 전혀
@@ -3550,6 +3475,20 @@
     };
   }
 
+  // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — "몇 시 방향" 안내 전용. 현재
+  // 구간의 목표(B)를 지난 직후 실제로 꺾어 나가야 할 방향(다음 구간
+  // B→C의 B 지점 기준 국소 진행방향)을 computeSectionApproachBearing과
+  // 완전히 같은 원리(lookahead)로 계산한다. 계산만 하고 회전은 하지
+  // 않는다(구현 계약, computeSectionApproachBearing과 동일).
+  function computeOutgoingBearingAtMilestone(section) {
+    const nextSection = peekNextSection(section);
+    if (!nextSection) return null;
+    const B = section.toMilestone;
+    const pseudoProj = { routeDistance: B.distanceM };
+    const approach = computeSectionApproachBearing(B.trailLat, B.trailLon, nextSection, pseudoProj);
+    return approach ? approach.bearing : null;
+  }
+
   // GPS 재시작/코스 재로드/백그라운드 복귀 시 이 기준점을 초기화해야,
   // 다음 updateGajaMap 호출이 "이전 세션의 근접 상태"와 비교해 부당하게
   // 억제되지 않고 무조건 재계산(회전 적용)한다.
@@ -3667,12 +3606,17 @@
       lastAppliedFarBearing = null;
       farDriftStreak = 0;
       const newSection = getCurrentSection();
-      if (!newSection) return { section, proj, recentered: false };
+      // arrivedMilestone: 이번 프레임에 실제로 통과한 방향점(B) — N/N+1
+      // 폐기 재설계로 원점 확정/통과 비프음(updateSegmentRotationTrigger가
+      // 예전에 findNextRotationTarget으로 별도 계산하던 것)을 여기서
+      // 이미 확정된 section.toMilestone으로 대체한다.
+      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone };
       const newProj = projectOntoCurrentSection(gpsLat, gpsLon, newSection);
-      if (!newProj) return { section: newSection, proj, recentered: false };
-      return updateGajaMapCore(newSection, newProj, gpsLat, gpsLon);
+      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone };
+      const coreResult = updateGajaMapCore(newSection, newProj, gpsLat, gpsLon);
+      return Object.assign(coreResult, { advanced: true, arrivedMilestone: section.toMilestone });
     }
-    return updateGajaMapCore(section, proj, gpsLat, gpsLon);
+    return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon), { advanced: false, arrivedMilestone: null });
   }
 
   function updateGajaMapCore(section, proj, gpsLat, gpsLon) {
@@ -3743,8 +3687,11 @@
   function recalculateGajaMapFromScratch(reason) {
     if (!lastKnownPos) return;
     sectionApproachState = null;
-    const nearest = findNearestInRange(lastKnownPos.lat, lastKnownPos.lon, currentPoints, 0, Math.max(0, (currentPoints ? currentPoints.length : 1) - 2));
-    if (nearest) resolveInitialSection(nearest.index);
+    // 🗺️ 2026-09-26 N/N+1 폐기 — findNearestInRange(전역 세그먼트 탐색)로
+    // nearestIdx를 구한 뒤 resolveInitialSection에 넘기던 경로를 없애고,
+    // resolveInitialSectionByProjection이 직접 GPS 좌표를 구간 후보들에
+    // 투영해 구간을 정한다.
+    resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
     updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
   }
 
@@ -3838,13 +3785,17 @@
   // 함께 제거했다 — getWayfindingTargetPoint/isReturnToOriginMode 분기,
   // 패널 DOM 텍스트 갱신 코드도 함께 정리. 녹색 안내선(guideLine) 자체는
   // 그대로 유지된다.
-  function updateWayfindingProgress(lat, lon, nearestIdx) {
+  // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — nearestIdx(구식) 대신 신
+  // 시스템의 routeDistance(A→B 구간 투영 결과)를 직접 받는다. wayfinding
+  // 자체는 별도 트랙(버튼이 현재 숨겨진 보류 기능)이라 이 재설계 범위
+  // 밖이지만, 호출부가 더 이상 nearestIdx를 만들지 않으므로 시그니처만
+  // 맞춰 호환을 유지한다.
+  function updateWayfindingProgress(lat, lon, traveledDist) {
     if (!isWayfindActive) return;
 
     if (!wayfindingTargetMilestone) {
       // 최초 진입 시 첫 목적지를 정한다.
-      const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
-      wayfindingTargetMilestone = findNextWaypointMilestone(traveledDist);
+      wayfindingTargetMilestone = findNextWaypointMilestone(traveledDist || 0);
     }
 
     const target = wayfindingTargetMilestone;
@@ -3870,8 +3821,7 @@
 
     // 도착 판정 → 다음 목적지 자동 전환(명세 11번).
     if (distToTarget <= WAYFINDING_ARRIVAL_RADIUS_M) {
-      const traveledDist = (cumulativeDistances && nearestIdx >= 0) ? (cumulativeDistances[nearestIdx] || 0) : 0;
-      const nextTarget = findNextWaypointMilestone(traveledDist);
+      const nextTarget = findNextWaypointMilestone(traveledDist || 0);
       if (nextTarget && nextTarget !== wayfindingTargetMilestone) {
         showToastBadge(`✅ ${wayfindingTargetMilestone ? wayfindingTargetMilestone.name : ''} 도착 — 다음: ${nextTarget.name}`);
       }
@@ -4804,14 +4754,23 @@
   // 구간(원점 미확정, 100m 이내)에서 지도 회전 방향과 화살표 방향이
   // 어긋났다. 호출부(handleGpsPositionUpdate)가 이미 계산해둔
   // arrowHeading을 그대로 받아써서 두 값을 하나로 통일한다.
-  function updateTrailheadApproach(lat, lon, minDistanceM, nearestPoint, arrowHeading) {
+  // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — 예전엔 nearestPointOnTrail(LOCKED
+  // N/N+1 전역탐색)이 찾은 minDistanceM/nearestPoint를 인자로 받았다.
+  // 이제 "구간이 아직 없다"는 것 자체가 "resolveInitialSectionByProjection
+  // 이 confident한 구간을 못 찾았거나, 찾은 구간까지의 거리(proj.distance)
+  // 가 이미 20m를 넘는다"는 뜻이므로, section/proj(신 시스템, 이미
+  // updateGajaMap이 계산해둔 결과)를 그대로 받아 쓴다 — 별도의 전역
+  // 탐색을 새로 만들지 않는다.
+  function updateTrailheadApproach(section, proj, arrowHeading) {
     isApproachingTrailhead = false;
     isTrailTooFar = false;
-    if (!currentPoints || currentPoints.length === 0 || !nearestPoint) return;
+    if (!currentPoints || currentPoints.length === 0 || !section || !proj) return;
 
     // 방향이 이미 확정됐으면(currentRotationOriginDist !== null) 접근
     // 모드를 켜지 않는다 — 이미 정상 경로 안내로 넘어간 상태.
     if (currentRotationOriginDist !== null) return;
+
+    const minDistanceM = proj.distance;
 
     // 이미 경로 위(온트레일)라면 접근 모드 자체가 필요 없다 — 새 반경을
     // 만들지 않고 기존 이탈판정 진입 기준(OFFTRAIL_BASE_ENTER_M)을
@@ -4832,8 +4791,9 @@
       return;
     }
 
-    // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(들머리일 수도,
-    // 경로 중간 지점일 수도 있다)을 향해 방향 안내를 시작한다.
+    // 온트레일 기준 ~ 100m 이내 — 가장 가까운 경로 지점(현재 구간의
+    // 투영점, 들머리일 수도 경로 중간 지점일 수도 있다)을 향해 방향
+    // 안내를 시작한다.
     isApproachingTrailhead = true;
     // 화살표(renderGpsArrow)와 항상 같은 값(arrowHeading, GPX 기준
     // computeArrowHeading 결과)으로 회전 — 가만히 서 있어 아직 방향이
@@ -4955,7 +4915,17 @@
   // (ROTATION_MIN_MOVE_M) 하나만으로 떨림을 억제한다. 이 함수
   // (updateSegmentRotationTrigger)는 이제 오직 "원점(currentRotationOriginDist,
   // 하단 경로 알람 기준점) 확정"과 "방향점 통과 비프음"만 담당한다.
-  function updateSegmentRotationTrigger(traveledDist, nearestIdx) {
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — 예전엔 findNextRotationTarget
+  // (traveledDist 선형탐색, N/N+1과 같은 부류의 구식 시스템)으로 "다음
+  // 원점 후보"를 독자적으로 찾고 while 루프로 연쇄 소진했다. 이제
+  // 원점(currentRotationOriginDist, 하단 알람 전용 기준점) 확정과 통과
+  // 비프음은 신 시스템(updateGajaMap이 이미 판정한 advanced/
+  // arrivedMilestone)을 그대로 받아쓴다 — 별도로 "다음 목표가 뭔지"를
+  // 다시 계산하지 않는다. 연쇄 소진이 필요 없어졌다: updateGajaMap은
+  // 이번 프레임에 실제로 넘은 마일스톤(section.toMilestone) 하나만
+  // 반환하는데, 이는 항상 "이번 프레임에 도착한 것으로 확정된" 방향점
+  // 이므로 그 자체가 이미 최종 결과다.
+  function updateSegmentRotationTrigger(section, advanced, arrivedMilestone) {
     if (!isSegmentRotationMode) return;
     // ⚠️ 손가락으로 지도를 드래그하는 도중(isMapBeingDragged)에 갈림길을
     // 지나 구간이 바뀌면 applySegmentRotation이 지도 CSS 회전을 즉시
@@ -4966,99 +4936,29 @@
     // 재현: "이동 중 드래그 시 지도가 손가락 반대/어긋난 방향으로 감").
     // 드래그 중에는 회전 판정 자체를 보류하고, 드래그가 끝나 자동 복귀
     // 유예까지 지나면(!isMapBeingDragged && !isMapDragReturnPending)
-    // 다음 픽스에서 정상적으로 재판정된다 — 기준점을 갱신하지 않으므로
-    // 갈림길을 지난 사실 자체는 유실되지 않는다.
+    // 다음 픽스에서 정상적으로 재판정된다.
     // 🧭 WAYFINDING_MODE 중에는 지도 회전을 손대지 않는다(구간회전과
-    // 별개로 동작 — closeWayfindingMode가 종료해도 구간회전 값은 그대로
-    // 유지된다, 나침반/손가락 회전 방식은 2026-09-23 완전히 제거됨) —
-    // 그 동안 구간회전이 끼어들면 나침반 회전과 충돌해 지도가 제멋대로
-    // 움직이는 것처럼 보인다.
+    // 별개로 동작).
     // ⚠️ forceOriginReset(resetOriginNow() 명시적 클릭)은 드래그 유예
     // 가드를 우회한다 — 이 가드가 없으면 "지도를 손가락으로 둘러보고
     // 놓은 직후(자동 복귀 유예 7초 이내)"에 원점 버튼을 눌러도 조용히
-    // 아무 일도 안 일어났다(사용자 재현: "원점 다시 잡는 메뉴... 클릭
-    // 하면 현재 위치에서 지도를 90도 돌려야 하는데... 눈에는 안
-    // 되고있는것 같아" — 실제로는 지도가 잘못된 방향으로 남아있는
-    // 상황에서 버튼을 눌렀는데 반응이 없었음). 길찾기 모드는 그동안
-    // 나침반/손가락이 회전을 전담하는 완전히 다른 구조이므로 이
-    // 예외에서 제외한다(길찾기 중에는 원점 버튼 자체를 쓸 상황이
-    // 아니다).
+    // 아무 일도 안 일어났다(사용자 재현).
     if ((isMapBeingDragged || isMapDragReturnPending) && !forceOriginReset) return;
     if (isWayfindActive) return;
-    // 🚨 경로 이탈 중에는 회전보다 복귀 방향 안내가 우선이어야 한다는
-    // 지적(사용자: "경로에서 벗어 났는데 회전보다 내가 가야할 곳을
-    // 알려주는게 낫지") — 이탈 상태에서는 회전 자체를 동결(마지막
-    // 회전값 유지)하고, updateNavigationToast의 이탈 안내 분기가
-    // 복귀 방향을 전담한다. 복귀하면 다음 픽스에서 정상 재개된다.
-    // 단, 아직 원점이 한 번도 안 잡힌 상태(currentRotationOriginDist
-    // === null)이거나 resetOriginNow()로 명시적 재설정을 요청한 경우
-    // (forceOriginReset)는 이탈 여부와 무관하게 계속 판정을 시도한다.
-    // ⚠️ v94에서 이 동결을 "원점 확정 여부와 무관하게" 걸었더니, 들머리
-    // 진입 직후(아직 트랙 위로 안정적으로 붙기 전이라 이탈 상태로
-    // 분류되기 쉬운 구간)에 원점 자체가 영영 안 잡히는 회귀가
-    // 생겼다(사용자 재현: "들머리에서 순방향이면 판정이 나는데 원점을
-    // 안 잡아 왜?"). 회전이 이미 한 번 확정된 뒤(갈림길 통과 등)에만
-    // 이탈 동결을 적용하고, 첫 원점 판정 자체는 계속 열어둔다.
-    //
-    // ⚠️ 2026-09-21 수정: 예전엔 "이탈 중 회전 동결" 때문에 지명(방향점)
-    // 통과 알림까지 통째로 스킵되는 문제가 있어 "통과 여부 확인 + 통과
-    // 비프음"과 "회전"을 분리했다. 2026-09-25부터 이 함수는 방향점 도착
-    // 판정(비프음)과 원점 확정(하단 알람용 기준점)만 담당한다 — 지도
-    // 회전은 handleGpsPositionUpdate의 applyLiveMapRotation이 매 픽스
-    // 즉시 전담한다(위 GPS_REACQUIRE_CONFIRM_STREAK 제거 관련 주석 참고).
-    // trackDirection(isReversingOnTrail)은 nearestPointOnTrail이 매
-    // 픽스마다 자동으로 갱신하므로(updateTrackDirection), 여기서 별도로
-    // 다시 갱신하지 않는다.
-    if (!lastKnownPos) return;
+    if (!lastKnownPos || !section) return;
 
     const isFirstRotation = currentRotationOriginDist === null;
-    // 시뮬레이션 중에는 항상 500m, 실제 GPS는 기본값(100m) — 사용자
-    // 지시: "시뮬레이션은 위 조건 무시해. 그냥 500m로 원점 잡는 것으로
-    // 해 줘." findNextRotationTarget 정의부의 SIM_ROTATION_TARGET_LOOKAHEAD_M
-    // 참고.
-    const rotationLookaheadM = isSimulationMode ? SIM_ROTATION_TARGET_LOOKAHEAD_M : undefined;
 
     if (!isFirstRotation) {
-      // 🧭 이미 원점이 있으면: 현재 기준점에서 찾은 목표에 실제로
-      // 도착/통과했는지 확인한다. 아직 도착 전이면(접근 중) 아무것도
-      // 하지 않고 이전 회전값을 그대로 유지 — "미리 회전" 방지.
-      //
-      // ⭐ 연쇄 소진(2026-09-21, 사용자 지시: "원점은 마지막 방향점이
-      // 지나갈때 잡으면 돼. 대신 방향 알람은 동시에 나오게 해줘"): 방향점
-      // (갈림길/봉우리/쉼터 등 지명이 있는 모든 지점) 간격이 10~20m로
-      // 촘촘한 구간에서는 GPS 픽스 한 번(약 1초) 사이에 여러 방향점을
-      // 동시에 지나칠 수 있다. 예전엔 한 번에 하나만 처리하고 return
-      // 했는데, 그 직후 currentRotationOriginDist!==null 상태에서 GPS
-      // 오차로 이탈(isOffTrailState) 오판이 겹치면 3700행의 동결 조건에
-      // 걸려 바로 옆 방향점이 다음 픽스에서도 영영 못 잡히는 문제가
-      // 있었다. while로 도착한 방향점을 모두 순서대로 소진해, 이번
-      // 프레임 안에서 마지막(가장 멀리 지나친) 방향점까지 한 번에
-      // 원점으로 확정한다. 중간에 지나친 방향점들도 통과 비프음을
-      // 순서대로 울려 "9시→11시" 같은 연속 통과를 놓치지 않는다.
-      let originDist = currentRotationOriginDist;
-      let finalTarget = null;
-      let guard = 0; // 무한루프 방지(코스 데이터 이상 등 극단적 상황 대비)
-      while (guard++ < 50) {
-        const currentTarget = findNextRotationTarget(originDist, isReversingOnTrail, rotationLookaheadM);
-        if (!currentTarget) break;
-        const arrived = isReversingOnTrail
-          ? (traveledDist <= currentTarget.distanceM + ROTATION_ARRIVAL_GRACE_M)
-          : (traveledDist >= currentTarget.distanceM - ROTATION_ARRIVAL_GRACE_M);
-        if (!arrived) break;
-        // 이름 없는 lookahead 지점 통과는 실제 방향점 통과가 아니므로 조용히.
-        if (currentTarget.isMilestone) playPassedMilestoneBeep();
-        originDist = currentTarget.distanceM;
-        finalTarget = currentTarget;
-      }
-      if (!finalTarget) return; // 도착한 방향점이 하나도 없음(접근 중)
-
-      // 마지막으로 도착한 방향점을 새 기준점으로 삼는다 — 통과 사실
-      // 자체(및 비프음)는 이탈 여부와 무관하게 이미 위 while 루프에서
-      // 보장됐으므로, 원점 갱신도 그대로 진행해 다음 방향점이 중복
-      // 판정되지 않게 한다. 지도 회전은 2026-09-25부터 이 함수가 하지
-      // 않는다(handleGpsPositionUpdate의 applyLiveMapRotation 전담) —
-      // 여기서는 하단 알람 기준점(currentRotationOriginDist)만 갱신한다.
-      currentRotationOriginDist = finalTarget.distanceM;
+      // 이미 원점이 있으면: 이번 프레임에 실제로 방향점을 통과했을
+      // 때만(advanced===true) 원점을 갱신하고 통과 비프음을 울린다.
+      // 이름 없는 lookahead 지점이 아니라 항상 실제 마일스톤(B)이므로
+      // 통과 시 무조건 비프음이 울린다(예전엔 lookahead 지점 통과는
+      // 조용히 지나갔는데, 신 시스템은 구간 경계 자체가 항상
+      // currentMilestones의 실제 지점이라 그런 무명 지점이 없다).
+      if (!advanced || !arrivedMilestone) return;
+      playPassedMilestoneBeep();
+      currentRotationOriginDist = arrivedMilestone.distanceM;
       return;
     }
 
@@ -5070,11 +4970,7 @@
     firstOriginFixCount++;
     if (firstOriginFixCount < FIRST_ORIGIN_MIN_FIXES) return; // 아직 이동방향 미확정 — 하단 알람 원점은 대기
 
-    const target = findNextRotationTarget(traveledDist, isReversingOnTrail, rotationLookaheadM);
-    if (!target) return;
-
-    currentRotationOriginDist = traveledDist;
-    return;
+    currentRotationOriginDist = section.fromMilestone.distanceM;
   }
 
   // 🔄 수동 "원점 다시 잡기" 버튼 — GPS가 크게 튀거나 원점이 엉뚱하게
@@ -5116,69 +5012,68 @@
 
     firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; // 수동 재설정은 대기 없이 즉시 확정
     forceOriginReset = true;
-    const nearest = nearestPointOnTrail(lastKnownPos.lat, lastKnownPos.lon, currentPoints);
-    const traveledDist = (nearest && cumulativeDistances[nearest.index] !== undefined) ? cumulativeDistances[nearest.index] : 0;
-    // 하단 경로 알람 원점(currentRotationOriginDist) 확정만 이 호출이
-    // 담당한다 — 지도 회전은 아래에서 직접 즉시 처리한다.
-    updateSegmentRotationTrigger(traveledDist, nearest ? nearest.index : undefined);
-    forceOriginReset = false;
-    // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "지금 위치 기준 즉시
-    // 재설정"을 옛 computeArrowHeading/applySegmentRotation 직접 호출
-    // 대신 recalculateGajaMapFromScratch로 통일한다(명세: 홈버튼은
-    // 현재GPS위치로 원점이동 + 현재구간→GPX위치→100m목표→GPX방향→12시를
-    // 다시 계산한다). 구간이 아직 없으면 이 함수가 nearest를 다시
-    // 계산해 자동으로 초기화하므로, 위에서 구한 nearest를 재사용하지
-    // 않고 내부에 맡긴다.
+    // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — nearestPointOnTrail 없이,
+    // recalculateGajaMapFromScratch가 resolveInitialSectionByProjection
+    // 으로 구간을 다시 확정하고 updateGajaMap까지 호출한다(명세: 홈버튼은
+    // 현재GPS위치로 원점이동 + 현재구간→GPX위치→lookahead목표→GPX방향→
+    // 12시를 다시 계산한다).
     recalculateGajaMapFromScratch('homeButton');
-    if (getCurrentSection()) {
-      const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, cumulativeDistances[nearest ? nearest.index : 0] || 0);
+    const section = getCurrentSection();
+    if (section) {
+      const proj = projectOntoCurrentSection(lastKnownPos.lat, lastKnownPos.lon, section);
+      // 하단 경로 알람 원점(currentRotationOriginDist) 확정만 이 호출이
+      // 담당한다 — 지도 회전은 recalculateGajaMapFromScratch가 이미
+      // 처리했다. firstOriginFixCount를 위에서 이미 즉시확정 값으로
+      // 만들어뒀으므로 이 한 번의 호출로 바로 확정된다.
+      updateSegmentRotationTrigger(section, false, null);
+      const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, proj ? proj.routeDistance : 0);
       if (arrowHeading !== null) {
         renderGpsArrow(arrowHeading);
         lastArrowHeadingForGuidance = arrowHeading;
       }
     }
+    forceOriginReset = false;
     showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
   }
   window.resetOriginNow = resetOriginNow;
 
-  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading, offTrailDistanceM, offTrailNearestPoint) {
-    // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 경로(온트레일 기준)
-    // 밖에 있으면(산행 시작 직후 집/주차장, 또는 경로 중간으로 바로
-    // 진입하는 경우 모두 포함) 트랙 기반 이탈판정·갈림길 안내·구간회전을
-    // 건너뛰고 가장 가까운 경로 지점까지 거리/방향만 안내한다.
+  // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — 사용자 확정 원칙: "모든
+  // 판단은 현재 A→B 구간과 현재 GPS 위치의 투영 결과를 기준으로
+  // 통합한다." 예전 시그니처(minDistanceM/nearestIdx/nearestPoint,
+  // 전부 nearestPointOnTrail의 LOCKED N/N+1 결과)를 완전히 버리고,
+  // section/proj(신 시스템, handleGpsPositionUpdate가 updateGajaMap으로
+  // 이미 계산해둔 결과)를 직접 받는다. 구간 판정 대상(section, 갈림길
+  // 포함)과 상단 알림 표시 대상(큰 지명, findNextBigLandmark로 치환)은
+  // 이 함수 안에서도 명확히 분리된다 — 데이터는 항상
+  // "section/proj → {이탈판정 결과 반영, 몇시방향, 화살표} → 표시명만
+  // 치환해서 상단판" 한 방향으로만 흐르고, 표시명 치환 결과가 section을
+  // 다시 바꾸는 경로는 없다.
+  function updateNavigationToast(accuracy, section, proj, arrowHeading, offTrailDistanceM, offTrailNearestPoint) {
+    // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 어떤 구간에도 온트레일
+    // (20m) 이내로 투영되지 않으면(산행 시작 직후 집/주차장 등) 트랙
+    // 기반 이탈판정·갈림길 안내를 건너뛰고 가장 가까운 경로 지점까지
+    // 거리/방향만 안내한다.
     //   - 100m 초과: 거리만 표시(isTrailTooFar)
     //   - 온트레일(20m)~100m: 방향 안내 시작(isApproachingTrailhead)
-    // GPS 이동방향이 경로 방향과 2~3회 연속 일치해 원점
-    // (currentRotationOriginDist)이 확정되는 순간 자동으로 꺼지고 아래
-    // 기존 로직(갈림길 안내 등)으로 넘어간다.
+    // 원점(currentRotationOriginDist)이 확정되는 순간 자동으로 꺼지고
+    // 아래 기존 로직(갈림길 안내 등)으로 넘어간다.
     if (lastKnownPos) {
-      updateTrailheadApproach(lastKnownPos.lat, lastKnownPos.lon, minDistanceM, nearestPoint, arrowHeading);
+      updateTrailheadApproach(section, proj, arrowHeading);
       if (isApproachingTrailhead || isTrailTooFar) return;
-    }
-
-    // 하단 경로 알람 원점(currentRotationOriginDist) 확정 판정은 텍스트
-    // 안내(이탈/온트레일 분기, 토스트 표시 여부)와 무관하게 토스트 표시
-    // 여부(toast.style.display==='none')와는 상관없이 항상 먼저
-    // 실행한다. 지도 회전 자체는 이 함수가 아니라
-    // handleGpsPositionUpdate의 applyLiveMapRotation이 매 픽스 즉시
-    // 전담한다(2026-09-25).
-    if (currentMilestones && currentMilestones.length >= 2 && nearestIdx >= 0 && cumulativeDistances) {
-      updateSegmentRotationTrigger(cumulativeDistances[nearestIdx] || 0, nearestIdx);
     }
 
     const toast = document.getElementById('gpsToast');
     if (!toast || toast.style.display === 'none') return;
-    if (!lastKnownPos) return;
+    if (!lastKnownPos || !section || !proj) return;
 
-    // 🐛 2026-09-26 이탈 판정 재설계 — 복귀 방향/거리는 이제 nearestPoint/
-    // minDistanceM(구식 LOCKED N/N+1 결과)이 아니라 offTrailNearestPoint/
-    // offTrailDistanceM(현재 A→B 구간 투영 결과, updateOffTrailHysteresis에
-    // 넘긴 값과 동일 소스)을 쓴다 — 이탈 여부 판정과 복귀 안내가 서로
-    // 다른 지점을 기준삼는 불일치(사용자 재현: 이탈 판정은 됐는데 안내는
-    // 엉뚱한 갈림길을 가리킴)를 막기 위함. offTrailNearestPoint가 없으면
-    // (구간 미확정 등 예외) 기존 nearestPoint로 안전하게 폴백한다.
-    const guidancePoint = offTrailNearestPoint || nearestPoint;
-    const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : minDistanceM;
+    // 🐛 2026-09-26 이탈 판정 재설계 — 복귀 방향/거리는 section/proj
+    // (현재 A→B 구간 투영 결과, updateOffTrailHysteresis에 넘긴 값과
+    // 동일 소스)에서 나온 offTrailNearestPoint/offTrailDistanceM을
+    // 쓴다 — 이탈 여부 판정과 복귀 안내가 서로 다른 지점을 기준삼는
+    // 불일치(사용자 재현: 이탈 판정은 됐는데 안내는 엉뚱한 갈림길을
+    // 가리킴)를 막기 위함.
+    const guidancePoint = offTrailNearestPoint;
+    const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : proj.distance;
     if (guidancePoint && isOffTrailState) {
       hideBottomDirectionArrow(); // 이탈 안내는 좌/우 상대 방향(angleDiffToPlainKorean)이라 하단 화살표(시계 방향) UI와 별개
       // 숲/계곡 GPS 수신 불안정 시 오알람 방지 (정확도가 25m보다 나쁘면 대기)
@@ -5192,8 +5087,7 @@
       // 아니라 "들머리 진입 중"으로 안내한다 — GPS 이동방향이 아직
       // 안정되지 않은 상태에서 갑자기 "이탈했다"는 경고만 뜨면
       // 사용자가 어디로 가야 할지 판단하기 어렵다는 지적(개선 제안).
-      const traveledDistForNotice = cumulativeDistances[nearestIdx] || 0;
-      const isNearTrailheadNotice = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForNotice < TRAILHEAD_ENTRY_DISTANCE_M;
+      const isNearTrailheadNotice = isSegmentRotationMode && currentRotationOriginDist === null && proj.routeDistance < TRAILHEAD_ENTRY_DISTANCE_M;
       if (isNearTrailheadNotice) {
         toast.className = 'gps-toast';
         let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
@@ -5215,134 +5109,85 @@
         playOffTrailBeep();
         speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
       }
-    } else if (nearestIdx >= 0 && currentPoints && currentPoints.length > 3) {
-      // 정지 중에는 "정지 중" 안내만, 이동 중에는 남은 거리만 표시한다.
-      // (이전에는 여기서 궤적 방향과 실제 이동 방향을 비교해 역주행 여부를
-      // 판정했으나, 개선 1로 그 판정 자체를 제거했다 — 녹색 점선과 이탈
-      // 경고가 이미 필요한 안내를 제공하므로 더 이상 계산할 필요가 없다.)
-      const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
-      const traveledDist = cumulativeDistances[nearestIdx] || 0;
-      const remainingDist = Math.max(0, totalDist - traveledDist);
-      const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
-      const fmtM = m => `${(m / 1000).toFixed(2)}km`;
-      // ⭐ "전체 Nkm" 한 줄에 남은 거리와 전체 거리가 같이 뭉쳐 있어
-      // 지금까지 실제로 얼마나 걸었는지 가늠하기 어렵다는 지적(사용자
-      // 요청: "(전체1.46km중 1.0km이동)"으로 구분해서 보여달라) —
-      // "전체 X중 Y 이동"처럼 전체 거리 대비 이동거리를 별도로 표시한다.
-      const totalDistStr = `${(totalDist / 1000).toFixed(2)}km`;
-      const traveledDistStr = `${(traveledDist / 1000).toFixed(2)}km`;
+      return;
+    }
 
-      // ⭐ 전면 재설계(2026-09-17 v94, 2026-09-17 v95) "단일 진행방향
-      // 소스 + 도착 시점 회전" 방식: turnAngle을 코스 로드 시점에 미리
-      // 계산해두던 이전 방식은 지도 회전 기준과 안내 각도 기준이 서로
-      // 다른 지점을 봐서 실기기에서 반복적으로 어긋났다(1~4·9·10번
-      // 사용자 재현 참고). v95에서는 회전 자체가 "목표 지점 도착/통과"
-      // 시에만 일어나므로, nextM에 접근하는 동안 mapRotationDeg는 항상
-      // "직전 기준점 → nextM" 방향으로 고정되어 있다(사용자 지시:
-      // "미리 회전하면 방향이 헷갈려"). "몇 시 방향"은 실시간으로,
-      // 그 "현재 화면이 가리키는 방향(mapRotationDeg)" 대비 "nextM을
-      // 지난 뒤 실제로 가야 할 다음 목표 방향"의 상대각으로 계산한다.
-      // 회전과 안내가 같은 값(mapRotationDeg)에서 파생되므로 화면과
-      // 어긋날 수가 없다.
-      //
-      // ↩️ 왕복/원점회귀 코스: 정상까지 갔다가 같은 길로 되돌아올 때도
-      // 갈림길 안내가 나와야 한다는 요구사항 — nearestIdx 증감 추이로
-      // "되돌아가는 중"을 판정(updateTrackDirection, nearestPointOnTrail
-      // 이 매 픽스마다 이미 호출함)하고, 역방향이면 findNextMilestone이
-      // 코스 순서상 이전 마일스톤을 다음 목표로 반환하도록 뒤집는다.
-      // distToNextM 계산도 방향에 맞게 뒤집는다.
-      const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
-      if (milestoneResult) {
-        const prevM = milestoneResult.prevM;
-        const nextM = milestoneResult.nextM;
-        const distToNextM = isReversingOnTrail
-          ? Math.max(0, traveledDist - nextM.distanceM)
-          : Math.max(0, nextM.distanceM - traveledDist);
+    // 정지 중에는 "정지 중" 안내만, 이동 중에는 남은 거리만 표시한다.
+    const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    const traveledDist = proj.routeDistance;
+    const remainingDist = Math.max(0, totalDist - traveledDist);
+    const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
+    const fmtM = m => `${(m / 1000).toFixed(2)}km`;
+    const totalDistStr = `${(totalDist / 1000).toFixed(2)}km`;
+    const traveledDistStr = `${(traveledDist / 1000).toFixed(2)}km`;
 
-        // nextM을 지난 직후(코스 진행거리 기준 살짝 더 간 지점)에서
-        // findNextRotationTarget과 완전히 같은 규칙으로 "그 다음 목표"를
-        // 찾는다 — 마일스톤이 있으면 그 지점, 없으면 100m 앞 지점.
-        // 이게 "nextM에서 실제로 꺾여 나가는 방향"이다.
-        const afterNextMDist = isReversingOnTrail
-          ? Math.max(0, nextM.distanceM - 1)
-          : nextM.distanceM + 1;
-        const afterTarget = findNextRotationTarget(afterNextMDist, isReversingOnTrail, isSimulationMode ? SIM_ROTATION_TARGET_LOOKAHEAD_M : undefined);
-        let turnAngle = null;
-        let turnLabel = null;
-        if (afterTarget) {
-          const outBearing = computeGuidanceHeading(nextM.trailLat, nextM.trailLon, afterTarget.lat, afterTarget.lon);
-          if (outBearing !== null) {
-            // "지금 화면이 가리키는 방향" = nextM을 향해 이미 맞춰진
-            // mapRotationDeg. 그 방향 대비 nextM 통과 후 방향의 상대각이
-            // 곧 화면 기준 "몇 시로 꺾어야 하는지"다.
-            turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
-            turnLabel = classifyTurnAngle(turnAngle);
-          }
-        }
-        // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
-        // 구간 동안은 하단 화살표를 새 목표(nextM) 기준으로 즉시
-        // 갱신하지 않고 직전 화살표를 그대로 유지한다 — 이전에는
-        // traveledDist가 prevM.distanceM을 넘는 즉시 nextM 기준으로
-        // 재계산되면서, 방금 지난 노드점의 방향 화살표가 통과와 동시에
-        // 사라져 확인할 새가 없었다(사용자 지시: "마지막 방향알림을
-        // 유지하다가 사라지게"). 상단 토스트(거리/지명 안내)는 이
-        // 영향을 받지 않고 기존 그대로 nextM 기준으로 계속 갱신된다.
-        const distPastPrevM = (prevM && prevM.distanceM !== undefined)
-          ? (isReversingOnTrail ? Math.max(0, prevM.distanceM - traveledDist) : Math.max(0, traveledDist - prevM.distanceM))
-          : Infinity;
-        if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M && lastShownArrowAngle !== null) {
-          showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
-        } else {
-          showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
-        }
+    // "A → B" 표시/거리는 section(신 시스템, 갈림길 포함) 그 자체에서
+    // 직접 나온다 — nearestIdx/traveledDist 선형탐색이 전혀 없으므로
+    // grace 여유값에 의한 "A→A" 축퇴 표시가 구조적으로 발생할 수 없다
+    // (section.fromMilestone !== section.toMilestone은 getCurrentSection이
+    // currentMilestoneIdx !== nextMilestoneIdx로 항상 보장한다).
+    const prevM = section.fromMilestone;
+    const nextM = section.toMilestone;
+    const distToNextM = Math.abs(nextM.distanceM - traveledDist);
 
-        toast.className = 'gps-toast';
-        // .gps-toast는 white-space:normal이라 innerText의 \n이 줄바꿈으로
-        // 렌더링되지 않는다 — 이 메시지만 <br>로 줄을 나눠야 하므로
-        // innerHTML을 쓴다. prevM/nextM.name은 GPX 웨이포인트 이름(외부
-        // 파일에서 올 수 있음)이라 다른 innerHTML 사용부(저장된 코스
-        // 목록의 safeName)와 동일하게 '<'를 이스케이프해 HTML 인젝션을
-        // 막는다.
-        const escName = s => String(s || '').replace(/</g, '&lt;');
-        // 🐛 2026-09-26 수정 — 상단 알림판 표시에만 큰 지명(갈림길 제외)
-        // 목록을 쓴다. 방향/화살표(turnAngle, showUpcomingTurnAlert)는
-        // 위에서 이미 정밀한 findNextMilestone(갈림길 포함) 결과로 계산을
-        // 끝냈으므로 전혀 영향받지 않는다 — 여기서 표시용 이름/거리만
-        // 별도로 다시 찾는다. 코스에 큰 지명이 2개 미만이면(웨이포인트가
-        // 거의 없는 GPX) 표시용 결과가 없을 수 있으니 그때만 기존
-        // prevM/nextM으로 안전하게 폴백한다.
-        const bigResult = findNextBigLandmark(traveledDist, isReversingOnTrail);
-        const dispPrevM = bigResult ? bigResult.prevM : prevM;
-        const dispNextM = bigResult ? bigResult.nextM : nextM;
-        const dispDistToNextM = bigResult
-          ? (isReversingOnTrail
-              ? Math.max(0, traveledDist - dispNextM.distanceM)
-              : Math.max(0, dispNextM.distanceM - traveledDist))
-          : distToNextM;
-        toast.innerHTML = `🧭 ${escName(dispPrevM.name)} → ${escName(dispNextM.name)} · ${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
-
-        // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
-        // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
-        // ARRIVAL_MIN_TRAVELED_M 이상 실제로 이동한 뒤에만 도착 판정을
-        // 한다. GPS 오차(보통 ±10~15m)를 감안해 20m 이내를 "도착"으로 본다.
-        if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
-          showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
-          // 🏁 산행 세션도 함께 종료한다 — 안 하면 다음에 같은 코스를
-          // 다시 열었을 때 "이전 세션 복귀"로 잘못 처리되어(등산 시작
-          // 확인 버튼 없이 곧바로 GPS가 켜짐) 새 산행을 시작 못 한다.
-          endHikingSession();
-          stopGpsTracking();
-        }
-        return;
-      }
-
-      hideBottomDirectionArrow();
-      toast.className = 'gps-toast';
-      toast.innerText = `🧭 위쪽으로 따라가세요 · 남은 ${remainingStr}`;
+    // "몇 시 방향" — nextM(B)을 지난 뒤 실제로 꺾어 나갈 방향
+    // (computeOutgoingBearingAtMilestone, computeSectionApproachBearing과
+    // 동일한 lookahead 원리)과, 지금 실제로 화면에 적용된 mapRotationDeg
+    // (신 시스템, applySegmentRotation이 이벤트 시에만 갱신하는 바로 그
+    // 값)의 상대각으로 계산한다 — 회전과 안내가 같은 값(mapRotationDeg)
+    // 에서 파생되므로 화면과 어긋날 수 없다(예전 구조는 findNextRotationTarget
+    // 이 독자적으로 계산한 outBearing과 mapRotationDeg를 섞어 "10시
+    // 방향" 같은 어긋난 안내가 나왔다).
+    const outBearing = computeOutgoingBearingAtMilestone(section);
+    let turnAngle = null;
+    let turnLabel = null;
+    if (outBearing !== null) {
+      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
+      turnLabel = classifyTurnAngle(turnAngle);
+    }
+    // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
+    // 구간 동안은 하단 화살표를 새 목표(nextM) 기준으로 즉시 갱신하지
+    // 않고 직전 화살표를 그대로 유지한다 — 방금 지난 노드점의 방향
+    // 화살표가 통과와 동시에 사라져 확인할 새가 없는 것을 방지.
+    const distPastPrevM = Math.max(0, traveledDist - prevM.distanceM);
+    if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M && lastShownArrowAngle !== null) {
+      showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
     } else {
-      hideBottomDirectionArrow();
-      toast.className = 'gps-toast';
-      toast.innerText = `🧭 위쪽으로 따라가세요`;
+      showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
+    }
+
+    toast.className = 'gps-toast';
+    // .gps-toast는 white-space:normal이라 innerText의 \n이 줄바꿈으로
+    // 렌더링되지 않는다 — 이 메시지만 <br>로 줄을 나눠야 하므로
+    // innerHTML을 쓴다. prevM/nextM.name은 GPX 웨이포인트 이름(외부
+    // 파일에서 올 수 있음)이라 다른 innerHTML 사용부(저장된 코스
+    // 목록의 safeName)와 동일하게 '<'를 이스케이프해 HTML 인젝션을
+    // 막는다.
+    const escName = s => String(s || '').replace(/</g, '&lt;');
+    // 🐛 2026-09-26 수정 — 상단 알림판 표시에만 큰 지명(갈림길 제외)
+    // 목록을 쓴다. section 자체(갈림길 포함)는 방향/화살표/구간전환/
+    // 이탈판정의 기준으로 전혀 바뀌지 않고, 여기서 표시용 이름/거리만
+    // findNextBigLandmark로 별도로 다시 찾는다(순수 표시 변환, section
+    // 을 역으로 바꾸지 않음). 코스에 큰 지명이 2개 미만이면(웨이포인트가
+    // 거의 없는 GPX) 표시용 결과가 없을 수 있으니 그때만 section의
+    // prevM/nextM으로 안전하게 폴백한다.
+    const bigResult = findNextBigLandmark(section, proj);
+    const dispPrevM = bigResult ? bigResult.prevM : prevM;
+    const dispNextM = bigResult ? bigResult.nextM : nextM;
+    const dispDistToNextM = bigResult ? Math.abs(dispNextM.distanceM - traveledDist) : distToNextM;
+    toast.innerHTML = `🧭 ${escName(dispPrevM.name)} → ${escName(dispNextM.name)} · ${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
+
+    // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
+    // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
+    // ARRIVAL_MIN_TRAVELED_M 이상 실제로 이동한 뒤에만 도착 판정을
+    // 한다. GPS 오차(보통 ±10~15m)를 감안해 20m 이내를 "도착"으로 본다.
+    if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
+      showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
+      // 🏁 산행 세션도 함께 종료한다 — 안 하면 다음에 같은 코스를
+      // 다시 열었을 때 "이전 세션 복귀"로 잘못 처리되어(등산 시작
+      // 확인 버튼 없이 곧바로 GPS가 켜짐) 새 산행을 시작 못 한다.
+      endHikingSession();
+      stopGpsTracking();
     }
   }
 
@@ -5380,11 +5225,13 @@
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
-    // key에 방향(isReversingOnTrail)을 포함시켜, 왕복 코스에서 같은
-    // 갈림길을 올라갈 때 한 번, 내려갈 때 또 한 번 각각 독립적으로
-    // 알람이 울리도록 한다 — 방향 정보 없이 좌표+거리만 쓰면 "이미
-    // 알람 울린 지점"으로 오판해 두 번째 통과 시 스킵될 수 있었다.
-    const key = nextM.name + '@' + nextM.distanceM + (isReversingOnTrail ? '@rev' : '@fwd');
+    // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
+    // 만으로 이미 유일하다. buildMilestones의 왕복 클러스터링이 "가는
+    // 길"과 "오는 길"을 각각 서로 다른 distanceM을 가진 별도 마일스톤
+    // 객체로 등록하므로(같은 이름이어도 distanceM이 다름), 예전처럼
+    // isReversingOnTrail(구식 전역 변수)을 방향 태그로 덧붙이지 않아도
+    // 왕복 코스에서 "이미 알람 울린 지점"으로 오판하는 문제가 없다.
+    const key = nextM.name + '@' + nextM.distanceM;
     // 이미 이 갈림길로 화살표가 떠 있는 상태면(같은 key로 한 번이라도
     // 알림이 시작됐으면) 더 관대한 HIDE 임계값을, 아직 안 떴으면 원래
     // 표시 임계값을 쓴다 — 60m 근처에서의 GPS 노이즈로 인한 깜빡임 방지.
@@ -5771,42 +5618,32 @@
     // 호출해 시뮬레이션 프레임 진행을 막지 않는다.
     updatePoiProximity(lat, lon);
 
-    // 🧭 지도 회전(시뮬레이션 전용, 2026-09-25 재조정) — 사용자 지시:
-    // "시뮬레이션에는 속도가 빨라서 지도가 춤을 추어. 시뮬레이션만
-    // 따로 기존 로직 적용하게 해". 실제 GPS는 매 픽스 즉시 회전
-    // (applyLiveMapRotation)을 그대로 쓰지만, 시뮬레이션은 배속(최대
-    // 5x) 재생이라 짧은 시간에 많은 프레임이 지나가면서 매 프레임
-    // 즉시 회전이 오히려 화면을 정신없이 흔든다. 시뮬레이션만 예전
-    // 구간회전 방식(방향점 도착/원점 확정 시에만 회전)으로 되돌린다
-    // — updateNavigationToast 안에서 이미 원점(currentRotationOriginDist)
-    // 확정을 판정하므로, 그 값이 이번 프레임에 바뀌었을 때만 새 목표를
-    // 향해 회전시킨다.
-    const originBeforeToast = currentRotationOriginDist;
+    // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — 시뮬레이션도 실제 GPS
+    // 경로(handleGpsPositionUpdate)와 완전히 같은 신 시스템(section/proj)
+    // 을 공유하도록 통합한다. 예전엔 findNextRotationTarget/
+    // isReversingOnTrail 스왑처럼 시뮬레이션 전용 우회로가 따로 있어
+    // 실제 GPS 경로와 코드가 갈라졌는데(검증 가치 저하 — gps_replay.html
+    // 이 실기기와 동등하려면 같은 함수를 타야 한다), 이제 구간
+    // 확정/투영/회전 판정 전부 handleGpsPositionUpdate와 동일한 함수를
+    // 그대로 재사용한다. 다만 배속 재생 중 매 프레임 즉시 회전은 화면이
+    // 정신없이 흔들리므로(사용자 지시), 회전 적용 자체는
+    // updateGajaMap이 이벤트 기반으로 이미 절제해서 호출하는 것을
+    // 그대로 믿는다 — 별도 억제 로직이 필요 없다.
+    if (!getCurrentSection()) {
+      resolveInitialSectionByProjection(lat, lon);
+    }
+    const simGajaMapResult = updateGajaMap(lat, lon);
+    const simSection = simGajaMapResult ? simGajaMapResult.section : null;
+    const simProj = simGajaMapResult ? simGajaMapResult.proj : null;
+    const simOffTrailNearestPoint = simProj ? { lat: simProj.projectedLat, lon: simProj.projectedLon } : null;
 
-    // 🧭 하단 경로 알람(updateNavigationToast)과 findNextRotationTarget은
-    // 전역 isReversingOnTrail을 직접 참조하는 기존 구조를 그대로 둔 채
-    // (호출 체인 전체를 매개변수화하는 대공사 대신), 이 프레임을 렌더하는
-    // 짧은 구간에만 시뮬레이션 전용 값(simIsReversingOnTrail)으로 잠깐
-    // 바꿔 쓰고 끝나면 실제 GPS 값으로 되돌린다 — 시뮬레이션과 실제 GPS
-    // 추적은 동시에 실행되지 않으므로(하나를 켜면 다른 하나는 꺼짐,
-    // toggleSimulation/startGpsTracking 참고) 안전하다.
-    const realIsReversingOnTrailBeforeSim = isReversingOnTrail;
-    isReversingOnTrail = simIsReversingOnTrail;
+    if (simGajaMapResult) {
+      updateSegmentRotationTrigger(simSection, simGajaMapResult.advanced, simGajaMapResult.arrivedMilestone);
+    }
 
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
     // 기존 순서를 그대로 유지(하단 경로 알람/원점 확정 로직 때문).
-    updateNavigationToast(5, 0, idx, pt, simArrowHeading);
-
-    if (currentRotationOriginDist !== null && currentRotationOriginDist !== originBeforeToast) {
-      const rotationLookaheadM = isSimulationMode ? SIM_ROTATION_TARGET_LOOKAHEAD_M : undefined;
-      const nextTarget = findNextRotationTarget(currentRotationOriginDist, isReversingOnTrail, rotationLookaheadM);
-      if (nextTarget) {
-        const bearing = computeGuidanceHeading(lat, lon, nextTarget.lat, nextTarget.lon);
-        if (bearing !== null) applySegmentRotation(bearing);
-      }
-    }
-
-    isReversingOnTrail = realIsReversingOnTrailBeforeSim; // 실제 GPS 값 복원
+    updateNavigationToast(5, simSection, simProj, simArrowHeading, simProj ? simProj.distance : 0, simOffTrailNearestPoint);
 
     const currentZoom = Math.max(map.getZoom(), 15);
     applyMapViewWithOffset(lat, lon, currentZoom, mapViewOpts);
@@ -6739,38 +6576,30 @@
         // 흔들려 오히려 혼란을 줬다. 화면의 확대/축소 버튼으로 사용자가
         // 직접 조절한다. 나중에 별도로 다시 설계할 수 있다.
 
-        // 🧭 대원칙 재정렬: 왕복 겹침 구간 판별은 이제 findNearestInRange
-        // 내부에서 isReversingOnTrail(GPX 인덱스 이력)과 currentSegmentBearings
-        // (GPX 점 순서)만으로 이뤄지므로, 여기서 GPS 이동방위각(result.bearing)을
-        // 별도로 넘겨줄 필요가 없어졌다.
-
-        // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
-        // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
-        // 구간에서 산길 위에 서 있는데도 이탈로 오판되지 않는다.
-        // ⚠️ 이 결과(LOCKED N/N+1 추적)는 더 이상 이탈 판정에 쓰지
-        // 않는다 — 아래 "이탈 판정 전용 재설계" 참고. 갈림길 거리 계산/
-        // 왕복판정(isReversingOnTrail)/화살표 진행방향(moveDirectionSign)
-        // 용도로만 계속 쓴다.
-        const nearest = nearestPointOnTrail(lat, lon, currentPoints);
-        const minDistanceM = nearest.distance;
-        const nearestPoint = nearest.point;
-        const nearestIdx = nearest.index;
-
-        // 🧭 WAYFINDING_MODE 진행 갱신(2026-09-23) — 활성 중이면 목적지
-        // 거리/도착 판정/녹색선을 여기서 전담한다. 이탈 판정
-        // (updateOffTrailHysteresis)이나 갈림길 자동 안내
-        // (updateNavigationToast, 아래에서 호출됨)와 동시에 화면에 뜨면
-        // 서로 다른 안내가 겹쳐 혼란스러우므로, WAYFINDING 활성 중에는
-        // 그 둘을 건드리지 않고 이 함수만 진행시킨다.
-        if (isWayfindActive) {
-          updateWayfindingProgress(lat, lon, nearestIdx);
+        // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계(사용자 확정 원칙:
+        // "nearestIdx 또는 N/N+1 좌표쌍을 방향 판정이나 구간 판정의
+        // 기준으로 사용하지 않는다. 모든 판단은 현재 A→B 구간과 현재
+        // GPS 위치의 투영 결과를 기준으로 통합한다.") — 예전엔
+        // nearestPointOnTrail(LOCKED N/N+1 전역/윈도우 탐색)을 먼저
+        // 호출해 minDistanceM/nearestPoint/nearestIdx를 구하고, 이탈
+        // 판정 이후에도 갈림길 거리 계산·왕복판정(isReversingOnTrail)·
+        // 화살표 진행방향(moveDirectionSign)에 계속 이 결과를 썼다.
+        // 이제 이 함수 자체를 호출하지 않는다 — 구간 확정(코스 진입
+        // 전이면 resolveInitialSectionByProjection)과 그 구간에 대한
+        // 투영(updateGajaMap이 내부에서 projectOntoCurrentSection 수행)
+        // 만으로 이탈판정/상단판/화살표/비프음/원점 전부를 통합한다.
+        if (!getCurrentSection()) {
+          resolveInitialSectionByProjection(lat, lon);
         }
+        const gajaMapResult = updateGajaMap(lat, lon);
+        const section = gajaMapResult ? gajaMapResult.section : null;
+        const sectionProj = gajaMapResult ? gajaMapResult.proj : null;
 
         // 코스 시작(들머리) 근처인지 — 첫 원점이 아직 한 번도 안 잡힌
         // 상태(currentRotationOriginDist===null, v75의 "방향 일치 전
         // 보류"와 같은 개념)이고 누적거리도 짧으면, 아직 GPS 이동방향이
         // 안정되지 않은 구간으로 보고 이탈 판정 기준을 완화한다.
-        const traveledDistForEntry = cumulativeDistances[nearestIdx] || 0;
+        const traveledDistForEntry = sectionProj ? sectionProj.routeDistance : 0;
         const isNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
 
         // 🐛 2026-09-26 이탈 판정 재설계(사용자 재현: 갈림길이 촘촘한
@@ -6778,26 +6607,28 @@
         // 복귀 안내선도 엉뚱한 곳을 가리킴) — 근본 원인은 이탈 판정이
         // 방향 판정(getCurrentSection, A→B 구간)과 완전히 다른 구식
         // 추적 방식(nearestPointOnTrail의 LOCKED N/N+1)을 썼다는 것.
-        // 갈림길 밀집 구간에서 LOCKED가 "지금 걷는다고 믿는" 세그먼트
-        // N이 실제 위치와 다른 세그먼트에 갇히면, 그 세그먼트까지의
-        // 거리만으로 이탈을 오판하고 안내도 그 틀린 세그먼트를 향했다.
         // 사용자 확정 원칙: "그 구간(A→B)에 있고 경로 위에 있으면
         // 이탈이 아니다. 그 구간에 있는데 경로에서 벗어나 있으면
-        // 이탈이다." → 이탈 판정용 거리/지점만 이미 매 픽스 계산되는
-        // A→B 구간 투영(projectOntoCurrentSection)의 결과로 교체한다.
-        // 구간이 아직 미확정(코스 진입 전)이면 이 투영 자체가 없으므로
-        // 기존 nearestPointOnTrail 결과로 자연히 폴백된다(들머리 접근
-        // 모드인 updateTrailheadApproach가 그 경우를 전담).
-        if (!getCurrentSection()) {
-          resolveInitialSection(nearestIdx);
-        }
-        const gajaMapResultForOffTrail = updateGajaMap(lat, lon);
-        const sectionProj = gajaMapResultForOffTrail ? gajaMapResultForOffTrail.proj : null;
-        const offTrailDistanceM = sectionProj ? sectionProj.distance : minDistanceM;
+        // 이탈이다." → 이탈 판정용 거리/지점은 오직 A→B 구간 투영
+        // (projectOntoCurrentSection)의 결과만 쓴다. 구간을 아예 못
+        // 찾은 예외 상황(마일스톤 2개 미만 등)에서는 이탈 판정을
+        // 건너뛴다 — 이런 코스는 애초에 경로 안내 자체가 성립하지
+        // 않는다.
+        const offTrailDistanceM = sectionProj ? sectionProj.distance : 0;
         const offTrailNearestPoint = sectionProj
           ? { lat: sectionProj.projectedLat, lon: sectionProj.projectedLon }
-          : nearestPoint;
-        updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
+          : null;
+        if (sectionProj) {
+          updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
+        }
+
+        // 🧭 WAYFINDING_MODE 진행 갱신(2026-09-23) — 활성 중이면 목적지
+        // 거리/도착 판정/녹색선을 여기서 전담한다. wayfinding은 별도
+        // 트랙(이 재설계 범위 밖, 버튼 자체가 현재 숨겨져 있음)이므로
+        // 구간 투영 거리(routeDistance)를 그대로 진행 지표로 넘긴다.
+        if (isWayfindActive && sectionProj) {
+          updateWayfindingProgress(lat, lon, sectionProj.routeDistance);
+        }
 
         // ⭐ 전면 재설계(2026-09-14): GPX가 경로 전체를 이미 알고 있으므로
         // "내가 지금 어느 방향을 보는가"는 더 이상 필요 없다. 정지/이동
@@ -6830,21 +6661,26 @@
         // 은 직전 회전 판정 이후 실제로 ROTATION_MIN_MOVE_M 이상
         // 이동했을 때만 새로 호출되고, 그보다 짧으면(제자리 서성임,
         // GPS 노이즈) 직전 회전값을 그대로 유지한다.
-        // 🗺️ 가자맵 대원칙 재설계 2단계(2026-09-25) — 위 computeArrowHeading/
-        // applyLiveMapRotation(GPX index 증감 기반, 5m마다 사실상 즉시
-        // 회전)을 새 구조(computeArrowHeadingV2/updateGajaMap, 지명
-        // 구간 + 100m 갱신 게이트)로 교체한다. 구간 확정(resolveInitialSection)과
-        // updateGajaMap 호출은 위 이탈 판정 재설계 블록에서 이미 이번
-        // 픽스분을 끝냈으므로(gajaMapResultForOffTrail) 여기서 다시
-        // 호출하지 않는다 — updateGajaMap을 한 픽스에 두 번 부르면
-        // maybeAdvanceSection(구간 전진 판정)이 이중으로 평가되어 짧은
-        // 구간에서 한 픽스에 두 구간을 건너뛸 위험이 있다.
-        const gajaMapResult = gajaMapResultForOffTrail;
-        const routeDistanceForArrow = gajaMapResult && gajaMapResult.proj ? gajaMapResult.proj.routeDistance : traveledDistForEntry;
+        // 🗺️ 가자맵 대원칙 재설계 2단계(2026-09-25) — computeArrowHeadingV2가
+        // updateGajaMap이 이미 계산한 routeDistance(section을 구할 때
+        // 위에서 한 번만 호출됨)를 그대로 재사용한다 — updateGajaMap을
+        // 한 픽스에 두 번 부르면 maybeAdvanceSection(구간 전진 판정)이
+        // 이중으로 평가되어 짧은 구간에서 한 픽스에 두 구간을 건너뛸
+        // 위험이 있으므로 반드시 한 번만 호출한다.
+        const routeDistanceForArrow = sectionProj ? sectionProj.routeDistance : traveledDistForEntry;
         const arrowHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
           lastArrowHeadingForGuidance = arrowHeading; // GPS 마커 아이콘 회전도 이 값을 씀(getCurrentAbsHeadingForGuidance)
+        }
+
+        // 하단 경로 알람 원점(currentRotationOriginDist) 확정과 통과
+        // 비프음 — updateGajaMap이 이미 판정한 advanced/arrivedMilestone
+        // (이번 프레임에 실제로 넘은 방향점)을 그대로 받아쓴다. 지도
+        // 회전 자체는 updateGajaMap이 이벤트 기반으로 이미 전담했으므로
+        // 여기서는 하단 알람용 기준점만 갱신한다.
+        if (gajaMapResult) {
+          updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
@@ -6852,7 +6688,7 @@
         // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로
         // 갱신하는데, 순서가 반대이면 화살표 보정 등이 옛 값(한 프레임
         // 지연)을 참조하게 된다.
-        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
+        updateNavigationToast(accuracy, section, sectionProj, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
 
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
