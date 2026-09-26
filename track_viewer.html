@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v175';
+    const CACHE_NAME = 'gaja-trail-cache-v176';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_background_resume_section_fix';
+      const APP_BUILD = 'v20260926_event_based_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3458,25 +3458,76 @@
     updateRouteBadgeRotation();
   }
 
-  // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — applyLiveMapRotation(5m마다
-  // 사실상 즉시 회전)을 대체할 100m 갱신 게이트. 명세: "지도 원점을
-  // 매 GPS 업데이트마다 변경하지 않는다 — 최초 GPS 확정 / 약 100m
-  // 이동 / 지명 구간 변경 / 백그라운드 복귀 시에만 재설정한다."
-  // (이번 커밋은 함수만 추가 — 실제 handleGpsPositionUpdate 스위치는
-  // 다음 커밋에서 한다.)
-  let lastRecenterDistance = null;
-  const RECENTER_DISTANCE_M = 100;
-  function shouldRecenterBy100m(routeDistance) {
-    if (lastRecenterDistance === null) return true; // 최초 GPS 확정
-    return Math.abs(routeDistance - lastRecenterDistance) >= RECENTER_DISTANCE_M;
+  // 🗺️ 2026-09-26 재설계 — 100m 갱신 게이트를 폐기하고 "이벤트 기반
+  // 회전 적용"으로 교체한다. 사용자 지적: "회전 기준을 바꾸는 조건은
+  // 거리 100m가 아니라 구간 변경이다. 100m는 방향 변경을 막는 게이트가
+  // 아니라 lookahead 거리로만 사용한다." 그리고 이어서 "B점 근거리에
+  // 들어가는 순간"도 별도 이벤트로 필요함을 확정: 원거리에서는 국소
+  // 진행방향(computeArrowHeadingV2와 같은 lookahead)을 12시로, B점에
+  // 가까워지면 B점 좌표 자체를 12시로 전환해야 한다(직선 목표가 아니라
+  // "지금 걷는 산길의 실제 진행방향"을 따라가다가, 도착 직전에만 목표
+  // 지점을 정면으로 보게 하기 위함).
+  //
+  // 핵심 원칙(사용자 확정): "계산"과 "적용"을 분리한다.
+  //   - 계산은 매 GPS 픽스마다 계속한다(국소 진행방향이든 B점 방향이든).
+  //   - 적용(applySegmentRotation 실제 호출)은 오직 세 이벤트에서만:
+  //     ① B점 근접 진입(원거리→근거리로 막 전환된 순간)
+  //     ② 구간 변경(maybeAdvanceSection이 true를 반환한 순간)
+  //     ③ 원거리 상태에서도 국소 진행방향이 크게 변한 경우(아래 참고)
+  //   그 외 GPS 픽스에서는 방향을 계산은 하되 화면 회전에 반영하지
+  //   않는다 — "매 GPS 픽스마다 회전하지 않는다"는 원칙은 유지된다.
+  //
+  // 🐛 2026-09-26 추가(사용자 재검토): 계룡산 5봉코스 Node.js 재검증에서
+  // 첫 구간(들머리→갈림길, 1469m)처럼 긴 구간을 원거리 상태로 걷는 동안
+  // 방향이 idx=0에서 딱 한 번만 적용된 뒤 전혀 재적용되지 않아, 실제
+  // 스위치백을 지날 때 화면 방향과 눈앞 경로가 최대 178도까지 벌어지는
+  // 걸 확인했다. 사용자 판단: "①②③ 세 이벤트로 확장한다. 단, 한 프레임
+  // 튐으로 바로 재적용하면 GPS 노이즈에 취약해지니, 임계각(90도) 이상
+  // 벌어진 상태가 연속 N픽스 유지될 때만(히스테리시스) 확정 재적용한다."
+  // ③은 ①②처럼 "상태 진입"이 아니라 "누적된 편차"로 판정하므로 별도
+  // 스트릭 카운터가 필요하다.
+  const B_POINT_NEAR_THRESHOLD_M = 30; // 이 거리 이내면 "B점 근거리" 상태
+  const FAR_STATE_DRIFT_THRESHOLD_DEG = 90; // 원거리 상태에서 이 각도 이상 벌어지면 드리프트 후보
+  const FAR_STATE_DRIFT_CONFIRM_STREAK = 3; // 드리프트가 이 픽스 수만큼 연속돼야 확정
+  let sectionApproachState = null; // null(구간 미확정) | 'far' | 'near' — 직전 프레임의 근접 상태(이벤트 감지용)
+  let lastAppliedFarBearing = null; // 원거리 상태에서 마지막으로 실제 적용된 방향(드리프트 비교 기준)
+  let farDriftStreak = 0; // FAR_STATE_DRIFT_THRESHOLD_DEG 이상 벌어진 상태가 연속된 픽스 수
+
+  // ⚠️ 구현 계약(반드시 지킬 것): 이 함수는 지도 회전 함수를 직접
+  // 호출하면 안 된다. 책임은 오직 "현재 위치 → 현재 구간의 전방
+  // lookahead"로 방향값을 계산해 반환하는 것뿐이다. 실제 지도 회전은
+  // 반드시 호출부(updateGajaMap의 이벤트 처리부)에서만
+  // applySegmentRotation()을 통해 수행한다 — 계산 함수와 화면 회전
+  // 함수가 다시 결합되는 것(과거 "매 픽스 즉시 회전" 회귀)을 막기
+  // 위한 구조적 안전장치다.
+  function computeSectionApproachBearing(gpsLat, gpsLon, section, proj) {
+    const distToTarget = Math.abs(section.toMilestone.distanceM - proj.routeDistance);
+    if (distToTarget <= B_POINT_NEAR_THRESHOLD_M) {
+      // 근거리: B점(목표 지명) 좌표 자체를 직접 향한다.
+      return {
+        state: 'near',
+        bearing: calculateBearing(gpsLat, gpsLon, section.toMilestone.trailLat, section.toMilestone.trailLon),
+      };
+    }
+    // 원거리: computeArrowHeadingV2와 동일한 원리(코스 시작점 기준
+    // 절대 누적거리 + lookahead)로 국소 진행방향을 구한다 — 화살표와
+    // 지도 회전이 다시 같은 원천을 공유한다.
+    const lookahead = isNearPeakMilestone(proj.routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + lookahead);
+    if (!targetPt) return null;
+    return {
+      state: 'far',
+      bearing: calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon),
+    };
   }
+
   // GPS 재시작/코스 재로드/백그라운드 복귀 시 이 기준점을 초기화해야,
-  // 다음 updateGajaMap 호출이 "이전 세션의 routeDistance"와 비교해
-  // 부당하게 억제되지 않고 무조건 재계산한다(옛 resetLiveMapRotationState
-  // 를 대체 — lastLiveRotationDist/ROTATION_MIN_MOVE_M은 죽은 코드가 되어
-  // 제거했고, 이제 지도 회전 기준점은 lastRecenterDistance 하나뿐이다).
+  // 다음 updateGajaMap 호출이 "이전 세션의 근접 상태"와 비교해 부당하게
+  // 억제되지 않고 무조건 재계산(회전 적용)한다.
   function resetGajaMapRotationState() {
-    lastRecenterDistance = null;
+    sectionApproachState = null;
+    lastAppliedFarBearing = null;
+    farDriftStreak = 0;
   }
 
   // 🐛 2026-09-25 수정(사용자 지적: "구간에서 내가 어디에 있든 그 구간을
@@ -3504,22 +3555,38 @@
     return true;
   }
 
-  // 명세의 핵심 함수: 현재 GPS → 현재 구간 → 구간 투영 → 100m 앞
-  // 목표점 → 방위각 → 그 방향을 화면 12시로(applySegmentRotation).
-  // isOffTrailState/이탈 여부를 인자로도 클로저로도 전혀 참조하지
-  // 않는다 — 이탈 상태가 지도 방향에 영향을 주는 경로 자체가 이
-  // 함수의 시그니처 안에 존재할 수 없다(명세 "이탈 상태가 지도 방향을
-  // 변경하게 하지 않는다"를 구조적으로 보장).
+  // 명세의 핵심 함수: 현재 GPS → 현재 구간 → 구간 투영 → 국소 진행방향
+  // (원거리) 또는 B점 직접 방향(근거리) → 그 방향을 화면 12시로
+  // (applySegmentRotation). isOffTrailState/이탈 여부를 인자로도
+  // 클로저로도 전혀 참조하지 않는다 — 이탈 상태가 지도 방향에 영향을
+  // 주는 경로 자체가 이 함수의 시그니처 안에 존재할 수 없다(명세
+  // "이탈 상태가 지도 방향을 변경하게 하지 않는다"를 구조적으로 보장).
+  //
+  // 🗺️ 2026-09-26 재설계 — 100m 게이트를 폐기하고 이벤트 기반으로
+  // 바꾼 뒤에도 이 함수의 시그니처/반환형은 그대로 유지한다(호출부인
+  // handleGpsPositionUpdate가 gajaMapResult.proj를 참조하므로). 매 픽스
+  // computeSectionApproachBearing으로 방향을 계산은 하되, 실제 회전
+  // 적용(applySegmentRotation 호출, recentered:true)은 ①구간 변경
+  // ②B점 근접 진입(원거리→근거리 전환) 두 이벤트에서만 일어난다.
   function updateGajaMap(gpsLat, gpsLon) {
     const section = getCurrentSection();
     if (!section) return null; // 구간 미확정 — 호출부가 resolveInitialSection으로 먼저 확정해야 함
     const proj = projectOntoCurrentSection(gpsLat, gpsLon, section);
     if (!proj) return null;
 
-    // 구간 목표 지점을 실제로 지나쳤으면 다음 구간으로 전진 — 회전
-    // 게이트(100m) 판정보다 먼저 해야, 전진 직후 새 구간 기준으로
-    // shouldRecenterBy100m/목표점 계산이 이뤄진다.
+    // 구간 목표 지점을 실제로 지나쳤으면 다음 구간으로 전진(이벤트①:
+    // 구간 변경) — 전진 직후에는 새 구간 기준으로 재투영해 그 프레임
+    // 안에서 바로 새 구간의 방향을 계산/적용한다. 새 구간에 들어선
+    // 것 자체가 회전 적용 사유이므로 sectionApproachState도 함께
+    // 리셋해 무조건 적용되게 만든다(짧은 구간이면 진입하자마자 이미
+    // 근거리일 수 있으므로, 리셋 후 재판정에 맡긴다). 드리프트 추적
+    // (lastAppliedFarBearing/farDriftStreak)도 새 구간 기준으로 다시
+    // 쌓아야 하므로 함께 리셋한다 — 이전 구간의 드리프트 이력이 새
+    // 구간까지 이어지면 안 된다.
     if (maybeAdvanceSection(section, proj)) {
+      sectionApproachState = null;
+      lastAppliedFarBearing = null;
+      farDriftStreak = 0;
       const newSection = getCurrentSection();
       if (!newSection) return { section, proj, recentered: false };
       const newProj = projectOntoCurrentSection(gpsLat, gpsLon, newSection);
@@ -3530,44 +3597,51 @@
   }
 
   function updateGajaMapCore(section, proj, gpsLat, gpsLon) {
-    // 🐛 2026-09-26 수정(사용자 지적: "등산시작 버튼 클릭 후 GPS가 연결
-    // 되고 내가 어디에서 어디로 가고 있는지 판정이 나면 그때가 시작점이야.
-    // 그 점하고 다음 구간 시작점하고 12시 방향으로 경로가 오게 해야
-    // 해.. 그래야 100m 이동전까지 방향을 바꾸지 않는다에 대한 왜곡이
-    // 해소가 될 것 같아" → 이어서 "다음 구간 시작점"의 의미를 확인 질문한
-    // 결과: "눈앞 진행방향"으로 확정됨, 먼 마일스톤 지명이 아님) —
-    // 최초 GPS 확정(lastRecenterDistance===null) 시점에도 그 이후와
-    // 똑같이 "100m 앞 한 점"을 목표로 삼고 있었다. 코스 시작 직후엔
-    // 아직 100m를 걷지도 않았는데 100m나 떨어진 먼 목표를 보고 방향을
-    // 정하다 보니, 첫 화면부터 눈앞 경로와 어긋나 보였다(들머리 근처는
-    // 특히 방향이 자주 꺾여 이 어긋남이 더 크게 드러남).
-    //
-    // 🐛 1차 시도(section.toMilestone 방향)의 실패: 목표를 "구간의 최종
-    // 목표 지명"으로 잡았더니, 계룡산 검증에서 목표 지명이 1469m나 멀리
-    // 있어 실제 눈앞 10m 방향과 136도나 어긋났다 — 사용자 확인 결과
-    // "다음 구간 시작점"은 먼 마일스톤이 아니라 "눈앞 진행방향"을
-    // 뜻했다. computeArrowHeadingV2(화살표)가 이미 쓰는 ARROW_LOOKAHEAD_M
-    // (15m, 정상류는 PEAK_LOOKAHEAD_M 50m)과 같은 가까운 lookahead로
-    // 최초 확정 목표를 잡는다 — 화살표와 지도 회전이 최초 확정 순간부터
-    // 같은 값을 공유해(명세 §23 "지도=GPX방향, 화살표=GPX방향") 자연히
-    // 일치한다. 최초 이후(100m 경과로 재중심하는 매 시점)는 원래대로
-    // "100m 앞"을 그대로 유지한다 — §3/§8의 100m 목표는 "코스 중간을
-    // 안정적으로 걷는 동안"에 대한 규칙이지, 시작 순간까지 포함하는
-    // 규칙이 아니었다는 재해석이다.
-    const isInitialFix = lastRecenterDistance === null;
-    if (!isInitialFix && !shouldRecenterBy100m(proj.routeDistance)) {
-      return { section, proj, recentered: false };
+    const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
+    if (!approach) return { section, proj, recentered: false };
+
+    // 이벤트② B점 근접 진입: 직전 프레임엔 원거리(또는 구간이 막
+    // 리셋된 직후라 상태 없음)였는데 이번 프레임에 근거리로 판정되면
+    // 그 순간에만 회전을 적용한다. 원거리 상태끼리, 또는 근거리
+    // 상태끼리는(둘 다 이미 적용된 이후) 매 픽스 다시 적용하지 않는다
+    // — "매 GPS 픽스마다 회전하지 않는다"는 원칙을 지킨다.
+    const isFirstJudgement = sectionApproachState === null;
+    const justEnteredNear = approach.state === 'near' && sectionApproachState !== 'near';
+
+    // 이벤트③ 원거리 드리프트: 긴 구간을 원거리 상태로 걷는 동안 실제
+    // 경로가 스위치백 등으로 크게 꺾이면, ①②가 트리거되지 않은 채 화면
+    // 방향과 눈앞 경로가 계속 벌어질 수 있다(계룡산 실측: 최대 178도).
+    // 마지막으로 적용된 원거리 방향(lastAppliedFarBearing) 대비 지금
+    // 계산된 방향이 FAR_STATE_DRIFT_THRESHOLD_DEG(90도) 이상 벌어진
+    // 상태가 FAR_STATE_DRIFT_CONFIRM_STREAK(3픽스) 연속돼야 확정한다 —
+    // GPS 튐 한 프레임만으로 재적용되면 오히려 지도가 노이즈에 따라
+    // 갑자기 뒤집히는 새 문제가 생기므로, 히스테리시스로 걸러낸다.
+    let driftConfirmed = false;
+    if (approach.state === 'far' && !isFirstJudgement && !justEnteredNear && lastAppliedFarBearing !== null) {
+      const drift = Math.abs(shortestAngleDiff(approach.bearing, lastAppliedFarBearing));
+      if (drift >= FAR_STATE_DRIFT_THRESHOLD_DEG) {
+        farDriftStreak++;
+        if (farDriftStreak >= FAR_STATE_DRIFT_CONFIRM_STREAK) {
+          driftConfirmed = true;
+          farDriftStreak = 0;
+        }
+      } else {
+        farDriftStreak = 0;
+      }
+    } else {
+      farDriftStreak = 0;
     }
 
-    const lookaheadM = isInitialFix
-      ? (isNearPeakMilestone(proj.routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M)
-      : RECENTER_DISTANCE_M;
-    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + lookaheadM);
-    if (!targetPt) return { section, proj, recentered: false };
-    const bearing = calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
-    applySegmentRotation(bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
-    lastRecenterDistance = proj.routeDistance;
-    return { section, proj, recentered: true, bearing };
+    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed;
+    sectionApproachState = approach.state;
+
+    if (!shouldApply) {
+      return { section, proj, recentered: false, bearing: approach.bearing };
+    }
+
+    applySegmentRotation(approach.bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
+    if (approach.state === 'far') lastAppliedFarBearing = approach.bearing;
+    return { section, proj, recentered: true, bearing: approach.bearing };
   }
 
   // 🗺️ 백그라운드/포그라운드 복귀·손가락 드래그 종료·홈 버튼을 하나로
@@ -3575,7 +3649,7 @@
   // 하지 않는다", "드래그 종료 후 자동복귀 시 새로 계산한다" — 예전
   // 코드는 이 세 지점에서 각각 "기존 mapRotationDeg를 그대로 재적용"
   // 하거나 개별적으로 리셋했는데, 그 패턴 자체가 명세 위반이었다).
-  // lastRecenterDistance를 강제로 리셋해 다음 updateGajaMap 호출이
+  // sectionApproachState를 강제로 리셋해 다음 updateGajaMap 호출이
   // 무조건 재계산(recentered:true)하도록 만든다.
   // 🐛 2026-09-26 수정(사용자 재현: "백그라운드 전환(홈 버튼, 화면
   // 꺼짐)이 큰 문제야. GPS가 새로 잡으면 그때부터 뭐가 이상해") — 예전엔
@@ -3589,7 +3663,7 @@
   // 다시 역산한다.
   function recalculateGajaMapFromScratch(reason) {
     if (!lastKnownPos) return;
-    lastRecenterDistance = null;
+    sectionApproachState = null;
     const nearest = findNearestInRange(lastKnownPos.lat, lastKnownPos.lon, currentPoints, 0, Math.max(0, (currentPoints ? currentPoints.length : 1) - 2));
     if (nearest) resolveInitialSection(nearest.index);
     updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
@@ -4050,7 +4124,7 @@
     if (!map || !points.length) return;
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
-    resetGajaMapRotationState(); // 새 코스이므로 지도 회전 기준점(lastRecenterDistance)도 초기화
+    resetGajaMapRotationState(); // 새 코스이므로 지도 회전 근접상태(sectionApproachState)도 초기화
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
@@ -4953,8 +5027,9 @@
     // 🧭 지도 회전각(mapRotationDeg/appliedMapRotationDeg)은 리셋하지
     // 않는다 — applySegmentRotation이 최단경로(shortestAngleDiff) 기준
     // 으로 새 값을 계산하므로, 리셋 없이도 다음 회전이 정확한 방향으로
-    // 스냅된다. lastRecenterDistance만 초기화해 "100m 이내는 재중심 안
-    // 함"이라는 게이트가 이번 수동 재설정을 막지 않게 한다.
+    // 스냅된다. sectionApproachState만 초기화해 "이미 판정된 상태와
+    // 같으면 재적용 안 함"이라는 게이트가 이번 수동 재설정을 막지 않게
+    // 한다.
     resetGajaMapRotationState();
 
     currentRotationOriginDist = null;
@@ -5443,10 +5518,10 @@
 
         // 🗺️ 가자맵 대원칙 재설계(2026-09-25) — "포그라운드 복귀 직후
         // 기존 map rotation 값을 그대로 신뢰하지 않는다"는 명세에 따라,
-        // 새 구간 상태(currentMilestoneIdx/nextMilestoneIdx)와 100m
-        // 재중심 게이트(lastRecenterDistance)도 함께 리셋한다 — 다음
-        // GPS 픽스(startGpsTracking 이후 handleGpsPositionUpdate)가
-        // 구간 미확정 상태에서 자동으로 재탐색해 새로 구간을 확정한다.
+        // 새 구간 상태(currentMilestoneIdx/nextMilestoneIdx)와 회전
+        // 근접상태(sectionApproachState)도 함께 리셋한다 — 다음 GPS
+        // 픽스(startGpsTracking 이후 handleGpsPositionUpdate)가 구간
+        // 미확정 상태에서 자동으로 재탐색해 새로 구간을 확정한다.
         //
         // 🐛 2026-09-26 수정(사용자 재현: "백그라운드 전환(홈 버튼, 화면
         // 꺼짐)이 큰 문제야. GPS가 새로 잡으면 그때부터 뭐가 이상해") —
@@ -5465,7 +5540,9 @@
         // 비로소 null을 반환해 재탐색이 정상적으로 트리거된다.
         currentMilestoneIdx = -1;
         nextMilestoneIdx = -1;
-        lastRecenterDistance = null;
+        sectionApproachState = null;
+        lastAppliedFarBearing = null;
+        farDriftStreak = 0;
 
         startGpsTracking(); // 항상 일반 GPS로 재시작 — 내부에서 wakeLock 등도 함께 재요청됨
       }
