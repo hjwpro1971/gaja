@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v183';
+    const CACHE_NAME = 'gaja-trail-cache-v184';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_gps_reliability_layer';
+      const APP_BUILD = 'v20260926_far_refresh_distance_trigger';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3443,9 +3443,19 @@
   const B_POINT_NEAR_THRESHOLD_M = 30; // 이 거리 이내면 "B점 근거리" 상태
   const FAR_STATE_DRIFT_THRESHOLD_DEG = 90; // 원거리 상태에서 이 각도 이상 벌어지면 드리프트 후보
   const FAR_STATE_DRIFT_CONFIRM_STREAK = 3; // 드리프트가 이 픽스 수만큼 연속돼야 확정
+  // 🐛 2026-09-26 추가(실기기 재검증, 월평동 코스): 90도 드리프트
+  // 임계값은 스위치백처럼 "확 꺾이는" 경우만 잡는다 — 완만하게 휘는
+  // 도로/능선(각 구간 편차가 90도 미만)에서는 진입 시 한 번 잡은 방향이
+  // 구간 끝까지 전혀 재계산되지 않아, 화살표(항상 정확)와 달리 지도
+  // 자체는 12시 방향을 계속 놓치는 게 실기기에서 반복 확인됐다. 각도와
+  // 무관하게 "일정 거리를 이동하면 무조건 재계산"하는 거리 기반 트리거를
+  // 추가한다 — 짧은 도심 구간에서도 자연스러운 주기로 보정되도록 앞서
+  // 계산에 쓰던 ARROW_LOOKAHEAD_M(15m)보다 조금 넉넉하게 잡는다.
+  const FAR_STATE_REFRESH_DISTANCE_M = 25;
   let sectionApproachState = null; // null(구간 미확정) | 'far' | 'near' — 직전 프레임의 근접 상태(이벤트 감지용)
   let lastAppliedFarBearing = null; // 원거리 상태에서 마지막으로 실제 적용된 방향(드리프트 비교 기준)
   let farDriftStreak = 0; // FAR_STATE_DRIFT_THRESHOLD_DEG 이상 벌어진 상태가 연속된 픽스 수
+  let lastAppliedFarRouteDistance = null; // 원거리 상태에서 마지막으로 회전을 적용한 시점의 proj.routeDistance(거리 기반 재계산 트리거용)
 
   // ⚠️ 구현 계약(반드시 지킬 것): 이 함수는 지도 회전 함수를 직접
   // 호출하면 안 된다. 책임은 오직 "현재 위치 → 현재 구간의 전방
@@ -3496,6 +3506,7 @@
     sectionApproachState = null;
     lastAppliedFarBearing = null;
     farDriftStreak = 0;
+    lastAppliedFarRouteDistance = null;
   }
 
   // 🐛 2026-09-26 공통화(사용자 지적: "그럼 공동함수를 사용해? 아니면
@@ -3724,6 +3735,7 @@
       sectionApproachState = null;
       lastAppliedFarBearing = null;
       farDriftStreak = 0;
+      lastAppliedFarRouteDistance = null;
       const newSection = getCurrentSection();
       // arrivedMilestone: 이번 프레임에 실제로 통과한 방향점(B) — N/N+1
       // 폐기 재설계로 원점 확정/통과 비프음(updateSegmentRotationTrigger가
@@ -3774,7 +3786,20 @@
       farDriftStreak = 0;
     }
 
-    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed;
+    // 이벤트④ 원거리 거리 기반 재계산: ③(90도 드리프트)은 급하게
+    // 꺾이는 구간만 잡고, 완만하게 휘는 구간(편차가 90도 미만)은
+    // 구간 진입 시 한 번 잡은 방향이 B점 근접 전까지 전혀 재계산되지
+    // 않는 사각지대가 있었다(실기기 재현: 월평동 코스, 화살표는 정확한데
+    // 지도만 12시를 계속 놓침). 각도와 무관하게 마지막 회전 적용 지점
+    // 대비 FAR_STATE_REFRESH_DISTANCE_M 이상 이동했으면 무조건 재계산한다.
+    let distanceRefreshDue = false;
+    if (approach.state === 'far' && !isFirstJudgement && !justEnteredNear && lastAppliedFarRouteDistance !== null) {
+      if (Math.abs(proj.routeDistance - lastAppliedFarRouteDistance) >= FAR_STATE_REFRESH_DISTANCE_M) {
+        distanceRefreshDue = true;
+      }
+    }
+
+    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed || distanceRefreshDue;
     sectionApproachState = approach.state;
 
     if (!shouldApply) {
@@ -3800,7 +3825,12 @@
     }
 
     applySegmentRotation(approach.bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
-    if (approach.state === 'far') lastAppliedFarBearing = approach.bearing;
+    if (approach.state === 'far') {
+      lastAppliedFarBearing = approach.bearing;
+      lastAppliedFarRouteDistance = proj.routeDistance;
+    } else {
+      lastAppliedFarRouteDistance = null; // near 상태에서는 거리 트리거를 쓰지 않으므로 초기화
+    }
     return { section, proj, recentered: true, bearing: approach.bearing };
   }
 
