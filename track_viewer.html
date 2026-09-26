@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v185';
+    const CACHE_NAME = 'gaja-trail-cache-v186';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_sim_mode_rotation_beep_tuning';
+      const APP_BUILD = 'v20260926_near_state_reversed_direction_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3476,9 +3476,23 @@
   // 함수가 다시 결합되는 것(과거 "매 픽스 즉시 회전" 회귀)을 막기
   // 위한 구조적 안전장치다.
   function computeSectionApproachBearing(gpsLat, gpsLon, section, proj) {
-    const distToTarget = Math.abs(section.toMilestone.distanceM - proj.routeDistance);
-    if (distToTarget <= B_POINT_NEAR_THRESHOLD_M) {
-      // 근거리: B점(목표 지명) 좌표 자체를 직접 향한다.
+    // 🐛 2026-09-26 수정(사용자 재현: "자티고개에서 6시방향" — 절대
+    // 있으면 안 되는 오류) — 예전엔 |B.distanceM - proj.routeDistance|
+    // (절대값)로만 근거리를 판정해, B를 이미 지나친 뒤에도(구간 전환은
+    // 아직 SECTION_ADVANCE_MARGIN_M 마진 안이라 안 일어난 상태) "GPS→B
+    // 직선 방향"을 그대로 계산했다. GPS가 B보다 앞서 있으면 이 값은
+    // 수학적으로 무조건 "뒤"(B 쪽)를 가리키므로, 화면이 이미 지나온
+    // 방향으로 회전해버려 "몇 시 방향" 안내가 정반대로 나오는 치명적
+    // 오류가 생겼다(시뮬레이션 배속처럼 한 프레임 이동거리가 크면
+    // 특히 잘 드러남). B를 아직 안 지났을 때만 "B로 직접 조준"하는
+    // near 방식을 쓰고, 이미 지나친 경우는 far와 동일하게 "앞으로
+    // 나아가는 진행방향"(lookahead)을 쓴다 — 항상 전방을 가리키므로
+    // 뒤돌아보는 방향이 나올 수 없다.
+    const remainingToTarget = section.isForward
+      ? section.toMilestone.distanceM - proj.routeDistance
+      : proj.routeDistance - section.toMilestone.distanceM;
+    if (remainingToTarget >= 0 && remainingToTarget <= B_POINT_NEAR_THRESHOLD_M) {
+      // 근거리(아직 B 도달 전): B점(목표 지명) 좌표 자체를 직접 향한다.
       return {
         state: 'near',
         bearing: calculateBearing(gpsLat, gpsLon, section.toMilestone.trailLat, section.toMilestone.trailLon),
@@ -3812,7 +3826,18 @@
       }
     }
 
-    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed || distanceRefreshDue;
+    // 🐛 2026-09-26 수정(사용자 재현: "6시방향" 오류, 수통골 시뮬레이션) —
+    // near 상태는 justEnteredNear(진입 순간)에만 회전이 적용되고 그
+    // 뒤로는 갱신되지 않았다. GPS가 near로 막 들어온 시점의 위치에서
+    // "GPS→B" 방향을 한 번 고정해버리면, 그 뒤 실제로 B에 더 접근하거나
+    // (특히 시뮬레이션 배속 재생처럼 프레임 간 이동거리가 큰 경우)
+    // B를 지나쳐도 화면은 그 옛 방향을 계속 보여준다. 그 상태에서
+    // "다음 갈림길 몇 시 방향"(outBearing 대비 mapRotationDeg 상대각)을
+    // 계산하면 실제 진행 방향과 반대(6시 등)로 나오는 치명적 오류가
+    // 생긴다. near는 B점까지 30m 이내로 짧은 구간이라 매 프레임
+    // 재계산해도 화면이 크게 흔들리지 않으므로, near 상태는 무조건
+    // 매 프레임 재적용한다(이벤트 절제 원칙에서 near만 예외로 둔다).
+    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed || distanceRefreshDue || approach.state === 'near';
     sectionApproachState = approach.state;
 
     if (!shouldApply) {
