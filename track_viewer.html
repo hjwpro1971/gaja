@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v182';
+    const CACHE_NAME = 'gaja-trail-cache-v183';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_offtrail_enter_confirm_streak';
+      const APP_BUILD = 'v20260926_gps_reliability_layer';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3509,6 +3509,84 @@
   // 문제였다. 이 함수 하나로 통일해 앞으로는 호출부를 늘리거나 리셋
   // 항목을 바꿀 때 여기 한 곳만 고치면 되게 한다.
   //
+  // 🗺️ 2026-09-26 GPS 신뢰도 계층(사용자 지시: "산에서는 GPS 튐을
+  // 정상적인 입력 오류로 전제하고 설계해야 한다" — 계곡·수직 암벽·
+  // 울창한 수목·능선 음영에서 GPS가 순간적으로 10~50m 이상 튀거나
+  // 반대편 사면 좌표로 찍힐 수 있음) — "GPS를 정확하게 만드는 것"이
+  // 아니라 "GPS가 틀렸을 때 가자맵이 틀리지 않게 만드는 것"이 목표다.
+  //
+  // GpsFilterEngine(MAX_ACCURACY=15m)은 정지/이동 판정용 별개 필터이고,
+  // 이 계층은 그와 독립적으로 "이 픽스를 section 전환/회전/이탈 확정에
+  // 반영해도 되는가"만 판정한다. 3단계로 나눈다:
+  //   GPS_NORMAL   — 모든 확정 상태 갱신(구간 전환/회전/이탈)에 정상 반영
+  //   GPS_SUSPECT  — 화면 마커만 갱신, 확정 상태 변경은 보류(직전 상태 유지)
+  //   GPS_REJECTED — 화면 마커도 갱신 안 함, 직전 확정 상태를 완전히 유지
+  //
+  // 판정은 매 픽스 새로 계산하고 이전 판정에 의존하지 않는다(과거
+  // SEARCHING/LOCKED 상태기계처럼 "갇히는" 구조를 만들지 않기 위함 —
+  // N/N+1 폐기 때 제거한 것과 같은 함정).
+  //
+  // ⚠️ 구현 계약 — 방향(bearing)은 판정 재료로 쓰지 않는다. 산길
+  // 스위치백은 실제로 120~180도 급격한 방향 변화가 정상 상황이라서
+  // (계룡산 실측: 최대 178도가 이미 확인된 정상 드리프트), 방향
+  // 변화를 이상치 판정에 섞으면 GPS 튐과 진짜 스위치백이 구분되지
+  // 않는다. 대신 "직전 확정 위치에서 Δ시간 동안 사람이 걸어서
+  // 물리적으로 도달 가능한 거리인가"를 주 판정으로 삼는다.
+  const GPS_RELIABILITY = { NORMAL: 'NORMAL', SUSPECT: 'SUSPECT', REJECTED: 'REJECTED' };
+  // 도보 상한(약 3~4 m/s = 시속 10.8~14.4km, 뛰는 경우까지 여유를 둠)
+  // 보다 넉넉히 잡아 5 m/s — 일반적인 등산 속도(시속 3~5km)를 크게
+  // 초과하지만, 짧은 내리막 질주나 GPS 타임스탬프 오차까지 감안한
+  // 여유값이다. 이보다 빠른 "이동"은 물리적으로 불가능하다고 본다.
+  const GPS_MAX_WALK_SPEED_MPS = 5.0;
+  // 위 상한을 다소 넘지만(관대하게 봐줄 여지가 있는) 애매한 구간은
+  // SUSPECT로, 명백히 초과하면(예: 상한의 3배 이상) REJECTED로 나눈다.
+  const GPS_REJECT_SPEED_MULTIPLIER = 3.0;
+  // proj.distance(구간까지의 거리)가 이 값 이상 벌어지면 보조 의심
+  // 재료로 더한다 — 단독으로 REJECT 사유는 아니다.
+  const GPS_SUSPECT_SECTION_DIST_M = 60;
+  let lastConfirmedGpsPos = null; // { lat, lon, timestamp } — GPS_NORMAL로 확정된 마지막 픽스만 갱신(GpsFilterEngine.lastConfirmed와 별개)
+  let sectionAdvanceConfirmStreak = 0; // 구간 전환 전용 연속 확인 카운터(이탈 판정의 enterStreakCount와 별개)
+  const SECTION_ADVANCE_CONFIRM_STREAK = 3; // GPS_SUSPECT 상태에서도 이만큼 연속 유지되면 구간 전환을 허용
+  let consecutiveRejectedCount = 0; // 연속 REJECTED 픽스 수 — 장시간 GPS 불안정 안내용
+
+  // 순수 판정 함수 — 상태를 대입하지 않고 값만 반환한다. accuracy 하나만
+  // 보고 REJECTED를 결정하지 않는다(원칙: accuracy>15m와 REJECTED를
+  // 동일시하지 않는다 — GpsFilterEngine의 15m 필터와는 목적이 다르다).
+  function classifyGpsReliability(lat, lon, accuracy, timestamp, proj) {
+    if (!lastConfirmedGpsPos) return GPS_RELIABILITY.NORMAL; // 직전 확정 위치가 없으면(코스 진입 최초 등) 판정 재료 자체가 없다 — 정상으로 통과시킨다.
+    // timestamp를 넘기지 않는 특수 호출부(recalculateGajaMapFromScratch,
+    // 시뮬레이션 renderSimFrame — 둘 다 "GPS를 방금 재획득했다" 또는
+    // "실제 GPS 오차가 없는 재생"이라는 이 계층 밖의 별도 원칙이 이미
+    // 있다)는 신뢰도 판정 자체를 건너뛰고 항상 NORMAL로 통과시킨다.
+    if (timestamp === undefined || timestamp === null) return GPS_RELIABILITY.NORMAL;
+
+    const distFromLast = haversineMeters(lastConfirmedGpsPos.lat, lastConfirmedGpsPos.lon, lat, lon);
+    const elapsedSec = Math.max((timestamp - lastConfirmedGpsPos.timestamp) / 1000, 0.001);
+    const speedMps = distFromLast / elapsedSec;
+
+    // 보조 의심 재료 — 이 자체로는 아무것도 확정하지 않는다.
+    const sectionDistSuspect = proj ? proj.distance >= GPS_SUSPECT_SECTION_DIST_M : false;
+    const accuracySuspect = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy > 30 : false;
+
+    // 주 판정: 물리적 이동가능성. 상한의 3배 이상이면 명백한 순간이동급
+    // 이상치로 보고 그 즉시 REJECTED(보조 재료를 볼 필요도 없음).
+    if (speedMps >= GPS_MAX_WALK_SPEED_MPS * GPS_REJECT_SPEED_MULTIPLIER) {
+      return GPS_RELIABILITY.REJECTED;
+    }
+    if (speedMps >= GPS_MAX_WALK_SPEED_MPS) {
+      // 상한은 넘었지만 3배 미만 — 보조 재료가 함께 의심스러우면 REJECTED,
+      // 아니면(단순 속도 초과만) SUSPECT로 완화한다.
+      return (sectionDistSuspect && accuracySuspect) ? GPS_RELIABILITY.REJECTED : GPS_RELIABILITY.SUSPECT;
+    }
+    // 속도 자체는 정상 범위 — 보조 재료가 둘 다 의심스러우면 SUSPECT,
+    // 그렇지 않으면 NORMAL. accuracy 하나만 나쁜 것으로는 SUSPECT조차
+    // 만들지 않는다(원칙: accuracy만으로 판단하지 않는다).
+    if (sectionDistSuspect && accuracySuspect) {
+      return GPS_RELIABILITY.SUSPECT;
+    }
+    return GPS_RELIABILITY.NORMAL;
+  }
+
   // options.resetMapOrientation(기본 true): mapRotationDeg/
   // appliedMapRotationDeg/userGpsMarker까지 완전히 리셋할지 여부.
   // resetOriginNow()는 의도적으로 이걸 리셋하지 않는다(주석: "최단경로
@@ -3525,6 +3603,12 @@
     offTrailStreakCount = 0;
     returnStreakCount = 0;
     enterStreakCount = 0;
+    // GPS 신뢰도 계층 상태도 함께 초기화 — 이전 세션의 직전 확정
+    // 위치를 기준으로 삼으면 GPS 재획득 직후(위치가 실제로 크게
+    // 바뀌었을 수 있음) 첫 픽스가 부당하게 이상치로 판정될 수 있다.
+    lastConfirmedGpsPos = null;
+    sectionAdvanceConfirmStreak = 0;
+    consecutiveRejectedCount = 0;
     // resetTrailSearchWindow가 내부적으로 resetTrackDirectionState도
     // 호출하므로 별도로 반복하지 않는다.
     resetTrailSearchWindow();
@@ -3563,12 +3647,32 @@
   // SECTION_ADVANCE_MARGIN_M만큼 지나쳤다"는 더 강한 조건(단순 근접이
   // 아니라 실제 통과)으로 좁혀 안전판을 둔다.
   const SECTION_ADVANCE_MARGIN_M = 15;
-  function maybeAdvanceSection(section, proj) {
+  // 🗺️ 2026-09-26 GPS 신뢰도 계층 — 구간 전환 전용 연속 확인
+  // (원칙 4, 이탈 판정의 enterStreakCount와는 완전히 별개 카운터를
+  // 쓴다). B 통과 조건을 만족해도 GPS_NORMAL이 아니면 그 즉시 전진하지
+  // 않고 sectionAdvanceConfirmStreak만 쌓는다 — GPS 품질이 계속 나쁜
+  // 구간(계곡·수목 밀집)에서 "완전 차단"하면 진짜 구간 전환이 영원히
+  // 지연되므로, 의심스러운 상태(GPS_SUSPECT)가 SECTION_ADVANCE_CONFIRM_STREAK
+  // (3픽스) 연속 유지되면 결국 전환을 허용한다. GPS_REJECTED 픽스는
+  // 스트릭 증가에도 관여하지 않는다(완전 무시).
+  function maybeAdvanceSection(section, proj, reliability) {
     if (!section || !proj) return false;
     const targetDist = section.toMilestone.distanceM;
     const passedForward = section.isForward && proj.routeDistance >= targetDist - SECTION_ADVANCE_MARGIN_M;
     const passedBackward = !section.isForward && proj.routeDistance <= targetDist + SECTION_ADVANCE_MARGIN_M;
-    if (!passedForward && !passedBackward) return false;
+    if (!passedForward && !passedBackward) {
+      sectionAdvanceConfirmStreak = 0;
+      return false;
+    }
+    if (reliability === GPS_RELIABILITY.REJECTED) {
+      return false; // 완전 무시 — 스트릭도 건드리지 않는다.
+    }
+    if (reliability === GPS_RELIABILITY.SUSPECT) {
+      sectionAdvanceConfirmStreak++;
+      if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
+    }
+    // GPS_NORMAL이거나, SUSPECT가 연속 확인 임계값을 넘겼으면 전진 확정.
+    sectionAdvanceConfirmStreak = 0;
     const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
     advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
     return true;
@@ -3587,11 +3691,25 @@
   // computeSectionApproachBearing으로 방향을 계산은 하되, 실제 회전
   // 적용(applySegmentRotation 호출, recentered:true)은 ①구간 변경
   // ②B점 근접 진입(원거리→근거리 전환) 두 이벤트에서만 일어난다.
-  function updateGajaMap(gpsLat, gpsLon) {
+  // 🗺️ 2026-09-26 GPS 신뢰도 계층 — accuracy/timestamp를 추가로 받아
+  // classifyGpsReliability로 이번 픽스의 신뢰도를 매긴 뒤, 그 결과를
+  // maybeAdvanceSection/updateGajaMapCore에 전달해 확정 상태(구간 전환/
+  // 회전 적용)에 반영할지 결정한다. computeSectionApproachBearing 등
+  // "계산"은 신뢰도와 무관하게 항상 수행된다(구현 계약 유지) — 신뢰도는
+  // 오직 "그 계산 결과를 확정 상태에 커밋하는가"만 게이트한다.
+  // GPS_NORMAL로 판정된 경우에만 lastConfirmedGpsPos를 갱신한다 —
+  // SUSPECT/REJECTED 픽스를 기준점으로 삼으면 이상치가 다음 이상치
+  // 판정의 기준이 되어버리는 자기강화 오류가 생긴다.
+  function updateGajaMap(gpsLat, gpsLon, accuracy, timestamp) {
     const section = getCurrentSection();
     if (!section) return null; // 구간 미확정 — 호출부가 resolveInitialSection으로 먼저 확정해야 함
     const proj = projectOntoCurrentSection(gpsLat, gpsLon, section);
     if (!proj) return null;
+
+    const reliability = classifyGpsReliability(gpsLat, gpsLon, accuracy, timestamp, proj);
+    if (reliability === GPS_RELIABILITY.NORMAL) {
+      lastConfirmedGpsPos = { lat: gpsLat, lon: gpsLon, timestamp };
+    }
 
     // 구간 목표 지점을 실제로 지나쳤으면 다음 구간으로 전진(이벤트①:
     // 구간 변경) — 전진 직후에는 새 구간 기준으로 재투영해 그 프레임
@@ -3602,7 +3720,7 @@
     // (lastAppliedFarBearing/farDriftStreak)도 새 구간 기준으로 다시
     // 쌓아야 하므로 함께 리셋한다 — 이전 구간의 드리프트 이력이 새
     // 구간까지 이어지면 안 된다.
-    if (maybeAdvanceSection(section, proj)) {
+    if (maybeAdvanceSection(section, proj, reliability)) {
       sectionApproachState = null;
       lastAppliedFarBearing = null;
       farDriftStreak = 0;
@@ -3611,16 +3729,16 @@
       // 폐기 재설계로 원점 확정/통과 비프음(updateSegmentRotationTrigger가
       // 예전에 findNextRotationTarget으로 별도 계산하던 것)을 여기서
       // 이미 확정된 section.toMilestone으로 대체한다.
-      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone };
+      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone, reliability };
       const newProj = projectOntoCurrentSection(gpsLat, gpsLon, newSection);
-      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone };
-      const coreResult = updateGajaMapCore(newSection, newProj, gpsLat, gpsLon);
-      return Object.assign(coreResult, { advanced: true, arrivedMilestone: section.toMilestone });
+      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone, reliability };
+      const coreResult = updateGajaMapCore(newSection, newProj, gpsLat, gpsLon, reliability);
+      return Object.assign(coreResult, { advanced: true, arrivedMilestone: section.toMilestone, reliability });
     }
-    return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon), { advanced: false, arrivedMilestone: null });
+    return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability), { advanced: false, arrivedMilestone: null, reliability });
   }
 
-  function updateGajaMapCore(section, proj, gpsLat, gpsLon) {
+  function updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability) {
     const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
     if (!approach) return { section, proj, recentered: false };
 
@@ -3660,6 +3778,24 @@
     sectionApproachState = approach.state;
 
     if (!shouldApply) {
+      return { section, proj, recentered: false, bearing: approach.bearing };
+    }
+
+    // 🗺️ 2026-09-26 GPS 신뢰도 계층(원칙 3) — 이벤트①②(근접진입/구간
+    // 변경)가 발생했어도, 이번 픽스의 신뢰도가 GPS_NORMAL이 아니면
+    // 실제 회전(확정 상태 변경)은 보류한다. reliability가 없으면
+    // (recalculateGajaMapFromScratch 등 신뢰도 계층 밖의 특수 재계산
+    // 경로) 기존처럼 항상 허용한다 — 이런 경로는 "GPS를 방금 다시
+    // 잡았으니 무조건 새로 계산한다"는 별도 원칙이 이미 있어 신뢰도
+    // 판정 자체가 성립하지 않는다.
+    // ⚠️ shouldApply=true인데 커밋을 보류하면, sectionApproachState는
+    // 이미 위에서 approach.state로 갱신된 뒤라 다음 프레임에
+    // justEnteredNear/isFirstJudgement가 다시 트리거되지 않는다 —
+    // 즉 "이 이벤트가 발생했다는 사실"은 소비되지만 회전은 적용 안 된
+    // 채로 넘어간다. 다음 GPS_NORMAL 픽스가 오면 드리프트(이벤트③)나
+    // 다음 이벤트가 자연스럽게 이어받으므로, 이 프레임을 완전히
+    // "놓치는" 것은 아니다.
+    if (reliability !== undefined && reliability !== GPS_RELIABILITY.NORMAL) {
       return { section, proj, recentered: false, bearing: approach.bearing };
     }
 
@@ -6546,6 +6682,36 @@
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
+        const nowTs = Date.now();
+
+        // 🗺️ 2026-09-26 GPS 신뢰도 계층 — 구간이 아직 확정 안 됐으면
+        // (코스 진입 최초 등) 판정 재료(proj)가 없으므로 항상 NORMAL로
+        // 통과시킨다. 구간이 있으면 미리 한 번 계산해, 화면 마커 갱신
+        // 여부(REJECTED만 보류)를 이 시점에 바로 결정할 수 있게 한다 —
+        // updateGajaMap 내부에서 다시 한 번 같은 값을 계산하지만(구간이
+        // maybeAdvanceSection으로 바뀔 수 있어 완전히 캐시하기 어려움),
+        // 이 사전 판정은 오직 "화면 마커를 이번 픽스로 움직일지"만
+        // 결정하는 가벼운 조회이므로 중복 계산 비용은 무시할 만하다.
+        const sectionForReliabilityPreview = getCurrentSection();
+        const projForReliabilityPreview = sectionForReliabilityPreview
+          ? projectOntoCurrentSection(lat, lon, sectionForReliabilityPreview)
+          : null;
+        const reliabilityPreview = classifyGpsReliability(lat, lon, accuracy, nowTs, projForReliabilityPreview);
+
+        if (reliabilityPreview === GPS_RELIABILITY.REJECTED) {
+          // 화면 마커도 갱신하지 않는다(원칙: 명백한 이상치는 완전 무시,
+          // 직전 확정 상태를 그대로 보여준다) — 단, GPS가 처음 켜진
+          // 시점(lastKnownPos가 아직 없음)에는 표시할 "직전 상태" 자체가
+          // 없으므로 이 경우만 예외로 통과시킨다.
+          if (lastKnownPos) {
+            consecutiveRejectedCount++;
+            if (consecutiveRejectedCount === 5) {
+              showToastBadge('📡 GPS 신호가 불안정합니다 — 잠시 후 다시 확인해주세요.');
+            }
+            return;
+          }
+        }
+        consecutiveRejectedCount = 0;
         lastKnownPos = { lat, lon }; // 화면 표시·이탈판정용 — 지연 없는 원시 좌표를 그대로 사용
 
         // 이정표 근접 모달은 화면 회전/정지판정 파이프라인과 무관하게
@@ -6616,9 +6782,10 @@
         if (!getCurrentSection()) {
           resolveInitialSectionByProjection(lat, lon);
         }
-        const gajaMapResult = updateGajaMap(lat, lon);
+        const gajaMapResult = updateGajaMap(lat, lon, accuracy, nowTs);
         const section = gajaMapResult ? gajaMapResult.section : null;
         const sectionProj = gajaMapResult ? gajaMapResult.proj : null;
+        const gpsReliability = gajaMapResult ? gajaMapResult.reliability : GPS_RELIABILITY.NORMAL;
 
         // 코스 시작(들머리) 근처인지 — 첫 원점이 아직 한 번도 안 잡힌
         // 상태(currentRotationOriginDist===null, v75의 "방향 일치 전
@@ -6643,7 +6810,11 @@
         const offTrailNearestPoint = sectionProj
           ? { lat: sectionProj.projectedLat, lon: sectionProj.projectedLon }
           : null;
-        if (sectionProj) {
+        // GPS 신뢰도 계층 — REJECTED로 재판정된 픽스(구간 전진 후
+        // 재투영 등 극히 드문 경로)는 이탈 판정 카운터 누적에서 제외한다
+        // (계획서 원칙: REJECTED 픽스가 우연히 3번 연속되어 이탈을
+        // 오확정하는 것을 막음).
+        if (sectionProj && gpsReliability !== GPS_RELIABILITY.REJECTED) {
           updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
         }
 
