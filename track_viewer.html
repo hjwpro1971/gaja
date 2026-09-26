@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v184';
+    const CACHE_NAME = 'gaja-trail-cache-v185';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_far_refresh_distance_trigger';
+      const APP_BUILD = 'v20260926_sim_mode_rotation_beep_tuning';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3452,6 +3452,17 @@
   // 추가한다 — 짧은 도심 구간에서도 자연스러운 주기로 보정되도록 앞서
   // 계산에 쓰던 ARROW_LOOKAHEAD_M(15m)보다 조금 넉넉하게 잡는다.
   const FAR_STATE_REFRESH_DISTANCE_M = 25;
+  // 🐛 2026-09-26 추가(사용자 지시: "시뮬레이션에선 지도 회전을 GPS모드
+  // 처럼 하면 속도가 너무 빨라서 어지러워") — 위 25m는 실제 도보 속도
+  // (초당 1~2m)를 전제로 한 값인데, 시뮬레이션은 배속 재생이라 같은
+  // 25m가 실제 시간으로는 훨씬 짧은 간격에 반복돼 화면이 정신없이
+  // 돈다. 시뮬레이션 중에는 훨씬 넉넉한 간격(500m)으로만 원거리 재계산
+  // 트리거를 걸고, 구간 변경(이벤트①)·B점 근접(이벤트②)은 "경로 변경점
+  // 에서 회전하기" 요구사항 그대로 GPS와 동일하게 유지한다.
+  const FAR_STATE_REFRESH_DISTANCE_SIM_M = 500;
+  function getFarStateRefreshDistanceM() {
+    return isSimulationMode ? FAR_STATE_REFRESH_DISTANCE_SIM_M : FAR_STATE_REFRESH_DISTANCE_M;
+  }
   let sectionApproachState = null; // null(구간 미확정) | 'far' | 'near' — 직전 프레임의 근접 상태(이벤트 감지용)
   let lastAppliedFarBearing = null; // 원거리 상태에서 마지막으로 실제 적용된 방향(드리프트 비교 기준)
   let farDriftStreak = 0; // FAR_STATE_DRIFT_THRESHOLD_DEG 이상 벌어진 상태가 연속된 픽스 수
@@ -3792,9 +3803,11 @@
     // 않는 사각지대가 있었다(실기기 재현: 월평동 코스, 화살표는 정확한데
     // 지도만 12시를 계속 놓침). 각도와 무관하게 마지막 회전 적용 지점
     // 대비 FAR_STATE_REFRESH_DISTANCE_M 이상 이동했으면 무조건 재계산한다.
+    // 시뮬레이션 중에는 훨씬 넉넉한 간격(500m, getFarStateRefreshDistanceM)을
+    // 쓴다 — 배속 재생에서 같은 25m가 너무 자주 반복돼 화면이 어지럽다.
     let distanceRefreshDue = false;
     if (approach.state === 'far' && !isFirstJudgement && !justEnteredNear && lastAppliedFarRouteDistance !== null) {
-      if (Math.abs(proj.routeDistance - lastAppliedFarRouteDistance) >= FAR_STATE_REFRESH_DISTANCE_M) {
+      if (Math.abs(proj.routeDistance - lastAppliedFarRouteDistance) >= getFarStateRefreshDistanceM()) {
         distanceRefreshDue = true;
       }
     }
@@ -5486,16 +5499,22 @@
     if (key !== lastAlertedMilestoneKey) {
       // 이 갈림길에 새로 진입하는 시점.
       lastAlertedMilestoneKey = key;
+      // 🐛 2026-09-26 추가(사용자 지시: "알림은 50M 이내에서 한 번만") —
+      // 실제 GPS는 50/30/10m 3단계를 그대로 유지하되, 시뮬레이션은
+      // speakTurnApproach가 이미 50m만 말하는 것과 똑같이 비프음도
+      // 50m 1회로 제한한다. 배속 재생이라 3단계 다 울리면 짧은 시간에
+      // 연속으로 겹쳐 울려 시끄럽고 정신없다는 문제였다.
+      const beepThresholdSource = isSimulationMode ? [Math.max(...TURN_ALERT_BEEP_THRESHOLDS_M)] : TURN_ALERT_BEEP_THRESHOLDS_M;
       // "아직 안 지남" = 현재 거리가 그 임계값보다 더 먼 상태(distToNextM > t) —
       // 즉 t가 distToNextM보다 작은 것들만 앞으로 발화할 대상으로 남긴다.
-      remainingBeepThresholds = TURN_ALERT_BEEP_THRESHOLDS_M.filter(t => t < distToNextM);
+      remainingBeepThresholds = beepThresholdSource.filter(t => t < distToNextM);
       // "가장 가까운 단계(배열 중 최솟값, 예:10m)까지 이미 지났을 때만"
       // 진입 즉시 1회 안내한다 — 예: 진입 즉시 35m면 50m만 지났고 아직
       // 진짜 가까운 단계(30m)는 안 지났으므로 조용히 대기(다음 픽스가
       // 30m 이하로 내려올 때 else 분기에서 정상 발화). 반대로 진입
       // 즉시 5m처럼 가장 가까운 단계(10m)까지 이미 지났다면, "지나친
       // 단계는 건너뛰고 남은 단계만" 사양에 따라 지금 1회만 안내한다.
-      const closestThreshold = Math.min(...TURN_ALERT_BEEP_THRESHOLDS_M);
+      const closestThreshold = Math.min(...beepThresholdSource);
       if (distToNextM <= closestThreshold) {
         playTurnAlertBeep();
         speakTurnApproach(nextM, closestThreshold, clockOnly);
