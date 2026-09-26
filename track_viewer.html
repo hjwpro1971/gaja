@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v179';
+    const CACHE_NAME = 'gaja-trail-cache-v180';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_offtrail_section_based';
+      const APP_BUILD = 'v20260926_portrait_lock';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -795,6 +795,30 @@
       }
     });
 
+    // 📱 세로 화면 고정 — manifest.json의 "orientation": "portrait"는
+    // 안드로이드에서 100% 강제되지 않는 경우가 실측으로 확인돼(제조사/
+    // OS 버전에 따라 자동회전 설정을 켜두면 여전히 가로로 돌아감),
+    // Screen Orientation API로 명시적 잠금을 한 번 더 시도한다. 이 API는
+    // "설치된 PWA(standalone)로 실행 중일 때만" 허용되는 표준 정책이라,
+    // 일반 브라우저 탭에서 열었을 때는 항상 실패한다(브라우저 정책상
+    // 정상 동작이므로 이 경우 콘솔에 조용히 남기고 넘어간다 — 사용자가
+    // 직접 기기 자동회전을 꺼야 세로가 유지된다).
+    function lockPortraitOrientation() {
+      try {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+          || window.navigator.standalone === true; // iOS 홈 화면 추가 판정
+        if (!isStandalone) return;
+        if (screen.orientation && typeof screen.orientation.lock === 'function') {
+          screen.orientation.lock('portrait').catch(err => {
+            console.log('화면 세로 고정 실패(기기/브라우저 미지원 가능):', err && err.message);
+          });
+        }
+      } catch (err) {
+        console.log('화면 세로 고정 시도 중 예외:', err && err.message);
+      }
+    }
+    window.addEventListener('load', lockPortraitOrientation);
+
     window.addEventListener('load', () => {
       // ⚠️ GitHub Pages는 정적 파일에 Cache-Control: max-age=600(10분)을
       // 건다 — sw.js 자체가 이 HTTP 캐시에 걸리면, 쿼리스트링(?v=84)을
@@ -850,6 +874,11 @@
           navigator.serviceWorker.getRegistration().then(reg => {
             if (reg) reg.update();
           });
+          // 일부 기기는 백그라운드 갔다 온 뒤 세로 고정이 풀린다는
+          // 보고가 있어(제조사 커스텀 회전 처리), 포그라운드 복귀마다
+          // 재시도한다 — lockPortraitOrientation은 standalone이 아니면
+          // 즉시 조용히 return하므로 일반 탭에서는 아무 일도 안 한다.
+          if (typeof lockPortraitOrientation === 'function') lockPortraitOrientation();
         }
       });
     });
