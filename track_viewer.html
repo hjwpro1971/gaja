@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v186';
+    const CACHE_NAME = 'gaja-trail-cache-v187';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_near_state_reversed_direction_fix';
+      const APP_BUILD = 'v20260926_rotation_only_on_node_passage';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3779,13 +3779,22 @@
     const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
     if (!approach) return { section, proj, recentered: false };
 
-    // 이벤트② B점 근접 진입: 직전 프레임엔 원거리(또는 구간이 막
-    // 리셋된 직후라 상태 없음)였는데 이번 프레임에 근거리로 판정되면
-    // 그 순간에만 회전을 적용한다. 원거리 상태끼리, 또는 근거리
-    // 상태끼리는(둘 다 이미 적용된 이후) 매 픽스 다시 적용하지 않는다
-    // — "매 GPS 픽스마다 회전하지 않는다"는 원칙을 지킨다.
+    // 🐛 2026-09-26 전면 재설계(사용자 확정 원칙): "노드점(마일스톤)에
+    // 도달하기 전에는 절대 회전하면 안 된다. 노드점을 실제로 통과했다고
+    // 판정이 난 후에만 회전해야 한다"는 최우선 원칙이 있다. 예전엔
+    // "B점 근접 진입"(far→near 전환) 자체를 회전 트리거로 썼는데, 이건
+    // 정확히 "아직 도달 전(근처 30m 이내)"에 회전을 바꾸는 것이라 이
+    // 원칙에 위배된다 — 그 상태에서 mapRotationDeg가 계산 오차나 GPS
+    // 튐으로 살짝만 어긋나도 "노드점 코앞에서 방향이 홱 바뀌는" 혼란을
+    // 준다(사용자 재현: 자티고개 접근 중 "6시방향" 표시). near 상태의
+    // "GPS→B 직접 조준" 계산(computeSectionApproachBearing)은 화살표
+    // 등 다른 용도로는 여전히 유효하므로 남겨두되, 그 결과를 실제 지도
+    // 회전(mapRotationDeg)에 커밋하는 것은 완전히 금지한다. 회전은
+    // 오직 ①구간 전환(노드점 통과 확정, maybeAdvanceSection이 true를
+    // 반환해 updateGajaMap이 sectionApproachState를 리셋한 바로 그
+    // 프레임) ②원거리(far) 상태에서의 거리/드리프트 재계산 두 갈래로만
+    // 일어난다.
     const isFirstJudgement = sectionApproachState === null;
-    const justEnteredNear = approach.state === 'near' && sectionApproachState !== 'near';
 
     // 이벤트③ 원거리 드리프트: 긴 구간을 원거리 상태로 걷는 동안 실제
     // 경로가 스위치백 등으로 크게 꺾이면, ①②가 트리거되지 않은 채 화면
@@ -3796,7 +3805,7 @@
     // GPS 튐 한 프레임만으로 재적용되면 오히려 지도가 노이즈에 따라
     // 갑자기 뒤집히는 새 문제가 생기므로, 히스테리시스로 걸러낸다.
     let driftConfirmed = false;
-    if (approach.state === 'far' && !isFirstJudgement && !justEnteredNear && lastAppliedFarBearing !== null) {
+    if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarBearing !== null) {
       const drift = Math.abs(shortestAngleDiff(approach.bearing, lastAppliedFarBearing));
       if (drift >= FAR_STATE_DRIFT_THRESHOLD_DEG) {
         farDriftStreak++;
@@ -3820,32 +3829,26 @@
     // 시뮬레이션 중에는 훨씬 넉넉한 간격(500m, getFarStateRefreshDistanceM)을
     // 쓴다 — 배속 재생에서 같은 25m가 너무 자주 반복돼 화면이 어지럽다.
     let distanceRefreshDue = false;
-    if (approach.state === 'far' && !isFirstJudgement && !justEnteredNear && lastAppliedFarRouteDistance !== null) {
+    if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarRouteDistance !== null) {
       if (Math.abs(proj.routeDistance - lastAppliedFarRouteDistance) >= getFarStateRefreshDistanceM()) {
         distanceRefreshDue = true;
       }
     }
 
-    // 🐛 2026-09-26 수정(사용자 재현: "6시방향" 오류, 수통골 시뮬레이션) —
-    // near 상태는 justEnteredNear(진입 순간)에만 회전이 적용되고 그
-    // 뒤로는 갱신되지 않았다. GPS가 near로 막 들어온 시점의 위치에서
-    // "GPS→B" 방향을 한 번 고정해버리면, 그 뒤 실제로 B에 더 접근하거나
-    // (특히 시뮬레이션 배속 재생처럼 프레임 간 이동거리가 큰 경우)
-    // B를 지나쳐도 화면은 그 옛 방향을 계속 보여준다. 그 상태에서
-    // "다음 갈림길 몇 시 방향"(outBearing 대비 mapRotationDeg 상대각)을
-    // 계산하면 실제 진행 방향과 반대(6시 등)로 나오는 치명적 오류가
-    // 생긴다. near는 B점까지 30m 이내로 짧은 구간이라 매 프레임
-    // 재계산해도 화면이 크게 흔들리지 않으므로, near 상태는 무조건
-    // 매 프레임 재적용한다(이벤트 절제 원칙에서 near만 예외로 둔다).
-    const shouldApply = isFirstJudgement || justEnteredNear || driftConfirmed || distanceRefreshDue || approach.state === 'near';
+    // near 상태(B점 30m 이내 접근 중)는 위 사용자 확정 원칙에 따라
+    // 회전 트리거가 아니다 — isFirstJudgement(구간 전환/최초 진입 직후
+    // 첫 판정)일 때만 예외적으로 적용되고, 그 외에는 near에 머무는 동안
+    // 절대 재적용되지 않는다(shouldApply 계산에 approach.state==='near'
+    // 조건을 넣지 않음으로써 구조적으로 보장).
+    const shouldApply = isFirstJudgement || driftConfirmed || distanceRefreshDue;
     sectionApproachState = approach.state;
 
     if (!shouldApply) {
       return { section, proj, recentered: false, bearing: approach.bearing };
     }
 
-    // 🗺️ 2026-09-26 GPS 신뢰도 계층(원칙 3) — 이벤트①②(근접진입/구간
-    // 변경)가 발생했어도, 이번 픽스의 신뢰도가 GPS_NORMAL이 아니면
+    // 🗺️ 2026-09-26 GPS 신뢰도 계층(원칙 3) — 이벤트(노드점 통과/원거리
+    // 재계산)가 발생했어도, 이번 픽스의 신뢰도가 GPS_NORMAL이 아니면
     // 실제 회전(확정 상태 변경)은 보류한다. reliability가 없으면
     // (recalculateGajaMapFromScratch 등 신뢰도 계층 밖의 특수 재계산
     // 경로) 기존처럼 항상 허용한다 — 이런 경로는 "GPS를 방금 다시
@@ -3853,7 +3856,7 @@
     // 판정 자체가 성립하지 않는다.
     // ⚠️ shouldApply=true인데 커밋을 보류하면, sectionApproachState는
     // 이미 위에서 approach.state로 갱신된 뒤라 다음 프레임에
-    // justEnteredNear/isFirstJudgement가 다시 트리거되지 않는다 —
+    // isFirstJudgement가 다시 트리거되지 않는다 —
     // 즉 "이 이벤트가 발생했다는 사실"은 소비되지만 회전은 적용 안 된
     // 채로 넘어간다. 다음 GPS_NORMAL 픽스가 오면 드리프트(이벤트③)나
     // 다음 이벤트가 자연스럽게 이어받으므로, 이 프레임을 완전히
