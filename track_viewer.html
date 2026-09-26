@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v181';
+    const CACHE_NAME = 'gaja-trail-cache-v182';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_nn1_removal_unified_section';
+      const APP_BUILD = 'v20260926_offtrail_enter_confirm_streak';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3524,6 +3524,7 @@
     isOffTrailState = false;
     offTrailStreakCount = 0;
     returnStreakCount = 0;
+    enterStreakCount = 0;
     // resetTrailSearchWindow가 내부적으로 resetTrackDirectionState도
     // 호출하므로 별도로 반복하지 않는다.
     resetTrailSearchWindow();
@@ -4666,6 +4667,17 @@
   let offTrailStreakCount = 0; // GPS 갱신마다 1씩 증가 — 연속 3회(약 3초) 이상일 때만 경고음
   const RETURN_CONFIRM_STREAK = 3; // 복귀음도 이탈 경고음과 대칭으로, 연속 3회(약 3초) 이상 정상 상태가 유지되어야 울린다 — GPS 순간 튐으로 잠깐만 25m 밑으로 들어왔다 다시 이탈해도 오알람이 울리지 않도록 함
   let returnStreakCount = 0; // 25m 미만 조건을 연속으로 만족한 횟수 — 이탈 중일 때만 누적, 이탈 재진입 시 리셋
+  // 🐛 2026-09-26 수정(사용자 재현: 아파트 단지에서 실제로는 경로 위에
+  // 있는데 "53m 이탈" 경고 문구가 떴다 — 도심은 건물 반사로 GPS
+  // 좌표가 순간적으로 수십 m씩 튀는 게 흔하다) — 예전엔 "이탈 진입"은
+  // 1픽스만에 즉시 확정(isOffTrailState=true, 화면 텍스트도 그 즉시
+  // 뜸)되고, "복귀"만 연속 3회 확인을 요구해 진입/복귀 판정이 비대칭
+  // 이었다. 소리(비프음)만 3회 대기하고 화면 텍스트는 1프레임 튐에도
+  // 바로 떠서, 순간 튐 한 번에도 사용자가 "이탈했다"는 문구를 보게
+  // 됐다. 복귀와 대칭으로 진입도 연속 확인을 요구해, 화면 텍스트 자체가
+  // GPS 순간 튐에 흔들리지 않게 한다.
+  const ENTER_CONFIRM_STREAK = 3; // 이탈 진입도 복귀와 대칭으로 연속 3회(약 3초) 확인 후 확정
+  let enterStreakCount = 0; // enterThreshold 이상 조건을 연속으로 만족한 횟수 — 정상 상태일 때만 누적, 정상 재진입 시 리셋
 
   // 이탈 히스테리시스 상태만 갱신하는 함수 — updateNavigationToast와
   // 정지 시 방향 고정 로직(watchPosition 콜백) 양쪽에서 공유해서 쓴다.
@@ -4817,8 +4829,17 @@
     const enterThreshold = Math.min(maxEnter, baseEnter + slack);
     const returnThreshold = Math.min(OFFTRAIL_MAX_RETURN_M, OFFTRAIL_BASE_RETURN_M + slack);
     if (!isOffTrailState && minDistanceM > enterThreshold) {
-      isOffTrailState = true;
-      returnStreakCount = 0;
+      enterStreakCount++;
+      if (enterStreakCount >= ENTER_CONFIRM_STREAK) {
+        isOffTrailState = true;
+        enterStreakCount = 0;
+        returnStreakCount = 0;
+      }
+    } else if (!isOffTrailState) {
+      // 정상 상태에서 enterThreshold 미만으로 돌아오면(연속 확인 중
+      // 노이즈로 다시 정상권에 들어온 경우) 카운터를 리셋한다 — 진짜
+      // 지속적인 이탈만 확정되게 한다.
+      enterStreakCount = 0;
     } else if (isOffTrailState && minDistanceM < returnThreshold) {
       returnStreakCount++;
       if (returnStreakCount >= RETURN_CONFIRM_STREAK) {
@@ -5103,9 +5124,13 @@
       let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
       toast.innerText = `🚨 [이탈] 경로에서 ${distStr} 벗어났어요. ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
-      // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
-      // 유지될 때만 실제 경고음을 울린다.
-      if (offTrailStreakCount >= 3) {
+      // 🐛 2026-09-26 수정 — isOffTrailState 자체가 이미
+      // updateOffTrailHysteresis의 ENTER_CONFIRM_STREAK(3픽스 연속
+      // 확인)를 거친 뒤에만 true가 되므로(도심 GPS 순간 튐 방지),
+      // 여기서 다시 offTrailStreakCount>=3을 요구하면 소리가 총 6픽스
+      // (약 6초)나 지연된다. 화면 텍스트가 이미 검증된 이탈 상태를
+      // 보여주는 시점이므로, 소리는 그 확정 즉시(1) 울린다.
+      if (offTrailStreakCount >= 1) {
         playOffTrailBeep();
         speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
       }
