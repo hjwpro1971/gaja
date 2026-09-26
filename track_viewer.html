@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v178';
+    const CACHE_NAME = 'gaja-trail-cache-v179';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_reset_for_fresh_gps_fix_unified';
+      const APP_BUILD = 'v20260926_offtrail_section_based';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5112,7 +5112,7 @@
   }
   window.resetOriginNow = resetOriginNow;
 
-  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading) {
+  function updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading, offTrailDistanceM, offTrailNearestPoint) {
     // 🚩 경로 접근 모드(2026-09-23 재설계) — 아직 경로(온트레일 기준)
     // 밖에 있으면(산행 시작 직후 집/주차장, 또는 경로 중간으로 바로
     // 진입하는 경우 모두 포함) 트랙 기반 이탈판정·갈림길 안내·구간회전을
@@ -5141,7 +5141,16 @@
     if (!toast || toast.style.display === 'none') return;
     if (!lastKnownPos) return;
 
-    if (nearestPoint && isOffTrailState) {
+    // 🐛 2026-09-26 이탈 판정 재설계 — 복귀 방향/거리는 이제 nearestPoint/
+    // minDistanceM(구식 LOCKED N/N+1 결과)이 아니라 offTrailNearestPoint/
+    // offTrailDistanceM(현재 A→B 구간 투영 결과, updateOffTrailHysteresis에
+    // 넘긴 값과 동일 소스)을 쓴다 — 이탈 여부 판정과 복귀 안내가 서로
+    // 다른 지점을 기준삼는 불일치(사용자 재현: 이탈 판정은 됐는데 안내는
+    // 엉뚱한 갈림길을 가리킴)를 막기 위함. offTrailNearestPoint가 없으면
+    // (구간 미확정 등 예외) 기존 nearestPoint로 안전하게 폴백한다.
+    const guidancePoint = offTrailNearestPoint || nearestPoint;
+    const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : minDistanceM;
+    if (guidancePoint && isOffTrailState) {
       hideBottomDirectionArrow(); // 이탈 안내는 좌/우 상대 방향(angleDiffToPlainKorean)이라 하단 화살표(시계 방향) UI와 별개
       // 숲/계곡 GPS 수신 불안정 시 오알람 방지 (정확도가 25m보다 나쁘면 대기)
       if (accuracy > 25 && offTrailStreakCount < 4) {
@@ -5158,17 +5167,17 @@
       const isNearTrailheadNotice = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForNotice < TRAILHEAD_ENTRY_DISTANCE_M;
       if (isNearTrailheadNotice) {
         toast.className = 'gps-toast';
-        let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+        let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
         toast.innerText = `🚩 들머리 진입 중 · 입구를 따라 조금만 더 이동하세요 (${distStr})`;
         return;
       }
       // 등산로 복귀 방향은 "북동쪽" 같은 절대 방위가 아니라, 마지막 GPS
       // 진행 방향(getCurrentAbsHeadingForGuidance) 기준 오른쪽/왼쪽
       // 상대 방향으로 안내한다.
-      const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, nearestPoint.lat, nearestPoint.lon);
+      const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, guidancePoint.lat, guidancePoint.lon);
       const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
       toast.className = 'gps-toast warning';
-      let distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+      let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
       toast.innerText = `🚨 [이탈] 경로에서 ${distStr} 벗어났어요. ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
       // GPS 순간 튐(수목/계곡 지역 등) 오알람 방지 — 연속 3회(약 3초) 이상
@@ -6709,6 +6718,10 @@
         // 등산로(선분)까지의 최단거리 탐색 — 점까지의 거리가 아니라
         // 점들을 이은 산길 자체까지의 거리를 재야 GPX 점 간격이 넓은
         // 구간에서 산길 위에 서 있는데도 이탈로 오판되지 않는다.
+        // ⚠️ 이 결과(LOCKED N/N+1 추적)는 더 이상 이탈 판정에 쓰지
+        // 않는다 — 아래 "이탈 판정 전용 재설계" 참고. 갈림길 거리 계산/
+        // 왕복판정(isReversingOnTrail)/화살표 진행방향(moveDirectionSign)
+        // 용도로만 계속 쓴다.
         const nearest = nearestPointOnTrail(lat, lon, currentPoints);
         const minDistanceM = nearest.distance;
         const nearestPoint = nearest.point;
@@ -6730,7 +6743,32 @@
         // 안정되지 않은 구간으로 보고 이탈 판정 기준을 완화한다.
         const traveledDistForEntry = cumulativeDistances[nearestIdx] || 0;
         const isNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
-        updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead);
+
+        // 🐛 2026-09-26 이탈 판정 재설계(사용자 재현: 갈림길이 촘촘한
+        // 구간에서 실제로는 경로 위에 있는데 "51m 이탈"로 오판되고,
+        // 복귀 안내선도 엉뚱한 곳을 가리킴) — 근본 원인은 이탈 판정이
+        // 방향 판정(getCurrentSection, A→B 구간)과 완전히 다른 구식
+        // 추적 방식(nearestPointOnTrail의 LOCKED N/N+1)을 썼다는 것.
+        // 갈림길 밀집 구간에서 LOCKED가 "지금 걷는다고 믿는" 세그먼트
+        // N이 실제 위치와 다른 세그먼트에 갇히면, 그 세그먼트까지의
+        // 거리만으로 이탈을 오판하고 안내도 그 틀린 세그먼트를 향했다.
+        // 사용자 확정 원칙: "그 구간(A→B)에 있고 경로 위에 있으면
+        // 이탈이 아니다. 그 구간에 있는데 경로에서 벗어나 있으면
+        // 이탈이다." → 이탈 판정용 거리/지점만 이미 매 픽스 계산되는
+        // A→B 구간 투영(projectOntoCurrentSection)의 결과로 교체한다.
+        // 구간이 아직 미확정(코스 진입 전)이면 이 투영 자체가 없으므로
+        // 기존 nearestPointOnTrail 결과로 자연히 폴백된다(들머리 접근
+        // 모드인 updateTrailheadApproach가 그 경우를 전담).
+        if (!getCurrentSection()) {
+          resolveInitialSection(nearestIdx);
+        }
+        const gajaMapResultForOffTrail = updateGajaMap(lat, lon);
+        const sectionProj = gajaMapResultForOffTrail ? gajaMapResultForOffTrail.proj : null;
+        const offTrailDistanceM = sectionProj ? sectionProj.distance : minDistanceM;
+        const offTrailNearestPoint = sectionProj
+          ? { lat: sectionProj.projectedLat, lon: sectionProj.projectedLon }
+          : nearestPoint;
+        updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
 
         // ⭐ 전면 재설계(2026-09-14): GPX가 경로 전체를 이미 알고 있으므로
         // "내가 지금 어느 방향을 보는가"는 더 이상 필요 없다. 정지/이동
@@ -6766,14 +6804,13 @@
         // 🗺️ 가자맵 대원칙 재설계 2단계(2026-09-25) — 위 computeArrowHeading/
         // applyLiveMapRotation(GPX index 증감 기반, 5m마다 사실상 즉시
         // 회전)을 새 구조(computeArrowHeadingV2/updateGajaMap, 지명
-        // 구간 + 100m 갱신 게이트)로 교체한다. 구간이 아직 확정 안 됐으면
-        // (코스 진입 전) 위에서 이미 계산한 nearestIdx로 첫 구간을
-        // 역산한다 — 매 픽스 재역산하지 않도록 getCurrentSection()이
-        // null일 때만 수행.
-        if (!getCurrentSection()) {
-          resolveInitialSection(nearestIdx);
-        }
-        const gajaMapResult = updateGajaMap(lat, lon);
+        // 구간 + 100m 갱신 게이트)로 교체한다. 구간 확정(resolveInitialSection)과
+        // updateGajaMap 호출은 위 이탈 판정 재설계 블록에서 이미 이번
+        // 픽스분을 끝냈으므로(gajaMapResultForOffTrail) 여기서 다시
+        // 호출하지 않는다 — updateGajaMap을 한 픽스에 두 번 부르면
+        // maybeAdvanceSection(구간 전진 판정)이 이중으로 평가되어 짧은
+        // 구간에서 한 픽스에 두 구간을 건너뛸 위험이 있다.
+        const gajaMapResult = gajaMapResultForOffTrail;
         const routeDistanceForArrow = gajaMapResult && gajaMapResult.proj ? gajaMapResult.proj.routeDistance : traveledDistForEntry;
         const arrowHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
         if (arrowHeading !== null) {
@@ -6786,7 +6823,7 @@
         // applySegmentRotation이 mapRotationDeg를 새 구간 방향으로
         // 갱신하는데, 순서가 반대이면 화살표 보정 등이 옛 값(한 프레임
         // 지연)을 참조하게 된다.
-        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading);
+        updateNavigationToast(accuracy, minDistanceM, nearestIdx, nearestPoint, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
 
         // 마커 생성 또는 이동
         if (!userGpsMarker) {
