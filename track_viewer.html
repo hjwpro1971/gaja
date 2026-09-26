@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v176';
+    const CACHE_NAME = 'gaja-trail-cache-v177';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_event_based_rotation';
+      const APP_BUILD = 'v20260926_shortcut_reentry_section_reset';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4125,6 +4125,23 @@
     currentPoints = points;
     resetTrailSearchWindow(); // 새 코스이므로 이전 코스의 탐색 위치 기억을 초기화
     resetGajaMapRotationState(); // 새 코스이므로 지도 회전 근접상태(sectionApproachState)도 초기화
+    // 🐛 2026-09-26 수정(사용자 재현: "등산시작 클릭후 다시 스마트폰
+    // 바탕화면에 있는 바로가기 클릭하면 GPS 새로 잡아. 이 경우도 지도가
+    // 아주 많이 엉망이 돼") — 홈 화면 바로가기(manifest.json의
+    // launch_handler: "navigate-existing")로 재진입하면 visibilitychange
+    // 가 아니라 페이지 전체가 새로 로드되며 이 함수(drawRoute)가 처음부터
+    // 다시 실행된다. 이때 currentMilestoneIdx/nextMilestoneIdx는
+    // visibilitychange의 -1 리셋을 전혀 거치지 못한 채 스크립트 선언
+    // 시점의 기본값(0/1)으로 남아있고, 곧이어 아래에서 새 currentMilestones
+    // 가 빌드된 뒤(4175행 근처) 산행 세션이 있으면 startGpsTracking()이
+    // 바로 호출된다(drawRoute 정의부 하단 참고) — startGpsTracking()도
+    // 이 두 인덱스를 리셋하지 않으므로, getCurrentSection()이 "들머리→
+    // 다음 지명"이라는 유효한(하지만 실제 위치와 무관한) 구간을 계속
+    // 반환해 재탐색이 전혀 트리거되지 않는다. visibilitychange에서 이미
+    // 검증된 것과 동일하게 -1로 리셋해야 다음 GPS 픽스가 실제 위치
+    // 기준으로 구간을 정상적으로 재확정한다.
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
     gpsFilterEngine.reset(); // 이전 위치의 필터 상태가 남아있으면 새 코스 시작 시 엉뚱한 곳으로 수렴하려는 과도기 흔들림이 생길 수 있어 초기화
     cumulativeDistances = buildCumulativeDistances(points); // 5단계: 누적거리 배열 미리 계산
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
@@ -6391,6 +6408,16 @@
     // 자체는 리셋하지 않아도 최단경로 계산으로 다음 픽스에서 바로 정확한
     // 방향으로 스냅된다(shortestAngleDiff 기준).
     resetGajaMapRotationState();
+    // 🐛 2026-09-26 수정 — drawRoute()가 페이지 로드 시점에 이미 -1로
+    // 리셋해두는 것과 별개로, GPS 버튼(🎯) 단독 재클릭처럼 drawRoute를
+    // 거치지 않고 startGpsTracking()만 단독 호출되는 경로도 있다. 이
+    // 함수가 GPS를 "새로" 잡는 모든 지점의 공통 관문이므로, 여기서도
+    // 구간 상태를 미확정(-1)으로 만들어 다음 GPS 픽스가 실제 위치
+    // 기준으로 항상 재확정하게 한다(visibilitychange에서 검증된 것과
+    // 동일한 원리 — 0/1로 리셋하면 getCurrentSection이 여전히 유효한
+    // 값을 반환해 재탐색이 트리거되지 않는다).
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
 
     // 🧭 구간회전 모드를 여기서 미리 켜둔다(2026-09-21, #11). 원래는
     // handleGpsPositionUpdate의 첫 마커 생성 시점(setHeadingUpMode 호출)
