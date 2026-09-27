@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v192';
+    const CACHE_NAME = 'gaja-trail-cache-v193';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_milestone_match_threshold_fix';
+      const APP_BUILD = 'v20260927_sim_speed_proportional_rotation_trigger';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3510,8 +3510,22 @@
   // 트리거를 걸고, 구간 변경(이벤트①)·B점 근접(이벤트②)은 "경로 변경점
   // 에서 회전하기" 요구사항 그대로 GPS와 동일하게 유지한다.
   const FAR_STATE_REFRESH_DISTANCE_SIM_M = 500;
+  // 🐛 2026-09-27 수정(사용자 지적: "500m가 누적 거리값이면 배속이
+  // 빠른 경우는 지도 회전이 아주 빠르겠지. 배속에 의해 누적거리값이
+  // 증가량이 틀리니 그것을 고려해야지. 배속이 있는 이유가 있잖아") —
+  // 500m는 "실제 걸은 거리" 기준이라 값 자체는 배속과 무관하게
+  // 고정이었지만, 그 500m를 채우는 데 필요한 프레임 수는 배속에
+  // 반비례한다(0.5x: 2m/프레임 → 250프레임, 5x: 80m/프레임 → 약
+  // 6프레임). 배속이 높을수록 같은 500m가 훨씬 짧은 화면 시간 안에
+  // 채워져 회전이 체감상 훨씬 잦고 빠르게 일어난다 — 배속을 두는
+  // 목적(짧은 산행/긴 산행을 각자 편한 속도로 훑어보기) 자체가
+  // 깨진다. 트리거 거리 자체를 배속에 비례해서 늘려, 배속이 얼마든
+  // "재계산까지 걸리는 프레임 수"가 비슷하게 유지되도록 한다
+  // (1배속 기준 500m를 그대로 두고, 그 외 배속은 simSpeed에 비례).
   function getFarStateRefreshDistanceM() {
-    return isSimulationMode ? FAR_STATE_REFRESH_DISTANCE_SIM_M : FAR_STATE_REFRESH_DISTANCE_M;
+    if (!isSimulationMode) return FAR_STATE_REFRESH_DISTANCE_M;
+    const speed = (typeof simSpeed === 'number' && simSpeed > 0) ? simSpeed : 1;
+    return FAR_STATE_REFRESH_DISTANCE_SIM_M * speed;
   }
   let sectionApproachState = null; // null(구간 미확정) | 'far' | 'near' — 직전 프레임의 근접 상태(이벤트 감지용)
   let lastAppliedFarBearing = null; // 원거리 상태에서 마지막으로 실제 적용된 방향(드리프트 비교 기준)
