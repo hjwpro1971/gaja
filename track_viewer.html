@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v194';
+    const CACHE_NAME = 'gaja-trail-cache-v195';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_revert_simulation_to_v187_gps_mode_untouched';
+      const APP_BUILD = 'v20260927_sim_restart_milestone_index_reset';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6185,6 +6185,18 @@
     // 사용자 지적: "경로 지나고 있는 하단 안내가 사라지지 않는다"의
     // 원인이기도 했다)도 함께 초기화한다.
     resetGajaMapRotationState();
+    // 🐛 2026-09-27 수정(사용자 재현: "시뮬레이션 중지 후 다시 시작하면
+    // 캐시 정리가 전혀 안 돼") — currentMilestoneIdx/nextMilestoneIdx를
+    // 리셋하지 않아서 새 재생이 simIndex=0(코스 시작점)부터 시작되는데도
+    // 구간(section)은 직전 세션이 멈췄던 지점에 그대로 남아있었다.
+    // getCurrentSection()이 여전히 유효한 구간을 반환하므로 renderSimFrame
+    // 의 "구간이 없을 때만 재탐색"(if (!getCurrentSection()) ...) 조건이
+    // 트리거되지 않아, 화면(구간/회전/하단안내)이 실제 재생 위치와 계속
+    // 어긋난 채로 남았다. GPS 재시작 경로(resetForFreshGpsFix)가 이미
+    // 하던 것과 동일하게 -1로 리셋해 다음 프레임이 반드시 재탐색하도록
+    // 한다.
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
     // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
     // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
