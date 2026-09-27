@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v195';
+    const CACHE_NAME = 'gaja-trail-cache-v196';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_sim_restart_milestone_index_reset';
+      const APP_BUILD = 'v20260927_bottom_guidance_lock_revert';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3580,24 +3580,6 @@
     return approach ? approach.bearing : null;
   }
 
-  // 🧭 2026-09-27 하단 안내 12시 기준 재정의(사용자 확정) — "지명(B점)
-  // 10m 전에서 정면으로 바라본 방향". GPS 실측 이동벡터가 아니라 GPX
-  // 트랙 자체가 B점으로 접근해 들어오는 방향(A→B 구간의 진입 방향)을
-  // 쓴다 — GPS 오차·정지 상태와 무관하게 항상 같은 값을 낸다는 것이
-  // 핵심 장점. B점보다 APPROACH_LOOKBACK_M만큼 앞선 GPX 지점을 찾아
-  // 그 지점→B점의 방위각을 반환한다.
-  const TURN_APPROACH_LOOKBACK_M = 10;
-  function computeApproachBearingIntoMilestone(section) {
-    const B = section.toMilestone;
-    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
-    const backDistance = section.isForward
-      ? B.distanceM - TURN_APPROACH_LOOKBACK_M
-      : B.distanceM + TURN_APPROACH_LOOKBACK_M;
-    const beforePt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, Math.max(0, backDistance));
-    if (!beforePt) return null;
-    return calculateBearing(beforePt.lat, beforePt.lon, B.trailLat, B.trailLon);
-  }
-
   // GPS 재시작/코스 재로드/백그라운드 복귀 시 이 기준점을 초기화해야,
   // 다음 updateGajaMap 호출이 "이전 세션의 근접 상태"와 비교해 부당하게
   // 억제되지 않고 무조건 재계산(회전 적용)한다.
@@ -3615,8 +3597,6 @@
     lastMovementVectorUpdatedAt = null;
     isReverseDirectionWarning = false;
     reverseWarningStreak = 0;
-    turnVectorLockedKey = null;
-    lockedTurnAngle = null;
   }
 
   // 🐛 2026-09-26 공통화(사용자 지적: "그럼 공동함수를 사용해? 아니면
@@ -4469,15 +4449,13 @@
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
-    // 🧭 2026-09-27 벡터 기반 화살표/하단 안내 — 새 코스이므로 이전
-    // 코스의 이동벡터·잠금 상태를 전부 초기화한다.
+    // 🧭 2026-09-27 벡터 기반 화살표 — 새 코스이므로 이전 코스의
+    // 이동벡터 상태를 전부 초기화한다.
     lastArrowVectorPos = null;
     lastMovementVectorHeading = null;
     lastMovementVectorUpdatedAt = null;
     isReverseDirectionWarning = false;
     reverseWarningStreak = 0;
-    turnVectorLockedKey = null;
-    lockedTurnAngle = null;
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -5456,44 +5434,23 @@
     const nextM = section.toMilestone;
     const distToNextM = Math.abs(nextM.distanceM - traveledDist);
 
-    // 🧭 2026-09-27 하단 안내 12시 기준 재정의(사용자 확정, 실기기
-    // 재현으로 수정: "삼자봉에서 9시 방향이어야 하는데 1시 방향으로
-    // 나왔다") — 처음엔 "캡처 시점 GPS 실측 이동벡터"를 12시로 썼는데,
-    // GPS가 갈림길 근처에서 튀거나 사용자가 거의 정지 상태면 실제
-    // 진행 방향과 다른 값이 캡처될 수 있었다. 12시는 "지명(B점) 10m
-    // 전에서 정면으로 바라본 방향" — GPS와 무관하게 GPX 트랙 자체가
-    // B점으로 접근하는 방향(computeApproachBearingIntoMilestone)이다.
-    // 이 값은 GPS 오차·정지 상태와 무관하게 항상 계산 가능하므로
-    // "최신 이동벡터 대기" 개념 자체가 필요 없다 — 50m 진입 즉시 확정.
-    // computeOutgoingBearingAtMilestone/mapRotationDeg는 절대 수정하지
-    // 않는다(회전 시스템 무변경 원칙).
+    // 🐛 2026-09-27 원복(사용자 확정: "하단 안내 관련해서 다 원복시켜")
+    // — v188~v193에서 시도한 "50m 진입 시 GPX 접근방향(또는 이동벡터)
+    // 으로 고정" 방식이, 큰 지명(예: 능동산) 도달 전에 작은 갈림길
+    // 마일스톤이 하나 끼어 있으면 그 갈림길과 큰 지명 각각에 대해
+    // 별도로 잠겨 "안내가 2번 발생하는 것처럼 보이는" 문제와 방향이
+    // 실제와 어긋나는 문제를 만들었다. v187 시점의 원래 방식(매 프레임
+    // outBearing과 mapRotationDeg의 실시간 상대각)으로 완전히 되돌린다
+    // — "몇 시 방향" 안내는 nextM(B)을 지난 뒤 실제로 꺾어 나갈 방향
+    // (computeOutgoingBearingAtMilestone)과, 지금 실제로 화면에 적용된
+    // mapRotationDeg(applySegmentRotation이 이벤트 시에만 갱신하는 값)
+    // 의 상대각으로 계산한다 — 회전과 안내가 같은 값(mapRotationDeg)
+    // 에서 파생되므로 화면과 어긋날 수 없다.
     const outBearing = computeOutgoingBearingAtMilestone(section);
-    const approachBearing = computeApproachBearingIntoMilestone(section);
-    const nextMKeyForLock = nextM.name + '@' + nextM.distanceM;
-
-    if (distToNextM <= TURN_VECTOR_LOCK_DISTANCE_M && turnVectorLockedKey !== nextMKeyForLock &&
-        approachBearing !== null && outBearing !== null) {
-      // approachBearing(B점 10m 전 GPX 지점 → B점 방향)을 12시 기준으로
-      // 놓고, outBearing(다음 GPX 구간 방향)과의 상대각을 계산해 고정한다.
-      lockedTurnAngle = shortestAngleDiff(outBearing, approachBearing);
-      turnVectorLockedKey = nextMKeyForLock;
-    }
-    if (turnVectorLockedKey !== nextMKeyForLock) {
-      lockedTurnAngle = null; // 이 갈림길에 대한 잠금 없음 — 폴백 사용
-    }
-
-    // 잠금이 있으면 mapRotationDeg 기반 계산을 아예 하지 않고
-    // lockedTurnAngle만 쓴다(잠긴 뒤에는 mapRotationDeg를 다시
-    // 참조하지 않는다는 원칙). 잠금이 없을 때만(아직 50m 밖이거나
-    // 캡처 대기 중) 기존 mapRotationDeg 기반 실시간 계산을 폴백으로
-    // 수행한다.
     let turnAngle = null;
     let turnLabel = null;
-    if (lockedTurnAngle !== null) {
-      turnAngle = lockedTurnAngle;
-      turnLabel = classifyTurnAngle(turnAngle);
-    } else if (outBearing !== null) {
-      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg); // 잠금 전 폴백(기존 동작 그대로)
+    if (outBearing !== null) {
+      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
       turnLabel = classifyTurnAngle(turnAngle);
     }
     // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
@@ -5574,11 +5531,6 @@
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; // 알람 지점(먼→가까운 순)
   let lastAlertedMilestoneKey = null;
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
-  // 🧭 2026-09-27 하단 안내 잠금(12시 기준: GPX 트랙의 B점 접근방향,
-  // GPS 이동벡터 아님) — updateNavigationToast 참고.
-  const TURN_VECTOR_LOCK_DISTANCE_M = 50;
-  let lockedTurnAngle = null;   // 고정된 turnAngle(각도)만 유지 — 라벨 문자열은 별도로 두지 않는다
-  let turnVectorLockedKey = null;
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
@@ -6181,9 +6133,6 @@
     // ===null)가 거짓이 되어, 새 재생의 첫 회전 적용 자체가 스킵된다
     // (updateGajaMapCore의 shouldApply 판정 참고) — resetGajaMapRotationState()
     // 로 완전히 초기화해 항상 새 재생 첫 프레임에 회전이 적용되게 한다.
-    // 이 함수가 하단 안내 잠금(turnVectorLockedKey/lockedTurnAngle,
-    // 사용자 지적: "경로 지나고 있는 하단 안내가 사라지지 않는다"의
-    // 원인이기도 했다)도 함께 초기화한다.
     resetGajaMapRotationState();
     // 🐛 2026-09-27 수정(사용자 재현: "시뮬레이션 중지 후 다시 시작하면
     // 캐시 정리가 전혀 안 돼") — currentMilestoneIdx/nextMilestoneIdx를
@@ -7168,17 +7117,6 @@
         // 여기서는 하단 알람용 기준점만 갱신한다.
         if (gajaMapResult) {
           updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
-        }
-
-        // 🧭 2026-09-27 벡터 기반 하단 안내 잠금 해제 — 구간 전환(노드점
-        // 통과 확정)이 이번 프레임에 일어났으면, 그 갈림길에 대한 잠금을
-        // 즉시 해제한다. updateNavigationToast가 이 프레임 안에서 이미
-        // 새 section/nextM 기준으로 호출되므로, 여기서 리셋해두면 바로
-        // 아래 호출에서 새 갈림길 기준으로 재판단된다(이전 갈림길의
-        // 낡은 각도가 한 프레임도 노출되지 않는다).
-        if (gajaMapResult && gajaMapResult.advanced) {
-          turnVectorLockedKey = null;
-          lockedTurnAngle = null;
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
