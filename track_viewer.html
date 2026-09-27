@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v193';
+    const CACHE_NAME = 'gaja-trail-cache-v194';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_sim_speed_proportional_rotation_trigger';
+      const APP_BUILD = 'v20260927_revert_simulation_to_v187_gps_mode_untouched';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1260,14 +1260,11 @@
   // 2000ms로 낮췄다 — 실제 도보 픽스 간격(보통 1초 내외)을 고려하면
   // 2초도 "몇 픽스 연속 3m 미만 이동"을 충분히 허용하는 값이다.
   const ARROW_VECTOR_MAX_STALE_MS = 2000;
-  // 시뮬레이션 전용 사본 — 실제 GPS 경로의 위 변수들과 완전히 분리해,
-  // 어느 한쪽을 고쳐도 다른 쪽에 영향을 주지 않는다(기존 simMoveDirectionSign
-  // 분리 관례 그대로).
-  let simLastArrowVectorPos = null;
-  let simLastMovementVectorHeading = null;
-  let simLastMovementVectorUpdatedAt = null;
-  let simIsReverseDirectionWarning = false;
-  let simReverseWarningStreak = 0;
+  // 🐛 2026-09-27 삭제(사용자 지시: "GPS 모드는 손대지 말고 시뮬레이션은
+  // 원복시켜") — 시뮬레이션 화살표를 이동벡터 기반으로 재현하려고 둔
+  // sim* 사본 상태들이었는데, renderSimFrame을 v187 방식(computeArrowHeadingForSim)
+  // 으로 되돌리며 더 이상 쓰이지 않는다. GPS 모드의 lastMovementVectorHeading
+  // 등은 이 삭제와 무관하게 전혀 손대지 않는다.
   let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태
   let guideLine = null; // 등산로 연결 점선 가이드
 
@@ -3510,22 +3507,17 @@
   // 트리거를 걸고, 구간 변경(이벤트①)·B점 근접(이벤트②)은 "경로 변경점
   // 에서 회전하기" 요구사항 그대로 GPS와 동일하게 유지한다.
   const FAR_STATE_REFRESH_DISTANCE_SIM_M = 500;
-  // 🐛 2026-09-27 수정(사용자 지적: "500m가 누적 거리값이면 배속이
-  // 빠른 경우는 지도 회전이 아주 빠르겠지. 배속에 의해 누적거리값이
-  // 증가량이 틀리니 그것을 고려해야지. 배속이 있는 이유가 있잖아") —
-  // 500m는 "실제 걸은 거리" 기준이라 값 자체는 배속과 무관하게
-  // 고정이었지만, 그 500m를 채우는 데 필요한 프레임 수는 배속에
-  // 반비례한다(0.5x: 2m/프레임 → 250프레임, 5x: 80m/프레임 → 약
-  // 6프레임). 배속이 높을수록 같은 500m가 훨씬 짧은 화면 시간 안에
-  // 채워져 회전이 체감상 훨씬 잦고 빠르게 일어난다 — 배속을 두는
-  // 목적(짧은 산행/긴 산행을 각자 편한 속도로 훑어보기) 자체가
-  // 깨진다. 트리거 거리 자체를 배속에 비례해서 늘려, 배속이 얼마든
-  // "재계산까지 걸리는 프레임 수"가 비슷하게 유지되도록 한다
-  // (1배속 기준 500m를 그대로 두고, 그 외 배속은 simSpeed에 비례).
+  // 🐛 2026-09-27 원복(사용자 정정: "배속이 빨라지면 누적거리도
+  // 빨라지니 경로 원점 잡는게 빨라지고.. 그래야 하고") — 직전 커밋에서
+  // "배속이 빠르면 회전이 체감상 잦아지니 트리거 거리를 배속에 비례해
+  // 늘려야 한다"고 판단해 수정했는데, 이는 사용자 의도와 정반대였다.
+  // 배속이 빠르면 누적거리(routeDistance)가 실제로 더 빨리 늘어나고,
+  // 그에 따라 500m 트리거도 더 빨리(화면 시간 기준으로) 도달하는 것이
+  // "배속에 맞게 코스 진행을 빠르게 보여준다"는 배속 기능의 원래
+  // 목적과 정확히 일치하는 정상 동작이다 — 이것 자체는 문제가 아니었다.
+  // 500m 고정값으로 원복한다.
   function getFarStateRefreshDistanceM() {
-    if (!isSimulationMode) return FAR_STATE_REFRESH_DISTANCE_M;
-    const speed = (typeof simSpeed === 'number' && simSpeed > 0) ? simSpeed : 1;
-    return FAR_STATE_REFRESH_DISTANCE_SIM_M * speed;
+    return isSimulationMode ? FAR_STATE_REFRESH_DISTANCE_SIM_M : FAR_STATE_REFRESH_DISTANCE_M;
   }
   let sectionApproachState = null; // null(구간 미확정) | 'far' | 'near' — 직전 프레임의 근접 상태(이벤트 감지용)
   let lastAppliedFarBearing = null; // 원거리 상태에서 마지막으로 실제 적용된 방향(드리프트 비교 기준)
@@ -4486,11 +4478,6 @@
     reverseWarningStreak = 0;
     turnVectorLockedKey = null;
     lockedTurnAngle = null;
-    simLastArrowVectorPos = null;
-    simLastMovementVectorHeading = null;
-    simLastMovementVectorUpdatedAt = null;
-    simIsReverseDirectionWarning = false;
-    simReverseWarningStreak = 0;
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -5959,6 +5946,16 @@
     const lat = pt.lat;
     const lon = pt.lon;
 
+    // 🐛 2026-09-27 원복(사용자 지시: "GPS 모드는 손대지 말라고 했잖아
+    // .. 시뮬레이션만 원복시켜") — v188에서 화살표를 이동벡터 기반으로
+    // 바꾸며 시뮬레이션(renderSimFrame)에도 같은 로직을 이식했는데,
+    // 그 뒤로 시뮬레이션에서 500m 회전/하단 안내/노드점 통과 표시가
+    // 전부 어긋나는 "총체적 난국"이 발생했다. GPS 모드 코드
+    // (handleGpsPositionUpdate)는 그대로 두고, 시뮬레이션 화살표
+    // 계산만 v187 시점의 방식(computeArrowHeadingForSim, GPX
+    // lookahead 기반)으로 되돌린다 — 이동벡터/역방향 경고 관련 코드는
+    // 시뮬레이션에서 전부 제거.
+    //
     // 🧭 시뮬레이션 전용 매칭/방향 함수 사용(nearestPointOnTrailForSim/
     // computeArrowHeadingForSim, 위 정의부 주석 참고) — 실제 GPS가 쓰는
     // nearestPointOnTrail/moveDirectionSign과 완전히 분리된 상태
@@ -5969,48 +5966,7 @@
     updateTrackDirectionForSim(simNearest.index); // 시뮬레이션 전용 상태만 갱신(simIsReversingOnTrail) — 실제 GPS의 isReversingOnTrail은 안 건드림
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-    const simGpxProgressHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
-
-    // 🧭 2026-09-27 벡터 기반 화살표 — 실제 GPS 경로와 동일한 원칙을
-    // 시뮬레이션 전용 상태(simLastArrowVectorPos 등)로 재현한다. 시뮬레이션은
-    // GPX 원본 좌표를 오차 없이 재생하므로 배속이 커도 이동벡터 자체는
-    // 항상 정확하다 — 왕복/역방향 스크럽(사용자가 스크럽바를 뒤로 끄는 것)
-    // 재현에 이 로직이 그대로 유효하다.
-    let simMovementHeading = null;
-    if (simLastArrowVectorPos) {
-      simMovementHeading = computeMovementVectorHeading(simLastArrowVectorPos.lat, simLastArrowVectorPos.lon, lat, lon);
-      if (simMovementHeading !== null) {
-        simLastMovementVectorHeading = simMovementHeading;
-        simLastMovementVectorUpdatedAt = Date.now();
-        simLastArrowVectorPos = { lat, lon };
-      }
-    } else {
-      simLastArrowVectorPos = { lat, lon };
-    }
-    const simArrowHeading = simLastMovementVectorHeading !== null ? simLastMovementVectorHeading : simGpxProgressHeading;
-    // 실제 GPS 경로와 동일한 최신성 검사 + 연속확인 스트릭
-    // (REVERSE_WARNING_CONFIRM_STREAK)을 시뮬레이션 전용 카운터로 재현한다.
-    const simIsArrowVectorFresh = simLastMovementVectorUpdatedAt !== null &&
-      (Date.now() - simLastMovementVectorUpdatedAt) <= ARROW_VECTOR_MAX_STALE_MS;
-    const simRawReversed = simIsArrowVectorFresh && isMovementReversed(simLastMovementVectorHeading, simGpxProgressHeading);
-    if (simRawReversed) {
-      simReverseWarningStreak++;
-      if (simReverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
-        simIsReverseDirectionWarning = true;
-      }
-    } else {
-      simReverseWarningStreak = 0;
-      simIsReverseDirectionWarning = false;
-    }
-
-    // 🐛 2026-09-27 삭제(사용자 지적: "시뮬레이션은 따로 관리 하자고
-    // 안 했나?") — 하단 안내 12시 기준을 GPX 접근방향
-    // (computeApproachBearingIntoMilestone)으로 재설계한 뒤에도 이
-    // 블록이 남아 실제 GPS 전용 변수 lastMovementVectorHeading을
-    // 시뮬레이션 프레임에서 계속 덮어쓰고 있었다 — GPS/시뮬레이션을
-    // 완전히 분리한다는 원칙 위반이었고, 지금은 하단 안내 잠금이 이
-    // 변수를 전혀 참조하지 않으므로(GPX 접근방향만 씀) 애초에 불필요한
-    // 코드였다. 완전히 제거한다.
+    const simArrowHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -6027,14 +5983,6 @@
       simMarker.setLatLng([lat, lon]);
     }
     if (simArrowHeading !== null) renderGpsArrow(simArrowHeading);
-    {
-      const marker = simMarker;
-      if (marker && marker.getElement) {
-        const el = marker.getElement();
-        const container = el && el.querySelector('.gps-marker-container');
-        if (container) container.classList.toggle('is-warning', isOffTrailState || simIsReverseDirectionWarning);
-      }
-    }
 
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
@@ -6066,13 +6014,6 @@
 
     if (simGajaMapResult) {
       updateSegmentRotationTrigger(simSection, simGajaMapResult.advanced, simGajaMapResult.arrivedMilestone);
-    }
-
-    // 🧭 2026-09-27 벡터 기반 하단 안내 잠금 해제(실제 GPS 경로와 동일
-    // 원칙) — 시뮬레이션도 구간 전환 시 잠금을 즉시 해제한다.
-    if (simGajaMapResult && simGajaMapResult.advanced) {
-      turnVectorLockedKey = null;
-      lockedTurnAngle = null;
     }
 
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
@@ -6244,14 +6185,6 @@
     // 사용자 지적: "경로 지나고 있는 하단 안내가 사라지지 않는다"의
     // 원인이기도 했다)도 함께 초기화한다.
     resetGajaMapRotationState();
-    // 🧭 2026-09-27 벡터 기반 화살표(시뮬레이션 전용) — 이전 재생의
-    // 이동벡터가 남아있으면 새 재생 시작점에서 엉뚱한 방향으로 보일 수
-    // 있다.
-    simLastArrowVectorPos = null;
-    simLastMovementVectorHeading = null;
-    simLastMovementVectorUpdatedAt = null;
-    simIsReverseDirectionWarning = false;
-    simReverseWarningStreak = 0;
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
     // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
     // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
