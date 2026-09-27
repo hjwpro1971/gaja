@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v188';
+    const CACHE_NAME = 'gaja-trail-cache-v189';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_vector_based_arrow_and_turn_lock';
+      const APP_BUILD = 'v20260927_remove_distance_from_turn_guidance';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5616,9 +5616,11 @@
       // "9시 방향 (좌회전)"처럼 clockDir.clock에 괄호로 붙은 회전 설명은
       // "9시방향으로"라는 조사 자체가 이미 회전 의미를 담고 있어 중복
       // 지시로 들린다는 사용자 피드백(2026-09-19) — 괄호 부분은 버리고
-      // "OO에서 X시방향으로(NNm앞)" 형식으로만 표기한다.
+      // "OO에서 X시방향으로" 형식으로만 표기한다.
+      // 🐛 2026-09-27 수정(사용자 지시: "거리는 안 나오게 해줘. 신뢰가
+      // 안 가는 거리야") — 남은 거리(distToNextM) 표기를 완전히 제거.
       clockOnly = clockDir.clock.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, '');
-      const label = `${nextM.name}에서 ${clockOnly}으로(${Math.round(distToNextM)}m앞)`;
+      const label = `${nextM.name}에서 ${clockOnly}으로`;
       // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
       // 그대로 넘긴다 — 화면이 이미 nextM 방향(mapRotationDeg)으로 맞춰진
       // 상태이므로, 이 값은 화면 기준 "몇 시로 꺾어야 하는지"와 정확히
@@ -5691,9 +5693,10 @@
   // 산행(GPS)은 실제 이동 속도라 이 문제가 없으므로 그대로 3단계 유지).
   function speakTurnApproach(nextM, threshold, clockOnly) {
     if (isSimulationMode && threshold !== 50) return;
-    const text = clockOnly
-      ? `${threshold}미터 앞 ${clockOnly}`
-      : `${nextM.name} ${threshold}미터 앞`;
+    // 🐛 2026-09-27 수정(사용자 지시: "거리는 안 나오게 해줘") — 음성
+    // 안내에서도 거리(threshold, 50/30/10m)를 읽지 않는다. threshold는
+    // 여전히 발화 시점 트리거로만 쓰고 문구에는 포함하지 않는다.
+    const text = clockOnly ? clockOnly : nextM.name;
     speakGuidance(text);
   }
 
