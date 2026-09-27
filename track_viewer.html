@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v196';
+    const CACHE_NAME = 'gaja-trail-cache-v197';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_bottom_guidance_lock_revert';
+      const APP_BUILD = 'v20260927_bottom_guidance_value_snapshot_lock';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3716,6 +3716,9 @@
     resetGajaMapRotationState();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
+    lockedSnapshotKey = null;
+    lockedSnapshotTurnAngle = null;
+    lockedSnapshotTurnLabel = null;
 
     // 구간을 미확정(-1) 상태로 만들어야 다음 GPS 픽스가 getCurrentSection()
     // ===null을 보고 실제 위치 기준으로 재탐색한다(0/1로 리셋하면
@@ -4449,6 +4452,9 @@
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
+    lockedSnapshotKey = null; // 새 코스이므로 하단 안내 고정 스냅샷도 초기화
+    lockedSnapshotTurnAngle = null;
+    lockedSnapshotTurnLabel = null;
     // 🧭 2026-09-27 벡터 기반 화살표 — 새 코스이므로 이전 코스의
     // 이동벡터 상태를 전부 초기화한다.
     lastArrowVectorPos = null;
@@ -5531,6 +5537,20 @@
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; // 알람 지점(먼→가까운 순)
   let lastAlertedMilestoneKey = null;
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
+  // 🐛 2026-09-27 추가(사용자 지시: "50m에서 나온 하단 화살표와 안내
+  // 토스트를 그 지점 통과 판정날 때까지 화면에 고정하고 싶어") — 방향
+  // 계산 로직(v187, outBearing과 mapRotationDeg의 실시간 상대각) 자체는
+  // 그대로 두되, 이 갈림길(key)에 처음 진입해 계산한 turnAngle/turnLabel
+  // "값"만 스냅샷으로 떠서 통과(advanced)까지 그대로 재사용한다. GPS가
+  // 50m/30m/10m 등 여러 픽스에 걸쳐 매번 재계산·재표시되면서 화면이 최대
+  // 3번 다시 그려지는 것처럼 보이던 것을 막는다 — 이전에 폐기했던 "50m
+  // 진입 시점 이동벡터/GPX 접근방향으로 방향 자체를 재계산해 고정"하는
+  // 방식과는 다르다(그 방식은 계산 로직 자체를 바꿨다가 실제와 어긋나는
+  // 문제가 있었다). key가 바뀌면(다음 갈림길로 넘어가면) 자동으로 풀리고
+  // 새로 스냅샷을 뜬다.
+  let lockedSnapshotKey = null;
+  let lockedSnapshotTurnAngle = null;
+  let lockedSnapshotTurnLabel = null;
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
@@ -5550,8 +5570,28 @@
         lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
         remainingBeepThresholds = null;
       }
+      // hideThreshold를 넘어 완전히 멀어진 시점이므로, 같은 key라도(예:
+      // GPS가 흔들려 잠깐 벗어났다가 다시 이 갈림길로 재진입하는 경우)
+      // 스냅샷은 무조건 리셋한다 — 그래야 재진입 시 그 시점 값으로 다시
+      // 잠긴다("key !== lockedSnapshotKey"로만 걸면 같은 갈림길에
+      // 재진입할 때 낡은 스냅샷이 그대로 남는다).
+      lockedSnapshotKey = null;
+      lockedSnapshotTurnAngle = null;
+      lockedSnapshotTurnLabel = null;
       return;
     }
+
+    // 이 갈림길(key)에 처음 진입한 프레임이면 지금 계산된 값을 스냅샷으로
+    // 고정하고, 이후 같은 key인 동안은 호출부(updateNavigationToast)가
+    // 매 프레임 새로 계산해 넘긴 nextM.turnAngle/turnLabel을 버리고 이
+    // 스냅샷 값으로 덮어쓴다 — 통과(advanced)로 key가 바뀌기 전까지 화면
+    // 표시가 흔들리지 않는다.
+    if (key !== lockedSnapshotKey) {
+      lockedSnapshotKey = key;
+      lockedSnapshotTurnAngle = nextM.turnAngle;
+      lockedSnapshotTurnLabel = nextM.turnLabel;
+    }
+    nextM = { ...nextM, turnAngle: lockedSnapshotTurnAngle, turnLabel: lockedSnapshotTurnLabel };
 
     // 🧭 "진짜 직진(5도 미만)"과 "회전각 계산 실패(turnAngle=null)"를
     // 구분한다(2026-09-21, 사용자 지시: "GPX 맵에 지명이 있으면 의도된
