@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v187';
+    const CACHE_NAME = 'gaja-trail-cache-v188';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260926_rotation_only_on_node_passage';
+      const APP_BUILD = 'v20260927_vector_based_arrow_and_turn_lock';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1230,6 +1230,44 @@
   let isLowPowerPolling = false;
   let lowPowerPollTimerId = null;
   let lastKnownPos = null;
+  // 🧭 2026-09-27 벡터 기반 화살표(사용자 실측 재현: "화살표가 항상
+  // 화면 기준 12시를 향해서 내가 역방향으로 걷는지 알 수 없다") — GPX
+  // 진행방향(computeArrowHeadingV2)이 아니라 "직전 GPS → 현재 GPS"
+  // 실측 이동벡터로 화살표를 회전시킨다. computeArrowHeadingV2는
+  // 삭제하지 않고 역방향 판정의 비교 기준선으로 계속 사용한다.
+  let lastArrowVectorPos = null;        // 마지막으로 "유효 이동"으로 인정된 GPS 좌표
+  let lastMovementVectorHeading = null; // 마지막 이동벡터 절대 방위각(진북 기준)
+  let lastMovementVectorUpdatedAt = null; // 위 값이 갱신된 시각(Date.now()) — 하단 안내 잠금의 "최신 벡터" 판정용
+  let isReverseDirectionWarning = false;
+  const ARROW_VECTOR_MIN_MOVE_M = 3; // 이 미만 이동은 GPS 흔들림으로 판단, 직전 방향 유지
+  const ARROW_REVERSE_ANGLE_THRESHOLD_DEG = 135; // 이동벡터가 GPX 진행방향과 이 각도 이상 벌어지면 역방향 경고
+  // 🐛 2026-09-27 추가(계룡산 실측 GPX 검증으로 발견): 정상/전망대 등
+  // GPX 마일스톤 간격이 매우 촘촘한(1~3m) 구간에서는 사용자가 좁게
+  // 서성이는 동안(이동벡터는 3m 미만이라 안정적으로 유지) GPX
+  // lookahead(computeArrowHeadingV2)가 급격히 바뀌면서 순간적으로
+  // 135도 이상 벌어지는 오탐이 발생했다. 이탈판정(ENTER_CONFIRM_STREAK)
+  // 과 동일한 원칙으로, N픽스 연속 확인돼야만 실제 역방향으로 확정한다.
+  const REVERSE_WARNING_CONFIRM_STREAK = 3;
+  let reverseWarningStreak = 0;
+  // 🐛 2026-09-27 추가(남덕유산/계룡산 실측 GPX 검증으로 발견): 정상 등
+  // GPX가 촘촘하게(1m 미만 간격) 기록된 구간에서 사용자가 실제로
+  // 제자리에 서있으면(이동벡터가 오래 갱신 안 됨) GPX lookahead만
+  // 계속 바뀌어 역방향 오탐이 스트릭으로도 안 걸러지는 경우가 있었다.
+  // 이동벡터 자체가 최신이 아니면("사용자가 사실상 정지 상태") 역방향
+  // 판정 자체를 하지 않는다 — 하단 안내 잠금의 최신성 개념과 동일.
+  // ⚠️ 처음엔 5000ms로 뒀으나, 실측 검증 결과 정상 서성임 구간에서
+  // 4.5초 만에도 GPX lookahead가 135도 이상 벌어지는 것이 확인돼
+  // 2000ms로 낮췄다 — 실제 도보 픽스 간격(보통 1초 내외)을 고려하면
+  // 2초도 "몇 픽스 연속 3m 미만 이동"을 충분히 허용하는 값이다.
+  const ARROW_VECTOR_MAX_STALE_MS = 2000;
+  // 시뮬레이션 전용 사본 — 실제 GPS 경로의 위 변수들과 완전히 분리해,
+  // 어느 한쪽을 고쳐도 다른 쪽에 영향을 주지 않는다(기존 simMoveDirectionSign
+  // 분리 관례 그대로).
+  let simLastArrowVectorPos = null;
+  let simLastMovementVectorHeading = null;
+  let simLastMovementVectorUpdatedAt = null;
+  let simIsReverseDirectionWarning = false;
+  let simReverseWarningStreak = 0;
   let isCurrentlyStopped = false; // GpsFilterEngine이 판정한 최신 정지 상태
   let guideLine = null; // 등산로 연결 점선 가이드
 
@@ -1387,7 +1425,10 @@
   // 가볍다 — updateOffTrailHysteresis/updateTrackDirection이 상태를
   // 바꿀 때마다 호출한다.
   function updateGpsMarkerWarningStyle() {
-    const shouldWarn = isOffTrailState || isReversingOnTrail;
+    // 🧭 2026-09-27: isReversingOnTrail(N/N+1 기반, 폐기되어 항상
+    // false)을 이동벡터 기반 isReverseDirectionWarning으로 교체 —
+    // 실제로 역방향 경고가 동작하는 유일한 조건이 된다.
+    const shouldWarn = isOffTrailState || isReverseDirectionWarning;
     const marker = userGpsMarker || simMarker;
     if (!marker || !marker.getElement) return;
     const el = marker.getElement();
@@ -3214,6 +3255,21 @@
     return calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
   }
 
+  // 🧭 2026-09-27 벡터 기반 화살표 — 순수 함수 2개(부작용 없음, 상태
+  // 대입 안 함). 이동벡터(직전 GPS→현재 GPS)와 GPX 진행벡터
+  // (computeArrowHeadingV2 결과)를 비교해 역방향 여부만 판정한다.
+  function computeMovementVectorHeading(prevLat, prevLon, currLat, currLon) {
+    if (prevLat === null || prevLat === undefined || currLat === null || currLat === undefined) return null;
+    const movedM = haversineMeters(prevLat, prevLon, currLat, currLon);
+    if (movedM < ARROW_VECTOR_MIN_MOVE_M) return null; // 흔들림 — 직전 방향 유지 신호
+    return calculateBearing(prevLat, prevLon, currLat, currLon);
+  }
+
+  function isMovementReversed(movementHeadingDeg, gpxProgressHeadingDeg) {
+    if (movementHeadingDeg === null || gpxProgressHeadingDeg === null) return false;
+    return Math.abs(shortestAngleDiff(movementHeadingDeg, gpxProgressHeadingDeg)) >= ARROW_REVERSE_ANGLE_THRESHOLD_DEG;
+  }
+
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
   // 스플라인으로 점을 촘촘히 보간한다(#3). GPS 매칭/거리 계산에 쓰는
   // 원본 points/cumulativeDistances는 절대 건드리지 않는다 — 이 함수의
@@ -3532,6 +3588,17 @@
     lastAppliedFarBearing = null;
     farDriftStreak = 0;
     lastAppliedFarRouteDistance = null;
+    // 🧭 2026-09-27: GPS를 새로 잡는 시점이므로 이전 위치에서 이어진
+    // 이동벡터 히스토리도 함께 무효화한다 — 그대로 두면 재획득 전
+    // 위치와 재획득 후 위치 사이의 "이동벡터"가 실제 걸음과 무관한
+    // 엉뚱한 방향(예: GPS가 순간이동)을 화살표에 반영할 수 있다.
+    lastArrowVectorPos = null;
+    lastMovementVectorHeading = null;
+    lastMovementVectorUpdatedAt = null;
+    isReverseDirectionWarning = false;
+    reverseWarningStreak = 0;
+    turnVectorLockedKey = null;
+    lockedTurnAngle = null;
   }
 
   // 🐛 2026-09-26 공통화(사용자 지적: "그럼 공동함수를 사용해? 아니면
@@ -4384,6 +4451,20 @@
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
+    // 🧭 2026-09-27 벡터 기반 화살표/하단 안내 — 새 코스이므로 이전
+    // 코스의 이동벡터·잠금 상태를 전부 초기화한다.
+    lastArrowVectorPos = null;
+    lastMovementVectorHeading = null;
+    lastMovementVectorUpdatedAt = null;
+    isReverseDirectionWarning = false;
+    reverseWarningStreak = 0;
+    turnVectorLockedKey = null;
+    lockedTurnAngle = null;
+    simLastArrowVectorPos = null;
+    simLastMovementVectorHeading = null;
+    simLastMovementVectorUpdatedAt = null;
+    simIsReverseDirectionWarning = false;
+    simReverseWarningStreak = 0;
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -5362,19 +5443,50 @@
     const nextM = section.toMilestone;
     const distToNextM = Math.abs(nextM.distanceM - traveledDist);
 
-    // "몇 시 방향" — nextM(B)을 지난 뒤 실제로 꺾어 나갈 방향
-    // (computeOutgoingBearingAtMilestone, computeSectionApproachBearing과
-    // 동일한 lookahead 원리)과, 지금 실제로 화면에 적용된 mapRotationDeg
-    // (신 시스템, applySegmentRotation이 이벤트 시에만 갱신하는 바로 그
-    // 값)의 상대각으로 계산한다 — 회전과 안내가 같은 값(mapRotationDeg)
-    // 에서 파생되므로 화면과 어긋날 수 없다(예전 구조는 findNextRotationTarget
-    // 이 독자적으로 계산한 outBearing과 mapRotationDeg를 섞어 "10시
-    // 방향" 같은 어긋난 안내가 나왔다).
+    // 🧭 2026-09-27 벡터 기반 하단 안내(사용자 재현: "1시→2시→다시1시
+    // 처럼 흔들린다") — 갈림길 50m 이내에서 처음 캡처에 성공한 순간의
+    // 실제 이동벡터를 "12시 기준"으로 고정하고, 그 갈림길을 통과
+    // 확정할 때까지 절대 재계산하지 않는다. 여기서 "12시"는 북쪽도
+    // 지도 화면 방향도 아니다 — 캡처 시점 사용자의 실제 이동벡터
+    // 그 자체가 기준선이다. 잠금 전(아직 50m 밖이거나 캡처 대기 중)
+    // 에는 기존 방식(outBearing 대비 mapRotationDeg 상대각)을 폴백으로
+    // 쓴다. computeOutgoingBearingAtMilestone/mapRotationDeg는 절대
+    // 수정하지 않는다(회전 시스템 무변경 원칙).
     const outBearing = computeOutgoingBearingAtMilestone(section);
+    const nextMKeyForLock = nextM.name + '@' + nextM.distanceM;
+
+    // 50m 이내 + 아직 이 갈림길을 잠그지 못한 동안은 매 프레임 캡처를
+    // 시도한다. 이동벡터가 최신(TURN_VECTOR_MAX_STALE_MS 이내 갱신)일
+    // 때만 실제로 잠긴다 — 한 번 성공하면 turnVectorLockedKey가 재시도
+    // 자체를 완전히 막는다(GPS 오차로 경계를 오가도 문제없음).
+    const hasFreshMovementVector = lastMovementVectorHeading !== null &&
+      lastMovementVectorUpdatedAt !== null &&
+      (Date.now() - lastMovementVectorUpdatedAt) <= TURN_VECTOR_MAX_STALE_MS;
+
+    if (distToNextM <= TURN_VECTOR_LOCK_DISTANCE_M && turnVectorLockedKey !== nextMKeyForLock &&
+        hasFreshMovementVector && outBearing !== null) {
+      // lastMovementVectorHeading(이 순간의 실제 이동벡터)을 12시
+      // 기준으로 놓고, outBearing(다음 GPX 구간 방향)과의 상대각을
+      // 계산해 고정한다.
+      lockedTurnAngle = shortestAngleDiff(outBearing, lastMovementVectorHeading);
+      turnVectorLockedKey = nextMKeyForLock;
+    }
+    if (turnVectorLockedKey !== nextMKeyForLock) {
+      lockedTurnAngle = null; // 이 갈림길에 대한 잠금 없음 — 폴백 사용
+    }
+
+    // 잠금이 있으면 mapRotationDeg 기반 계산을 아예 하지 않고
+    // lockedTurnAngle만 쓴다(잠긴 뒤에는 mapRotationDeg를 다시
+    // 참조하지 않는다는 원칙). 잠금이 없을 때만(아직 50m 밖이거나
+    // 캡처 대기 중) 기존 mapRotationDeg 기반 실시간 계산을 폴백으로
+    // 수행한다.
     let turnAngle = null;
     let turnLabel = null;
-    if (outBearing !== null) {
-      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
+    if (lockedTurnAngle !== null) {
+      turnAngle = lockedTurnAngle;
+      turnLabel = classifyTurnAngle(turnAngle);
+    } else if (outBearing !== null) {
+      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg); // 잠금 전 폴백(기존 동작 그대로)
       turnLabel = classifyTurnAngle(turnAngle);
     }
     // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
@@ -5455,6 +5567,11 @@
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; // 알람 지점(먼→가까운 순)
   let lastAlertedMilestoneKey = null;
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
+  // 🧭 2026-09-27 벡터 기반 하단 안내 잠금 — updateNavigationToast 참고.
+  const TURN_VECTOR_LOCK_DISTANCE_M = 50;
+  const TURN_VECTOR_MAX_STALE_MS = 5000; // 이보다 오래된 이동벡터는 "최신"으로 보지 않는다
+  let lockedTurnAngle = null;   // 고정된 turnAngle(각도)만 유지 — 라벨 문자열은 별도로 두지 않는다
+  let turnVectorLockedKey = null;
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
@@ -5829,7 +5946,48 @@
     updateTrackDirectionForSim(simNearest.index); // 시뮬레이션 전용 상태만 갱신(simIsReversingOnTrail) — 실제 GPS의 isReversingOnTrail은 안 건드림
     const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
-    const simArrowHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
+    const simGpxProgressHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
+
+    // 🧭 2026-09-27 벡터 기반 화살표 — 실제 GPS 경로와 동일한 원칙을
+    // 시뮬레이션 전용 상태(simLastArrowVectorPos 등)로 재현한다. 시뮬레이션은
+    // GPX 원본 좌표를 오차 없이 재생하므로 배속이 커도 이동벡터 자체는
+    // 항상 정확하다 — 왕복/역방향 스크럽(사용자가 스크럽바를 뒤로 끄는 것)
+    // 재현에 이 로직이 그대로 유효하다.
+    let simMovementHeading = null;
+    if (simLastArrowVectorPos) {
+      simMovementHeading = computeMovementVectorHeading(simLastArrowVectorPos.lat, simLastArrowVectorPos.lon, lat, lon);
+      if (simMovementHeading !== null) {
+        simLastMovementVectorHeading = simMovementHeading;
+        simLastMovementVectorUpdatedAt = Date.now();
+        simLastArrowVectorPos = { lat, lon };
+      }
+    } else {
+      simLastArrowVectorPos = { lat, lon };
+    }
+    const simArrowHeading = simLastMovementVectorHeading !== null ? simLastMovementVectorHeading : simGpxProgressHeading;
+    // 실제 GPS 경로와 동일한 최신성 검사 + 연속확인 스트릭
+    // (REVERSE_WARNING_CONFIRM_STREAK)을 시뮬레이션 전용 카운터로 재현한다.
+    const simIsArrowVectorFresh = simLastMovementVectorUpdatedAt !== null &&
+      (Date.now() - simLastMovementVectorUpdatedAt) <= ARROW_VECTOR_MAX_STALE_MS;
+    const simRawReversed = simIsArrowVectorFresh && isMovementReversed(simLastMovementVectorHeading, simGpxProgressHeading);
+    if (simRawReversed) {
+      simReverseWarningStreak++;
+      if (simReverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
+        simIsReverseDirectionWarning = true;
+      }
+    } else {
+      simReverseWarningStreak = 0;
+      simIsReverseDirectionWarning = false;
+    }
+
+    // 🧭 하단 안내(updateNavigationToast)는 시뮬레이션/실제 GPS 공용
+    // 함수라 lastMovementVectorHeading(실제 GPS 전용 화살표 변수와
+    // 이름은 같지만 하단 안내 잠금이 참조하는 그 변수)을 시뮬레이션
+    // 프레임에서도 함께 갱신해야 50m 잠금이 시뮬레이션에서도 동작한다.
+    if (simMovementHeading !== null) {
+      lastMovementVectorHeading = simMovementHeading;
+      lastMovementVectorUpdatedAt = Date.now();
+    }
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -5846,6 +6004,14 @@
       simMarker.setLatLng([lat, lon]);
     }
     if (simArrowHeading !== null) renderGpsArrow(simArrowHeading);
+    {
+      const marker = simMarker;
+      if (marker && marker.getElement) {
+        const el = marker.getElement();
+        const container = el && el.querySelector('.gps-marker-container');
+        if (container) container.classList.toggle('is-warning', isOffTrailState || simIsReverseDirectionWarning);
+      }
+    }
 
     lastKnownPos = { lat, lon };
     isCurrentlyStopped = false;
@@ -5877,6 +6043,13 @@
 
     if (simGajaMapResult) {
       updateSegmentRotationTrigger(simSection, simGajaMapResult.advanced, simGajaMapResult.arrivedMilestone);
+    }
+
+    // 🧭 2026-09-27 벡터 기반 하단 안내 잠금 해제(실제 GPS 경로와 동일
+    // 원칙) — 시뮬레이션도 구간 전환 시 잠금을 즉시 해제한다.
+    if (simGajaMapResult && simGajaMapResult.advanced) {
+      turnVectorLockedKey = null;
+      lockedTurnAngle = null;
     }
 
     // ⚠️ updateNavigationToast를 지도뷰 갱신보다 먼저 호출한다 —
@@ -6036,6 +6209,16 @@
     simMoveDirectionSign = 1;
     simLastMoveDirectionIdx = null;
     resetSimTrackDirectionState(); // 시뮬레이션 전용 isReversingOnTrail(simIsReversingOnTrail)도 함께 초기화 — 실제 GPS 상태는 건드리지 않음
+    // 🧭 2026-09-27 벡터 기반 화살표(시뮬레이션 전용) — 이전 재생의
+    // 이동벡터가 남아있으면 새 재생 시작점에서 엉뚱한 방향으로 보일 수
+    // 있다. 하단 안내 잠금(turnVectorLockedKey 등)은 실제 GPS와 공용
+    // 상태이므로 여기서 별도로 건드리지 않는다(구간이 리셋되지 않는
+    // 한 이어서 재생하는 것이 자연스러움).
+    simLastArrowVectorPos = null;
+    simLastMovementVectorHeading = null;
+    simLastMovementVectorUpdatedAt = null;
+    simIsReverseDirectionWarning = false;
+    simReverseWarningStreak = 0;
     // createGpsIconHtml은 showHeadingArrow가 true일 때만 방향 화살표를
     // 그린다 — 실제 GPS(startGpsTracking)만 이 값을 켰고 시뮬레이션은
     // 전혀 건드리지 않아, 파란 점만 보이고 방향 콘이 안 보이던
@@ -6940,12 +7123,65 @@
         // 한 픽스에 두 번 부르면 maybeAdvanceSection(구간 전진 판정)이
         // 이중으로 평가되어 짧은 구간에서 한 픽스에 두 구간을 건너뛸
         // 위험이 있으므로 반드시 한 번만 호출한다.
+        // 🧭 2026-09-27 벡터 기반 화살표(사용자 재현: "화살표가 화면
+        // 기준 항상 12시를 향해서 내가 역방향으로 걷는지 알 수 없다") —
+        // computeArrowHeadingV2(GPX 진행벡터, "코스가 정방향이라면
+        // 이래야 할 방향")는 삭제하지 않고 역방향 판정의 비교 기준선
+        //으로 그대로 유지한다. 실제로 화면에 그리는 방향은 "직전 GPS
+        // → 현재 GPS" 실측 이동벡터로 바꾼다 — 이래야 왕복 구간이나
+        // 들머리에서 반대로 걸을 때 화살표도 실제로 반대를 가리킨다.
         const routeDistanceForArrow = sectionProj ? sectionProj.routeDistance : traveledDistForEntry;
-        const arrowHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
+        const gpxProgressHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
+
+        let movementHeading = null;
+        if (lastArrowVectorPos) {
+          movementHeading = computeMovementVectorHeading(lastArrowVectorPos.lat, lastArrowVectorPos.lon, lat, lon);
+          if (movementHeading !== null) {
+            lastMovementVectorHeading = movementHeading;
+            lastMovementVectorUpdatedAt = Date.now();
+            lastArrowVectorPos = { lat, lon };
+          }
+          // ARROW_VECTOR_MIN_MOVE_M 미만 이동이면 lastArrowVectorPos를
+          // 갱신하지 않는다 — 제자리 서성임이 누적되어 기준점이 서서히
+          // 밀리는 것을 방지한다.
+        } else {
+          lastArrowVectorPos = { lat, lon };
+        }
+
+        // 코스 시작 직후(아직 3m 이상 이동이 한 번도 없었던 시점)에만
+        // gpxProgressHeading을 잠깐 폴백으로 보여준다. 3m 이상 이동이
+        // 단 한 번이라도 발생해 lastMovementVectorHeading이 채워지면
+        // 그 뒤로는 절대 gpxProgressHeading으로 되돌아가지 않는다(코스
+        // 재로드/GPS 재시작으로 null 리셋되기 전까지 영구히 이동벡터만 씀).
+        const arrowHeading = lastMovementVectorHeading !== null ? lastMovementVectorHeading : gpxProgressHeading;
+
+        // 🐛 2026-09-27 수정(계룡산/남덕유산 실측 GPX 검증으로 발견) —
+        // GPX 마일스톤 간격이 매우 촘촘한 구간(정상/전망대 등)에서
+        // 사용자가 좁게 서성이면(이동벡터는 3m 미만이라 안정적으로
+        // 유지) GPX lookahead만 급격히 바뀌어 135도 이상 벌어지는
+        // 오탐이 있었다. 이동벡터가 오래(ARROW_VECTOR_MAX_STALE_MS)
+        // 갱신 안 됐으면 "사용자가 사실상 정지 상태"이므로 역방향
+        // 판정 자체를 생략한다(1차 방어). 그래도 남는 순간적 튐은
+        // 이탈판정과 동일하게 REVERSE_WARNING_CONFIRM_STREAK(3픽스)
+        // 연속 확인돼야만 실제 역방향 경고로 확정한다(2차 방어).
+        const isArrowVectorFresh = lastMovementVectorUpdatedAt !== null &&
+          (Date.now() - lastMovementVectorUpdatedAt) <= ARROW_VECTOR_MAX_STALE_MS;
+        const rawReversed = isArrowVectorFresh && isMovementReversed(lastMovementVectorHeading, gpxProgressHeading);
+        if (rawReversed) {
+          reverseWarningStreak++;
+          if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
+            isReverseDirectionWarning = true;
+          }
+        } else {
+          reverseWarningStreak = 0;
+          isReverseDirectionWarning = false;
+        }
+
         if (arrowHeading !== null) {
           renderGpsArrow(arrowHeading);
           lastArrowHeadingForGuidance = arrowHeading; // GPS 마커 아이콘 회전도 이 값을 씀(getCurrentAbsHeadingForGuidance)
         }
+        updateGpsMarkerWarningStyle();
 
         // 하단 경로 알람 원점(currentRotationOriginDist) 확정과 통과
         // 비프음 — updateGajaMap이 이미 판정한 advanced/arrivedMilestone
@@ -6954,6 +7190,17 @@
         // 여기서는 하단 알람용 기준점만 갱신한다.
         if (gajaMapResult) {
           updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
+        }
+
+        // 🧭 2026-09-27 벡터 기반 하단 안내 잠금 해제 — 구간 전환(노드점
+        // 통과 확정)이 이번 프레임에 일어났으면, 그 갈림길에 대한 잠금을
+        // 즉시 해제한다. updateNavigationToast가 이 프레임 안에서 이미
+        // 새 section/nextM 기준으로 호출되므로, 여기서 리셋해두면 바로
+        // 아래 호출에서 새 갈림길 기준으로 재판단된다(이전 갈림길의
+        // 낡은 각도가 한 프레임도 노출되지 않는다).
+        if (gajaMapResult && gajaMapResult.advanced) {
+          turnVectorLockedKey = null;
+          lockedTurnAngle = null;
         }
 
         // ⚠️ updateNavigationToast를 마커 생성/지도뷰 갱신보다 먼저
