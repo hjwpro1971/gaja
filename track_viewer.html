@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v190';
+    const CACHE_NAME = 'gaja-trail-cache-v191';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_turn_lock_gpx_approach_bearing';
+      const APP_BUILD = 'v20260927_sim_state_isolation_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5995,14 +5995,14 @@
       simIsReverseDirectionWarning = false;
     }
 
-    // 🧭 하단 안내(updateNavigationToast)는 시뮬레이션/실제 GPS 공용
-    // 함수라 lastMovementVectorHeading(실제 GPS 전용 화살표 변수와
-    // 이름은 같지만 하단 안내 잠금이 참조하는 그 변수)을 시뮬레이션
-    // 프레임에서도 함께 갱신해야 50m 잠금이 시뮬레이션에서도 동작한다.
-    if (simMovementHeading !== null) {
-      lastMovementVectorHeading = simMovementHeading;
-      lastMovementVectorUpdatedAt = Date.now();
-    }
+    // 🐛 2026-09-27 삭제(사용자 지적: "시뮬레이션은 따로 관리 하자고
+    // 안 했나?") — 하단 안내 12시 기준을 GPX 접근방향
+    // (computeApproachBearingIntoMilestone)으로 재설계한 뒤에도 이
+    // 블록이 남아 실제 GPS 전용 변수 lastMovementVectorHeading을
+    // 시뮬레이션 프레임에서 계속 덮어쓰고 있었다 — GPS/시뮬레이션을
+    // 완전히 분리한다는 원칙 위반이었고, 지금은 하단 안내 잠금이 이
+    // 변수를 전혀 참조하지 않으므로(GPX 접근방향만 씀) 애초에 불필요한
+    // 코드였다. 완전히 제거한다.
 
     // 실제 GPS 추적과 동일한 방향 화살표 마커를 사용한다 — 예전엔
     // 단순 원형 점만 그려서 시뮬레이션 중 "내 위치 화살표가 안
@@ -6224,11 +6224,21 @@
     simMoveDirectionSign = 1;
     simLastMoveDirectionIdx = null;
     resetSimTrackDirectionState(); // 시뮬레이션 전용 isReversingOnTrail(simIsReversingOnTrail)도 함께 초기화 — 실제 GPS 상태는 건드리지 않음
+    // 🐛 2026-09-27 수정(사용자 재현: "지도회전 안 해") — 시뮬레이션이
+    // simIndex=0(코스 처음)부터 새로 재생되는데도 sectionApproachState/
+    // lastAppliedFarBearing 등 지도 회전 이벤트 판정 상태는 리셋하지
+    // 않았다. 직전 GPS 추적이나 이전 시뮬레이션 세션에서 이미 'near'
+    // 등으로 남은 상태가 있으면 isFirstJudgement(=sectionApproachState
+    // ===null)가 거짓이 되어, 새 재생의 첫 회전 적용 자체가 스킵된다
+    // (updateGajaMapCore의 shouldApply 판정 참고) — resetGajaMapRotationState()
+    // 로 완전히 초기화해 항상 새 재생 첫 프레임에 회전이 적용되게 한다.
+    // 이 함수가 하단 안내 잠금(turnVectorLockedKey/lockedTurnAngle,
+    // 사용자 지적: "경로 지나고 있는 하단 안내가 사라지지 않는다"의
+    // 원인이기도 했다)도 함께 초기화한다.
+    resetGajaMapRotationState();
     // 🧭 2026-09-27 벡터 기반 화살표(시뮬레이션 전용) — 이전 재생의
     // 이동벡터가 남아있으면 새 재생 시작점에서 엉뚱한 방향으로 보일 수
-    // 있다. 하단 안내 잠금(turnVectorLockedKey 등)은 실제 GPS와 공용
-    // 상태이므로 여기서 별도로 건드리지 않는다(구간이 리셋되지 않는
-    // 한 이어서 재생하는 것이 자연스러움).
+    // 있다.
     simLastArrowVectorPos = null;
     simLastMovementVectorHeading = null;
     simLastMovementVectorUpdatedAt = null;
