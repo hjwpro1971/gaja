@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v191';
+    const CACHE_NAME = 'gaja-trail-cache-v192';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_sim_state_isolation_fix';
+      const APP_BUILD = 'v20260927_milestone_match_threshold_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2539,33 +2539,27 @@
           return;
         }
 
-        // 🐛 2026-09-26 수정(사용자 재현: "test 수목원" 편도 코스에서
-        // "갈림길1"이 마일스톤 2개(89.1m, 183.4m)로 중복 등록되어 상단
-        // 알림판이 "갈림길1→갈림길1"을 표시하는 근본 원인) — 예전엔
-        // matchThreshold를 globalMinD와 무관하게 항상 WAYPOINT_MATCH_
-        // RADIUS_M(30m)로 고정했다. 실제 최단거리(globalMinD)가 1m
-        // 안팎으로 명백히 한 지점에만 매칭되는데도, 30m 반경 안에
-        // 우연히 들어온 무관한 다른 지점(직선 구간의 이전/이후 포인트,
-        // 실측: 8.8m 떨어진 지점)까지 "후보"로 끌어들였다. 그 무관한
-        // 후보가 진짜 매치와 ROUNDTRIP_CLUSTER_GAP_M(50m) 이상 떨어져
-        // 있으면 별도 클러스터(=중복 마일스톤)로 잘못 나뉘었다.
-        // matchThreshold를 globalMinD 기준 여유값(WAYPOINT_MATCH_
-        // RADIUS_TOLERANCE_M)으로 좁혀, "진짜 최단거리에 근접한 후보만"
-        // 남긴다 — 진짜 왕복 구간(가는 길/오는 길 둘 다 거의 같은 최단
-        // 거리로 트랙에 인접)은 이 여유값 안에 둘 다 들어오므로 왕복
-        // 클러스터링 자체는 그대로 유지된다.
-        // ⚠️ 여유값(10m)으로도 부족했다(사용자 재현 GPX 실측: 진짜 매치
-        // 1.08m 옆에 8.79m 떨어진 무관한 지점이 있어 10m 여유로는
-        // 걸러지지 않음) — 3m로 좁혀 "사실상 같은 지점"만 후보로 남긴다.
-        // 진짜 왕복 구간(가는 길/오는 길)은 각 방향 트랙이 보통 수 m
-        // 이상 벌어져 있어 이 좁은 여유값 안에 어차피 둘 다 들어오지
-        // 않는 경우가 있을 수 있으므로, globalMinD 자체가 크면(코스가
-        // 웨이포인트에서 멀리 떨어져 지나가는 경우) 비례해 여유도 함께
-        // 넓힌다 — 정확히는 "globalMinD의 3배 또는 3m 중 큰 값"으로,
-        // 트랙에 딱 붙어있는(1m 안팎) 경우는 좁게, 다소 떨어진(10m대)
-        // 경우는 비례해 넓게 잡는다.
-        const WAYPOINT_MATCH_RADIUS_TOLERANCE_M = Math.max(3, globalMinD * 2);
-        const matchThreshold = Math.min(WAYPOINT_MATCH_RADIUS_M, globalMinD + WAYPOINT_MATCH_RADIUS_TOLERANCE_M);
+        // 🐛 2026-09-27 수정(사용자 재현: 남덕유산 실제 코스에서 "삼자봉"이
+        // 마일스톤 2개(8032.9m, 8051.9m, 겨우 19m 차이)로 중복 등록되어
+        // 하단 안내가 같은 갈림길인데 "1시방향"/"5시방향"으로 오락가락한
+        // 근본 원인) — globalMinD 기반 좁은 matchThreshold(예: 삼자봉처럼
+        // 트랙이 웨이포인트에 1m 미만으로 붙어있으면 3.76m까지 좁아짐)가
+        // 정상 근처의 정상적인 GPS 지그재그(3~4m 폭)를 후보에서 대거
+        // 누락시켰고, 그 누락 구간이 ROUNDTRIP_CLUSTER_INDEX_GAP(10)보다
+        // 길어(실측 14칸) 하나의 지점을 두 마일스톤으로 잘못 쪼갰다.
+        // matchThreshold를 WAYPOINT_MATCH_RADIUS_M(30m) 고정값으로
+        // 되돌린다 — 이 좁힘은 원래 "test 수목원" 코스의 "갈림길1" 중복
+        // (8.8m 떨어진 무관한 지점이 후보로 끌려들어온 것)을 막기 위한
+        // 것이었는데, 실측 재검증 결과 그 무관한 후보도 인덱스상으로는
+        // 진짜 매치와 인접(간격 1)해 ROUNDTRIP_CLUSTER_INDEX_GAP(10)
+        // 클러스터링만으로 이미 하나로 합쳐진다 — 즉 애초에 globalMinD
+        // 기반 좁힘 없이도 그 버그는 재발하지 않았다(30m 고정으로
+        // 수목원 19개 마일스톤 전부 고유함을 Node.js 재현으로 확인).
+        // 반면 좁힘 자체는 삼자봉처럼 "트랙이 웨이포인트에 아주 가깝게
+        // 붙어 지그재그하는" 케이스에서 오히려 정상 배회 구간을 인위적
+        // 으로 쪼개는 새로운 버그를 만들었으므로, 이 좁힘 로직 전체를
+        // 제거하고 원래의 단순한 30m 고정값으로 되돌린다.
+        const matchThreshold = WAYPOINT_MATCH_RADIUS_M;
         // 🐛 2026-09-26 수정(N/N+1 전면 폐기 재설계 중 Node.js 검증으로
         // 발견: "부산오뎅바"와 "갈림길6"처럼 서로 다른 실제 좌표를 가진
         // 두 웨이포인트가 같은 긴 세그먼트(idx=30, 84.7m 길이)에 매칭될
