@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v200';
+    const CACHE_NAME = 'gaja-trail-cache-v201';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_gps_reject_auto_recover';
+      const APP_BUILD = 'v20260928_first_judgement_reliability_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3895,12 +3895,25 @@
     // 절대 재적용되지 않는다(shouldApply 계산에 approach.state==='near'
     // 조건을 넣지 않음으로써 구조적으로 보장).
     const shouldApply = isFirstJudgement || driftConfirmed || distanceRefreshDue;
-    sectionApproachState = approach.state;
 
     if (!shouldApply) {
+      sectionApproachState = approach.state;
       return { section, proj, recentered: false, bearing: approach.bearing };
     }
 
+    // 🐛 2026-09-28 수정(사용자 재현: "GPS 다시 잡고 난 후 경로 원점을
+    // 안 잡는것 같아" — 포그라운드 복귀 직후 경로가 화면 12시로 정렬되지
+    // 않음) — 예전엔 shouldApply=true가 되면 신뢰도 확인 전에
+    // sectionApproachState를 먼저 approach.state로 덮어썼다(위 주석의
+    // "이벤트가 발생했다는 사실은 소비되지만 회전은 적용 안 된 채로
+    // 넘어간다"). GPS 재획득 직후 콜드스타트 튐으로 "첫 판정" 프레임의
+    // 신뢰도가 하필 NORMAL이 아니면, isFirstJudgement가 그 프레임에
+    // 조용히 소비되고 sectionApproachState가 이미 'near'/'far'로 확정된
+    // 뒤였다 — near 상태는 구조적으로 다시는 회전 트리거가 아니므로
+    // (바로 위 주석), 이후 GPS가 정상으로 돌아와도 회전이 영원히
+    // 재적용되지 않았다("다음 이벤트가 자연스럽게 이어받는다"는 예전
+    // 주장은 near에 머무는 한 성립하지 않는다).
+    //
     // 🗺️ 2026-09-26 GPS 신뢰도 계층(원칙 3) — 이벤트(노드점 통과/원거리
     // 재계산)가 발생했어도, 이번 픽스의 신뢰도가 GPS_NORMAL이 아니면
     // 실제 회전(확정 상태 변경)은 보류한다. reliability가 없으면
@@ -3908,18 +3921,17 @@
     // 경로) 기존처럼 항상 허용한다 — 이런 경로는 "GPS를 방금 다시
     // 잡았으니 무조건 새로 계산한다"는 별도 원칙이 이미 있어 신뢰도
     // 판정 자체가 성립하지 않는다.
-    // ⚠️ shouldApply=true인데 커밋을 보류하면, sectionApproachState는
-    // 이미 위에서 approach.state로 갱신된 뒤라 다음 프레임에
-    // isFirstJudgement가 다시 트리거되지 않는다 —
-    // 즉 "이 이벤트가 발생했다는 사실"은 소비되지만 회전은 적용 안 된
-    // 채로 넘어간다. 다음 GPS_NORMAL 픽스가 오면 드리프트(이벤트③)나
-    // 다음 이벤트가 자연스럽게 이어받으므로, 이 프레임을 완전히
-    // "놓치는" 것은 아니다.
+    //
+    // 신뢰도가 나쁘면 sectionApproachState를 건드리지 않고 그대로
+    // 반환한다 — isFirstJudgement(또는 드리프트/거리 재계산 조건)가
+    // 다음 GPS_NORMAL 픽스에서도 계속 살아있어, 실제로 회전을 적용할
+    // 수 있을 때까지 "첫 판정" 자격이 유지된다.
     if (reliability !== undefined && reliability !== GPS_RELIABILITY.NORMAL) {
       return { section, proj, recentered: false, bearing: approach.bearing };
     }
 
     applySegmentRotation(approach.bearing); // 기존 함수 그대로 — translate(-50%,-50%) 등 위치 보정 그대로 보존됨
+    sectionApproachState = approach.state; // 회전이 실제로 적용된 뒤에만 "판정 소비"를 확정한다
     if (approach.state === 'far') {
       lastAppliedFarBearing = approach.bearing;
       lastAppliedFarRouteDistance = proj.routeDistance;
