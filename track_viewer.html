@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v199';
+    const CACHE_NAME = 'gaja-trail-cache-v200';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_reverse_direction_by_distance';
+      const APP_BUILD = 'v20260928_gps_reject_auto_recover';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6884,6 +6884,21 @@
             consecutiveRejectedCount++;
             if (consecutiveRejectedCount === 5) {
               showToastBadge('📡 GPS 신호가 불안정합니다 — 잠시 후 다시 확인해주세요.');
+              // 🐛 2026-09-28 추가(사용자 재현: "원점 버튼 클릭하면 바로
+              // GPS 잡았어") — 5픽스 연속 REJECTED가 실제로는 GPS 자체가
+              // 나쁜 게 아니라, classifyGpsReliability의 판정 기준점
+              // (lastConfirmedGpsPos)이 낡은/부정확한 값에 고정되어 그
+              // 이후의 정상적인 새 픽스들까지 "그 낡은 기준점 대비 너무
+              // 빠르게 이동한 것"으로 계속 REJECTED 처리되는 경우가 실측
+              // 재현됐다. 원점 버튼(resetOriginNow → resetForFreshGpsFix)
+              // 이 lastConfirmedGpsPos를 null로 리셋하는 순간 바로 정상
+              // 판정으로 돌아오는 것으로 원인을 특정했다. 화면 회전 등
+              // 부수 효과가 있는 resetOriginNow() 전체를 자동 호출하는
+              // 대신, 판정 기준점만 리셋해 이 REJECTED 루프 자체를 끊는다
+              // (원점 버튼을 실제로 누른 것과 달리 지도 회전/구간은 손대지
+              // 않는다 — 다음 정상 픽스가 스스로 이어서 처리한다).
+              lastConfirmedGpsPos = null;
+              sectionAdvanceConfirmStreak = 0;
             }
             return;
           }
