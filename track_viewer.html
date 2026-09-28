@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v197';
+    const CACHE_NAME = 'gaja-trail-cache-v198';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260927_bottom_guidance_value_snapshot_lock';
+      const APP_BUILD = 'v20260928_turn_reference_fix_lr_label';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3716,9 +3716,6 @@
     resetGajaMapRotationState();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
-    lockedSnapshotKey = null;
-    lockedSnapshotTurnAngle = null;
-    lockedSnapshotTurnLabel = null;
 
     // 구간을 미확정(-1) 상태로 만들어야 다음 GPS 픽스가 getCurrentSection()
     // ===null을 보고 실제 위치 기준으로 재탐색한다(0/1로 리셋하면
@@ -4452,9 +4449,6 @@
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
-    lockedSnapshotKey = null; // 새 코스이므로 하단 안내 고정 스냅샷도 초기화
-    lockedSnapshotTurnAngle = null;
-    lockedSnapshotTurnLabel = null;
     // 🧭 2026-09-27 벡터 기반 화살표 — 새 코스이므로 이전 코스의
     // 이동벡터 상태를 전부 초기화한다.
     lastArrowVectorPos = null;
@@ -5440,23 +5434,30 @@
     const nextM = section.toMilestone;
     const distToNextM = Math.abs(nextM.distanceM - traveledDist);
 
-    // 🐛 2026-09-27 원복(사용자 확정: "하단 안내 관련해서 다 원복시켜")
-    // — v188~v193에서 시도한 "50m 진입 시 GPX 접근방향(또는 이동벡터)
-    // 으로 고정" 방식이, 큰 지명(예: 능동산) 도달 전에 작은 갈림길
-    // 마일스톤이 하나 끼어 있으면 그 갈림길과 큰 지명 각각에 대해
-    // 별도로 잠겨 "안내가 2번 발생하는 것처럼 보이는" 문제와 방향이
-    // 실제와 어긋나는 문제를 만들었다. v187 시점의 원래 방식(매 프레임
-    // outBearing과 mapRotationDeg의 실시간 상대각)으로 완전히 되돌린다
-    // — "몇 시 방향" 안내는 nextM(B)을 지난 뒤 실제로 꺾어 나갈 방향
-    // (computeOutgoingBearingAtMilestone)과, 지금 실제로 화면에 적용된
-    // mapRotationDeg(applySegmentRotation이 이벤트 시에만 갱신하는 값)
-    // 의 상대각으로 계산한다 — 회전과 안내가 같은 값(mapRotationDeg)
-    // 에서 파생되므로 화면과 어긋날 수 없다.
+    // 🐛 2026-09-28 수정(사용자 재현: T자/Y자 갈림길에서 안내 방향이
+    // 90도 가까이 어긋남 — "12시로 가라는데 실제론 9시", "2시로
+    // 가라는데 실제론 11시") — v187 방식(2026-09-27 원복본)은
+    // mapRotationDeg(화면에 적용된 회전값)를 기준축으로 삼았는데,
+    // mapRotationDeg는 목표 지점(B) 30m 이내 근접 중(near 상태)에는
+    // "노드점 통과 전 회전 금지" 원칙(updateGajaMapCore 참고)에 따라
+    // 절대 갱신되지 않고 직전 구간 진입 시 값에 멈춰있다. 완만한
+    // 지형에서는 이 낡은 기준과 실제 값의 차이가 작아 티가 안 나지만,
+    // 급하게 꺾이는 갈림길(T자/Y자)에서는 "지금 서 있는 구간 방향"과
+    // "다음 구간이 실제로 꺾이는 방향(outBearing)"의 원점 자체가
+    // 서로 달라 안내가 크게 어긋났다. 기준축을 mapRotationDeg 대신
+    // computeSectionApproachBearing(현재 GPS 위치 기준으로 매 프레임
+    // 새로 계산되는 GPX 진행방향 — near 상태에서도 절대 멈추지 않음,
+    // 지도 회전(applySegmentRotation)에 커밋되지 않을 뿐 계산 자체는
+    // near에서도 계속됨)으로 바꾼다. 지도 회전/구간전환 로직은 전혀
+    // 건드리지 않았다 — 이미 존재하는 순수 계산 함수를 하단 안내
+    // 전용으로 한 번 더 호출할 뿐이다.
     const outBearing = computeOutgoingBearingAtMilestone(section);
     let turnAngle = null;
     let turnLabel = null;
-    if (outBearing !== null) {
-      turnAngle = shortestAngleDiff(outBearing, mapRotationDeg);
+    if (outBearing !== null && lastKnownPos) {
+      const currentApproach = computeSectionApproachBearing(lastKnownPos.lat, lastKnownPos.lon, section, proj);
+      const referenceBearing = currentApproach ? currentApproach.bearing : mapRotationDeg;
+      turnAngle = shortestAngleDiff(outBearing, referenceBearing);
       turnLabel = classifyTurnAngle(turnAngle);
     }
     // 🧭 노드점(방향점) 통과 직후 POST_MILESTONE_ARROW_HOLD_M(10m)
@@ -5537,20 +5538,6 @@
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; // 알람 지점(먼→가까운 순)
   let lastAlertedMilestoneKey = null;
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
-  // 🐛 2026-09-27 추가(사용자 지시: "50m에서 나온 하단 화살표와 안내
-  // 토스트를 그 지점 통과 판정날 때까지 화면에 고정하고 싶어") — 방향
-  // 계산 로직(v187, outBearing과 mapRotationDeg의 실시간 상대각) 자체는
-  // 그대로 두되, 이 갈림길(key)에 처음 진입해 계산한 turnAngle/turnLabel
-  // "값"만 스냅샷으로 떠서 통과(advanced)까지 그대로 재사용한다. GPS가
-  // 50m/30m/10m 등 여러 픽스에 걸쳐 매번 재계산·재표시되면서 화면이 최대
-  // 3번 다시 그려지는 것처럼 보이던 것을 막는다 — 이전에 폐기했던 "50m
-  // 진입 시점 이동벡터/GPX 접근방향으로 방향 자체를 재계산해 고정"하는
-  // 방식과는 다르다(그 방식은 계산 로직 자체를 바꿨다가 실제와 어긋나는
-  // 문제가 있었다). key가 바뀌면(다음 갈림길로 넘어가면) 자동으로 풀리고
-  // 새로 스냅샷을 뜬다.
-  let lockedSnapshotKey = null;
-  let lockedSnapshotTurnAngle = null;
-  let lockedSnapshotTurnLabel = null;
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
@@ -5570,28 +5557,8 @@
         lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
         remainingBeepThresholds = null;
       }
-      // hideThreshold를 넘어 완전히 멀어진 시점이므로, 같은 key라도(예:
-      // GPS가 흔들려 잠깐 벗어났다가 다시 이 갈림길로 재진입하는 경우)
-      // 스냅샷은 무조건 리셋한다 — 그래야 재진입 시 그 시점 값으로 다시
-      // 잠긴다("key !== lockedSnapshotKey"로만 걸면 같은 갈림길에
-      // 재진입할 때 낡은 스냅샷이 그대로 남는다).
-      lockedSnapshotKey = null;
-      lockedSnapshotTurnAngle = null;
-      lockedSnapshotTurnLabel = null;
       return;
     }
-
-    // 이 갈림길(key)에 처음 진입한 프레임이면 지금 계산된 값을 스냅샷으로
-    // 고정하고, 이후 같은 key인 동안은 호출부(updateNavigationToast)가
-    // 매 프레임 새로 계산해 넘긴 nextM.turnAngle/turnLabel을 버리고 이
-    // 스냅샷 값으로 덮어쓴다 — 통과(advanced)로 key가 바뀌기 전까지 화면
-    // 표시가 흔들리지 않는다.
-    if (key !== lockedSnapshotKey) {
-      lockedSnapshotKey = key;
-      lockedSnapshotTurnAngle = nextM.turnAngle;
-      lockedSnapshotTurnLabel = nextM.turnLabel;
-    }
-    nextM = { ...nextM, turnAngle: lockedSnapshotTurnAngle, turnLabel: lockedSnapshotTurnLabel };
 
     // 🧭 "진짜 직진(5도 미만)"과 "회전각 계산 실패(turnAngle=null)"를
     // 구분한다(2026-09-21, 사용자 지시: "GPX 맵에 지명이 있으면 의도된
@@ -5607,23 +5574,16 @@
     let clockOnly = null; // 음성 안내("NN미터 앞 X시 방향")에서도 재사용
 
     if (hasDirection) {
-      // 좌회전/우회전 텍스트보다 몇 시 방향인지(예: "1시 방향")가 훨씬
-      // 직관적으로 보인다는 사용자 피드백 — turnAngle(호출부에서 실시간
-      // 계산한, "지금 화면이 가리키는 방향" 대비 상대 회전각)을 시계방향
-      // 문구로 변환해 함께 보여준다.
-      const clockDir = angleDiffToClockDirection(nextM.turnAngle);
-      // "9시 방향 (좌회전)"처럼 clockDir.clock에 괄호로 붙은 회전 설명은
-      // "9시방향으로"라는 조사 자체가 이미 회전 의미를 담고 있어 중복
-      // 지시로 들린다는 사용자 피드백(2026-09-19) — 괄호 부분은 버리고
-      // "OO에서 X시방향으로" 형식으로만 표기한다.
-      // 🐛 2026-09-27 수정(사용자 지시: "거리는 안 나오게 해줘. 신뢰가
-      // 안 가는 거리야") — 남은 거리(distToNextM) 표기를 완전히 제거.
-      clockOnly = clockDir.clock.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, '');
-      const label = `${nextM.name}에서 ${clockOnly}으로`;
+      // 🐛 2026-09-28 수정(사용자 지시: "왼쪽방향, 오른쪽 방향, 직진으로
+      // 변경하고 싶어") — "1시 방향"류 시계방향 문구(angleDiffToClockDirection)
+      // 대신, 이미 존재하는 classifyTurnAngle 결과(nextM.turnLabel —
+      // 직진/약간좌회전/좌회전/급좌회전/약간우회전/우회전/급우회전, 5도/
+      // 30도/120도 경계로 이미 세분화되어 있음)를 그대로 노출한다. 새
+      // 분류 함수를 만들지 않고 기존 계산 결과를 그대로 재사용한다.
+      clockOnly = nextM.turnLabel;
+      const label = `${nextM.name}에서 ${clockOnly}`;
       // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
-      // 그대로 넘긴다 — 화면이 이미 nextM 방향(mapRotationDeg)으로 맞춰진
-      // 상태이므로, 이 값은 화면 기준 "몇 시로 꺾어야 하는지"와 정확히
-      // 일치한다(updateNavigationToast 호출부 주석 참고).
+      // 그대로 넘긴다 — 화살표 회전 각도는 그대로 유지(문구만 교체).
       showBottomDirectionArrow(nextM.turnAngle, label, false);
     } else {
       // 방향 계산이 실패했어도(화살표는 못 띄우지만) 지명이 다가온다는
