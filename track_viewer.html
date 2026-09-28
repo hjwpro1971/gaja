@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v198';
+    const CACHE_NAME = 'gaja-trail-cache-v199';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_turn_reference_fix_lr_label';
+      const APP_BUILD = 'v20260928_reverse_direction_by_distance';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1240,26 +1240,19 @@
   let lastMovementVectorUpdatedAt = null; // 위 값이 갱신된 시각(Date.now()) — 하단 안내 잠금의 "최신 벡터" 판정용
   let isReverseDirectionWarning = false;
   const ARROW_VECTOR_MIN_MOVE_M = 3; // 이 미만 이동은 GPS 흔들림으로 판단, 직전 방향 유지
-  const ARROW_REVERSE_ANGLE_THRESHOLD_DEG = 135; // 이동벡터가 GPX 진행방향과 이 각도 이상 벌어지면 역방향 경고
-  // 🐛 2026-09-27 추가(계룡산 실측 GPX 검증으로 발견): 정상/전망대 등
-  // GPX 마일스톤 간격이 매우 촘촘한(1~3m) 구간에서는 사용자가 좁게
-  // 서성이는 동안(이동벡터는 3m 미만이라 안정적으로 유지) GPX
-  // lookahead(computeArrowHeadingV2)가 급격히 바뀌면서 순간적으로
-  // 135도 이상 벌어지는 오탐이 발생했다. 이탈판정(ENTER_CONFIRM_STREAK)
-  // 과 동일한 원칙으로, N픽스 연속 확인돼야만 실제 역방향으로 확정한다.
-  const REVERSE_WARNING_CONFIRM_STREAK = 3;
+  // 🐛 2026-09-28 재설계(사용자 지시: "역방향을 판단을 잘 못해.. 거리로
+  // 구분을 해야지. AB 구간에서 B로 가까이 가면 순방향, A로 가까이 가면
+  // 역방향이야. 지금은 내 위치 화살표 방향이 왔다갔다하니") — 이동벡터
+  // 각도(계속 유지)와 GPX 진행각도(computeArrowHeadingV2)의 135도 이상
+  // 차이로 역방향을 판정하던 방식(ARROW_REVERSE_ANGLE_THRESHOLD_DEG)은
+  // 순간 각도라 GPS 오차에 취약했다(사용자 화살표 회전과는 별개 문제 —
+  // 화살표가 가리키는 각도 자체는 그대로 이동벡터를 쓰고, 손대지 않음).
+  // 역방향 "판정"만 현재 구간(A→B) 위 투영 거리(proj.routeDistance)가
+  // B쪽으로 늘었는지(순방향) A쪽으로 줄었는지(역방향)로 바꾼다 — 거리는
+  // GPX 트랙에 투영된 값이라 GPS 좌표 자체의 지그재그보다 훨씬 안정적.
+  const REVERSE_WARNING_CONFIRM_STREAK = 3; // N픽스 연속 같은 방향일 때만 확정(GPS 튐 방지)
   let reverseWarningStreak = 0;
-  // 🐛 2026-09-27 추가(남덕유산/계룡산 실측 GPX 검증으로 발견): 정상 등
-  // GPX가 촘촘하게(1m 미만 간격) 기록된 구간에서 사용자가 실제로
-  // 제자리에 서있으면(이동벡터가 오래 갱신 안 됨) GPX lookahead만
-  // 계속 바뀌어 역방향 오탐이 스트릭으로도 안 걸러지는 경우가 있었다.
-  // 이동벡터 자체가 최신이 아니면("사용자가 사실상 정지 상태") 역방향
-  // 판정 자체를 하지 않는다 — 하단 안내 잠금의 최신성 개념과 동일.
-  // ⚠️ 처음엔 5000ms로 뒀으나, 실측 검증 결과 정상 서성임 구간에서
-  // 4.5초 만에도 GPX lookahead가 135도 이상 벌어지는 것이 확인돼
-  // 2000ms로 낮췄다 — 실제 도보 픽스 간격(보통 1초 내외)을 고려하면
-  // 2초도 "몇 픽스 연속 3m 미만 이동"을 충분히 허용하는 값이다.
-  const ARROW_VECTOR_MAX_STALE_MS = 2000;
+  let lastRouteDistanceForReverseCheck = null; // 직전 픽스의 proj.routeDistance
   // 🐛 2026-09-27 삭제(사용자 지시: "GPS 모드는 손대지 말고 시뮬레이션은
   // 원복시켜") — 시뮬레이션 화살표를 이동벡터 기반으로 재현하려고 둔
   // sim* 사본 상태들이었는데, renderSimFrame을 v187 방식(computeArrowHeadingForSim)
@@ -3256,11 +3249,6 @@
     return calculateBearing(prevLat, prevLon, currLat, currLon);
   }
 
-  function isMovementReversed(movementHeadingDeg, gpxProgressHeadingDeg) {
-    if (movementHeadingDeg === null || gpxProgressHeadingDeg === null) return false;
-    return Math.abs(shortestAngleDiff(movementHeadingDeg, gpxProgressHeadingDeg)) >= ARROW_REVERSE_ANGLE_THRESHOLD_DEG;
-  }
-
   // 🌊 화면에 그리는 등산로 선(polyline)만 부드럽게 보이도록 Catmull-Rom
   // 스플라인으로 점을 촘촘히 보간한다(#3). GPS 매칭/거리 계산에 쓰는
   // 원본 points/cumulativeDistances는 절대 건드리지 않는다 — 이 함수의
@@ -3597,6 +3585,7 @@
     lastMovementVectorUpdatedAt = null;
     isReverseDirectionWarning = false;
     reverseWarningStreak = 0;
+    lastRouteDistanceForReverseCheck = null;
   }
 
   // 🐛 2026-09-26 공통화(사용자 지적: "그럼 공동함수를 사용해? 아니면
@@ -4456,6 +4445,7 @@
     lastMovementVectorUpdatedAt = null;
     isReverseDirectionWarning = false;
     reverseWarningStreak = 0;
+    lastRouteDistanceForReverseCheck = null;
 
     if (polyline) map.removeLayer(polyline);
     markers.forEach(m => map.removeLayer(m));
@@ -7082,18 +7072,38 @@
         // 재로드/GPS 재시작으로 null 리셋되기 전까지 영구히 이동벡터만 씀).
         const arrowHeading = lastMovementVectorHeading !== null ? lastMovementVectorHeading : gpxProgressHeading;
 
-        // 🐛 2026-09-27 수정(계룡산/남덕유산 실측 GPX 검증으로 발견) —
-        // GPX 마일스톤 간격이 매우 촘촘한 구간(정상/전망대 등)에서
-        // 사용자가 좁게 서성이면(이동벡터는 3m 미만이라 안정적으로
-        // 유지) GPX lookahead만 급격히 바뀌어 135도 이상 벌어지는
-        // 오탐이 있었다. 이동벡터가 오래(ARROW_VECTOR_MAX_STALE_MS)
-        // 갱신 안 됐으면 "사용자가 사실상 정지 상태"이므로 역방향
-        // 판정 자체를 생략한다(1차 방어). 그래도 남는 순간적 튐은
-        // 이탈판정과 동일하게 REVERSE_WARNING_CONFIRM_STREAK(3픽스)
-        // 연속 확인돼야만 실제 역방향 경고로 확정한다(2차 방어).
-        const isArrowVectorFresh = lastMovementVectorUpdatedAt !== null &&
-          (Date.now() - lastMovementVectorUpdatedAt) <= ARROW_VECTOR_MAX_STALE_MS;
-        const rawReversed = isArrowVectorFresh && isMovementReversed(lastMovementVectorHeading, gpxProgressHeading);
+        // 🐛 2026-09-28 재설계(사용자 지시: "역방향을 판단을 잘 못해..
+        // 거리로 구분을 해야지. AB 구간에서 B로 가까이 가면 순방향, A로
+        // 가까이 가면 역방향이야") — 이동벡터/GPX 진행각도의 135도 차이
+        // 판정(2026-09-27) 대신, 현재 구간 위 투영 거리(routeDistanceForArrow)
+        // 가 목표(B) 쪽으로 늘었는지 줄었는지로 순방향/역방향을 정한다.
+        // section.isForward는 "이 구간이 코스 정방향인지"를 뜻하므로,
+        // routeDistance 증가가 순방향인지 감소가 순방향인지는 그 값에
+        // 따라 달라진다. 직전 픽스의 routeDistance가 없으면(구간 전환
+        // 직후 등) 판정을 건너뛴다. 이탈판정과 동일하게 N픽스
+        // (REVERSE_WARNING_CONFIRM_STREAK) 연속 확인돼야만 확정한다 —
+        // GPS 투영 자체는 지그재그 GPS 좌표보다 안정적이지만, 정지
+        // 상태에서의 미세한 전후 흔들림까지 걸러내기 위함이다.
+        // Node.js 재현으로 발견: routeDistance는 GPS→트랙 투영 계산의
+        // 부동소수점 특성상 "제자리"인데도 이전 값과 완전히 똑같지 않고
+        // 0.0001m 이하로 미세하게 흔들릴 수 있다. 이 미세 흔들림이 우연히
+        // 음의 방향으로 REVERSE_WARNING_CONFIRM_STREAK번 연속되면 실제로는
+        // 정지 상태인데 역방향으로 오확정되므로, ARROW_VECTOR_MIN_MOVE_M
+        // (3m, 화살표 흔들림 방지에 쓰는 것과 동일한 최소 이동거리)보다
+        // 작은 변화는 "정체"로 보고 판정 자체를 건너뛴다.
+        let rawReversed = false;
+        const routeDistanceDelta = lastRouteDistanceForReverseCheck !== null
+          ? routeDistanceForArrow - lastRouteDistanceForReverseCheck : null;
+        if (routeDistanceDelta !== null && Math.abs(routeDistanceDelta) >= ARROW_VECTOR_MIN_MOVE_M) {
+          const movedForward = section.isForward ? routeDistanceDelta > 0 : routeDistanceDelta < 0;
+          rawReversed = !movedForward;
+          lastRouteDistanceForReverseCheck = routeDistanceForArrow;
+        } else if (lastRouteDistanceForReverseCheck === null) {
+          lastRouteDistanceForReverseCheck = routeDistanceForArrow;
+        }
+        // 3m 미만 변화(제자리 서성임)면 lastRouteDistanceForReverseCheck를
+        // 갱신하지 않는다 — lastArrowVectorPos와 동일한 원칙: 기준점이
+        // 미세 흔들림으로 서서히 밀리는 것을 방지한다.
         if (rawReversed) {
           reverseWarningStreak++;
           if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
