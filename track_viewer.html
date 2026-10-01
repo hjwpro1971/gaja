@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v201';
+    const CACHE_NAME = 'gaja-trail-cache-v202';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_first_judgement_reliability_fix';
+      const APP_BUILD = 'v20260928_bottom_guidance_flicker_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1674,9 +1674,26 @@
   // 기억값 — showBottomDirectionArrow가 호출될 때마다 갱신된다.
   let lastShownArrowAngle = null;
   let lastShownArrowLabel = null;
+  // 🐛 2026-09-28 추가(사용자 재현: "갈림길에서 사라지고 갈림길 지나고
+  // 나서 한 번 더 나와" — 모든 갈림길에서 반복) — 위 두 값이 "어느
+  // 노드점(prevM)에 대한 화살표였는지" 식별자 없이 저장되던 것이 원인.
+  // B(예: 영각재) 통과 직후 다음 목표 C(예: 남덕유산)가 90m보다 멀어
+  // hideBottomDirectionArrow()가 호출돼도 lastShownArrowAngle은
+  // 리셋되지 않고 B의 낡은 값(예: "영각재에서 직진")으로 남아있었다.
+  // 이후 updateNavigationToast의 POST_MILESTONE_ARROW_HOLD_M 홀드
+  // 조건(distPastPrevM 0~10m)이 우연히 다시 참이 되면, 이미 C로
+  // 바뀐 목표를 무시하고 B의 낡은 값을 그대로 다시 그려 "B가 통과
+  // 후 한 번 더 뜨는" 것처럼 보였다. 이 값이 "어느 노드점을 막
+  // 지난 직후에 저장된 것인지" 식별자를 함께 저장해, 지금의 prevM과
+  // 다르면 재사용하지 않는다.
+  let lastShownArrowMilestoneKey = null;
   const POST_MILESTONE_ARROW_HOLD_M = 10; // 노드점 통과 후 이 거리(m)까지는 직전 화살표 유지
 
-  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
+  // milestoneKey: 이 화살표가 "어느 노드점을 향한 안내인지" 식별자
+  // (nextM.name+'@'+nextM.distanceM). 노드점 통과 직후 10m 홀드 재사용
+  // 호출(updateNavigationToast)은 이 값을 생략해 직전 key를 그대로
+  // 유지한다 — 재사용 자체는 값을 바꾸지 않는다.
+  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed, milestoneKey) {
     const el = document.getElementById('bottomDirectionArrow');
     const rotor = document.getElementById('bottomArrowRotor');
     const label = document.getElementById('bottomArrowLabel');
@@ -1691,6 +1708,7 @@
     // 그대로 재사용하기 위해 마지막으로 표시한 각도/문구를 기억해둔다.
     lastShownArrowAngle = angleDiff;
     lastShownArrowLabel = clockLabel;
+    if (milestoneKey !== undefined) lastShownArrowMilestoneKey = milestoneKey;
   }
 
   function hideBottomDirectionArrow() {
@@ -2851,10 +2869,25 @@
   // updateGajaMap이 영원히 null만 반환했다(실측: idx=30~88 전 구간이
   // null). idxHi를 최소 idxLo+1로 보장해, A/B가 같은 세그먼트 안에
   // 있어도 그 세그먼트 자체는 항상 투영 대상에 포함되게 한다.
+  // 🐛 2026-09-28 수정(사용자 재현: "갈림길에서 사라지고 지나고 나서
+  // 한 번 더 나와" — 모든 갈림길에서 반복) — maybeAdvanceSection이
+  // SECTION_ADVANCE_MARGIN_M(15m) 마진으로 구간을 "조기 확정"하면, 그
+  // 순간 GPS는 아직 물리적으로 fromMilestone(방금 확정된 시작점)에
+  // 도달하지 못한 상태일 수 있다. 그런데 이 범위는 fromMilestone부터만
+  // 시작해, 아직 범위 밖(이전 구간 쪽)에 있는 GPS가 범위 안의 첫 점
+  // 하나에 강제로 투영되어 routeDistance가 수초간 고정되는 현상을
+  // Node.js 재현으로 확인했다(남덕유산 실측: 11프레임/약 11초 고정).
+  // 그 동안 distToNextM이 실제보다 훨씬 크게 계산돼 화살표가 사라지고,
+  // GPS가 실제로 그 지점을 지나는 순간 10m 홀드 조건에 우연히 다시
+  // 걸려 "방금 지난 갈림길"의 낡은 안내가 재등장했다. 투영 범위를
+  // SECTION_ADVANCE_MARGIN_M만큼 양쪽으로 넉넉히 넓혀, 마진 안에서
+  // 조기 확정된 GPS도 자신의 실제 물리적 위치에 정확히 투영되게 한다.
   function getSectionIndexRange(section) {
     const dFrom = section.fromMilestone.distanceM;
     const dTo = section.toMilestone.distanceM;
-    const lo = Math.min(dFrom, dTo), hi = Math.max(dFrom, dTo);
+    const lo = Math.max(0, Math.min(dFrom, dTo) - SECTION_ADVANCE_MARGIN_M);
+    const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    const hi = Math.min(totalDist, Math.max(dFrom, dTo) + SECTION_ADVANCE_MARGIN_M);
     const idxLo = findPointsIndexAtDistance(cumulativeDistances, lo);
     const idxHi = Math.max(idxLo + 1, findPointsIndexAtDistance(cumulativeDistances, hi));
     return { idxLo, idxHi };
@@ -3705,6 +3738,7 @@
     resetGajaMapRotationState();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
+    hideStreakCount = 0;
 
     // 구간을 미확정(-1) 상태로 만들어야 다음 GPS 픽스가 getCurrentSection()
     // ===null을 보고 실제 위치 기준으로 재탐색한다(0/1로 리셋하면
@@ -4450,6 +4484,7 @@
     currentSegmentBearings = buildSegmentBearings(points); // 내 위치 화살표 전용 — 선분별 GPX 순방향 미리 계산
     lastAlertedMilestoneKey = null; // 새 코스이므로 갈림길 알람도 처음부터 다시 트리거
     remainingBeepThresholds = null;
+    hideStreakCount = 0;
     // 🧭 2026-09-27 벡터 기반 화살표 — 새 코스이므로 이전 코스의
     // 이동벡터 상태를 전부 초기화한다.
     lastArrowVectorPos = null;
@@ -5466,8 +5501,23 @@
     // 구간 동안은 하단 화살표를 새 목표(nextM) 기준으로 즉시 갱신하지
     // 않고 직전 화살표를 그대로 유지한다 — 방금 지난 노드점의 방향
     // 화살표가 통과와 동시에 사라져 확인할 새가 없는 것을 방지.
+    // 🐛 2026-09-28 수정(사용자 재현: "갈림길에서 사라지고 지나고 나서
+    // 한 번 더 나와") — lastShownArrowMilestoneKey(직전 화살표가 "방금
+    // 지난 그 노드점"에 대한 것이었는지)도 함께 확인한다. key가 없으면
+    // (코스 재로드 직후 등) 재사용하지 않는다. 또한 다음 목표(nextM)가
+    // TURN_ALERT_HIDE_DISTANCE_M(90m)보다 멀면 홀드를 적용하지 않는다
+    // — 다음 갈림길이 수백m 떨어져 있어 애초에 화살표를 보여줄 상황이
+    // 아닌데도, "방금 지난 갈림길" 값을 홀드 조건이 다시 재사용해
+    // 완전히 무관한 먼 목표 상황에서 낡은 안내가 재등장하는 문제였다
+    // (남덕유산 실측 재현: 다음 목표가 850m나 남았는데 영각재 안내가
+    // 재등장). 홀드는 어디까지나 "곧 보여줄 다음 안내와 교체되는
+    // 과도기 몇 초"를 매끄럽게 잇기 위한 것이지, 다음 안내 자체가
+    // 아직 한참 멀 때까지 적용할 의도가 아니었다.
     const distPastPrevM = Math.max(0, traveledDist - prevM.distanceM);
-    if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M && lastShownArrowAngle !== null) {
+    const prevMKey = prevM.name + '@' + prevM.distanceM;
+    if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M &&
+        lastShownArrowAngle !== null && lastShownArrowMilestoneKey === prevMKey &&
+        distToNextM <= TURN_ALERT_HIDE_DISTANCE_M) {
       showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
     } else {
       showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
@@ -5540,6 +5590,17 @@
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; // 알람 지점(먼→가까운 순)
   let lastAlertedMilestoneKey = null;
   let remainingBeepThresholds = null; // 이 갈림길에서 아직 안 울린 임계값들
+  // 🐛 2026-09-28 추가(사용자 재현: "하단 토스트와 화살표가 사라졌다가
+  // 다시 나왔어", 모든 갈림길에서 반복) — GPS 좌표 오차가 트랙 위 투영
+  // 거리(distToNextM)로 증폭되면서, 실제로는 90m를 넘어 멀어진 적이
+  // 없는데도 한 픽스만 순간적으로 hideThreshold를 넘어 화살표가
+  // 사라졌다가 바로 다음 픽스에 다시 60m 이내로 "재진입"해 같은 문구가
+  // 다시 뜨는 현상을 Node.js로 재현 확인했다(verify_hide_threshold_flicker.js).
+  // 이탈판정(ENTER_CONFIRM_STREAK)과 동일한 원칙으로, 이미 떠 있는
+  // 화살표를 숨기는 것도 HIDE_CONFIRM_STREAK(3픽스) 연속으로 임계값을
+  // 넘어야만 확정한다 — 순간적인 GPS 튐 한 프레임으로는 숨기지 않는다.
+  const HIDE_CONFIRM_STREAK = 3;
+  let hideStreakCount = 0;
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
     // 🗺️ 2026-09-26 N/N+1 폐기 재설계 — key는 nextM.name + distanceM
@@ -5548,19 +5609,32 @@
     // 객체로 등록하므로(같은 이름이어도 distanceM이 다름), 예전처럼
     // isReversingOnTrail(구식 전역 변수)을 방향 태그로 덧붙이지 않아도
     // 왕복 코스에서 "이미 알람 울린 지점"으로 오판하는 문제가 없다.
-    const key = nextM.name + '@' + nextM.distanceM;
+    const key = nextM.name + '@' + nextM.distanceM; // 이 화살표가 "가리키는" 목표(nextM)의 식별자
     // 이미 이 갈림길로 화살표가 떠 있는 상태면(같은 key로 한 번이라도
     // 알림이 시작됐으면) 더 관대한 HIDE 임계값을, 아직 안 떴으면 원래
     // 표시 임계값을 쓴다 — 60m 근처에서의 GPS 노이즈로 인한 깜빡임 방지.
     const hideThreshold = (key === lastAlertedMilestoneKey) ? TURN_ALERT_HIDE_DISTANCE_M : TURN_ALERT_DISTANCE_M;
     if (distToNextM > hideThreshold) {
-      hideBottomDirectionArrow();
+      // 아직 한 번도 안 뜬 상태(key !== lastAlertedMilestoneKey, 즉
+      // 60m 임계값 밖)라면 원래부터 숨겨진 상태를 유지하는 것뿐이므로
+      // 스트릭 없이 즉시 처리한다 — 스트릭은 "이미 떠 있던 것을 숨길
+      // 때"만 필요하다.
       if (key !== lastAlertedMilestoneKey) {
+        hideBottomDirectionArrow();
         lastAlertedMilestoneKey = null; // 다음 갈림길 재진입 대비 리셋
         remainingBeepThresholds = null;
+        hideStreakCount = 0;
+        return;
       }
+      hideStreakCount++;
+      if (hideStreakCount < HIDE_CONFIRM_STREAK) return; // 아직 확정 전 — 직전 화살표를 그대로 유지(아무것도 하지 않고 반환)
+      hideBottomDirectionArrow();
+      lastAlertedMilestoneKey = null;
+      remainingBeepThresholds = null;
+      hideStreakCount = 0;
       return;
     }
+    hideStreakCount = 0; // 임계값 안으로 돌아왔으면 스트릭 리셋
 
     // 🧭 "진짜 직진(5도 미만)"과 "회전각 계산 실패(turnAngle=null)"를
     // 구분한다(2026-09-21, 사용자 지시: "GPX 맵에 지명이 있으면 의도된
@@ -5586,7 +5660,11 @@
       const label = `${nextM.name}에서 ${clockOnly}`;
       // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
       // 그대로 넘긴다 — 화살표 회전 각도는 그대로 유지(문구만 교체).
-      showBottomDirectionArrow(nextM.turnAngle, label, false);
+      // 🐛 2026-09-28 추가 — 이 화살표가 "nextM(key)을 향한 것"임을
+      // 함께 기록한다. 이 갈림길(nextM)을 실제로 통과해 prevM이 되는
+      // 순간에만, updateNavigationToast의 10m 홀드 재사용 조건이 이
+      // key와 그때의 prevM key를 비교해 낡은 값 재사용을 막는다.
+      showBottomDirectionArrow(nextM.turnAngle, label, false, key);
     } else {
       // 방향 계산이 실패했어도(화살표는 못 띄우지만) 지명이 다가온다는
       // 사실 자체는 여전히 안내해야 한다.
