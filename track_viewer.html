@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v205';
+    const CACHE_NAME = 'gaja-trail-cache-v206';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_preview_300m_lookahead';
+      const APP_BUILD = 'v20261002_preview_drift_trigger';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3972,10 +3972,24 @@
       return { section: newSection, proj: newProj, recentered: true, advanced: true, arrivedMilestone };
     }
 
-    // 이벤트②: 500m마다 무조건 재적용(각도/상태 조건 없음).
+    // 🧭 2026-10-02 추가(사용자 재현: "대청봉에서 유턴하는데 지도 방향이
+    // 제대로 안 돼") — 500m 거리 트리거만으로는, 정상 근처처럼 능선이
+    // 짧은 구간 안에서 크게 꺾이는 코스에서 화면 방향이 실제 진행방향
+    // 보다 한참(설악산 대청봉 접근 구간 실측: 최대 148도) 뒤처진 채로
+    // 500m를 다 채울 때까지 재적용되지 않는 사각지대가 있었다. GPS
+    // 경로(updateGajaMapCore)는 노이즈 때문에 "연속 3픽스 확정" 히스테
+    // 리시스가 필요했지만, 미리보기는 GPX 원본 좌표를 오차 없이 그대로
+    // 재생하므로 그런 억제가 필요 없다 — 각도가 벌어지면 그 즉시
+    // (연속 확인 없이) 재적용한다.
+    const PREVIEW_DRIFT_THRESHOLD_DEG = 30;
+    const bearing = computePreviewBearing(lat, lon, section, proj);
+    const driftDeg = Math.abs(shortestAngleDiff(bearing, mapRotationDeg));
+
+    // 이벤트②③: 500m마다, 또는 각도가 60도 이상 벌어지면 무조건 재적용.
     if (previewLastRotatedRouteDistance === null
-        || Math.abs(proj.routeDistance - previewLastRotatedRouteDistance) >= PREVIEW_ROTATION_REFRESH_DISTANCE_M) {
-      applySegmentRotation(computePreviewBearing(lat, lon, section, proj));
+        || Math.abs(proj.routeDistance - previewLastRotatedRouteDistance) >= PREVIEW_ROTATION_REFRESH_DISTANCE_M
+        || driftDeg >= PREVIEW_DRIFT_THRESHOLD_DEG) {
+      applySegmentRotation(bearing);
       previewLastRotatedRouteDistance = proj.routeDistance;
       return { section, proj, recentered: true, advanced: false, arrivedMilestone: null };
     }
