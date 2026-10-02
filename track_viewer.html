@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v206';
+    const CACHE_NAME = 'gaja-trail-cache-v207';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_preview_drift_trigger';
+      const APP_BUILD = 'v20261002_section_range_long_segment_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2904,6 +2904,22 @@
   // 걸려 "방금 지난 갈림길"의 낡은 안내가 재등장했다. 투영 범위를
   // SECTION_ADVANCE_MARGIN_M만큼 양쪽으로 넉넉히 넓혀, 마진 안에서
   // 조기 확정된 GPS도 자신의 실제 물리적 위치에 정확히 투영되게 한다.
+  // 🐛 2026-10-02 수정(사용자 재현: "끝청에서 180도 회전해서 6시 방향" —
+  // 미리보기 전용 코드가 아니라 GPS와 공유하는 이 함수 자체의 잠재
+  // 결함이었다. 설악산 GPX 실측으로 재현: idx554(누적 6118.4m)->idx555
+  // (6489.4m)처럼 GPX 점 간격이 371m나 되는 긴 세그먼트가 있는데,
+  // 끝청의 distanceM(6251.9m)이 바로 이 세그먼트 "안쪽"에 있었다.
+  // findPointsIndexAtDistance(hi)는 "누적거리가 hi 이하인 마지막 인덱스"
+  // 만 보므로, 세그먼트 시작(idx554, 6118.4m)이 hi(6266.9m) 이하라는
+  // 이유만으로 idxHi=554가 되고, 투영 루프(`for i=idxLo; i<idxHi`)가
+  // 세그먼트 554(554->555)를 통째로 건너뛰었다. 그 세그먼트 안에 끝청
+  // 통과 지점이 있는데도 투영 대상에서 빠지니, GPS/재생이 그 구간을
+  // 지나는 동안 routeDistance가 훨씬 못 미친 값에 멈춰 있다가 다음
+  // 세그먼트로 넘어가며 한번에 수백 m씩 건너뛰었다(구간 통과 판정이
+  // 그 사이 어느 프레임에서도 안정적으로 걸리지 않음). idxHi가 가리키는
+  // 점의 누적거리가 이미 hi를 넘지 못하면(= 그 다음 세그먼트가 아직
+  // hi 범위를 포함할 수 있으면) 한 칸 더 확장해, hi를 포함하는 세그먼트
+  // 자체가 항상 투영 루프 안에 들어오게 보장한다.
   function getSectionIndexRange(section) {
     const dFrom = section.fromMilestone.distanceM;
     const dTo = section.toMilestone.distanceM;
@@ -2911,7 +2927,10 @@
     const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
     const hi = Math.min(totalDist, Math.max(dFrom, dTo) + SECTION_ADVANCE_MARGIN_M);
     const idxLo = findPointsIndexAtDistance(cumulativeDistances, lo);
-    const idxHi = Math.max(idxLo + 1, findPointsIndexAtDistance(cumulativeDistances, hi));
+    let idxHi = Math.max(idxLo + 1, findPointsIndexAtDistance(cumulativeDistances, hi));
+    while (idxHi < cumulativeDistances.length - 1 && cumulativeDistances[idxHi] < hi) {
+      idxHi++;
+    }
     return { idxLo, idxHi };
   }
 
