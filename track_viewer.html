@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v204';
+    const CACHE_NAME = 'gaja-trail-cache-v205';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_preview_simple_rotation';
+      const APP_BUILD = 'v20261002_preview_300m_lookahead';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3392,6 +3392,30 @@
     return findPointAheadByDistance(points, distances, 0, targetDistM);
   }
 
+  // 🧭 2026-10-02 추가 — pointAtCumulativeDistance는 항상 배열 순방향
+  // (오름차순 routeDistance)으로만 탐색한다. 왕복 코스의 역방향 구간
+  // (section.isForward === false, 날머리→들머리로 되짚는 중)에서 "내
+  // 위치에서 300m 앞"은 routeDistance가 더 작은 쪽이므로, targetDistM이
+  // 음수 방향이면 배열을 거꾸로 선형보간한다. 코스 시작(0) 이전까지
+  // targetMeters가 안 나오면 첫 점을 반환한다(들머리에 거의 다 왔다는 뜻
+  // — findPointAheadByDistance가 끝점에서 하는 처리와 대칭).
+  function pointAtCumulativeDistanceBehind(points, distances, targetDistM) {
+    if (!points || points.length === 0) return null;
+    for (let i = points.length - 1; i > 0; i--) {
+      if (distances[i - 1] <= targetDistM) {
+        const segStart = distances[i - 1];
+        const segEnd = distances[i];
+        const segLen = segEnd - segStart;
+        const t = segLen > 0 ? (targetDistM - segStart) / segLen : 0;
+        return {
+          lat: points[i - 1].lat + (points[i].lat - points[i - 1].lat) * t,
+          lon: points[i - 1].lon + (points[i].lon - points[i - 1].lon) * t
+        };
+      }
+    }
+    return points[0];
+  }
+
   // 🐛 2026-09-26 조사(사용자 재현: gps_replay.html로 계룡산 5봉코스
   // idx=43 근처 재생 — 화면에 적용된 회전(235.8°)과 실제 눈앞 10~30m
   // GPX 방향(201~205°)이 30도 넘게 어긋나 "경로가 12시가 아니라 11시로
@@ -3906,14 +3930,27 @@
     previewLastRotatedRouteDistance = null;
   }
 
-  // 미리보기 전용 회전 방향 계산 — near(B 30m 이내)/far(lookahead) 모두
-  // computeSectionApproachBearing을 그대로 재사용하되, null이 나오면(코스
-  // 끝 근처 등) B점 좌표를 직접 조준하는 값으로 폴백해 "방향을 못 구해
-  // 회전이 스킵되는" 경우 자체를 없앤다.
+  // 🧭 2026-10-02 변경(사용자 지시: "내 위치 기준 300m 앞에 있는 점을
+  // 12시 방향으로. 구간이 300m 이하인 경우는 구간 기준(=B점)으로") —
+  // computeSectionApproachBearing(near 30m/far lookahead) 대신, 코스
+  // 전체 누적거리(routeDistance) 기준으로 "내 위치에서 300m 앞 지점"을
+  // 직접 찾아 그 지점을 조준한다. 현재 구간(AB)에서 B까지 남은 거리가
+  // 300m 이하면 300m 앞 지점이 이미 B를 넘어서게 되므로, 그 경우엔
+  // B점 좌표를 직접 조준해 "구간이 짧으면 구간 끝(B)을 본다"는 의도를
+  // 그대로 만족한다(pointAtCumulativeDistance는 코스 끝에서도 마지막
+  // 점을 반환하므로 null이 나올 일이 없다 — 별도 폴백이 필요 없음).
+  const PREVIEW_LOOKAHEAD_M = 300;
   function computePreviewBearing(lat, lon, section, proj) {
-    const approach = computeSectionApproachBearing(lat, lon, section, proj);
-    if (approach && approach.bearing !== null && !isNaN(approach.bearing)) return approach.bearing;
-    return calculateBearing(lat, lon, section.toMilestone.trailLat, section.toMilestone.trailLon);
+    const remainingToB = section.isForward
+      ? section.toMilestone.distanceM - proj.routeDistance
+      : proj.routeDistance - section.toMilestone.distanceM;
+    if (remainingToB <= PREVIEW_LOOKAHEAD_M) {
+      return calculateBearing(lat, lon, section.toMilestone.trailLat, section.toMilestone.trailLon);
+    }
+    const targetPt = section.isForward
+      ? pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + PREVIEW_LOOKAHEAD_M)
+      : pointAtCumulativeDistanceBehind(currentPoints, cumulativeDistances, proj.routeDistance - PREVIEW_LOOKAHEAD_M);
+    return calculateBearing(lat, lon, targetPt.lat, targetPt.lon);
   }
 
   function updateGajaMapForPreview(lat, lon) {
