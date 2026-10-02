@@ -3037,6 +3037,17 @@ ${trkpts}    </trkseg>
         ele: (p.ele !== undefined ? p.ele : null),
         time: p.time || null
       }));
+      // 🐛 2026-10-02 수정(사용자 재현: "gps_replay.html에서 지명이 왜
+      // 안 나와? 지명이 나와야지 회전 방향 검증을 할 수 있어") — 지명
+      // (갈림길/봉우리 등)의 실제 소스는 waypoints(사용자가 지도에 찍은
+      // 경로 생성용 점, {lat,lon}만 있고 이름이 없다)가 아니라
+      // importedGpxWpts(기존 GPX를 불러왔을 때 들어있던 <wpt>,
+      // {lat,lon,name,ele})다 — gpx_editor.html은 궤적(trkpt)만 편집하고
+      // 지명 자체는 건드리지 않는 도구라는 설계(buildGpxXml 정의부
+      // 주석 참고). pointsToSave는 평범한 배열이라 .waypoints 속성이
+      // 없었던 탓에 saveRouteToViewerStorage의 points.waypoints가 항상
+      // 빈 배열로 저장되고 있었다.
+      pointsToSave.waypoints = importedGpxWpts;
       saveRouteToViewerStorage(courseName, sourceKey, pointsToSave);
       return { courseName, sourceKey };
     } catch(e) {
