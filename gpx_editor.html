@@ -1706,6 +1706,35 @@
     return null;
   }
 
+  // 좌표열(points)의 실제 경로 길이(각 구간 haversine 거리의 합)를 구한다
+  // — fetchTrailSegment가 "반환된 경로가 직선거리 대비 비정상적으로
+  // 길지 않은지" 검증할 때 쓴다.
+  function calcPathLengthM(points) {
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      total += calcDistanceM(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+    }
+    return total;
+  }
+
+  // 🐛 2026-10-02 수정(사용자 재현: "gpx-editor에서 산행경로 만들기
+  // 하니 도로까지 다 불러와서 만들어.. 내가 찍은 경로만 나오게 해야
+  // 하는데", 스크린샷: 설악산 코스에서 경유지와 무관하게 북쪽 해안
+  // 도로까지 크게 우회하는 경로가 생성됨) — OSRM(routed-foot)/BRouter
+  // 둘 다 공개 라우팅 서버라, 그 구간의 OSM 등산로 데이터가 부실하면
+  // "걸어서 갈 수 있는 가장 가까운 길"을 도로까지 포함해 엉뚱하게
+  // 멀리 우회한 경로로 반환하는 경우가 실제로 있다. 두 점 사이
+  // 직선거리 대비 반환된 경로 길이가 비정상적으로 길면(예: 실제
+  // 등산로는 아무리 구불거려도 직선거리의 3배를 잘 안 넘는다) 신뢰하지
+  // 않고 버려, 다음 후보(BRouter, 그다음 직선 fallback)로 넘어가게 한다.
+  const TRAIL_SEGMENT_MAX_DETOUR_RATIO = 3.0;
+  function isSegmentDetourReasonable(points, fromLat, fromLon, toLat, toLon) {
+    const straightM = calcDistanceM(fromLat, fromLon, toLat, toLon);
+    if (straightM < 30) return true; // 너무 짧은 구간은 비율 자체가 불안정하므로 검증을 건너뛴다
+    const pathM = calcPathLengthM(points);
+    return pathM <= straightM * TRAIL_SEGMENT_MAX_DETOUR_RATIO;
+  }
+
   // "등산로 만들기"(전체 새로 생성)용 — OSRM → BRouter → 직선 순으로
   // 시도한다. 공공데이터는 여기서 쓰지 않는다(생성 단계에서 자동 매칭하면
   // 사용자가 찍은 점과 무관한 다른 실측 트랙이 섞여 들어오는 문제가 있어,
@@ -1714,12 +1743,28 @@
   // (BOX_RELINK_SOURCES)이 여전히 사용 중이다.
   async function fetchTrailSegment(fromLat, fromLon, toLat, toLon) {
     const fromOsrm = await trySegmentFromOsrm(fromLat, fromLon, toLat, toLon);
-    if (fromOsrm) return { points: fromOsrm, fallback: false, source: 'osrm' };
+    if (fromOsrm && isSegmentDetourReasonable(fromOsrm, fromLat, fromLon, toLat, toLon)) {
+      return { points: fromOsrm, fallback: false, source: 'osrm' };
+    }
+    if (fromOsrm) {
+      console.warn('OSRM 경로가 직선거리 대비 과도하게 우회함 — 다음 후보로 넘어감', {
+        straightM: calcDistanceM(fromLat, fromLon, toLat, toLon),
+        pathM: calcPathLengthM(fromOsrm)
+      });
+    }
 
     const fromBRouter = await trySegmentFromBRouter(fromLat, fromLon, toLat, toLon);
-    if (fromBRouter) return { points: fromBRouter, fallback: false, source: 'brouter' };
+    if (fromBRouter && isSegmentDetourReasonable(fromBRouter, fromLat, fromLon, toLat, toLon)) {
+      return { points: fromBRouter, fallback: false, source: 'brouter' };
+    }
+    if (fromBRouter) {
+      console.warn('BRouter 경로가 직선거리 대비 과도하게 우회함 — 직선으로 대체', {
+        straightM: calcDistanceM(fromLat, fromLon, toLat, toLon),
+        pathM: calcPathLengthM(fromBRouter)
+      });
+    }
 
-    // 탐색 실패 시 직선 2점 반환 (fallback 표시)
+    // 탐색 실패(또는 둘 다 비정상적으로 우회) 시 직선 2점 반환 (fallback 표시)
     return { points: [{ lat: fromLat, lon: fromLon, ele: null }, { lat: toLat, lon: toLon, ele: null }], fallback: true, source: 'straight' };
   }
 
