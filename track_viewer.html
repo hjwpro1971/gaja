@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v203';
+    const CACHE_NAME = 'gaja-trail-cache-v204';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_naver_tile_version_autofetch';
+      const APP_BUILD = 'v20261002_preview_simple_rotation';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3885,6 +3885,67 @@
     return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability), { advanced: false, arrivedMilestone: null, reliability });
   }
 
+  // 🧭 2026-10-02 추가(사용자 지시: "AB 구간에서 B 구간 통과하면 바로
+  // 경로가 12시 방향으로 오게 회전, 긴 경로인 경우는 500m마다 12시
+  // 방향으로") — 미리보기(▶️ 따라가기, renderSimFrame)는 실제 GPS
+  // 안내와 목적이 다르다. GPS 쪽(updateGajaMapCore)은 실기기 오차·노이즈를
+  // 전제로 신뢰도 게이팅/드리프트 확정(연속 3픽스)/근거리 전용 억제 같은
+  // 여러 조건을 쌓아뒀는데, 그 조건 중 하나(예: computeSectionApproachBearing이
+  // 코스 끝 lookahead 범위를 벗어나 null을 반환하는 경우 — 3605행 참고)에
+  // 걸리면 그 프레임의 회전 자체가 조용히 스킵된다. 미리보기는 "코스
+  // 흐름을 훑어보는" 용도일 뿐 실제 GPS 오차가 없는 재생이므로, 이런
+  // 정교한 억제 조건이 전혀 필요 없다 — 오히려 "가끔 회전이 안 먹는다"는
+  // 체감만 만든다. GPS 경로(updateGajaMap/updateGajaMapCore)는 전혀
+  // 건드리지 않고, 미리보기 전용으로 완전히 분리된 단순 버전을 둔다:
+  // ①B(목표 지명) 통과, ②마지막 회전 지점에서 500m 이상 이동, 이 두
+  // 조건만으로 무조건 applySegmentRotation을 호출한다.
+  const PREVIEW_ROTATION_REFRESH_DISTANCE_M = 500;
+  let previewLastRotatedRouteDistance = null; // 미리보기에서 마지막으로 회전을 적용한 routeDistance
+
+  function resetPreviewRotationState() {
+    previewLastRotatedRouteDistance = null;
+  }
+
+  // 미리보기 전용 회전 방향 계산 — near(B 30m 이내)/far(lookahead) 모두
+  // computeSectionApproachBearing을 그대로 재사용하되, null이 나오면(코스
+  // 끝 근처 등) B점 좌표를 직접 조준하는 값으로 폴백해 "방향을 못 구해
+  // 회전이 스킵되는" 경우 자체를 없앤다.
+  function computePreviewBearing(lat, lon, section, proj) {
+    const approach = computeSectionApproachBearing(lat, lon, section, proj);
+    if (approach && approach.bearing !== null && !isNaN(approach.bearing)) return approach.bearing;
+    return calculateBearing(lat, lon, section.toMilestone.trailLat, section.toMilestone.trailLon);
+  }
+
+  function updateGajaMapForPreview(lat, lon) {
+    const section = getCurrentSection();
+    if (!section) return null;
+    const proj = projectOntoCurrentSection(lat, lon, section);
+    if (!proj) return null;
+
+    const advanced = maybeAdvanceSection(section, proj, GPS_RELIABILITY.NORMAL);
+    if (advanced) {
+      const arrivedMilestone = section.toMilestone;
+      const newSection = getCurrentSection();
+      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone };
+      const newProj = projectOntoCurrentSection(lat, lon, newSection);
+      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone };
+      // 이벤트①: B 통과 — 무조건 즉시 12시로 회전.
+      applySegmentRotation(computePreviewBearing(lat, lon, newSection, newProj));
+      previewLastRotatedRouteDistance = newProj.routeDistance;
+      return { section: newSection, proj: newProj, recentered: true, advanced: true, arrivedMilestone };
+    }
+
+    // 이벤트②: 500m마다 무조건 재적용(각도/상태 조건 없음).
+    if (previewLastRotatedRouteDistance === null
+        || Math.abs(proj.routeDistance - previewLastRotatedRouteDistance) >= PREVIEW_ROTATION_REFRESH_DISTANCE_M) {
+      applySegmentRotation(computePreviewBearing(lat, lon, section, proj));
+      previewLastRotatedRouteDistance = proj.routeDistance;
+      return { section, proj, recentered: true, advanced: false, arrivedMilestone: null };
+    }
+
+    return { section, proj, recentered: false, advanced: false, arrivedMilestone: null };
+  }
+
   function updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability) {
     const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
     if (!approach) return { section, proj, recentered: false };
@@ -6047,21 +6108,19 @@
     // 호출해 시뮬레이션 프레임 진행을 막지 않는다.
     updatePoiProximity(lat, lon);
 
-    // 🗺️ 2026-09-26 N/N+1 전면 폐기 재설계 — 시뮬레이션도 실제 GPS
-    // 경로(handleGpsPositionUpdate)와 완전히 같은 신 시스템(section/proj)
-    // 을 공유하도록 통합한다. 예전엔 findNextRotationTarget/
-    // isReversingOnTrail 스왑처럼 시뮬레이션 전용 우회로가 따로 있어
-    // 실제 GPS 경로와 코드가 갈라졌는데(검증 가치 저하 — gps_replay.html
-    // 이 실기기와 동등하려면 같은 함수를 타야 한다), 이제 구간
-    // 확정/투영/회전 판정 전부 handleGpsPositionUpdate와 동일한 함수를
-    // 그대로 재사용한다. 다만 배속 재생 중 매 프레임 즉시 회전은 화면이
-    // 정신없이 흔들리므로(사용자 지시), 회전 적용 자체는
-    // updateGajaMap이 이벤트 기반으로 이미 절제해서 호출하는 것을
-    // 그대로 믿는다 — 별도 억제 로직이 필요 없다.
+    // 🧭 2026-10-02 변경(사용자 지시: "AB 구간에서 B 통과하면 바로 12시,
+    // 긴 경로는 500m마다 12시") — 예전엔 실제 GPS 경로(updateGajaMap)와
+    // 완전히 같은 이벤트 판정(신뢰도 게이팅/드리프트 확정 등)을 공유했는데,
+    // 그 정교한 억제 조건 중 하나에 걸리면(예: 코스 끝 근처 lookahead
+    // 계산 실패) 미리보기에서 회전이 조용히 스킵되는 문제가 있었다.
+    // 미리보기는 실제 GPS 오차가 없는 단순 재생이므로 그런 억제가 필요
+    // 없다 — updateGajaMapForPreview(미리보기 전용 단순 트리거)로 교체.
+    // GPS 실사용 경로(handleGpsPositionUpdate)와 gps_replay.html은 전혀
+    // 건드리지 않는다.
     if (!getCurrentSection()) {
       resolveInitialSectionByProjection(lat, lon);
     }
-    const simGajaMapResult = updateGajaMap(lat, lon);
+    const simGajaMapResult = updateGajaMapForPreview(lat, lon);
     const simSection = simGajaMapResult ? simGajaMapResult.section : null;
     const simProj = simGajaMapResult ? simGajaMapResult.proj : null;
     const simOffTrailNearestPoint = simProj ? { lat: simProj.projectedLat, lon: simProj.projectedLon } : null;
@@ -6236,6 +6295,7 @@
     // (updateGajaMapCore의 shouldApply 판정 참고) — resetGajaMapRotationState()
     // 로 완전히 초기화해 항상 새 재생 첫 프레임에 회전이 적용되게 한다.
     resetGajaMapRotationState();
+    resetPreviewRotationState(); // 미리보기 전용 500m 트리거 기준점도 새 재생 시작 시 초기화
     // 🐛 2026-09-27 수정(사용자 재현: "시뮬레이션 중지 후 다시 시작하면
     // 캐시 정리가 전혀 안 돼") — currentMilestoneIdx/nextMilestoneIdx를
     // 리셋하지 않아서 새 재생이 simIndex=0(코스 시작점)부터 시작되는데도
