@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v207';
+    const CACHE_NAME = 'gaja-trail-cache-v208';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_section_range_long_segment_fix';
+      const APP_BUILD = 'v20261002_gps_replay_mode_bypass';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3741,6 +3741,12 @@
   // 보고 REJECTED를 결정하지 않는다(원칙: accuracy>15m와 REJECTED를
   // 동일시하지 않는다 — GpsFilterEngine의 15m 필터와는 목적이 다르다).
   function classifyGpsReliability(lat, lon, accuracy, timestamp, proj) {
+    // 🧪 gps_replay.html 배속 재생 전용 우회(isGpsReplayMode 선언부
+    // 주석 참고) — 도보 속도 상한 검사를 적용하면 10배속 같은 빠른
+    // 재생이 거의 전부 REJECTED로 버려지므로, 이 모드에서는 항상
+    // NORMAL로 통과시킨다. 실제 GPS(isGpsReplayMode===false)에는
+    // 전혀 영향 없다.
+    if (isGpsReplayMode) return GPS_RELIABILITY.NORMAL;
     if (!lastConfirmedGpsPos) return GPS_RELIABILITY.NORMAL; // 직전 확정 위치가 없으면(코스 진입 최초 등) 판정 재료 자체가 없다 — 정상으로 통과시킨다.
     // timestamp를 넘기지 않는 특수 호출부(recalculateGajaMapFromScratch,
     // 시뮬레이션 renderSimFrame — 둘 다 "GPS를 방금 재획득했다" 또는
@@ -4802,7 +4808,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v154';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v208';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5990,6 +5996,19 @@
   // 회전 목표 탐색 거리를 100m(실제 GPS) 대신 500m로 쓸지 판단하는 데
   // 참조한다(toggleSimulation 시작/종료 지점에서 설정).
   let isSimulationMode = false;
+
+  // 🧪 gps_replay.html(NAS 전용 GPS 재생 테스트 도구) 전용 플래그 —
+  // URL에 ?replay=1이 있으면 true로 세팅된다(DOMContentLoaded 참고).
+  // gps_replay.html은 navigator.geolocation.watchPosition을 가로채
+  // 실제 watchId 콜백 경로로 "진짜 GPS처럼" 좌표를 흘려보내므로
+  // isSimulationMode(내부 ▶️ 따라가기, renderSimFrame 전용 경로)와는
+  // 완전히 다르다. 배속 재생(예: 10배속 = 시속 40km대)은
+  // classifyGpsReliability의 도보 속도 상한(GPS_MAX_WALK_SPEED_MPS)을
+  // 훨씬 넘기므로, 가로채지 않으면 거의 모든 픽스가 REJECTED로 버려져
+  // 화면이 거의 안 움직인다(사용자 재현: "10배속인데 속도가 거의 안
+  // 나"). 실제 산행 안전장치(classifyGpsReliability)는 건드리지 않고,
+  // 이 재생 전용 경로에서만 그 검사를 우회한다.
+  let isGpsReplayMode = false;
 
   // ════════════════════════════════════════════════════════════════
   // 🎬 시뮬레이션 전용 트랙 매칭(2026-09-25, 사용자 지시: "시뮬레이션과
@@ -7750,6 +7769,7 @@
 
 
     const urlParams = new URLSearchParams(window.location.search);
+    isGpsReplayMode = urlParams.get('replay') === '1';
     const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
     let gpxUrl = urlParams.get('url') || urlParams.get('file');
     const courseName = urlParams.get('name');
