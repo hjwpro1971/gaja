@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v202';
+    const CACHE_NAME = 'gaja-trail-cache-v203';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20260928_bottom_guidance_flicker_fix';
+      const APP_BUILD = 'v20261002_naver_tile_version_autofetch';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1207,6 +1207,7 @@
 
   let map = null;
   let currentLayer = null;
+  let currentLayerType = 'terrain'; // switchLayer가 마지막으로 그린 레이어 타입 — 버전 갱신 후 재적용에 사용
   let polyline = null;
   let markers = [];
   let routeBadgeEls = []; // 갈림길/봉우리 라벨 마커들 — 구간회전 시 텍스트를 화면 기준 수평으로 유지하기 위해 회전 갱신 대상으로 별도 보관
@@ -1752,13 +1753,32 @@
       </div>
     `;
   }
-  // 버전 번호를 고정한다. 온라인일 때마다 최신 버전을 새로 받아오면, 이전에
-  // 저장해둔 오프라인 타일 캐시의 URL(버전 포함)과 새 요청 URL이 달라져
-  // 캐시가 있어도 매번 다시 다운로드하는 문제가 있었다. 네이버 타일 서버의
-  // 버전 문자열은 실제로 거의 바뀌지 않으므로 고정값으로 캐시 재사용을
-  // 보장하고, 버전이 바뀌어 지도가 깨지는 게 확인되면 이 값만 수동으로
-  // 갱신한다.
-  const naverTileVersion = '1788514292';
+  // 버전 번호를 고정값으로 시작한다. 네이버가 타일 버전을 교체하면 구버전
+  // URL이 400을 반환해 지도가 전부 회색으로 나온다(2026-10-02 실사용 신고
+  // — gpx_editor.html에서는 이미 겪고 자동 갱신 로직을 넣었는데
+  // track_viewer.html에는 빠져 있어 똑같은 문제가 재현됨). 아래 fetch가
+  // 최신 버전을 받아와 갱신하므로, 이 초기값은 fetch 완료 전 잠깐 쓰이는
+  // 값일 뿐이다 — 수동으로 맞출 필요 없다.
+  let naverTileVersion = '1788514292';
+
+  // 최신 네이버 타일 버전 조회(gpx_editor.html과 동일 패턴).
+  // initMap()의 최초 switchLayer('terrain') 호출은 이 fetch 완료를 기다리지
+  // 않으므로, 첫 레이어는 항상 위 초기값(구버전)으로 그려진다. 응답이
+  // 도착하면 naverTileVersion을 갱신하고, 네이버 계열 레이어(terrain/basic/
+  // satellite)가 현재 선택돼 있을 때만 새 버전으로 다시 그린다 —
+  // opentopo처럼 이 버전과 무관한 레이어를 보고 있을 때 불필요하게
+  // 되그리지 않기 위함.
+  fetch('https://map.pstatic.net/nrb/styles/terrain.json?fmt=png')
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.version && d.version !== naverTileVersion) {
+        naverTileVersion = d.version;
+        if (currentLayerType !== 'opentopo' && typeof switchLayer === 'function') {
+          switchLayer(currentLayerType);
+        }
+      }
+    })
+    .catch(() => {});
 
   // 🧭 iOS Safari의 vh 단위 오차 보정 — #map.heading-up의 CSS 정의부
   // 주석 참고. window.innerHeight는 실제로 눈에 보이는 뷰포트 높이
@@ -2089,6 +2109,8 @@
       }
       currentLayer = null;
     }
+
+    currentLayerType = type;
 
     const layerItems = document.querySelectorAll('.layer-item');
     layerItems.forEach(el => el.classList.remove('selected'));
