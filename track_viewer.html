@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v208';
+    const CACHE_NAME = 'gaja-trail-cache-v209';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261002_gps_replay_mode_bypass';
+      const APP_BUILD = 'v20261002_nearestpoint_dead_ref_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4808,7 +4808,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v208';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v209';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -7455,10 +7455,19 @@
         // 갈 방향 안내 (등산로 복귀 가이드 점선) — WAYFINDING_MODE가
         // 활성 중이면 guideLine은 updateWayfindingProgress가 전담하므로
         // 여기서는 건드리지 않는다(서로 다른 목적지를 그리는 충돌 방지).
+        // 🐛 2026-10-02 수정(사용자 재현: "지명이 안 나와" — 실제로는
+        // 지명 데이터가 아니라 콘솔에 매 픽스 "nearestPoint is not
+        // defined" 예외가 쌓이며 핸들러가 중간에 끊겨, 이후의 지도
+        // 회전/배지 갱신까지 함께 막혀있었다). 2026-09-26 N/N+1 전면
+        // 폐기 재설계 때 nearestPointOnTrail이 반환하던
+        // nearestPoint/minDistanceM 참조가 이 블록 하나만 새 구조
+        // (updateGajaMap이 반환하는 sectionProj.projectedLat/
+        // projectedLon/distance)로 갈아타지 못한 채 죽은 변수로 남아
+        // 있었다. sectionProj로 교체한다.
         if (isWayfindActive) {
           // no-op — updateWayfindingProgress가 이미 위에서 처리함
-        } else if (nearestPoint && minDistanceM > 12) {
-          const guideCoords = [[lat, lon], [nearestPoint.lat, nearestPoint.lon]];
+        } else if (sectionProj && sectionProj.distance > 12) {
+          const guideCoords = [[lat, lon], [sectionProj.projectedLat, sectionProj.projectedLon]];
           if (!guideLine) {
             guideLine = L.polyline(guideCoords, {
               color: '#00e676',
