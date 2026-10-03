@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v213';
+    const CACHE_NAME = 'gaja-trail-cache-v214';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_saved_route_tile_badge';
+      const APP_BUILD = 'v20261004_reset_origin_recenter_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4812,7 +4812,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v213';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v214';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5576,6 +5576,24 @@
         lastArrowHeadingForGuidance = arrowHeading;
       }
     }
+    // 🐛 2026-10-04 수정(사용자 재현: "원점을 잡아도 지도가 원점으로
+    // 안 갔어. 다시 가자맵을 off-on 하고 gps 잡은 후에 원점으로 갔어" —
+    // 스크린샷으로 확인: 경로/화살표 방향 자체는 맞는데, 내 위치가
+    // 화면 하단 30% 지점이 아니라 너무 위쪽에 있고 하단에 흰 여백이
+    // 보임) — recalculateGajaMapFromScratch는 지도 "회전"(CSS rotate)
+    // 만 다시 계산할 뿐, 지도 "중심 이동"(setView로 내 위치를 heading-up
+    // 정사각형의 top:70% 지점에 다시 맞추는 applyMapViewWithOffset)은
+    // 전혀 호출하지 않았다. applyMapViewWithOffset은 매 GPS 픽스마다
+    // (handleGpsPositionUpdate)만 호출되는데, 원점 버튼은 새 픽스를
+    // 기다리지 않고 lastKnownPos로 즉석 재계산만 해 그 경로를 안 탔다.
+    // 그 사이 사용자가 지도를 드래그/줌했다면 중심이 그 엉뚱한 위치에
+    // 그대로 남아, 회전만 맞고 내 위치는 화면 하단 지정 위치로 복귀하지
+    // 않는 것처럼 보였다. 현재 줌을 유지하며 명시적으로 재중심한다.
+    if (map && lastKnownPos) {
+      const currentZoom = Math.max(map.getZoom(), 15);
+      applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, currentZoom, { animate: true });
+    }
+
     forceOriginReset = false;
     showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
   }
