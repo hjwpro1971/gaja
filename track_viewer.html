@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v215';
+    const CACHE_NAME = 'gaja-trail-cache-v216';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261004_auto_end_hike_on_arrival';
+      const APP_BUILD = 'v20261004_missing_endpoint_milestone_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2170,8 +2170,6 @@
       });
     }
 
-    const hasAnyWaypoint = waypoints && waypoints.length > 0;
-
 
     
 
@@ -2197,16 +2195,20 @@
       }
     }
 
-    if (!hasAnyWaypoint) {
-      
-      if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
-        const startPt = points[0];
-        list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2', trailLat: startPt.lat, trailLon: startPt.lon });
-      }
-      if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
-        const endPt = points[points.length - 1];
-        list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
-      }
+
+    
+
+    
+
+    
+    
+    if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
+      const startPt = points[0];
+      list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2', trailLat: startPt.lat, trailLon: startPt.lon });
+    }
+    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
+      const endPt = points[points.length - 1];
+      list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
     }
     
     
@@ -3807,7 +3809,7 @@
 
   
   
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v215';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v216';
 
   function getTileSaveStatus(courseKey) {
     try {
