@@ -1,5 +1,5 @@
-// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v209)
-const CACHE_NAME = 'gaja-trail-cache-v209';
+// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v210)
+const CACHE_NAME = 'gaja-trail-cache-v210';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',
@@ -60,14 +60,42 @@ self.addEventListener('fetch', event => {
   // 이제 HTML은 절대 캐시에 새로 저장하지 않는다 — 온라인이면 무조건
   // 네트워크에서 받아오고, fetch 자체가 실패(진짜 오프라인)할 때만
   // install 시점에 미리 저장해둔 스냅샷(CORE_ASSETS)을 최후 수단으로 쓴다.
+  //
+  // 🐛 2026-10-04 수정(사용자 재현: "산행도중에 가자맵이 갑자기 연결
+  // 오류... 산속 와이파이(데이터 없음) 상태에서 앱 자체가 안 열림,
+  // 5분 뒤에 다시 하니 연결이 됨") — fetch()는 "완전히 끊긴 오프라인"
+  // (기내모드 등)에서는 즉시 reject되어 .catch() 폴백이 바로 동작하지만,
+  // 산속 음영지역처럼 "전파는 있는데 응답이 안 오는" 상태에서는 reject
+  // 되지 않고 OS/네트워크 스택이 수십 초~수 분간 응답을 기다린다. 그
+  // 동안은 catch()가 전혀 트리거되지 않아 로딩 화면이 무한정 멈춰
+  // "앱 자체가 안 열리는" 것처럼 보인다(스크린샷 재현: 빈 흰 화면 +
+  // 멈춘 로딩바). 네트워크 요청과 타임아웃을 Promise.race로 묶어, 4초
+  // 안에 응답이 없으면 더 기다리지 않고 즉시 캐시 폴백으로 넘어간다.
   if (req.mode === 'navigate' || url.includes('track_viewer.html') || url.includes('track_viewer2.html') || url.endsWith('/gaja/')) {
     // 오프라인 폴백 대상은 요청한 파일 그대로 골라야 한다 — 무조건
     // track_viewer.html로 폴백하면 track_viewer2.html을 오프라인 상태에서
     // 열었을 때 엉뚱하게 구버전 파일 내용이 뜨는 문제가 있었다.
     const fallbackFile = url.includes('track_viewer2.html') ? './track_viewer2.html' : './track_viewer.html';
+    const NAV_TIMEOUT_MS = 4000;
     event.respondWith(
-      fetch(req, { cache: 'no-cache' }).catch(() => {
-        return caches.match(fallbackFile);
+      new Promise(resolve => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          caches.match(fallbackFile).then(resolve);
+        }, NAV_TIMEOUT_MS);
+        fetch(req, { cache: 'no-cache' }).then(res => {
+          clearTimeout(timer);
+          if (settled) return; // 이미 타임아웃 폴백으로 응답을 보낸 뒤 — 뒤늦게 온 네트워크 응답은 버린다.
+          settled = true;
+          resolve(res);
+        }).catch(() => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
+          caches.match(fallbackFile).then(resolve);
+        });
       })
     );
     return;
