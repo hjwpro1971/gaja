@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v212';
+    const CACHE_NAME = 'gaja-trail-cache-v213';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_tile_retry_partial_fix';
+      const APP_BUILD = 'v20261004_saved_route_tile_badge';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -561,6 +561,10 @@
     .saved-route-info { flex: 1; min-width: 0; }
     .saved-route-name { font-size: 14px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .saved-route-date { font-size: 11px; color: #689f38; margin-top: 2px; }
+    .saved-route-tile-badge { display: block; font-size: 10.5px; font-weight: 700; margin-top: 3px; }
+    .saved-route-tile-badge.tile-complete { color: #2e7d32; }
+    .saved-route-tile-badge.tile-partial { color: #e65100; }
+    .saved-route-tile-badge.tile-none { color: #9e9e9e; }
     .saved-route-del {
       flex-shrink: 0;
       background: #ffebee; border: 1.5px solid #ffcdd2; font-size: 18px; cursor: pointer;
@@ -4808,7 +4812,7 @@
   // 혹시라도 undefined면 caches.open(undefined)로 엉뚱한 캐시를 여는
   // 사고를 막기 위해 sw.js의 현재 CACHE_NAME과 동일한 값을 최후
   // fallback으로 둔다(둘 다 매 배포마다 함께 갱신).
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v212';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v213';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -5070,11 +5074,22 @@
       listEl.innerHTML = routes.map((r, i) => {
         const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
         const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
+        const tileKey = getTileCourseKey(r.name, r.sourceUrl);
+        const tileStatus = getTileSaveStatus(tileKey);
+        let tileBadge;
+        if (tileStatus && tileStatus.status === 'complete') {
+          tileBadge = '<span class="saved-route-tile-badge tile-complete">✅ 오프라인 지도 저장됨</span>';
+        } else if (tileStatus && tileStatus.status === 'partial') {
+          tileBadge = `<span class="saved-route-tile-badge tile-partial">⚠️ 일부 미저장(${tileStatus.failedCount}개) — 열면 이어받음</span>`;
+        } else {
+          tileBadge = '<span class="saved-route-tile-badge tile-none">⏳ 오프라인 지도 미저장 — 열면 자동 저장</span>';
+        }
         return `
           <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
             <div class="saved-route-info">
               <div class="saved-route-name">⛰️ ${safeName}</div>
               <div class="saved-route-date">저장일: ${dateStr}</div>
+              ${tileBadge}
             </div>
             <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
               🗑️
