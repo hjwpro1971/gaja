@@ -460,6 +460,7 @@
       <button class="btn-sub-tool" onclick="undoHistory()" title="실행 취소 (Ctrl+Z)">↩️</button>
       <button class="btn-sub-tool" onclick="redoHistory()" title="다시 실행 (Ctrl+Y)">↪️</button>
       <button class="btn-sub-tool" onclick="reverseTrailDirection()" title="전체 경로 방향 반전 — 두 GPX를 이어붙였는데 뒤쪽 트랙이 반대 방향으로 기록된 경우 사용">🔃</button>
+      <button class="btn-sub-tool" onclick="markAsRoundTrip()" title="🔁 편도왕복 — 실제로는 왕복(원점회귀)인데 트랙은 편도(반환점까지)만 그려진 경우. 날머리를 들머리와 같은 지점으로 맞춰 저장하면, track_viewer가 반환점에서 자동으로 되돌아오는 코스로 인식합니다.">🔁</button>
       <button class="btn-sub-tool" onclick="onClickCleanupPreview()" title="🧹 정제 미리보기 — 정상/전망대 등에서 서성인 구간을 진입점-대표점-이탈점으로 압축하고, 전체 경로를 5m 간격으로 재샘플링합니다. 왕복 전환점과 경유지는 보존됩니다.">🧹</button>
       <button class="btn-sub-tool" onclick="onClickFindLingeringSegments()" title="⚠️ 헤맴 구간 찾기 — 갈림길 등에서 서성인 것으로 의심되는 구간을 지도에 노란색으로 표시만 합니다(자동 삭제 안 함). 박스 선택 삭제/재라우팅으로 직접 정리하세요.">⚠️</button>
       <button class="btn-sub-tool danger" onclick="clearAllPoints()" title="전체 초기화">🗑️</button>
@@ -2847,6 +2848,57 @@ ${trkpts}    </trkseg>
     updateTrailStats();
     showToast('🔃 경로 방향을 반전했습니다. 들머리·날머리가 바뀌었습니다.');
   }
+
+  // 🔁 2026-10-04 추가(사용자 지시: "gpx-editor에서 왕복이라는 걸 표시
+  // 하게 하고 들머리, 날머리를 동시에 잡게 하면 될 것 같은데 즉 편도인데
+  // 내가 편도왕복이라고 클릭하면 날머리가 들머리와 일치하게 하는거야")
+  // — 실제로 왕복(원점회귀)인 코스인데 트랙 좌표(allTrailPoints)는 편도
+  // (들머리→반환점)로만 그려진 GPX에, "이 코스는 왕복이다"는 표시를
+  // 남기는 기능. 트랙 좌표 자체는 전혀 건드리지 않는다(복귀 구간을
+  // 복사해 붙이지 않음 — 그러면 파일만 커지고, 나중에 가는 길만 고치고
+  // 복사된 오는 길은 안 고쳐지는 어긋남 사고가 날 수 있다, 설악산C1
+  // 사례 참고). track_viewer.html의 buildMilestones가 이미 "들머리/
+  // 날머리가 50m 이내로 가까우면 들·날머리(원점회귀)로 자동 병합"하는
+  // 로직을 갖고 있으므로, 날머리 waypoint 좌표를 들머리와 동일하게
+  // 맞춰주기만 하면 GPS 실사용 경로(advanceSection의 왕복 자동 반전)와
+  // 미리보기(startSimInterval의 반전 재생, 별도 수정분) 양쪽 모두
+  // "이건 왕복 코스"라고 올바르게 인식한다.
+  function markAsRoundTrip() {
+    if (!allTrailPoints || allTrailPoints.length < 2) {
+      showToast('⚠️ 먼저 경로를 만들어주세요.');
+      return;
+    }
+    const startPt = allTrailPoints[0];
+    let deulmeori = importedGpxWpts.find(w => (w.name || '').includes('들머리') || (w.name || '').includes('출발'));
+    if (!deulmeori) {
+      deulmeori = { lat: startPt.lat, lon: startPt.lon, name: '들머리', ele: startPt.ele };
+      importedGpxWpts.push(deulmeori);
+    }
+    // 🐛 2026-10-04 수정 — 날머리 좌표를 들머리와 "완전히 동일"하게
+    // 만들면, track_viewer.html의 buildMilestones가 쓰는 좌표 기반
+    // 중복 제거(1m 반올림 좌표를 키로 Set에 넣고 두 번째부터는 통째로
+    // 스킵)에 걸려 "날머리" 웨이포인트 자체가 list에 아예 안 들어가는
+    // 역설이 생겼다(Node.js 재현으로 확인 — 결과적으로 자동 보완 로직이
+    // 다시 끼어들어 코스 끝점을 날머리로 쓰면서 편도왕복 표시가 무력화
+    // 됨). 완전히 같은 좌표 대신 약 2m만 살짝 어긋나게 만든다 — 그
+    // 1m 반올림 중복 판정은 피하면서, buildMilestones의 "들·날머리가
+    // 50m 이내면 들·날머리(원점회귀)로 자동 병합"하는 로직에는 그대로
+    // 걸려 의도한 대로 병합된다.
+    const TINY_OFFSET_DEG = 0.00002; // 위도 기준 약 2.2m
+    let nalmeori = importedGpxWpts.find(w => (w.name || '').includes('날머리') || (w.name || '').includes('도착'));
+    if (!nalmeori) {
+      nalmeori = { lat: deulmeori.lat + TINY_OFFSET_DEG, lon: deulmeori.lon, name: '날머리', ele: deulmeori.ele };
+      importedGpxWpts.push(nalmeori);
+    } else {
+      nalmeori.lat = deulmeori.lat + TINY_OFFSET_DEG;
+      nalmeori.lon = deulmeori.lon;
+      nalmeori.ele = deulmeori.ele;
+    }
+    saveHistory();
+    autosaveEditorState();
+    showToast('🔁 편도왕복으로 표시했습니다. 날머리를 들머리와 같은 지점으로 맞췄습니다.\n저장하면 track_viewer가 반환점에서 자동으로 되돌아오는 코스로 인식합니다.');
+  }
+  window.markAsRoundTrip = markAsRoundTrip;
 
   function clearAllPoints() {
     if (waypoints.length === 0) return;

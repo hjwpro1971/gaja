@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v216';
+    const CACHE_NAME = 'gaja-trail-cache-v217';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261004_missing_endpoint_milestone_fix';
+      const APP_BUILD = 'v20261004_sim_roundtrip_reverse_playback';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3809,7 +3809,7 @@
 
   
   
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v216';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v217';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4801,6 +4801,24 @@
   let simMarker = null;
   let simSpeed = 1;
 
+  
+
+  
+
+  
+  
+  
+  let simPlayDirection = 1; 
+
+  
+
+  
+  
+  function isRoundTripCourse() {
+    if (!currentMilestones || currentMilestones.length < 1) return false;
+    return currentMilestones.some(m => m.name && m.name.includes('원점회귀'));
+  }
+
   let isSimulationMode = false;
 
 
@@ -5112,6 +5130,7 @@
     pauseBtn.style.display = 'flex';
     speedOpts.style.display = 'flex';
     simIndex = 0;
+    simPlayDirection = 1; 
 
     
 
@@ -5176,9 +5195,24 @@
 
   function startSimInterval() {
     function tick() {
-      if (!currentPoints || simIndex >= currentPoints.length) {
+      if (!currentPoints || currentPoints.length === 0) {
         toggleSimulation();
         return;
+      }
+      
+      
+      if (simIndex >= currentPoints.length || simIndex < 0) {
+        if (isRoundTripCourse() && simPlayDirection === 1 && simIndex >= currentPoints.length) {
+          simPlayDirection = -1;
+          simIndex = currentPoints.length - 1;
+          showToastBadge('🔁 반환점 도착 — 왕복 코스라 되돌아가는 구간을 이어서 재생합니다.');
+        } else if (isRoundTripCourse() && simPlayDirection === -1 && simIndex < 0) {
+          toggleSimulation(); 
+          return;
+        } else {
+          toggleSimulation();
+          return;
+        }
       }
       renderSimFrame(simIndex, { animate: true, duration: 0.25 });
       updateSimScrubHandle();
@@ -5225,12 +5259,22 @@
         }
       }
 
-      let nextIndex = simIndex + 1;
+
+      
+      let nextIndex = simIndex + simPlayDirection;
       const startDist = cumulativeDistances[simIndex] || 0;
-      while (nextIndex < currentPoints.length) {
-        const currentDist = cumulativeDistances[nextIndex] || 0;
-        if (currentDist - startDist >= stepDistanceM) break;
-        nextIndex++;
+      if (simPlayDirection === 1) {
+        while (nextIndex < currentPoints.length) {
+          const currentDist = cumulativeDistances[nextIndex] || 0;
+          if (currentDist - startDist >= stepDistanceM) break;
+          nextIndex++;
+        }
+      } else {
+        while (nextIndex >= 0) {
+          const currentDist = cumulativeDistances[nextIndex] || 0;
+          if (startDist - currentDist >= stepDistanceM) break;
+          nextIndex--;
+        }
       }
       simIndex = nextIndex;
 
