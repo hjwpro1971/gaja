@@ -77,12 +77,12 @@
     // 만들었는데.. 아이폰에선는 저장된 지도가 안 보여"). 이제 한 곳
     // (아래 CACHE_NAME)만 버전마다 갱신하면 sw.js와 타일 저장 로직이
     // 항상 같은 이름을 쓴다.
-    const CACHE_NAME = 'gaja-trail-cache-v210';
+    const CACHE_NAME = 'gaja-trail-cache-v211';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_nav_fetch_timeout_fallback';
+      const APP_BUILD = 'v20261004_sleep_monitor_background_leak_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5955,6 +5955,20 @@
           watchId = null;
           releaseWakeLock();
           stopCompass();
+          // 🔋 2026-10-04 수정(사용자 재현: "배터리 소모량이 상당히 많다" —
+          // 핸드폰 배터리 설정 실측: 총 4시간50분 중 화면표시 38분/
+          // 백그라운드 4시간11분) — 화면이 꺼져 GPS watch를 끈 뒤에도
+          // sleepTickTimerId(10초 간격)/sleepWatchdogTimerId(SLEEP_WATCHDOG_MS
+          // 간격) setInterval이 멈추지 않고 계속 돌고 있었다. 사용자가
+          // 명시적으로 "🏁 등산 완료"를 눌렀을 때(stopGpsTracking)와 GPS
+          // 수신 실패(handleGpsError) 때는 이미 stopSleepMonitor()를
+          // 호출하는데, 화면이 꺼질 때만 빠져 있었다 — "화면이 꺼지면
+          // 당연히 아무것도 작동 안 해야 한다"는 기존 설계 의도와 어긋남.
+          // handleSleepTimerTick 자체는 watchId===null이면 바로 return해
+          // 가볍지만, 살아있는 setInterval은 OS가 백그라운드 탭/프로세스를
+          // 완전히 동결하지 못하게 막는 요인이 될 수 있다. 화면이 꺼질 때
+          // (저전력 폴링이 아닌 완전 종료 분기) 함께 멈춘다.
+          stopSleepMonitor();
         }
       }
       // isLowPowerPolling이 이미 true인 상태로 화면이 또 꺼지는 경우
