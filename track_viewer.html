@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v218';
+    const CACHE_NAME = 'gaja-trail-cache-v219';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261004_explicit_roundtrip_flag';
+      const APP_BUILD = 'v20261004_roundtrip_flag_storage_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3622,11 +3622,17 @@
 
   function saveRouteToStorage(courseName, sourceUrl, points) {
     try {
+
+      
+
+      
+
       const newRoute = {
         name: courseName,
         sourceUrl: sourceUrl || null,
         points: points,
         waypoints: points.waypoints || [],
+        isExplicitRoundTrip: !!points.isExplicitRoundTrip,
         savedAt: Date.now()
       };
       let list = loadSavedRoutes();
@@ -3825,7 +3831,7 @@
 
   
   
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v218';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v219';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4100,6 +4106,10 @@
     if (!r) return;
     closeModal();
     if (r.waypoints) r.points.waypoints = r.waypoints;
+
+    
+    
+    r.points.isExplicitRoundTrip = !!r.isExplicitRoundTrip;
     drawRoute(r.points, r.name, r.sourceUrl);
   }
   window.openSavedRouteByIndex = openSavedRouteByIndex;
@@ -6400,6 +6410,8 @@
         if (cached) {
           console.log('오프라인 캐시에서 등산로 복원 완료:', cached.name);
           if (cached.waypoints) cached.points.waypoints = cached.waypoints;
+          
+          cached.points.isExplicitRoundTrip = !!cached.isExplicitRoundTrip;
           drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true);
           
           const fastBadge = document.createElement('div');
