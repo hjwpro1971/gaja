@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v217';
+    const CACHE_NAME = 'gaja-trail-cache-v218';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261004_sim_roundtrip_reverse_playback';
+      const APP_BUILD = 'v20261004_explicit_roundtrip_flag';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3474,6 +3474,17 @@
       return { lat, lon, name, ele };
     }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
     cleanedPoints.waypoints = wpts;
+
+
+    
+
+    try {
+      const roundtripEl = xml.getElementsByTagName('roundtrip')[0];
+      cleanedPoints.isExplicitRoundTrip = !!(roundtripEl && roundtripEl.textContent.trim() === 'true');
+    } catch (e) {
+      cleanedPoints.isExplicitRoundTrip = false;
+    }
+
     return cleanedPoints;
   }
 
@@ -3654,6 +3665,11 @@
   function drawRoute(points, courseName, sourceUrl, isFromCache) {
     if (!map || !points.length) return;
     currentPoints = points;
+
+    
+    
+    
+    explicitRoundTripFlag = !!points.isExplicitRoundTrip;
     resetTrailSearchWindow(); 
     resetGajaMapRotationState(); 
 
@@ -3809,7 +3825,7 @@
 
   
   
-  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v217';
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v218';
 
   function getTileSaveStatus(courseKey) {
     try {
@@ -4814,7 +4830,9 @@
 
   
   
+  let explicitRoundTripFlag = false;
   function isRoundTripCourse() {
+    if (explicitRoundTripFlag) return true;
     if (!currentMilestones || currentMilestones.length < 1) return false;
     return currentMilestones.some(m => m.name && m.name.includes('원점회귀'));
   }

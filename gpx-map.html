@@ -157,6 +157,7 @@
           <input type="text" id="input-end-name" placeholder="예: 날머리 (원점회귀)">
         </div>
         <label style="margin:2px 0 0; font-size:12px;"><input type="checkbox" id="isRoundTripCheckbox" style="width:auto; margin-right:6px;">🔁 이 코스는 왕복(원점회귀)입니다 — 트랙은 반환점까지만 있음</label>
+        <div id="roundTripHint" style="display:none; font-size:11px; color:#718096; margin-top:-2px;">✅ 왕복 코스는 날머리가 들머리와 같은 지점이라 별도 지명이 필요 없습니다. track_viewer가 마지막 지점에서 자동으로 유턴시킵니다.</div>
       </div>
       <div class="action-bar" style="margin-top:4px; gap:6px;">
         <button class="btn" id="btn-toggle-edit" type="button" style="flex:1; font-weight:700; background:#edf2f7; color:#2d3748; border-color:#cbd5e0; font-size:12.5px;">✏️ 지명 편집모드</button>
@@ -2141,35 +2142,20 @@ restoreGpxDraftIfAny();
       wpts.push({ name: startTrailName || '들머리', lat: startPt.lat, lon: startPt.lon, ele: startPt.ele, routeDistKm: 0 });
     }
 
-    // 🐛 2026-10-04 수정(사용자 재현: gpx_editor의 "🔁 편도왕복" 버튼으로
-    // 날머리를 들머리와 거의 같은 좌표로 맞춰 저장했는데, 그 GPX를
-    // gpx-map.html에서 지명만 수정해 다시 저장하니 "날머리"가 다시
-    // 코스 물리적 끝점(반환점) 좌표로 돌아가 있었다. 이 함수가 날머리를
-    // 항상 loadedPoints의 마지막 점 좌표로 강제 재계산해, gpx_editor가
-    // 만든 편도왕복 표시를 완전히 무시했던 것이 원인 — gpx-map.html은
-    // 트랙(궤적)이 아니라 지명만 다루는 도구인데, 날머리 좌표는 지명이
-    // 아니라 트랙 데이터(코스 끝점)에서 매번 새로 뽑고 있었다.
-    // "🔁 이 코스는 왕복" 체크박스가 켜져 있으면, 날머리 좌표를 트랙
-    // 끝점이 아니라 들머리와 거의 같은 지점으로 맞춘다 — gpx_editor의
-    // markAsRoundTrip과 동일한 원리(완전히 같은 좌표면 track_viewer.html
-    // buildMilestones의 좌표 기반 중복 제거에 걸려 날머리 자체가 통째로
-    // 스킵되므로, 약 2m만 살짝 어긋나게 만든다).
+    // 🔁 2026-10-04 재설계(사용자 지시: "이 코스는 왕복 선택하면 들머리
+    // [날머리] 입력창이 비활성화 되게 하고 마지막 노드에서 유턴되게 해") —
+    // 이전엔 "날머리 좌표를 들머리와 거의 같게(2m 오프셋) 맞추는" 방식
+    // 이었는데, 좌표 오프셋/이름 매칭에 의존하다 보니 사용자가 날머리
+    // 입력창에 쓴 텍스트가 실제로 뭘 하는지 직관적이지 않고 디버깅도
+    // 어려웠다. 왕복이면 날머리 waypoint 자체를 아예 만들지 않고,
+    // 대신 <metadata>에 명시적 플래그(아래 참고)를 남긴다 —
+    // track_viewer.html이 좌표 근접성을 추론할 필요 없이 그 플래그만
+    // 보고 "마지막 트랙 포인트에서 유턴하는 왕복 코스"임을 바로 안다.
     const isRoundTripChecked = document.getElementById('isRoundTripCheckbox')
       && document.getElementById('isRoundTripCheckbox').checked;
     const endPt = loadedPoints[loadedPoints.length - 1];
-    if (!specialMarkersMap['end'].deleted) {
-      if (isRoundTripChecked) {
-        const ROUND_TRIP_OFFSET_DEG = 0.00002; // 위도 기준 약 2.2m
-        wpts.push({
-          name: endTrailName || '날머리',
-          lat: startPt.lat + ROUND_TRIP_OFFSET_DEG,
-          lon: startPt.lon,
-          ele: startPt.ele,
-          routeDistKm: totalDist,
-        });
-      } else {
-        wpts.push({ name: endTrailName || '날머리', lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
-      }
+    if (!isRoundTripChecked && !specialMarkersMap['end'].deleted) {
+      wpts.push({ name: endTrailName || '날머리', lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
     }
 
     if (!specialMarkersMap['peak_top'].deleted) {
@@ -2207,7 +2193,14 @@ restoreGpxDraftIfAny();
     const lines = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<gpx version="1.1" creator="gajago-nav" xmlns="http://www.topografix.com/GPX/1/1">');
-    lines.push('  <metadata><name>' + trackName + '</name></metadata>');
+    // 🔁 명시적 왕복 플래그 — 표준 GPX 밖 확장이라 다른 GPX 도구에서는
+    // 무시되지만(파싱 실패 없음, 그냥 모르는 태그로 건너뜀),
+    // track_viewer.html만 이걸 읽어 좌표 근접성 추론 없이 왕복 여부를
+    // 100% 확정적으로 판단한다.
+    const metadataExtra = isRoundTripChecked
+      ? '<extensions><gajago:roundtrip xmlns:gajago="https://hjwpro1971.github.io/gaja">true</gajago:roundtrip></extensions>'
+      : '';
+    lines.push('  <metadata><name>' + trackName + '</name>' + metadataExtra + '</metadata>');
 
     wpts.forEach(w => {
       const safeName = (w.name || '').replace(/[<>&"']/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[s]);
@@ -2512,6 +2505,31 @@ restoreGpxDraftIfAny();
     navFilenameInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') exportNavGpx(); });
   }
 
+  // 🔁 2026-10-04 추가(사용자 지시: "이 코스는 왕복 선택하면 들머리
+  // 입력창이 비활성화 되게 하고 마지막 노드에서 유턴되게 해") — 왕복
+  // 체크 시 날머리는 들머리와 같은 지점이라는 뜻이므로, 별도 지명
+  // 입력 자체가 혼란만 준다(이전엔 "날머리 지명을 입력하면서 동시에
+  // 좌표는 들머리와 같게 만드는" 방식이라 사용자가 날머리에 입력한
+  // 텍스트가 실제로 뭘 하는지 직관적이지 않았다). 체크박스가 켜지면
+  // 입력창을 잠그고 비워, 저장 시(buildNavGpxXml) 날머리 waypoint
+  // 자체를 아예 만들지 않는다 — 대신 <metadata>에 명시적 왕복 플래그를
+  // 남겨 track_viewer.html이 좌표 근접성 추론 없이 곧바로 인식한다.
+  function syncRoundTripCheckboxUI() {
+    const checkbox = document.getElementById('isRoundTripCheckbox');
+    const endInput = document.getElementById('input-end-name');
+    const hint = document.getElementById('roundTripHint');
+    if (!checkbox || !endInput) return;
+    const checked = checkbox.checked;
+    endInput.disabled = checked;
+    if (checked) endInput.value = '';
+    if (hint) hint.style.display = checked ? 'block' : 'none';
+  }
+  const roundTripCheckboxEl = document.getElementById('isRoundTripCheckbox');
+  if (roundTripCheckboxEl) {
+    roundTripCheckboxEl.addEventListener('change', syncRoundTripCheckboxUI);
+    syncRoundTripCheckboxUI(); // 페이지 로드 시(자동저장 복원 등) 초기 상태 반영
+  }
+
 
   document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1));
   document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(-1));
@@ -2566,7 +2584,7 @@ function generateCourseText() {
 // 📌 이 페이지도 gpx_editor.html과 마찬가지로 서비스워커 없이 GitHub
 // Pages 기본 HTTP 캐시에만 의존한다. 배포할 때마다 이 문자열만 올리면
 // 화면 우측 하단 뱃지로 "지금 받은 코드가 최신인지" 바로 확인 가능.
-const GPX_MAP_VERSION = 'v1';
+const GPX_MAP_VERSION = 'v2';
 (function fillGpxMapVersionBadge() {
   const el = document.getElementById('gpxMapVersionBadge');
   if (el) el.innerText = GPX_MAP_VERSION;
