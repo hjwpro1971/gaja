@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_roundtrip_flag_ns_fix';
+      const APP_BUILD = 'v20261004_roundtrip_expand_return';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2776,14 +2776,19 @@
     // 표시되고, 거기 도착하면 "산행 종료" 확인창(confirmEndHike)까지 뜰 수
     // 있었다. 왕복이면 트랙 마지막 점은 "반환점"으로 넣는다 — 구간 커버리지
     // (getCurrentSection 사각지대 방지)는 그대로 유지되고 이름만 다르다.
-    const isExplicitRoundTrip = !!(points.isExplicitRoundTrip || explicitRoundTripFlag);
-    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착') || m.name.includes('반환점'))) {
+    // (이후 2026-10-04 재설계) drawRoute가 왕복 트랙을 반환점→들머리까지
+    // 펼쳐두므로(expandRoundTripPoints) 트랙 마지막 점은 다시 들머리다 —
+    // 날머리는 평소처럼 끝점에 두고(아래 원점회귀 통합으로 들머리와 합쳐짐),
+    // 반환점은 펼친 지점(roundTripTurnIdx)에 별도 마일스톤으로 넣는다.
+    const turnIdx = points.roundTripTurnIdx;
+    if (turnIdx != null && points[turnIdx] && !list.some(m => m.name.includes('반환점'))) {
+      const tp = points[turnIdx];
+      const turnDistM = (cumDistances && cumDistances[turnIdx]) || 0;
+      list.push({ name: '반환점', lat: tp.lat, lon: tp.lon, distanceM: turnDistM, icon: '🔁', color: '#7b1fa2', trailLat: tp.lat, trailLon: tp.lon });
+    }
+    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
       const endPt = points[points.length - 1];
-      if (isExplicitRoundTrip) {
-        list.push({ name: '반환점', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🔁', color: '#7b1fa2', trailLat: endPt.lat, trailLon: endPt.lon });
-      } else {
-        list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
-      }
+      list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
     }
     
     // 원점회귀 처리: 기존에 웨이포인트로 들어있든, 방금 자동으로 추가되었든
@@ -4672,8 +4677,39 @@
   // sourceUrl: 로컬 저장소 키로 쓰는 GPX 원본 주소. 코스명(courseName)만으로는
   // 서로 다른 GPX가 같은 이름으로 뽑혀 캐시가 뒤섞이는 문제가 있었다 —
   // 반드시 원본 URL로 구분해야 한다.
+  // 🔁 2026-10-04 추가(사용자 지시: "반환점에서 다시 시작하면 돼잖아.
+  // 들머리가 가는 경로를") — 명시적 왕복 GPX는 트랙이 반환점까지만
+  // 있다. 이전엔 시뮬레이션만 배열 끝에서 재생 방향을 뒤집었는데,
+  // 안내(마일스톤/남은거리)는 "index 증가 = 전진"을 전제로 짜여 있어
+  // 되돌아오는 동안 "반환점 → 반환점 · 0.00km"에 멈춰 있었고 실제 GPS
+  // 경로에는 아예 복귀 구간이 없었다. 그래서 왕복이면 트랙 자체를
+  // 들머리→반환점 + (같은 길 역순)반환점→들머리로 펼쳐, 복귀 구간도
+  // 평범한 "앞으로 가는" 코스로 만든다 — 시뮬레이션·실제 GPS·안내가
+  // 모두 별도 분기 없이 그대로 동작하고, 가는 길/오는 길 겹침은 기존
+  // 왕복 클러스터링(buildMilestones)이 처리한다.
+  // 저장 목록에는 펼친 상태로 저장되므로, 다시 열 때 또 펼치지 않도록
+  // "첫 점과 마지막 점이 같으면 이미 펼친 것"으로 판단한다(펼치기 전
+  // 왕복 GPX의 마지막 점은 반환점이라 들머리와 멀리 떨어져 있다).
+  function expandRoundTripPoints(points) {
+    if (!points || !points.isExplicitRoundTrip || points.length < 2) return points;
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first.lat === last.lat && first.lon === last.lon) {
+      if (points.roundTripTurnIdx == null) points.roundTripTurnIdx = Math.floor((points.length - 1) / 2);
+      return points; // 이미 펼쳐진 트랙(저장 목록 복원 등)
+    }
+    const turnIdx = points.length - 1;
+    const back = points.slice(0, turnIdx).reverse().map(p => Object.assign({}, p));
+    const expanded = points.concat(back);
+    expanded.waypoints = points.waypoints;
+    expanded.isExplicitRoundTrip = true;
+    expanded.roundTripTurnIdx = turnIdx;
+    return expanded;
+  }
+
   function drawRoute(points, courseName, sourceUrl, isFromCache) {
     if (!map || !points.length) return;
+    points = expandRoundTripPoints(points);
     currentPoints = points;
     // 🔁 gpx-map.html의 "이 코스는 왕복" 체크박스가 남긴 명시적 플래그
     // (parseGPX의 isExplicitRoundTrip)를 전역 상태로 옮겨둔다 — points
@@ -6645,8 +6681,11 @@
       }
       // 배열 끝(또는 시작, 반전 재생 중)에 닿았을 때: 원점회귀 코스면
       // 방향을 뒤집어 계속 진행하고, 아니면(종주형) 기존처럼 종료한다.
+      // 명시적 왕복은 drawRoute가 복귀 구간까지 트랙을 펼쳐뒀으므로
+      // (expandRoundTripPoints) 배열 끝 = 들머리 복귀 완료 — 반전하지 않는다.
+      const needsSimReverse = isRoundTripCourse() && currentPoints.roundTripTurnIdx == null;
       if (simIndex >= currentPoints.length || simIndex < 0) {
-        if (isRoundTripCourse() && simPlayDirection === 1 && simIndex >= currentPoints.length) {
+        if (needsSimReverse && simPlayDirection === 1 && simIndex >= currentPoints.length) {
           simPlayDirection = -1;
           simIndex = currentPoints.length - 1;
           showToastBadge('🔁 반환점 도착 — 왕복 코스라 되돌아가는 구간을 이어서 재생합니다.');
