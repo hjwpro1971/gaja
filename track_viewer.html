@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_roundtrip_hide_turn';
+      const APP_BUILD = 'v20261004_roundtrip_turn_label';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5868,7 +5868,14 @@
     const dispPrevM = bigResult ? bigResult.prevM : prevM;
     const dispNextM = bigResult ? bigResult.nextM : nextM;
     const dispDistToNextM = bigResult ? Math.abs(dispNextM.distanceM - traveledDist) : distToNextM;
-    toast.innerHTML = `🧭 ${escName(dispPrevM.name)} → ${escName(dispNextM.name)} · ${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
+    // 사용자 지시: 왕복 코스의 자동 보완 마일스톤 '반환점'은 이름을 글자로
+    // 보여주지 않는다(표시 문구에서만 생략 — 마일스톤/거리 계산은 그대로).
+    const dispName = m => (m.name === '반환점' ? '' : escName(m.name));
+    const prevName = dispName(dispPrevM);
+    const nextName = dispName(dispNextM);
+    const routeLabel = (prevName && nextName) ? `${prevName} → ${nextName} · `
+      : (prevName ? `${prevName} · ` : (nextName ? `${nextName} · ` : ''));
+    toast.innerHTML = `🧭 ${routeLabel}${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
 
     // 🏁 날머리 도착 자동 종료 — 원점회귀 코스(들머리=날머리)는 출발
     // 직후에도 remainingDist가 잠깐 작을 수 있으므로, 최소
