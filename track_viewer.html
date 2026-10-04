@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_roundtrip_turn_label';
+      const APP_BUILD = 'v20261004_roundtrip_single_line';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4763,7 +4763,13 @@
     // 원본 그대로 두고, 화면에 그리는 선(latlngs)만 Catmull-Rom
     // 스플라인으로 보간해 시각적으로 부드럽게 만든다. GPX 파일이나
     // 다른 계산 로직에는 전혀 영향 없음.
-    const latlngs = smoothPolylinePoints(points);
+    // 🔁 왕복은 복귀 구간을 같은 길 역순으로 펼쳐 두었으므로(expandRoundTripPoints)
+    // 화면에는 들머리→반환점 한 줄만 그린다 — 되돌아오는 선을 또 그리면
+    // 스무딩 오차로 같은 길에 선이 두 줄로 어긋나 보인다(안내 데이터는 그대로).
+    const drawPoints = (points.roundTripTurnIdx != null)
+      ? points.slice(0, points.roundTripTurnIdx + 1)
+      : points;
+    const latlngs = smoothPolylinePoints(drawPoints);
 
     // 깔끔하고 선명한 등산로 빨간선
     polyline = L.polyline(latlngs, {
