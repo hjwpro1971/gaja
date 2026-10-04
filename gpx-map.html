@@ -157,7 +157,7 @@
           <input type="text" id="input-end-name" placeholder="예: 날머리 (원점회귀)">
         </div>
         <label style="margin:2px 0 0; font-size:12px;"><input type="checkbox" id="isRoundTripCheckbox" style="width:auto; margin-right:6px;">🔁 이 코스는 왕복(원점회귀)입니다 — 트랙은 반환점까지만 있음</label>
-        <div id="roundTripHint" style="display:none; font-size:11px; color:#718096; margin-top:-2px;">✅ 왕복 코스는 날머리가 들머리와 같은 지점이라 별도 지명이 필요 없습니다. track_viewer가 마지막 지점에서 자동으로 유턴시킵니다.</div>
+        <div id="roundTripHint" style="display:none; font-size:11px; color:#718096; margin-top:-2px;">✅ 왕복 코스는 날머리가 들머리와 같은 지점입니다. 위 입력칸에는 반환점 지명(예: 희운각대피소)을 적으면 되고, track_viewer가 마지막 지점에서 자동으로 유턴시킵니다.</div>
       </div>
       <div class="action-bar" style="margin-top:4px; gap:6px;">
         <button class="btn" id="btn-toggle-edit" type="button" style="flex:1; font-weight:700; background:#edf2f7; color:#2d3748; border-color:#cbd5e0; font-size:12.5px;">✏️ 지명 편집모드</button>
@@ -298,6 +298,18 @@ function parseGPX(xmlText) {
   }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
 
   points.waypoints = wpts;
+
+  // 🔁 gpx-map이 저장한 GPX의 <metadata><extensions><gajago:roundtrip>true</...>
+  // 왕복 플래그를 읽는다 — 이게 없으면 왕복으로 만든 코스를 다시 불러와도
+  // "이 코스는 왕복" 체크가 꺼진 채로 나온다. XML 문서에서 getElementsByTagName은
+  // 접두사 포함 이름(gajago:roundtrip)으로만 매칭하므로 로컬 이름 검색(NS '*')을 쓴다.
+  try {
+    const rtEl = xml.getElementsByTagNameNS('*', 'roundtrip')[0]
+      || xml.getElementsByTagName('gajago:roundtrip')[0];
+    points.isExplicitRoundTrip = !!(rtEl && rtEl.textContent.trim() === 'true');
+  } catch (e) {
+    points.isExplicitRoundTrip = false;
+  }
   return points;
 }
 
@@ -1454,6 +1466,10 @@ function loadGpxFromText(text, baseName) {
   try {
     const points = parseGPX(text);
     loadedPoints = points;
+    // 🔁 왕복 체크 상태는 지도 그리기와 무관하므로 가장 먼저 반영한다(지도 SDK 오류로
+    // 뒤쪽 단계가 중단돼도 체크 상태는 파일과 일치). 반환점 지명 입력칸은
+    // initRoutePOIs가 기본값을 덮어쓴 뒤 아래에서 다시 한 번 채운다.
+    applyLoadedRoundTripState(points);
     clearPoiMarkers();
     loadedPoiList = [];
     resetPoiHistory(); // 새 코스를 불러오면 이전 코스의 실행취소 기록은 의미가 없다
@@ -1484,6 +1500,11 @@ function loadGpxFromText(text, baseName) {
     saveHandoffToSummary(gpxBaseName, stats);
     saveGpxDraft(points, gpxBaseName);
     initRoutePOIs(points);
+    // 🔁 불러온 GPX가 왕복으로 저장된 파일이면 체크박스를 그대로 켠다(아니면 끈다 —
+    // 이전 코스의 체크 상태가 새 코스로 새지 않게). 반환점 지점에 지명이 있으면
+    // 입력칸에도 채운다. initRoutePOIs가 날머리 입력칸을 기본값으로 덮은 뒤에 해야 한다.
+    applyLoadedRoundTripState(points);
+    saveGpxDraft(points, gpxBaseName);
     const navFilenameInput = document.getElementById('input-nav-filename');
     if (navFilenameInput) {
       navFilenameInput.value = gpxBaseName;
@@ -1497,6 +1518,21 @@ function loadGpxFromText(text, baseName) {
     savePartialBtn.disabled = true;
     return false;
   }
+}
+
+function applyLoadedRoundTripState(points) {
+  const cb = document.getElementById('isRoundTripCheckbox');
+  if (!cb) return;
+  cb.checked = !!points.isExplicitRoundTrip;
+  const endInput = document.getElementById('input-end-name');
+  if (cb.checked && endInput) {
+    // 반환점(트랙 마지막 점) 30m 이내의 지명 waypoint가 있으면 그 이름을 반환점 지명으로 복원
+    const last = points[points.length - 1];
+    const turnWpt = (points.waypoints || []).find(w =>
+      !/들머리|출발/.test(w.name) && haversineKm(last, w) * 1000 <= 30);
+    endInput.value = turnWpt ? turnWpt.name : '';
+  }
+  if (window.syncRoundTripCheckboxUI) window.syncRoundTripCheckboxUI();
 }
 
 function handleGPXFile(e) {
@@ -1673,6 +1709,8 @@ function saveGpxDraft(points, baseName, poiList) {
       poiList: Array.isArray(poiList) ? poiList : null,
       startTrailName: typeof startTrailName !== 'undefined' ? startTrailName : null,
       endTrailName: typeof endTrailName !== 'undefined' ? endTrailName : null,
+      isRoundTrip: !!(document.getElementById('isRoundTripCheckbox') && document.getElementById('isRoundTripCheckbox').checked),
+      turnName: (document.getElementById('input-end-name') || {}).value || '',
       specialMarkersMap: (typeof specialMarkersMap !== 'undefined') ? specialMarkersMap : null
     }));
   } catch (e) {
@@ -1735,6 +1773,14 @@ function restoreGpxDraftIfAny() {
       delete specialMarkersMap['start'].dy;
       delete specialMarkersMap['end'].dx;
       delete specialMarkersMap['end'].dy;
+    }
+    // 🔁 draft에 남긴 왕복 체크 상태/반환점 지명 복원
+    const rtCbDraft = document.getElementById('isRoundTripCheckbox');
+    if (rtCbDraft) {
+      rtCbDraft.checked = !!data.isRoundTrip;
+      const rtEndInput = document.getElementById('input-end-name');
+      if (rtCbDraft.checked && rtEndInput) rtEndInput.value = data.turnName || '';
+      if (window.syncRoundTripCheckboxUI) window.syncRoundTripCheckboxUI();
     }
     drawRoute(points);
 
@@ -2157,6 +2203,16 @@ restoreGpxDraftIfAny();
     if (!isRoundTripChecked && !specialMarkersMap['end'].deleted) {
       wpts.push({ name: endTrailName || '날머리', lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
     }
+    // 🔁 왕복이면 날머리 대신 "반환점 지명"(예: 희운각대피소)을 쓸 수 있다 — 입력칸에
+    // 직접 적은 이름이 있을 때만 트랙 마지막 점(=반환점)에 그 이름의 waypoint로 저장한다.
+    // '날머리/도착'이 들어간 기본 문구는 지명이 아니므로 저장하지 않는다.
+    if (isRoundTripChecked) {
+      const turnInput = document.getElementById('input-end-name');
+      const turnName = turnInput ? turnInput.value.trim() : '';
+      if (turnName && !/날머리|도착/.test(turnName)) {
+        wpts.push({ name: turnName, lat: endPt.lat, lon: endPt.lon, ele: endPt.ele, routeDistKm: totalDist });
+      }
+    }
 
     if (!specialMarkersMap['peak_top'].deleted) {
       const withEle = loadedPoints.filter(p => p.ele !== null);
@@ -2543,13 +2599,24 @@ restoreGpxDraftIfAny();
     const hint = document.getElementById('roundTripHint');
     if (!checkbox || !endInput) return;
     const checked = checkbox.checked;
-    endInput.disabled = checked;
-    if (checked) endInput.value = '';
+    // 왕복이어도 입력칸을 잠그지 않는다 — 날머리 대신 "반환점 지명"으로 쓴다.
+    // (예전엔 잠그고 비워서, 반환점에 지명을 넣을 방법이 없었다.) 자동으로 채워진
+    // '날머리 …' 기본 문구만 지우고, 사용자가 적은 지명은 그대로 둔다.
+    endInput.disabled = false;
+    const endLabel = document.querySelector('label[for="input-end-name"]');
+    if (endLabel) endLabel.textContent = checked ? '🔁 반환점 지명 (왕복 코스)' : '🏁 날머리 지명';
+    endInput.placeholder = checked ? '예: 희운각대피소 (비우면 지명 없음)' : '예: 날머리 (원점회귀)';
+    if (checked && /날머리|도착/.test(endInput.value)) endInput.value = '';
     if (hint) hint.style.display = checked ? 'block' : 'none';
   }
   const roundTripCheckboxEl = document.getElementById('isRoundTripCheckbox');
+  window.syncRoundTripCheckboxUI = syncRoundTripCheckboxUI;
   if (roundTripCheckboxEl) {
-    roundTripCheckboxEl.addEventListener('change', syncRoundTripCheckboxUI);
+    roundTripCheckboxEl.addEventListener('change', () => {
+      syncRoundTripCheckboxUI();
+      // 체크 상태도 draft에 남겨, 새로고침/메뉴 전환 후 복원 때 유지한다.
+      if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
+    });
     syncRoundTripCheckboxUI(); // 페이지 로드 시(자동저장 복원 등) 초기 상태 반영
   }
 

@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_hide_auto_peak_badge';
+      const APP_BUILD = 'v20261004_roundtrip_turn_name';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2782,7 +2782,10 @@
     // 날머리는 평소처럼 끝점에 두고(아래 원점회귀 통합으로 들머리와 합쳐짐),
     // 반환점은 펼친 지점(roundTripTurnIdx)에 별도 마일스톤으로 넣는다.
     const turnIdx = points.roundTripTurnIdx;
-    if (turnIdx != null && points[turnIdx] && !list.some(m => m.name.includes('반환점'))) {
+    // 반환점 근처(60m)에 이미 지명 마일스톤(예: gpx-map의 반환점 지명 '희운각')이 있으면
+    // 그 지명이 반환점 역할을 하므로 별도 '반환점'을 만들지 않는다.
+    if (turnIdx != null && points[turnIdx] && !list.some(m => m.name.includes('반환점')
+        || Math.abs((m.distanceM || 0) - ((cumDistances && cumDistances[turnIdx]) || 0)) < 60)) {
       const tp = points[turnIdx];
       const turnDistM = (cumDistances && cumDistances[turnIdx]) || 0;
       list.push({ name: '반환점', lat: tp.lat, lon: tp.lon, distanceM: turnDistM, icon: '🔁', color: '#7b1fa2', trailLat: tp.lat, trailLon: tp.lon, hideMarker: true }); // 사용자 지시: 지도에는 표시하지 않음(안내용 마일스톤만 유지)
