@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_roundtrip_turn_name';
+      const APP_BUILD = 'v20261004_offtrack_waypoints';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2593,7 +2593,12 @@
         // 붙어 지그재그하는" 케이스에서 오히려 정상 배회 구간을 인위적
         // 으로 쪼개는 새로운 버그를 만들었으므로, 이 좁힘 로직 전체를
         // 제거하고 원래의 단순한 30m 고정값으로 되돌린다.
-        const matchThreshold = WAYPOINT_MATCH_RADIUS_M;
+        // 🐛 2026-10-04 수정(사용자 재현: 설악산_울산바위.gpx의 '신흥사'가 지도에 안 뜸) —
+        // 위의 '100m 초과면 제외' 필터를 통과한 지명(트랙에서 30~100m, 예: 신흥사 61m)이
+        // 여기서 30m 고정 반경 때문에 후보를 하나도 못 찾아 조용히 버려졌다. 30m 밖이면
+        // 가장 가까운 세그먼트(+1m 이내, 왕복이면 가는 길/오는 길 양쪽)를 매칭 후보로 쓴다.
+        // 30m 이내 지명은 기존과 완전히 동일하게 30m 고정값을 쓴다.
+        const matchThreshold = globalMinD > WAYPOINT_MATCH_RADIUS_M ? globalMinD + 1 : WAYPOINT_MATCH_RADIUS_M;
         // 🐛 2026-09-26 수정(N/N+1 전면 폐기 재설계 중 Node.js 검증으로
         // 발견: "부산오뎅바"와 "갈림길6"처럼 서로 다른 실제 좌표를 가진
         // 두 웨이포인트가 같은 긴 세그먼트(idx=30, 84.7m 길이)에 매칭될
