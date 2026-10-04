@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_hide_auto_names';
+      const APP_BUILD = 'v20261004_hide_auto_peak_badge';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2748,7 +2748,7 @@
           trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
           trailLon: peak.lon,
           isPeak: true,
-          autoNamed: true, // 사용자가 GPX에 넣지 않은 자동 보완 이름 — 안내 문구에는 표시하지 않음
+          autoNamed: true, hideMarker: true, // 사용자가 GPX에 넣지 않은 자동 보완 이름 — 지도 배지/안내 문구에 표시하지 않음
         });
       }
     }
@@ -6006,7 +6006,7 @@
       // 30도/120도 경계로 이미 세분화되어 있음)를 그대로 노출한다. 새
       // 분류 함수를 만들지 않고 기존 계산 결과를 그대로 재사용한다.
       clockOnly = nextM.turnLabel;
-      const label = `${nextM.name}에서 ${clockOnly}`;
+      const label = nextM.autoNamed ? `${clockOnly}` : `${nextM.name}에서 ${clockOnly}`; // 자동 보완 이름('정상 (…m)')은 표시하지 않음
       // showBottomDirectionArrow(angleDiff, ...)의 angleDiff는 turnAngle을
       // 그대로 넘긴다 — 화살표 회전 각도는 그대로 유지(문구만 교체).
       // 🐛 2026-09-28 추가 — 이 화살표가 "nextM(key)을 향한 것"임을
