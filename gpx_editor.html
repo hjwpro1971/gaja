@@ -2740,13 +2740,41 @@ ${trkpts}    </trkseg>
 </gpx>`;
   }
 
-  function writeGpxFile() {
+  // 🐛 2026-10-04 수정(사용자 지시: "gps-map,gpx-editor 저장시 기존
+  // 이름으로 저장 가능하게 해" → "뒤에 1,2,3 첨자가 붙어서 그래" →
+  // "덮어쓰기") — a.download 방식은 브라우저가 전적으로 저장 경로를
+  // 결정하는데, 다운로드 폴더에 같은 이름의 파일이 이미 있으면 Chrome
+  // 등이 사용자에게 묻지 않고 자동으로 "파일명 (1).gpx"처럼 첨자를
+  // 붙여버린다 — 기존 파일을 덮어쓸 방법이 없었다. File System Access
+  // API(showSaveFilePicker)를 쓰면 저장 대화상자가 떠서, 사용자가 기존
+  // 파일을 직접 선택해 진짜로 덮어쓸 수 있다. Chrome/Edge(데스크톱)만
+  // 지원하므로, 없는 환경(Safari/Firefox/대부분의 모바일)은 기존
+  // a.click() 다운로드 방식으로 조용히 폴백한다.
+  async function writeGpxFile() {
     let courseName = document.getElementById('courseNameInput').value.trim();
     if (!courseName) courseName = '나만의_등산로_코스';
 
     const gpxXml = buildGpxXml(courseName);
-
     const blob = new Blob([gpxXml], { type: 'application/gpx+xml;charset=utf-8' });
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: `${courseName}.gpx`,
+          types: [{ description: 'GPX 파일', accept: { 'application/gpx+xml': ['.gpx'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast(`🎉 실제 산길이 담긴 '${courseName}.gpx' (${allTrailPoints.length}개 좌표) 저장이 완료되었습니다!`);
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // 사용자가 저장 대화상자를 취소함
+        console.warn('showSaveFilePicker 저장 실패, 기존 다운로드 방식으로 폴백:', err);
+        // 아래로 떨어져 기존 방식으로 계속 진행
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -4089,7 +4117,7 @@ ${trkpts}    </trkseg>
   // Pages 기본 HTTP 캐시에만 의존한다 — 배포해도 핸드폰이 한동안 구버전을
   // 그대로 쓸 수 있다. 매번 배포할 때 이 문자열만 올리면, 화면 좌측 하단
   // 뱃지로 "지금 핸드폰이 최신 코드를 받았는지"를 바로 확인할 수 있다.
-  const GPX_EDITOR_VERSION = 'v2';
+  const GPX_EDITOR_VERSION = 'v3';
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();

@@ -2233,7 +2233,13 @@ restoreGpxDraftIfAny();
     return lines.join('\n');
   }
 
-  function exportNavGpx() {
+  // 🐛 2026-10-04 수정(사용자 지시: "gps-map,gpx-editor 저장시 기존
+  // 이름으로 저장 가능하게 해" → "뒤에 1,2,3 첨자가 붙어서 그래" →
+  // "덮어쓰기") — gpx_editor.html의 writeGpxFile과 동일한 이유로
+  // File System Access API를 쓴다(그쪽 정의부 주석 참고). 미지원
+  // 환경(Safari/Firefox/대부분의 모바일)은 기존 a.click() 다운로드로
+  // 폴백한다.
+  async function exportNavGpx() {
     const navFilenameInput = document.getElementById('input-nav-filename');
     let customName = (navFilenameInput ? navFilenameInput.value : '').trim();
     if (!customName) {
@@ -2248,6 +2254,23 @@ restoreGpxDraftIfAny();
       return;
     }
     const blob = new Blob([xml], { type: 'application/gpx+xml;charset=utf-8' });
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: cleanBaseName + '.gpx',
+          types: [{ description: 'GPX 파일', accept: { 'application/gpx+xml': ['.gpx'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // 사용자가 저장 대화상자를 취소함
+        console.warn('showSaveFilePicker 저장 실패, 기존 다운로드 방식으로 폴백:', err);
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2584,7 +2607,7 @@ function generateCourseText() {
 // 📌 이 페이지도 gpx_editor.html과 마찬가지로 서비스워커 없이 GitHub
 // Pages 기본 HTTP 캐시에만 의존한다. 배포할 때마다 이 문자열만 올리면
 // 화면 우측 하단 뱃지로 "지금 받은 코드가 최신인지" 바로 확인 가능.
-const GPX_MAP_VERSION = 'v2';
+const GPX_MAP_VERSION = 'v3';
 (function fillGpxMapVersionBadge() {
   const el = document.getElementById('gpxMapVersionBadge');
   if (el) el.innerText = GPX_MAP_VERSION;
