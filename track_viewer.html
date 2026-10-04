@@ -82,7 +82,7 @@
 
     // 스마트폰 바탕화면(PWA) 구버전 캐시 즉시 탈출 & 최신 코드 자동 활성화
     (function() {
-      const APP_BUILD = 'v20261004_roundtrip_single_line';
+      const APP_BUILD = 'v20261004_hide_auto_names';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2748,6 +2748,7 @@
           trailLat: peak.lat, // 트랙 자체의 점이라 원본 좌표가 곧 트랙 좌표
           trailLon: peak.lon,
           isPeak: true,
+          autoNamed: true, // 사용자가 GPX에 넣지 않은 자동 보완 이름 — 안내 문구에는 표시하지 않음
         });
       }
     }
@@ -5874,9 +5875,9 @@
     const dispPrevM = bigResult ? bigResult.prevM : prevM;
     const dispNextM = bigResult ? bigResult.nextM : nextM;
     const dispDistToNextM = bigResult ? Math.abs(dispNextM.distanceM - traveledDist) : distToNextM;
-    // 사용자 지시: 왕복 코스의 자동 보완 마일스톤 '반환점'은 이름을 글자로
+    // 사용자 지시: 자동 보완 마일스톤('반환점', GPX에 없던 '정상 (…m)')은 이름을 글자로
     // 보여주지 않는다(표시 문구에서만 생략 — 마일스톤/거리 계산은 그대로).
-    const dispName = m => (m.name === '반환점' ? '' : escName(m.name));
+    const dispName = m => ((m.name === '반환점' || m.autoNamed) ? '' : escName(m.name));
     const prevName = dispName(dispPrevM);
     const nextName = dispName(dispNextM);
     const routeLabel = (prevName && nextName) ? `${prevName} → ${nextName} · `
