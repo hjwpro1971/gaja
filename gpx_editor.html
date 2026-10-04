@@ -475,6 +475,7 @@
       <button class="btn-sub-tool" onclick="undoHistory()" title="실행 취소 (Ctrl+Z)">↩️</button>
       <button class="btn-sub-tool" onclick="redoHistory()" title="다시 실행 (Ctrl+Y)">↪️</button>
       <button class="btn-sub-tool" onclick="reverseTrailDirection()" title="전체 경로 방향 반전 — 두 GPX를 이어붙였는데 뒤쪽 트랙이 반대 방향으로 기록된 경우 사용">🔃</button>
+      <button class="btn-sub-tool" onclick="mergeOutAndBackToSingleLine()" title="✂️ 왕복 한 줄로 합치기 — 올라갈 때와 내려올 때가 따로 기록돼 선이 2줄인 GPX를, 들머리→반환점 한 줄로 줄입니다(반환점은 들머리에서 가장 먼 지점). 합친 뒤 필요하면 옆의 🔁 편도왕복을 눌러 저장하세요.">🪢</button>
       <button class="btn-sub-tool" onclick="markAsRoundTrip()" title="🔁 편도왕복 — 실제로는 왕복(원점회귀)인데 트랙은 편도(반환점까지)만 그려진 경우. 날머리를 들머리와 같은 지점으로 맞춰 저장하면, track_viewer가 반환점에서 자동으로 되돌아오는 코스로 인식합니다.">🔁</button>
       <button class="btn-sub-tool" onclick="onClickCleanupPreview()" title="🧹 정제 미리보기 — 정상/전망대 등에서 서성인 구간을 진입점-대표점-이탈점으로 압축하고, 전체 경로를 5m 간격으로 재샘플링합니다. 왕복 전환점과 경유지는 보존됩니다.">🧹</button>
       <button class="btn-sub-tool" onclick="onClickFindLingeringSegments()" title="⚠️ 헤맴 구간 찾기 — 갈림길 등에서 서성인 것으로 의심되는 구간을 지도에 노란색으로 표시만 합니다(자동 삭제 안 함). 박스 선택 삭제/재라우팅으로 직접 정리하세요.">⚠️</button>
@@ -2942,6 +2943,65 @@ ${trkpts}    </trkseg>
     showToast('🔁 편도왕복으로 표시했습니다. 날머리를 들머리와 같은 지점으로 맞췄습니다.\n저장하면 track_viewer가 반환점에서 자동으로 되돌아오는 코스로 인식합니다.');
   }
   window.markAsRoundTrip = markAsRoundTrip;
+
+  // 🪢 2026-10-04 추가(사용자 지시: "gpx-editor에서 gpx를 불러왔는데 편도왕복인데
+  // 올라갈 때/내려올 때 데이터가 2줄이야. 그냥 1줄로 만들고 싶어") — 실제로
+  // 왕복 산행을 기록한 GPX는 같은 길이 가는 선/오는 선으로 두 번 들어 있다.
+  // 반환점(들머리에서 직선거리가 가장 먼 점)까지만 남기고 뒤쪽 복귀 구간을
+  // 잘라 한 줄로 만든다. 복귀 구간이 가는 길과 실제로 겹치는지(되돌아오는
+  // 점의 80% 이상이 가는 선에서 40m 이내)를 먼저 확인해, 겹치지 않는 종주/
+  // 순환 코스를 실수로 반토막 내지 않도록 막는다. 실행 취소(Ctrl+Z) 가능.
+  function mergeOutAndBackToSingleLine() {
+    if (!allTrailPoints || allTrailPoints.length < 4) {
+      showToast('⚠️ 합칠 경로가 없습니다. GPX를 먼저 불러오세요.');
+      return;
+    }
+    const pts = allTrailPoints;
+    const start = pts[0];
+    let turnIdx = 0, maxD = -1;
+    pts.forEach((p, i) => {
+      const d = calcDistanceM(start.lat, start.lon, p.lat, p.lon);
+      if (d > maxD) { maxD = d; turnIdx = i; }
+    });
+    if (turnIdx < 1 || turnIdx >= pts.length - 2) {
+      showToast('⚠️ 반환점을 찾지 못했습니다(경로 끝이 이미 가장 먼 지점입니다). 이미 한 줄이면 합칠 필요가 없습니다.');
+      return;
+    }
+    const outPts = pts.slice(0, turnIdx + 1);
+    const backPts = pts.slice(turnIdx + 1);
+    const MATCH_M = 40;
+    let matched = 0;
+    backPts.forEach(bp => {
+      let best = Infinity;
+      for (let i = 0; i < outPts.length; i++) {
+        const d = calcDistanceM(bp.lat, bp.lon, outPts[i].lat, outPts[i].lon);
+        if (d < best) best = d;
+        if (best <= MATCH_M) break;
+      }
+      if (best <= MATCH_M) matched++;
+    });
+    const ratio = matched / backPts.length;
+    if (ratio < 0.8) {
+      showToast('⚠️ 되돌아오는 구간이 가는 길과 ' + Math.round(ratio * 100) + '%만 겹칩니다. 같은 길을 왕복한 코스가 아니라서 합치지 않았습니다.');
+      return;
+    }
+    if (!confirm('🪢 왕복 한 줄로 합칠까요?\n\n'
+      + '들머리에서 가장 먼 지점(' + Math.round(maxD) + 'm, ' + (turnIdx + 1) + '번째 점)을 반환점으로 보고,\n'
+      + '그 뒤 ' + backPts.length + '개 점(되돌아오는 구간, ' + Math.round(ratio * 100) + '% 겹침)을 지웁니다.\n'
+      + '(Ctrl+Z로 되돌릴 수 있습니다)')) return;
+
+    saveHistory();
+    const kept = outPts.map(p => Object.assign({}, p));
+    delete kept[kept.length - 1].gapAfter;
+    allTrailPoints = kept;
+    waypoints = [allTrailPoints[0], allTrailPoints[allTrailPoints.length - 1]];
+    renderWaypoints();
+    renderTrailAndHandles();
+    updateTrailStats();
+    fitRoute();
+    showToast('🪢 왕복을 한 줄로 합쳤습니다. (' + pts.length + ' → ' + kept.length + '개 점)\n왕복 코스로 쓰려면 🔁 편도왕복을 눌러 저장하세요.');
+  }
+  window.mergeOutAndBackToSingleLine = mergeOutAndBackToSingleLine;
 
   function clearAllPoints() {
     if (waypoints.length === 0) return;
