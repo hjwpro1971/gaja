@@ -823,9 +823,21 @@ function drawRoute(points, preserveView) {
     
     const startItem = specialMarkersMap['start'];
     const endItem = specialMarkersMap['end'];
-    
-    // 원점회귀(50m 이내) 판정
-    const isRoundTrip = haversineKm(start, end) < 0.05;
+
+    // 🐛 2026-10-05 수정(사용자 지적: "왕복체크박스가 체크 안 됐으면
+    // 일반적인 편도 등산로야. 들머리, 날머리 등 기존 일반 지명은 다
+    // 들어가야 해. 왕복체크박스가 체크되는 경우가 특수한 경우이고") —
+    // 예전엔 좌표 근접성(들머리~끝점 50m 이내)만으로 "이 코스는
+    // 원점회귀"라고 자동 판단해 날머리 마커를 숨겼다. 그런데 이건
+    // "이 코스는 왕복" 체크박스(사용자가 명시적으로 켜는 특수 케이스
+    // 표시)와 완전히 무관한 독립 로직이라, 체크박스를 꺼둔 일반/편도
+    // 코스인데도 우연히 들머리·날머리 좌표가 가깝다는 이유만으로
+    // 날머리 지명 자체가 지도에서 통째로 사라지는 결함이 있었다.
+    // 좌표 근접성 추론을 버리고, 체크박스 상태를 유일한 기준으로
+    // 삼는다 — 체크박스가 꺼져 있으면(기본값, 일반적인 경우) 좌표가
+    // 아무리 가까워도 들머리/날머리를 각각 그대로 보여준다.
+    const roundTripCbEl = document.getElementById('isRoundTripCheckbox');
+    const isRoundTrip = !!(roundTripCbEl && roundTripCbEl.checked);
 
     if (isRoundTrip) {
       startItem.name = '들·날머리 (원점회귀)';
@@ -2674,7 +2686,7 @@ function generateCourseText() {
 // 📌 이 페이지도 gpx_editor.html과 마찬가지로 서비스워커 없이 GitHub
 // Pages 기본 HTTP 캐시에만 의존한다. 배포할 때마다 이 문자열만 올리면
 // 화면 우측 하단 뱃지로 "지금 받은 코드가 최신인지" 바로 확인 가능.
-const GPX_MAP_VERSION = 'v3';
+const GPX_MAP_VERSION = 'v4';
 (function fillGpxMapVersionBadge() {
   const el = document.getElementById('gpxMapVersionBadge');
   if (el) el.innerText = GPX_MAP_VERSION;
