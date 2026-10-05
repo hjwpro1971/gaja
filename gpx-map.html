@@ -845,12 +845,16 @@ function drawRoute(points, preserveView) {
       endItem.deleted = true; 
       currentMarkers.push(makeCalloutMarker(startLL, '#7b1fa2', startItem.name, startItem, 3, 150)); // 중앙 상단 보라색
     } else {
+      // 🐛 2026-10-05 수정: 왕복 체크 상태에서 한 번이라도 drawRoute가
+      // 실행되면 위 if분기에서 endItem.deleted = true가 영구히 남는다.
+      // 이후 사용자가 체크박스를 꺼도 되돌리는 코드가 없어, 날머리가
+      // "삭제된 마커"로 취급되어 계속 안 그려지는 결함이 있었다 — 왕복이
+      // 아닌 일반 코스로 전환할 때는 날머리를 명시적으로 복원한다.
+      endItem.deleted = false;
       startItem.name = startTrailName || '들머리';
       endItem.name = endTrailName || '날머리';
       currentMarkers.push(makeCalloutMarker(startLL, '#2b6cb0', startItem.name, startItem, 1, 150));
-      if (!endItem.deleted) {
-        currentMarkers.push(makeCalloutMarker(endLL, '#dd6b20', endItem.name, endItem, 2, 140));
-      }
+      currentMarkers.push(makeCalloutMarker(endLL, '#dd6b20', endItem.name, endItem, 2, 140));
     }
 
     const withEle = points.filter(p => p.ele !== null);
@@ -2686,7 +2690,7 @@ function generateCourseText() {
 // 📌 이 페이지도 gpx_editor.html과 마찬가지로 서비스워커 없이 GitHub
 // Pages 기본 HTTP 캐시에만 의존한다. 배포할 때마다 이 문자열만 올리면
 // 화면 우측 하단 뱃지로 "지금 받은 코드가 최신인지" 바로 확인 가능.
-const GPX_MAP_VERSION = 'v4';
+const GPX_MAP_VERSION = 'v5';
 (function fillGpxMapVersionBadge() {
   const el = document.getElementById('gpxMapVersionBadge');
   if (el) el.innerText = GPX_MAP_VERSION;
