@@ -470,6 +470,7 @@
       <button class="btn-mode" id="btnModeSegmentDelete" onclick="setEditMode('segmentDelete')" title="⑦ 경로 구간 삭제 — 시작점과 끝점을 차례로 클릭하면 그 사이 노드가 전부 지워집니다(여러 산길이 섞였을 때 사용)">🗑️</button>
       <button class="btn-mode" id="btnModeConnect" onclick="setEditMode('connect')" title="⑧ 끊긴 점 연결 — 끊긴 두 점을 차례로 클릭하면 즉시 직선으로 이어집니다">🔗</button>
       <button class="btn-mode" id="btnModeBoxCandidates" onclick="setEditMode('boxCandidates')" title="⑨ 구간 후보 비교(실험적) — 박스로 지정한 구간에서 내 DB의 서로 다른 경로 후보를 모두 찾아 비교">🧭</button>
+      <button class="btn-mode" id="btnModeBoxCleanup" onclick="setEditMode('boxCleanup')" title="⑩ 박스 구간 강제 정제 — '🧹 정제 미리보기'가 애매하다고 보존한(⚠️ 헤맴 구간) 서성임을, 박스로 지정한 범위만큼 무조건 진입점-대표점-이탈점으로 압축하고 전체를 5m 재샘플링">🧽</button>
     </div>
     <div class="tool-actions-sub">
       <button class="btn-sub-tool" onclick="undoHistory()" title="실행 취소 (Ctrl+Z)">↩️</button>
@@ -821,7 +822,7 @@
     const container = map.getContainer();
 
     container.addEventListener('mousedown', (e) => {
-      if (currentEditMode !== 'boxDelete' && currentEditMode !== 'boxRelink' && currentEditMode !== 'boxCandidates') return;
+      if (currentEditMode !== 'boxDelete' && currentEditMode !== 'boxRelink' && currentEditMode !== 'boxCandidates' && currentEditMode !== 'boxCleanup') return;
       if (e.button !== 0) return;
       boxSelectActive = true;
       map.dragging.disable();
@@ -863,6 +864,8 @@
         applyBoxRelink(p1, p2, isLeftToRight);
       } else if (currentEditMode === 'boxCandidates') {
         applyBoxCandidates(p1, p2, isLeftToRight);
+      } else if (currentEditMode === 'boxCleanup') {
+        applyBoxCleanup(p1, p2, isLeftToRight);
       } else {
         applyBoxDelete(p1, p2, isLeftToRight);
       }
@@ -2623,6 +2626,77 @@
     return sortedTargets.map(interpAt);
   }
 
+  // 🧹 박스로 지정한 범위를 강제로 정제한다 — "정제 미리보기"(①
+  // compressStationaryClusters)는 waypoint 중심 자동 판정이라
+  // classifyCluster가 'turnaround'(애매함)로 분류하면 압축하지 않고
+  // 보존한다("⚠️ 헤맴 구간 찾기"로 노출되는 이유). 하지만 사용자가
+  // 지도를 보고 "여기는 명백히 왔다갔다한 서성임이다"라고 이미
+  // 판단했다면, 그 자동 판정을 건너뛰고 박스 안 전체를 "진입점 →
+  // 대표점(좌표 평균) → 이탈점" 3점으로 강제 압축한 뒤, 전체 트랙을
+  // 5m 간격으로 재샘플링한다(resampleByDistance는 전체 points를
+  // 받아야 forcedKeepPoints/왕복 처리가 일관되므로, 압축은 박스
+  // 범위에만 적용하고 재샘플링은 항상 전체에 적용한다).
+  //
+  // 🐛 2026-10-07 추가(사용자 신고: "정제 미리보기 버튼 클릭후
+  // 헤맴구간을 클릭하면 나오는 곳이야" — 조망대 근처에서 지그재그로
+  // 왔다갔다한 구간이 자동 정제 후에도 여전히 "헤맴 구간"으로 남아
+  // 수동으로 노드를 지우고 있었음) — 일정 범위를 사람이 직접 지정해
+  // 강제로 정제하는 기능을 추가했다.
+  function applyBoxCleanup(latlng1, latlng2, isLeftToRight) {
+    if (allTrailPoints.length === 0) return;
+
+    const idxList = findBoxSelectedIdx(latlng1, latlng2, isLeftToRight);
+    if (idxList.length === 0) {
+      showToast('🧹 박스 안에 정제할 점이 없습니다.');
+      return;
+    }
+    const startIdx = Math.min(...idxList);
+    const endIdx = Math.max(...idxList);
+    // 진입점/이탈점까지 포함해 최소 4개 점(진입+내부1개 이상+이탈)은
+    // 있어야 압축할 의미가 있다.
+    if (endIdx - startIdx + 1 < 3) {
+      showToast('🧹 선택 범위가 너무 작습니다. 서성인 구간을 더 넓게 선택해주세요.');
+      return;
+    }
+
+    saveHistory();
+    const before = allTrailPoints.length;
+
+    const entryIdx = Math.max(0, startIdx - 1);
+    const exitIdx = Math.min(allTrailPoints.length - 1, endIdx + 1);
+
+    // 대표점 좌표: 박스 안(entryIdx~exitIdx) 좌표 평균. 가까운 waypoint
+    // (30m 이내)가 있으면 compressStationaryClusters와 동일하게 그
+    // 좌표로 스냅해 지명 지점 자체가 사라지지 않게 한다.
+    let sumLat = 0, sumLon = 0, sumEle = 0, eleCount = 0, n = 0;
+    for (let k = entryIdx; k <= exitIdx; k++) {
+      sumLat += allTrailPoints[k].lat;
+      sumLon += allTrailPoints[k].lon;
+      if (allTrailPoints[k].ele !== null && allTrailPoints[k].ele !== undefined && !isNaN(allTrailPoints[k].ele)) {
+        sumEle += allTrailPoints[k].ele;
+        eleCount++;
+      }
+      n++;
+    }
+    let repLat = sumLat / n, repLon = sumLon / n;
+    const repEle = eleCount > 0 ? sumEle / eleCount : null;
+    const nearWpt = (importedGpxWpts || []).find(w => calcDistanceM(repLat, repLon, w.lat, w.lon) <= 30);
+    if (nearWpt) { repLat = nearWpt.lat; repLon = nearWpt.lon; }
+
+    const compressed = [];
+    for (let k = 0; k < entryIdx; k++) compressed.push(allTrailPoints[k]);
+    compressed.push(allTrailPoints[entryIdx]);
+    compressed.push({ lat: repLat, lon: repLon, ele: repEle, time: allTrailPoints[startIdx].time || null });
+    compressed.push(allTrailPoints[exitIdx]);
+    for (let k = exitIdx + 1; k < allTrailPoints.length; k++) compressed.push(allTrailPoints[k]);
+
+    const resampled = resampleByDistance(compressed);
+    allTrailPoints = resampled;
+    renderTrailAndHandles();
+    updateTrailStats();
+    showToast(`🧹 선택 구간 강제 정제: ${endIdx - startIdx + 1}개 점 압축 · ${before}개 → ${allTrailPoints.length}개로 재샘플링`);
+  }
+
   // "🧹 정제 미리보기" 버튼 핸들러 — ①서성임 압축 → ③5m 재샘플링
   // 순서로 적용한다. saveHistory()로 되돌리기 가능하게 하고, 결과는
   // allTrailPoints에 바로 반영한다(저장은 별도로 "GPX 저장" 버튼을
@@ -3595,12 +3669,13 @@ ${trkpts}    </trkseg>
       'boxRelink': document.getElementById('btnModeBoxRelink'),
       'segmentDelete': document.getElementById('btnModeSegmentDelete'),
       'connect': document.getElementById('btnModeConnect'),
-      'boxCandidates': document.getElementById('btnModeBoxCandidates')
+      'boxCandidates': document.getElementById('btnModeBoxCandidates'),
+      'boxCleanup': document.getElementById('btnModeBoxCleanup')
     }[mode];
     if (activeBtn) activeBtn.classList.add('active');
 
     // 박스 선택 모드에서는 지도 자체 드래그(패닝)를 막고 사각형 드래그로만 조작
-    if (mode === 'boxDelete' || mode === 'boxRelink' || mode === 'boxCandidates') {
+    if (mode === 'boxDelete' || mode === 'boxRelink' || mode === 'boxCandidates' || mode === 'boxCleanup') {
       map.dragging.disable();
     } else {
       map.dragging.enable();
@@ -3643,6 +3718,9 @@ ${trkpts}    </trkseg>
     } else if (mode === 'boxCandidates') {
       renderTrailAndHandles();
       showToast('🧭 [구간 후보 비교 모드 — 실험적]\n박스로 구간을 감싸면, 내 DB에서 그 구간을 잇는 서로 다른 경로 후보를 모두 찾아 색이 다른 점선으로 보여줍니다. 원하는 후보를 클릭해 선택한 뒤 적용하세요.');
+    } else if (mode === 'boxCleanup') {
+      renderTrailAndHandles();
+      showToast('🧽 [박스 구간 강제 정제 모드]\n"🧹 정제 미리보기"가 애매하다고 보존해 "⚠️ 헤맴 구간"으로 남은 지그재그/서성임을, 박스로 감싼 범위만큼 무조건 진입점→대표점→이탈점으로 압축하고 전체를 5m 간격으로 재샘플링합니다.');
     }
   }
 
@@ -4177,7 +4255,7 @@ ${trkpts}    </trkseg>
   // Pages 기본 HTTP 캐시에만 의존한다 — 배포해도 핸드폰이 한동안 구버전을
   // 그대로 쓸 수 있다. 매번 배포할 때 이 문자열만 올리면, 화면 좌측 하단
   // 뱃지로 "지금 핸드폰이 최신 코드를 받았는지"를 바로 확인할 수 있다.
-  const GPX_EDITOR_VERSION = 'v3';
+  const GPX_EDITOR_VERSION = 'v4';
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
