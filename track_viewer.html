@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v222';
+    const CACHE_NAME = 'gaja-trail-cache-v223';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261012_origin_reset_target_fit';
+      const APP_BUILD = 'v20261012_roundtrip_initial_direction';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1048,6 +1048,16 @@
   const REVERSE_WARNING_CONFIRM_STREAK = 3; 
   let reverseWarningStreak = 0;
   let lastRouteDistanceForReverseCheck = null; 
+
+
+  
+  
+  
+  let pendingRoundTripPair = null; 
+  let pendingDirectionConfirmHeading = null; 
+  let pendingDirectionConfirmStreak = 0; 
+  const ROUNDTRIP_DIRECTION_CONFIRM_STREAK = 3; 
+  const ROUNDTRIP_DIRECTION_TOLERANCE_DEG = 45; 
 
   
   
@@ -2170,6 +2180,18 @@
             ? [clusters.reduce((a, b) => (cumDistances[a.best.idx] || 0) >= (cumDistances[b.best.idx] || 0) ? a : b)]
             : clusters;
         }
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+        const pushedMilestones = [];
         selectedClusters.forEach(cluster => {
           const nearestIdx = cluster.best.idx;
           const t = cluster.best.t || 0;
@@ -2181,11 +2203,17 @@
           const segB = points[nearestIdx + 1] || segA;
           const trailLat = segA.lat + (segB.lat - segA.lat) * t;
           const trailLon = segA.lon + (segB.lon - segA.lon) * t;
-          list.push({
+          const m = {
             name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
             trailLat, trailLon, isPeak,
-          });
+          };
+          list.push(m);
+          pushedMilestones.push(m);
         });
+        if (pushedMilestones.length === 2) {
+          pushedMilestones[0].roundTripPeer = pushedMilestones[1];
+          pushedMilestones[1].roundTripPeer = pushedMilestones[0];
+        }
       });
     }
 
@@ -2427,6 +2455,84 @@
     }
     currentMilestoneIdx = best.idx;
     nextMilestoneIdx = best.idx + 1;
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    const bestSection = getCurrentSection();
+    if (bestSection) {
+      const fromTarget = bestSection.fromMilestone.roundTripPeer || bestSection.fromMilestone;
+      const toTarget = bestSection.toMilestone.roundTripPeer || bestSection.toMilestone;
+
+      const hasAnyPeer = !!bestSection.fromMilestone.roundTripPeer || !!bestSection.toMilestone.roundTripPeer;
+      if (hasAnyPeer) {
+        let pairIdx = -1;
+        for (let i = 0; i < currentMilestones.length - 1; i++) {
+          if (currentMilestones[i] === toTarget && currentMilestones[i + 1] === fromTarget) {
+            pairIdx = i;
+            break;
+          }
+        }
+        if (pairIdx >= 0) {
+          pendingRoundTripPair = { candidateIdxA: best.idx, candidateIdxB: pairIdx };
+          pendingDirectionConfirmHeading = null;
+          pendingDirectionConfirmStreak = 0;
+        }
+      }
+    }
+  }
+
+
+  
+
+  
+  
+  
+  function reconfirmPendingRoundTripPair(movementHeading) {
+    if (!pendingRoundTripPair || movementHeading === null || movementHeading === undefined) return;
+
+    if (pendingDirectionConfirmHeading === null) {
+      pendingDirectionConfirmHeading = movementHeading;
+      pendingDirectionConfirmStreak = 1;
+      return;
+    }
+    const diff = Math.abs(shortestAngleDiff(movementHeading, pendingDirectionConfirmHeading));
+    if (diff <= ROUNDTRIP_DIRECTION_TOLERANCE_DEG) {
+      pendingDirectionConfirmStreak++;
+    } else {
+      pendingDirectionConfirmHeading = movementHeading;
+      pendingDirectionConfirmStreak = 1;
+    }
+
+    if (pendingDirectionConfirmStreak < ROUNDTRIP_DIRECTION_CONFIRM_STREAK) return;
+
+    const { candidateIdxA, candidateIdxB } = pendingRoundTripPair;
+    const sectionA = { fromMilestone: currentMilestones[candidateIdxA], toMilestone: currentMilestones[candidateIdxA + 1] };
+    const sectionB = { fromMilestone: currentMilestones[candidateIdxB], toMilestone: currentMilestones[candidateIdxB + 1] };
+    const bearingA = calculateBearing(sectionA.fromMilestone.trailLat, sectionA.fromMilestone.trailLon, sectionA.toMilestone.trailLat, sectionA.toMilestone.trailLon);
+    const bearingB = calculateBearing(sectionB.fromMilestone.trailLat, sectionB.fromMilestone.trailLon, sectionB.toMilestone.trailLat, sectionB.toMilestone.trailLon);
+    const diffA = Math.abs(shortestAngleDiff(movementHeading, bearingA));
+    const diffB = Math.abs(shortestAngleDiff(movementHeading, bearingB));
+    const chosenIdx = diffA <= diffB ? candidateIdxA : candidateIdxB;
+
+    if (currentMilestoneIdx !== chosenIdx) {
+      currentMilestoneIdx = chosenIdx;
+      nextMilestoneIdx = chosenIdx + 1;
+      showToastBadge('🔁 실제 이동 방향에 맞춰 경로를 다시 확인했습니다.');
+    }
+
+    pendingRoundTripPair = null;
+    pendingDirectionConfirmHeading = null;
+    pendingDirectionConfirmStreak = 0;
   }
 
 
@@ -3021,6 +3127,13 @@
 
     currentMilestoneIdx = -1;
     nextMilestoneIdx = -1;
+
+
+    
+    
+    pendingRoundTripPair = null;
+    pendingDirectionConfirmHeading = null;
+    pendingDirectionConfirmStreak = 0;
 
     if (resetMapOrientation) {
       if (userGpsMarker) { map.removeLayer(userGpsMarker); userGpsMarker = null; }
@@ -6107,6 +6220,9 @@
             lastMovementVectorHeading = movementHeading;
             lastMovementVectorUpdatedAt = Date.now();
             lastArrowVectorPos = { lat, lon };
+
+            
+            reconfirmPendingRoundTripPair(movementHeading);
           }
 
         } else {
