@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v221';
+    const CACHE_NAME = 'gaja-trail-cache-v222';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261012_safe_reload_lock_course';
+      const APP_BUILD = 'v20261012_origin_reset_target_fit';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4501,6 +4501,56 @@
 
   
 
+  
+
+  
+
+  
+
+  
+
+  
+  function getBearingAndTargetForOriginReset(lat, lon, section) {
+    const target = section && section.toMilestone;
+    if (!target || typeof target.trailLat !== 'number' || typeof target.trailLon !== 'number') return null;
+    return {
+      bearing: calculateBearing(lat, lon, target.trailLat, target.trailLon),
+      targetLat: target.trailLat,
+      targetLon: target.trailLon,
+    };
+  }
+
+
+  
+
+  
+  const ORIGIN_RESET_VIEW_PADDING_RATIO = 2.6; 
+  function applyOriginResetFitView(aLat, aLon, bLat, bLon) {
+    if (!map) return;
+    
+    
+    if (isWayfindActive) return;
+    const centerLat = (aLat + bLat) / 2;
+    const centerLon = (aLon + bLon) / 2;
+    const distM = haversineMeters(aLat, aLon, bLat, bLon);
+
+    
+    const mapSize = map.getSize();
+    const shortSidePx = Math.max(100, Math.min(mapSize.x, mapSize.y));
+    const desiredMetersPerPx = (distM * ORIGIN_RESET_VIEW_PADDING_RATIO) / shortSidePx;
+    let zoom = 15;
+    if (distM > 0 && desiredMetersPerPx > 0) {
+      
+      const latRad = centerLat * Math.PI / 180;
+      const metersPerPxAtZ0 = 156543.03392 * Math.cos(latRad);
+      zoom = Math.log2(metersPerPxAtZ0 / desiredMetersPerPx);
+    }
+    zoom = Math.max(14, Math.min(18, Math.round(zoom)));
+    isProgrammaticZoomInProgress = true;
+    map.once('moveend', () => { isProgrammaticZoomInProgress = false; });
+    map.setView([centerLat, centerLon], zoom, { animate: true });
+  }
+
   let forceOriginReset = false;
   function resetOriginNow() {
     if (!isSegmentRotationMode || !lastKnownPos) {
@@ -4520,29 +4570,42 @@
 
     
     
-    recalculateGajaMapFromScratch('homeButton');
+    resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
     const section = getCurrentSection();
+    let targetInfo = null;
     if (section) {
       const proj = projectOntoCurrentSection(lastKnownPos.lat, lastKnownPos.lon, section);
-
+      
       
       updateSegmentRotationTrigger(section, false, null);
-      const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, proj ? proj.routeDistance : 0);
-      if (arrowHeading !== null) {
-        renderGpsArrow(arrowHeading);
-        lastArrowHeadingForGuidance = arrowHeading;
+
+      targetInfo = getBearingAndTargetForOriginReset(lastKnownPos.lat, lastKnownPos.lon, section);
+      if (targetInfo) {
+        applySegmentRotation(targetInfo.bearing);
+        renderGpsArrow(targetInfo.bearing);
+        lastArrowHeadingForGuidance = targetInfo.bearing;
+      } else {
+        
+        
+        updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
+        const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, proj ? proj.routeDistance : 0);
+        if (arrowHeading !== null) {
+          renderGpsArrow(arrowHeading);
+          lastArrowHeadingForGuidance = arrowHeading;
+        }
       }
     }
 
-    
 
     
 
-    
-    
     if (map && lastKnownPos) {
-      const currentZoom = Math.max(map.getZoom(), 15);
-      applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, currentZoom, { animate: true });
+      if (targetInfo) {
+        applyOriginResetFitView(lastKnownPos.lat, lastKnownPos.lon, targetInfo.targetLat, targetInfo.targetLon);
+      } else {
+        const currentZoom = Math.max(map.getZoom(), 15);
+        applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, currentZoom, { animate: true });
+      }
     }
 
     forceOriginReset = false;
