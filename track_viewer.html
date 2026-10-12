@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v220';
+    const CACHE_NAME = 'gaja-trail-cache-v221';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261005_sim_speed3_home';
+      const APP_BUILD = 'v20261012_safe_reload_lock_course';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -629,12 +629,27 @@
   
   if ('serviceWorker' in navigator) {
     let refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
-        refreshing = true;
-        window.location.reload();
+
+    
+
+    
+
+    
+    
+    let reloadPending = false;
+    function reloadIfSafe() {
+      if (refreshing) return;
+      if (typeof watchId !== 'undefined' && watchId !== null) {
+        reloadPending = true;
+        showToastBadge('🔄 새 버전이 준비되었습니다.\n등산 완료 후 자동으로 적용됩니다.');
+        return;
       }
-    });
+      refreshing = true;
+      window.location.reload();
+    }
+    window.__gajaReloadIfSafe = reloadIfSafe;
+    window.__gajaIsReloadPending = () => reloadPending;
+    navigator.serviceWorker.addEventListener('controllerchange', reloadIfSafe);
 
 
     
@@ -4151,7 +4166,19 @@
   }
   window.showSavedRouteList = showSavedRouteList;
 
+
+  
+
+  
+  function isHikeInProgress() {
+    return typeof watchId !== 'undefined' && watchId !== null;
+  }
+
   function openSavedRouteByIndex(index) {
+    if (isHikeInProgress()) {
+      alert('⚠️ 등산 안내 중에는 다른 코스를 열 수 없습니다.\n\n먼저 "🏁 등산 완료"를 눌러 현재 산행을 종료해 주세요.');
+      return;
+    }
     const routes = loadSavedRoutes();
     const r = routes[index];
     if (!r) return;
@@ -4212,6 +4239,12 @@
   function onFileSelected(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (isHikeInProgress()) {
+      alert('⚠️ 등산 안내 중에는 다른 코스를 열 수 없습니다.\n\n먼저 "🏁 등산 완료"를 눌러 현재 산행을 종료해 주세요.');
+      e.target.value = '';
+      return;
+    }
 
     const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
     const sourceUrl = 'file:' + file.name;
@@ -5481,6 +5514,11 @@
     lowPowerModeEnabled = false;
     try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
     updateLowPowerBtnUI();
+
+
+    if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
+      window.location.reload();
+    }
   }
 
 
@@ -6154,6 +6192,11 @@
     
     const waitingOverlayErr = document.getElementById('gpsWaitingOverlay');
     if (waitingOverlayErr) waitingOverlayErr.style.display = 'none';
+
+
+    if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
+      window.location.reload();
+    }
   }
 
 
