@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v223';
+    const CACHE_NAME = 'gaja-trail-cache-v224';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261012_roundtrip_initial_direction';
+      const APP_BUILD = 'v20261013_stable_turn_heading';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1403,16 +1403,9 @@
   let lastShownArrowLabel = null;
 
   
-
   
-
   
-  let lastShownArrowMilestoneKey = null;
-  const POST_MILESTONE_ARROW_HOLD_M = 10; 
-
-
-  
-  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed, milestoneKey) {
+  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
     const el = document.getElementById('bottomDirectionArrow');
     const rotor = document.getElementById('bottomArrowRotor');
     const label = document.getElementById('bottomArrowLabel');
@@ -1427,7 +1420,6 @@
     
     lastShownArrowAngle = angleDiff;
     lastShownArrowLabel = clockLabel;
-    if (milestoneKey !== undefined) lastShownArrowMilestoneKey = milestoneKey;
   }
 
   function hideBottomDirectionArrow() {
@@ -3003,14 +2995,59 @@
 
 
   
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function computeWeightedHeadingOverRange(fromDist, toDist) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const lo = Math.min(fromDist, toDist);
+    const hi = Math.max(fromDist, toDist);
+    let sx = 0, sy = 0;
+    let i = 0;
+    while (i < cumulativeDistances.length - 1 && cumulativeDistances[i] < lo) i++;
+    let prevPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, lo);
+    while (i < cumulativeDistances.length - 1 && cumulativeDistances[i] < hi) {
+      const p = currentPoints[i];
+      const segLen = haversineMeters(prevPt.lat, prevPt.lon, p.lat, p.lon);
+      if (segLen > 0.1) {
+        const b = calculateBearing(prevPt.lat, prevPt.lon, p.lat, p.lon);
+        const rad = b * Math.PI / 180;
+        sx += Math.cos(rad) * segLen;
+        sy += Math.sin(rad) * segLen;
+      }
+      prevPt = p;
+      i++;
+    }
+    const endPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, hi);
+    const segLen = haversineMeters(prevPt.lat, prevPt.lon, endPt.lat, endPt.lon);
+    if (segLen > 0.1) {
+      const b = calculateBearing(prevPt.lat, prevPt.lon, endPt.lat, endPt.lon);
+      const rad = b * Math.PI / 180;
+      sx += Math.cos(rad) * segLen;
+      sy += Math.sin(rad) * segLen;
+    }
+    if (sx === 0 && sy === 0) return null;
+    return (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360;
+  }
+
+  const BEARING_BASELINE_M = 30;
+
+
+  
+  
   
   function computeOutgoingBearingAtMilestone(section) {
     const nextSection = peekNextSection(section);
     if (!nextSection) return null;
     const B = section.toMilestone;
-    const pseudoProj = { routeDistance: B.distanceM };
-    const approach = computeSectionApproachBearing(B.trailLat, B.trailLon, nextSection, pseudoProj);
-    return approach ? approach.bearing : null;
+    return computeWeightedHeadingOverRange(B.distanceM, B.distanceM + BEARING_BASELINE_M);
   }
 
 
@@ -3122,7 +3159,9 @@
     resetGajaMapRotationState();
     lastAlertedMilestoneKey = null;
     remainingBeepThresholds = null;
-    hideStreakCount = 0;
+
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
 
 
     currentMilestoneIdx = -1;
@@ -3158,6 +3197,11 @@
   
 
   
+
+  
+
+  
+  
   function maybeAdvanceSection(section, proj, reliability) {
     if (!section || !proj) return false;
     const targetDist = section.toMilestone.distanceM;
@@ -3170,11 +3214,9 @@
     if (reliability === GPS_RELIABILITY.REJECTED) {
       return false; 
     }
-    if (reliability === GPS_RELIABILITY.SUSPECT) {
-      sectionAdvanceConfirmStreak++;
-      if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
-    }
     
+    sectionAdvanceConfirmStreak++;
+    if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
     sectionAdvanceConfirmStreak = 0;
     const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
     advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
@@ -3867,7 +3909,10 @@
     currentSegmentBearings = buildSegmentBearings(points); 
     lastAlertedMilestoneKey = null; 
     remainingBeepThresholds = null;
-    hideStreakCount = 0;
+    
+    
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
     
     
     lastArrowVectorPos = null;
@@ -4811,30 +4856,29 @@
     
 
     
+
+    
+
     
     const outBearing = computeOutgoingBearingAtMilestone(section);
     let turnAngle = null;
     let turnLabel = null;
-    if (outBearing !== null && lastKnownPos) {
-      const currentApproach = computeSectionApproachBearing(lastKnownPos.lat, lastKnownPos.lon, section, proj);
-      const referenceBearing = currentApproach ? currentApproach.bearing : mapRotationDeg;
-      turnAngle = shortestAngleDiff(outBearing, referenceBearing);
-      turnLabel = classifyTurnAngle(turnAngle);
+    if (outBearing !== null) {
+      const referenceBearing = computeWeightedHeadingOverRange(nextM.distanceM - BEARING_BASELINE_M, nextM.distanceM);
+      if (referenceBearing !== null) {
+        turnAngle = shortestAngleDiff(outBearing, referenceBearing);
+        turnLabel = classifyTurnAngle(turnAngle);
+      }
     }
 
     
 
     
-
     
-
-    
-    const distPastPrevM = Math.max(0, traveledDist - prevM.distanceM);
-    const prevMKey = prevM.name + '@' + prevM.distanceM;
-    if (distPastPrevM > 0 && distPastPrevM <= POST_MILESTONE_ARROW_HOLD_M &&
-        lastShownArrowAngle !== null && lastShownArrowMilestoneKey === prevMKey &&
-        distToNextM <= TURN_ALERT_HIDE_DISTANCE_M) {
-      showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
+    if (postArrivalArrowFixCount !== null && distToNextM > TURN_ALERT_DISTANCE_M) {
+      if (lastShownArrowAngle !== null) {
+        showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
+      }
     } else {
       showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
     }
@@ -4881,13 +4925,10 @@
   
 
   
-  
-  
-  const TURN_ALERT_DISTANCE_M = 60;   
 
   
-  
-  const TURN_ALERT_HIDE_DISTANCE_M = 90;
+
+  const TURN_ALERT_DISTANCE_M = 50;   
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; 
 
   
@@ -4901,8 +4942,10 @@
 
   
   
-  const HIDE_CONFIRM_STREAK = 3;
-  let hideStreakCount = 0;
+  
+  let postArrivalArrowFixCount = null; 
+  let postArrivalArrowMilestoneKey = null; 
+  const POST_ARRIVAL_ARROW_HOLD_FIXES = 3; 
 
   function showUpcomingTurnAlert(nextM, distToNextM) {
 
@@ -4911,26 +4954,19 @@
     
     const key = nextM.name + '@' + nextM.distanceM; 
 
-    const hideThreshold = (key === lastAlertedMilestoneKey) ? TURN_ALERT_HIDE_DISTANCE_M : TURN_ALERT_DISTANCE_M;
-    if (distToNextM > hideThreshold) {
-
-      
-      if (key !== lastAlertedMilestoneKey) {
-        hideBottomDirectionArrow();
-        lastAlertedMilestoneKey = null; 
-        remainingBeepThresholds = null;
-        hideStreakCount = 0;
-        return;
-      }
-      hideStreakCount++;
-      if (hideStreakCount < HIDE_CONFIRM_STREAK) return; 
+    
+    
+    
+    if (distToNextM > TURN_ALERT_DISTANCE_M) {
       hideBottomDirectionArrow();
-      lastAlertedMilestoneKey = null;
+      lastAlertedMilestoneKey = null; 
       remainingBeepThresholds = null;
-      hideStreakCount = 0;
       return;
     }
-    hideStreakCount = 0; 
+    
+    
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
 
 
     
@@ -4948,11 +4984,9 @@
       
       clockOnly = nextM.turnLabel;
       const label = nextM.autoNamed ? `${clockOnly}` : `${nextM.name}에서 ${clockOnly}`; 
-
       
       
-      
-      showBottomDirectionArrow(nextM.turnAngle, label, false, key);
+      showBottomDirectionArrow(nextM.turnAngle, label, false);
     } else {
       
       
@@ -6275,6 +6309,23 @@
         
         if (gajaMapResult) {
           updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
+        }
+
+
+        
+        if (gajaMapResult && gajaMapResult.advanced && gajaMapResult.arrivedMilestone) {
+          
+          
+          const m = gajaMapResult.arrivedMilestone;
+          postArrivalArrowFixCount = 0;
+          postArrivalArrowMilestoneKey = m.name + '@' + m.distanceM;
+        } else if (postArrivalArrowFixCount !== null) {
+          postArrivalArrowFixCount++;
+          if (postArrivalArrowFixCount >= POST_ARRIVAL_ARROW_HOLD_FIXES) {
+            hideBottomDirectionArrow();
+            postArrivalArrowFixCount = null;
+            postArrivalArrowMilestoneKey = null;
+          }
         }
 
 
