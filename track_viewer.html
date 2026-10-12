@@ -4805,21 +4805,11 @@
   }
 
 
-  let wakeLock = null;
-  async function requestWakeLock() {
-    try {
-      if ('wakeLock' in navigator) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
-      }
-    } catch (e) {}
-  }
-  function releaseWakeLock() {
-    if (wakeLock) {
-      wakeLock.release().catch(() => {});
-      wakeLock = null;
-    }
-  }
+  
+
+  
+
+  
 
   
 
@@ -4845,7 +4835,6 @@
           wasPollingBeforeHidden = false;
           navigator.geolocation.clearWatch(watchId);
           watchId = null;
-          releaseWakeLock();
           stopCompass();
 
           
@@ -5466,7 +5455,6 @@
     const toast = document.getElementById('gpsToast');
     setHeadingUpMode(false, true);
     showHeadingArrow = false;
-    releaseWakeLock();
     stopSleepMonitor(); 
     if (isNativeApp()) {
       try { window.AndroidBridge.stopForegroundLocation(); } catch(e) {}
@@ -5667,11 +5655,10 @@
 
     btn.innerText = '🧭';
     btn.classList.add('active');
-    requestWakeLock();
     toast.style.display = 'block';
     toast.className = 'gps-toast';
     toast.innerText = '📡 GPS 수신 중...';
-    showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
+    showToastBadge('📍 [내 위치 켜짐]');
 
     
     
@@ -6160,7 +6147,6 @@
     btn.classList.remove('active');
     watchId = null;
     showHeadingArrow = false;
-    releaseWakeLock();
     stopCompass();
     if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
     stopSleepMonitor();
