@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v226';
+    const CACHE_NAME = 'gaja-trail-cache-v227';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261013_revert_section_advance_streak';
+      const APP_BUILD = 'v20261013_split_preview_advance_fn';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3203,6 +3203,17 @@
   
 
   
+
+  
+
+  
+
+  
+
+  
+
+  
+  
   
   function maybeAdvanceSection(section, proj, reliability) {
     if (!section || !proj) return false;
@@ -3216,12 +3227,25 @@
     if (reliability === GPS_RELIABILITY.REJECTED) {
       return false; 
     }
-    if (reliability === GPS_RELIABILITY.SUSPECT) {
-      sectionAdvanceConfirmStreak++;
-      if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
-    }
     
+    sectionAdvanceConfirmStreak++;
+    if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
     sectionAdvanceConfirmStreak = 0;
+    const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
+    advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
+    return true;
+  }
+
+
+  
+
+  
+  function maybeAdvanceSectionForPreview(section, proj) {
+    if (!section || !proj) return false;
+    const targetDist = section.toMilestone.distanceM;
+    const passedForward = section.isForward && proj.routeDistance >= targetDist - SECTION_ADVANCE_MARGIN_M;
+    const passedBackward = !section.isForward && proj.routeDistance <= targetDist + SECTION_ADVANCE_MARGIN_M;
+    if (!passedForward && !passedBackward) return false;
     const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
     advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
     return true;
@@ -3312,7 +3336,7 @@
     const proj = projectOntoCurrentSection(lat, lon, section);
     if (!proj) return null;
 
-    const advanced = maybeAdvanceSection(section, proj, GPS_RELIABILITY.NORMAL);
+    const advanced = maybeAdvanceSectionForPreview(section, proj);
     if (advanced) {
       const arrivedMilestone = section.toMilestone;
       const newSection = getCurrentSection();
