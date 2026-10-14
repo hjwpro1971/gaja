@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v227';
+    const CACHE_NAME = 'gaja-trail-cache-v228';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261013_split_preview_advance_fn';
+      const APP_BUILD = 'v20261014_roundtrip_zoom_drag_fix';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -2475,9 +2475,18 @@
           }
         }
         if (pairIdx >= 0) {
+
+          
+
+          
+          const samePairAsBefore = pendingRoundTripPair
+            && pendingRoundTripPair.candidateIdxA === best.idx
+            && pendingRoundTripPair.candidateIdxB === pairIdx;
           pendingRoundTripPair = { candidateIdxA: best.idx, candidateIdxB: pairIdx };
-          pendingDirectionConfirmHeading = null;
-          pendingDirectionConfirmStreak = 0;
+          if (!samePairAsBefore) {
+            pendingDirectionConfirmHeading = null;
+            pendingDirectionConfirmStreak = 0;
+          }
         }
       }
     }
@@ -3460,13 +3469,24 @@
   
 
   
+
+  
+
+  
+
+  
+
+  
+  
   
   function recalculateGajaMapFromScratch(reason) {
     if (!lastKnownPos) return;
     sectionApproachState = null;
 
     
-    resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
+    if (!getCurrentSection()) {
+      resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
+    }
     updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
   }
 
