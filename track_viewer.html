@@ -52,12 +52,12 @@
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v230';
+    const CACHE_NAME = 'gaja-trail-cache-v231';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261019_roundtrip_forward_default';
+      const APP_BUILD = 'v20261019_roundtrip_distance_first';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1051,13 +1051,17 @@
 
 
   
-  
+
   
   let pendingRoundTripPair = null; 
   let pendingDirectionConfirmHeading = null; 
   let pendingDirectionConfirmStreak = 0; 
   const ROUNDTRIP_DIRECTION_CONFIRM_STREAK = 3; 
   const ROUNDTRIP_DIRECTION_TOLERANCE_DEG = 45; 
+
+  
+
+  const ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M = 20;
 
   
   
@@ -2465,6 +2469,9 @@
 
     
 
+    
+    
+    
     const bestFrom = currentMilestones[best.idx];
     const bestTo = currentMilestones[best.idx + 1];
     const fromTarget = bestFrom.roundTripPeer || bestFrom;
@@ -2485,24 +2492,48 @@
     if (pairIdx >= 0) {
       
       
-      const forwardIdx = Math.min(best.idx, pairIdx);
-      const reverseIdx = Math.max(best.idx, pairIdx);
-      currentMilestoneIdx = forwardIdx;
-      nextMilestoneIdx = forwardIdx + 1;
+      const pairSection = { fromMilestone: currentMilestones[pairIdx], toMilestone: currentMilestones[pairIdx + 1], isForward: true };
+      const pairProj = projectOntoCurrentSection(lat, lon, pairSection);
+      const pairDistance = pairProj ? pairProj.distance : Infinity;
+      const distGap = Math.abs(best.proj.distance - pairDistance);
+
+      if (distGap >= ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M) {
+        
+        
+        currentMilestoneIdx = best.idx;
+        nextMilestoneIdx = best.idx + 1;
+
+        if (pendingRoundTripPair
+            && (pendingRoundTripPair.candidateIdxA === best.idx || pendingRoundTripPair.candidateIdxA === pairIdx)
+            && (pendingRoundTripPair.candidateIdxB === best.idx || pendingRoundTripPair.candidateIdxB === pairIdx)) {
+          pendingRoundTripPair = null;
+          pendingDirectionConfirmHeading = null;
+          pendingDirectionConfirmStreak = 0;
+        }
+      } else {
+
+        
+        
+        
+        currentMilestoneIdx = best.idx;
+        nextMilestoneIdx = best.idx + 1;
 
 
-      
+        
 
-      
-      
-      
-      const samePairAsBefore = pendingRoundTripPair
-        && pendingRoundTripPair.candidateIdxA === forwardIdx
-        && pendingRoundTripPair.candidateIdxB === reverseIdx;
-      pendingRoundTripPair = { candidateIdxA: forwardIdx, candidateIdxB: reverseIdx };
-      if (!samePairAsBefore) {
-        pendingDirectionConfirmHeading = null;
-        pendingDirectionConfirmStreak = 0;
+        
+        
+        
+        const normA = Math.min(best.idx, pairIdx);
+        const normB = Math.max(best.idx, pairIdx);
+        const samePairAsBefore = pendingRoundTripPair
+          && pendingRoundTripPair.candidateIdxA === normA
+          && pendingRoundTripPair.candidateIdxB === normB;
+        pendingRoundTripPair = { candidateIdxA: normA, candidateIdxB: normB };
+        if (!samePairAsBefore) {
+          pendingDirectionConfirmHeading = null;
+          pendingDirectionConfirmStreak = 0;
+        }
       }
     } else {
       
@@ -2510,6 +2541,7 @@
       nextMilestoneIdx = best.idx + 1;
     }
   }
+
 
 
   
