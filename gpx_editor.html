@@ -428,9 +428,14 @@
 </div>
 
 <!-- 🧭 구간 후보 비교(실험적) 액션바 — 색이 다른 점선 여러 개를 동시에
-     지도에 그려 보여주고, 그중 하나를 클릭해 선택한 뒤에만 적용한다. -->
-<div class="box-relink-preview-bar" id="boxCandidatesBar" style="display:none;">
+     지도에 그려 보여주고, 그중 하나를 클릭해 선택한 뒤에만 적용한다.
+     2026-10-22 추가: 지도 위 가는 점선을 직접 클릭해야만 선택할 수 있어
+     어렵다는 지적에 따라, boxCandidatesList에 후보 목록(색상 버튼)도
+     함께 보여준다 — 리스트 항목을 클릭해도 지도 위 점선 클릭과 동일하게
+     selectBoxCandidate(idx)가 호출되어 선택/강조된다. -->
+<div class="box-relink-preview-bar" id="boxCandidatesBar" style="display:none; flex-wrap:wrap;">
   <span id="boxCandidatesLabel">🧭 후보 비교 중</span>
+  <div id="boxCandidatesList" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
   <button class="btn-sub-tool" id="btnApplyBoxCandidates" onclick="applyBoxCandidatesSelection()" disabled>✅ 선택한 후보로 교체</button>
   <button class="btn-sub-tool danger" onclick="cancelBoxCandidatesPreview()">❌ 취소</button>
 </div>
@@ -1224,6 +1229,9 @@
     clearBoxCandidatesLayers();
     boxCandidatesSelectedIdx = null;
 
+    const listEl = document.getElementById('boxCandidatesList');
+    listEl.innerHTML = '';
+
     state.candidates.forEach((c, idx) => {
       const color = BOX_CANDIDATES_COLORS[idx % BOX_CANDIDATES_COLORS.length];
       const coords = [state.snappedBeforePoint, ...c.points, state.snappedAfterPoint].map(p => [p.lat, p.lon]);
@@ -1232,10 +1240,23 @@
       }).addTo(map);
       layer.on('click', () => selectBoxCandidate(idx));
       boxCandidatesLayers.push({ layer, candidate: c, color });
+
+      // 지도 위 점선 클릭이 어렵다는 지적에 따라, 같은 선택 동작을 하는
+      // 리스트 버튼도 함께 만든다 — 버튼 색이 지도 위 점선 색과 일치해
+      // 어느 버튼이 어느 선인지 바로 알 수 있다.
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-sub-tool';
+      btn.dataset.candidateIdx = idx;
+      btn.style.borderColor = color;
+      btn.style.color = color;
+      btn.innerText = `후보 ${idx + 1} (${(c.distanceM / 1000).toFixed(2)}km)`;
+      btn.onclick = () => selectBoxCandidate(idx);
+      listEl.appendChild(btn);
     });
 
     document.getElementById('boxCandidatesLabel').innerText =
-      `🧭 후보 ${state.candidates.length}개 — 색이 다른 점선을 클릭해 선택하세요`;
+      `🧭 후보 ${state.candidates.length}개 — 목록을 클릭하거나 색이 다른 점선을 클릭해 선택하세요`;
     document.getElementById('btnApplyBoxCandidates').disabled = true;
     document.getElementById('boxCandidatesBar').style.display = 'flex';
   }
@@ -1249,6 +1270,16 @@
         opacity: isSelected ? 1 : 0.4,
         dashArray: isSelected ? null : '8, 8',
       });
+    });
+    // 리스트 버튼 쪽도 선택 상태를 함께 강조한다(배경을 해당 후보 색으로
+    // 채우고 글자를 흰색으로 — 지도 위 polyline 강조와 같은 시각 언어).
+    const listEl = document.getElementById('boxCandidatesList');
+    Array.from(listEl.children).forEach((btn, i) => {
+      const isSelected = i === idx;
+      const color = BOX_CANDIDATES_COLORS[i % BOX_CANDIDATES_COLORS.length];
+      btn.style.background = isSelected ? color : '';
+      btn.style.color = isSelected ? '#ffffff' : color;
+      btn.style.fontWeight = isSelected ? '700' : '400';
     });
     const c = boxCandidatesState.candidates[idx];
     document.getElementById('boxCandidatesLabel').innerText =
@@ -1264,6 +1295,8 @@
   function clearBoxCandidatesPreview() {
     clearBoxCandidatesLayers();
     document.getElementById('boxCandidatesBar').style.display = 'none';
+    const listEl = document.getElementById('boxCandidatesList');
+    if (listEl) listEl.innerHTML = '';
     boxCandidatesState = null;
     boxCandidatesSelectedIdx = null;
   }
