@@ -947,6 +947,22 @@
     const beforePoint = minDeleteIdx > 0 ? allTrailPoints[minDeleteIdx - 1] : null;
     const afterPoint = maxDeleteIdx < allTrailPoints.length - 1 ? allTrailPoints[maxDeleteIdx + 1] : null;
 
+    // 버그 수정(2026-10-22): 삭제 구간 안에 지명(importedGpxWpts, 예: 갈림길)이
+    // 있으면 그 wpt는 좌표만 남고 참조할 트랙이 사라진다 — gpx-map에서 다시
+    // 불러올 때 경로가 깨진 것처럼 보이는 원인 중 하나였다. 삭제 자체를
+    // 막지는 않되(사용자가 명시적으로 지우려는 구간이므로), 영향받는
+    // 지명이 있으면 미리 알려 실수로 지우는 걸 막는다.
+    const DELETE_WARN_RADIUS_M = 60;
+    const deletedSegPoints = toDeleteIdx.map(i => allTrailPoints[i]);
+    const affectedByDelete = importedGpxWpts.filter(w =>
+      deletedSegPoints.some(p => calcDistanceM(w.lat, w.lon, p.lat, p.lon) <= DELETE_WARN_RADIUS_M)
+    );
+    if (affectedByDelete.length > 0) {
+      const names = affectedByDelete.map(w => w.name).join(', ');
+      const proceed = confirm(`⚠️ 삭제하려는 구간 근처에 지명이 ${affectedByDelete.length}개 있습니다: ${names}\n\n이 지명들은 삭제되지 않지만, 트랙이 끊기면 경로에서 동떨어진 상태로 남을 수 있습니다.\n\n그래도 삭제할까요?`);
+      if (!proceed) return;
+    }
+
     saveHistory();
     // 삭제로 구간이 끊기면(양 끝이 둘 다 남는 경우) 남는 앞쪽 점에 gapAfter를
     // 찍어둔다 — 그래야 필터링 후 남은 두 점이 배열상 인접해도 직선으로
@@ -1384,19 +1400,48 @@
     const { beforeIdx, afterIdx, affectedCount, resultPoints, anyFallback, sourceLabel } = boxRelinkPreviewState;
     const middle = resultPoints.slice(1, -1);
 
+    // 버그 수정(2026-10-22): 박스 재라우팅은 beforeIdx~afterIdx 구간의
+    // 트랙 좌표를 완전히 다른 경로(resultPoints)로 통째로 바꿔치기하는데,
+    // importedGpxWpts(gpx-map.html에서 추가한 갈림길 등 지명)는 전혀
+    // 건드리지 않았다. 그 결과 재라우팅된 구간 안에 있던 지명이 새
+    // 경로에서 동떨어진 좌표로 남아, gpx-map에서 다시 불러올 때 경로가
+    // 깨진 것처럼 보이거나 지명이 엉뚱한 위치(또는 안 보이는 것처럼)
+    // 나오는 실사고가 있었다 — 재라우팅 적용 시, 바뀐 구간(원래
+    // beforeIdx~afterIdx 범위) 안에 있던 지명을 새 경로 위의 가장 가까운
+    // 점으로 다시 스냅시킨다.
+    const oldSegmentPoints = allTrailPoints.slice(beforeIdx, afterIdx + 1);
+    const SNAP_RADIUS_M = 60; // 재라우팅 전 구간 근처에 있던 지명만 대상으로 한다
+    const affectedWpts = importedGpxWpts.filter(w =>
+      oldSegmentPoints.some(p => calcDistanceM(w.lat, w.lon, p.lat, p.lon) <= SNAP_RADIUS_M)
+    );
+
     saveHistory();
     allTrailPoints[beforeIdx] = Object.assign({}, allTrailPoints[beforeIdx], { lat: resultPoints[0].lat, lon: resultPoints[0].lon });
     allTrailPoints[afterIdx] = Object.assign({}, allTrailPoints[afterIdx], { lat: resultPoints[resultPoints.length - 1].lat, lon: resultPoints[resultPoints.length - 1].lon });
     allTrailPoints.splice(beforeIdx + 1, affectedCount, ...middle);
     allTrailPoints = await fillMissingElevations(allTrailPoints);
+
+    if (affectedWpts.length > 0) {
+      const newSegmentPoints = allTrailPoints.slice(beforeIdx, beforeIdx + resultPoints.length);
+      affectedWpts.forEach(w => {
+        let best = null, bestD = Infinity;
+        newSegmentPoints.forEach(p => {
+          const d = calcDistanceM(w.lat, w.lon, p.lat, p.lon);
+          if (d < bestD) { bestD = d; best = p; }
+        });
+        if (best) { w.lat = best.lat; w.lon = best.lon; }
+      });
+    }
+
     clearBoxRelinkPreview();
     boxRelinkAttemptKey = null; // 다음에 이 구간을 다시 재라우팅하면 공공데이터부터 새로 순환
     renderTrailAndHandles();
     updateTrailStats();
+    const wptNote = affectedWpts.length > 0 ? ` (지명 ${affectedWpts.length}개를 새 경로로 다시 스냅했습니다)` : '';
     if (anyFallback) {
-      showToast(`⚠️ [${sourceLabel}]로 교체했지만 일부 구간은 후보가 없어 직선으로 대체됐습니다. 확인 후 필요하면 직접 수정하세요.`);
+      showToast(`⚠️ [${sourceLabel}]로 교체했지만 일부 구간은 후보가 없어 직선으로 대체됐습니다. 확인 후 필요하면 직접 수정하세요.${wptNote}`);
     } else {
-      showToast(`✅ [${sourceLabel}] 경로로 교체했습니다.`);
+      showToast(`✅ [${sourceLabel}] 경로로 교체했습니다.${wptNote}`);
     }
   }
 

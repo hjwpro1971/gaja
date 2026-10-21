@@ -83,6 +83,7 @@
     margin-top: 12px; align-self: flex-end; font-size: 12.5px; font-weight: 700;
     background: transparent; border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
   }
+
 </style>
   <script src="korea_pois.js"></script>
   <script src="my_custom_pois.js"></script>
@@ -164,6 +165,24 @@
         <button class="btn" id="btn-reset-poi" type="button" style="font-size:12.5px;" title="지금 보이는 지명을 모두 지우고, 갈림길/주변 지명(100m 이내)을 처음부터 다시 자동 채굴합니다">🔄 초기화(자동 채굴)</button>
       </div>
       <div id="poi-status" style="font-size:11.5px; color:#718096; margin-top:8px; line-height:1.4;">지도에서 지명을 드래그해 이동하거나 ✕로 삭제할 수 있습니다.</div>
+
+      <!-- 좌표로 지명 직접 추가 — 다른 지도 서비스(카카오맵 등)에만 있는
+           지명을 네이버 지도 기반 이 도구에 가져올 때, 지도를 클릭하는
+           대신 위도/경도 숫자를 직접 입력해 정확한 위치에 찍을 수 있게
+           한다(2026-10-21 추가, 사용자 사례: 천관산 진죽봉 — 카카오맵
+           에서 확인한 좌표를 gpx-map에 그대로 입력). 내부적으로는 지도
+           클릭 추가와 동일한 addPoiAtLocation()을 그대로 재사용한다. -->
+      <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #cbd5e0;">
+        <div style="font-size:11.5px; color:#718096; margin-bottom:6px;">📍 좌표로 지명 직접 추가 (다른 지도에서 확인한 좌표를 가져올 때)</div>
+        <div style="display:flex; gap:6px; margin-bottom:6px;">
+          <input type="text" id="input-poi-coord-lat" placeholder="위도 (예: 34.53552)" style="flex:1; font-size:12px;">
+          <input type="text" id="input-poi-coord-lon" placeholder="경도 (예: 126.91106)" style="flex:1; font-size:12px;">
+        </div>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="input-poi-coord-name" placeholder="지명 (예: 진죽봉)" style="flex:1; font-size:12px;">
+          <button class="btn" id="btn-add-poi-by-coord" type="button" style="font-size:12px; font-weight:700; white-space:nowrap; background:#2c7a7b; border-color:#2c7a7b; color:#ffffff;">+ 추가</button>
+        </div>
+      </div>
         </fieldset>
 
     <fieldset id="junction-collect-fieldset">
@@ -194,6 +213,53 @@
     <div class="warn-box" id="save-warn-box"></div>
     <div class="info-box" id="save-info-box"></div>
     <p class="map-note">인터넷 환경 및 지도 데이터량에 따라 캡처에 1~3초 정도 소요될 수 있습니다. 부분캡쳐는 버튼을 누른 뒤 지도 위에서 마우스로 원하는 영역을 드래그하면 그 영역만 저장됩니다.</p>
+
+    <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #cbd5e0;">
+      <div style="font-size:12.5px; font-weight:700; color:#553c9a; margin-bottom:6px;">📘 builder 코스별 볼거리 연동 (선택)</div>
+      <div id="builder-json-status" style="font-size:11.5px; color:#718096; margin-bottom:6px;">불러온 builder 데이터 없음</div>
+      <div style="display:flex; gap:6px;">
+        <label class="btn" style="flex:1; text-align:center; margin:0; cursor:pointer;">
+          📂 파일 선택
+          <input type="file" id="builder-json-file" accept=".json,application/json" style="display:none;">
+        </label>
+        <button class="btn" id="btn-builder-json-paste" type="button" style="flex:1;">📋 텍스트 붙여넣기</button>
+      </div>
+      <textarea id="builder-json-paste-box" rows="5" placeholder="builder.html에서 복사한 JSON을 여기에 붙여넣고 Enter" style="width:100%; display:none; margin-top:6px; resize:vertical; font-size:11.5px; font-family:monospace; padding:8px; border:1px solid #cbd5e0; border-radius:6px;"></textarea>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label for="concept-map-title-input" style="font-size:11.5px; color:#718096; display:block; margin-bottom:4px;">개념도 제목 (같은 산이라도 코스가 다르면 직접 구분해서 적어주세요. 예: "설악산(대청봉 코스)")</label>
+      <input type="text" id="concept-map-title-input" placeholder="예: 지리산 (성삼재~노고단 코스)" style="width:100%; padding:7px 9px; font-size:12.5px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box;">
+    </div>
+    <div id="concept-map-course-shape-wrap" style="margin-top:8px; padding:8px; background:#fffaf0; border:1.5px solid #dd6b20; border-radius:6px;">
+      <label for="concept-map-course-shape" style="font-size:11.5px; color:#9c4221; font-weight:700; display:block; margin-bottom:4px;">🧭 코스 형태 (좌표 데이터 생성 시 경로 구조 지시에 사용 — 항상 직접 확인하고 고르세요)</label>
+      <select id="concept-map-course-shape" style="width:100%; padding:7px 9px; font-size:12.5px; border:1.5px solid #dd6b20; border-radius:6px; box-sizing:border-box; background:#ffffff; font-weight:700; color:#2d3748;">
+        <option value="oneway">편도 — 들머리와 날머리가 서로 다른 먼 지점</option>
+        <option value="outback">왕복(갔던 길 그대로) — 정상까지 올라갔다가 같은 길로 내려옴</option>
+        <option value="loop">원점회귀(루프) — 다른 길로 한 바퀴 돌아 들머리 근처로 복귀</option>
+        <option value="lollipop">사탕막대형(원점회귀) — 들머리에서 한 구간은 걸어가고, 중간 지점에서 작은 루프를 한 바퀴 돈 뒤 같은 길로 되돌아옴</option>
+      </select>
+    </div>
+    <!-- 📐 산행 개념도: SVG로 직접 그리던 레이어(지도 모드/다이어그램 모드/
+         아이콘 팔레트/프로젝트 저장 등)는 2026-10-15에 전부 제거했다 —
+         실제로 결과가 좋았던 방식은 "지도 캡처(위 전체캡쳐 버튼) + 좌표
+         데이터를 NotebookLM 같은 외부 AI에 같이 넘겨 거기서 생성"뿐이었고,
+         SVG 레이아웃 자동 배치는 반복 실패했다("디자인이 이게 뭐야" 피드백).
+         그래서 이 버튼은 좌표·거리·고도·경사 데이터 + 생성 요청 프롬프트
+         텍스트를 만드는 것까지만 담당한다. -->
+    <button class="btn" id="btn-concept-coord-text" type="button" disabled style="width:100%; margin-top:8px; font-weight:700; background:#2c7a7b; border-color:#2c7a7b; color:#ffffff;">📋 좌표 데이터 (NotebookLM용)</button>
+    <textarea id="concept-map-output" rows="10" style="width:100%; display:none; margin-top:8px; resize:vertical; font-size:12px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748;" readonly></textarea>
+    <button class="btn" id="btn-concept-map-copy" type="button" style="width:100%; display:none; margin-top:6px;">📋 복사</button>
+    <button class="btn" id="btn-concept-coord-download" type="button" style="width:100%; display:none; margin-top:6px;">⬇️ .md 파일로 다운로드</button>
+    <!-- 🎨 2026-10-18: 화풍을 텍스트 스펙만으로 매번 똑같이 재현하기 어려워,
+         고정된 샘플 이미지를 "유일한 화풍 기준"으로 매번 같이 첨부하는
+         쪽이 훨씬 확실하다는 결론(사용자 확인) — gpx-map.html은 사용자가
+         올린 적 없는 로컬 파일을 읽을 수 없으므로, 저장소에 고정 배치한
+         style/Y자형 개념도.png를 그대로 받게 한다. -->
+    <a id="btn-style-sample-download" href="./style/V%EC%9E%90%ED%98%95%20%EA%B0%9C%EB%85%90%EB%8F%84.jpg" download="화풍기준_V자형(편도).jpg" class="btn" style="width:100%; margin-top:6px; display:block; text-align:center; text-decoration:none; background:#805ad5; border-color:#805ad5; color:#ffffff; box-sizing:border-box;">🎨 화풍 기준 이미지 다운로드</a>
+    <p class="map-note" id="concept-map-note" style="display:none;">💡 이 텍스트와 함께, 위 "🎨 화풍 기준 이미지"(화풍을 고정할 샘플) + "전체캡쳐"로 받은 지도 이미지를 NotebookLM 등 AI 도구에 같이 올려서 개념도 생성을 요청하세요. 기준 이미지를 매번 같이 주면 그림체가 매번 바뀌는 걸 막을 수 있습니다.</p>
+    <button class="btn" id="btn-concept-prepare-all" type="button" disabled style="width:100%; margin-top:10px; font-weight:700; background:#2b6cb0; border-color:#2b6cb0; color:#ffffff;">📦 개념도 준비 통합 (지도캡처+화풍이미지+MD 한번에)</button>
+    <div class="info-box" id="concept-prepare-all-status" style="display:none;"></div>
   </div>
 
   <div class="main-pane" id="main-pane" style="position:relative;">
@@ -494,6 +560,50 @@ window.onEditPoi = function(e, poiId) {
   }
 };
 
+// 🔗 "사탕막대형(lollipop)" 코스 형태 전용 — 어느 경유지에서 왕복 구간과
+// 루프 구간이 나뉘는지를 AI가 텍스트만으로 추측하지 못해 전체를 단순
+// 루프로 뭉개 그리는 문제가 있었다(2026-10-17 실사고: 가리산 사례).
+// 사용자가 지도 위 경유지를 직접 "합류점"으로 지정하면, buildConceptMapData()가
+// 이 지점을 기준으로 좌표 표를 왕복/루프 구간으로 나눠 명시한다.
+//
+// 확장(2026-10-20): 최대 2개까지 지정 가능하다 — 병풍산처럼 "만남재(왕복/
+// 루프 분기점)"와 "삼거리(루프 안에서 다시 정상을 찍고 되돌아오는 돌출
+// 왕복 분기점)"처럼 2단계 분기 구조를 가진 코스가 실제로 있었다. 지정
+// 순서를 junctionOrder(1=첫 번째, 2=두 번째)로 구분한다 — 3번째를 누르면
+// 가장 오래된(1번) 지정이 밀려나고 2번이 1번이 되는 식으로 순환한다.
+window.onToggleJunction = function(e, poiId) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  const item = findPoiById(poiId);
+  if (!item) return;
+  savePoiHistory();
+  const MAX_JUNCTIONS = 2;
+  if (item.isJunction) {
+    // 이미 지정된 지점을 다시 누르면 해제하고, 뒤 순번이 있으면 앞으로 당긴다.
+    const removedOrder = item.junctionOrder;
+    delete item.isJunction;
+    delete item.junctionOrder;
+    (loadedPoiList || []).forEach(p => {
+      if (p.isJunction && p.junctionOrder > removedOrder) p.junctionOrder -= 1;
+    });
+  } else {
+    const current = (loadedPoiList || []).filter(p => p.isJunction);
+    if (current.length >= MAX_JUNCTIONS) {
+      // 가장 먼저(1번) 지정된 것을 밀어내고, 남은 것을 1번으로 당긴 뒤 새로 2번을 붙인다.
+      const oldest = current.find(p => p.junctionOrder === 1);
+      if (oldest) { delete oldest.isJunction; delete oldest.junctionOrder; }
+      current.forEach(p => { if (p.isJunction && p.junctionOrder > 1) p.junctionOrder -= 1; });
+      item.isJunction = true;
+      item.junctionOrder = MAX_JUNCTIONS;
+    } else {
+      item.isJunction = true;
+      item.junctionOrder = current.length + 1;
+    }
+  }
+  renderPoiMarkers(loadedPoiList);
+  updatePoiStatusText();
+  if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
+};
+
 // 들머리 / 날머리 / 최고지점 지명 수정 (클릭 또는 ✏️ 버튼 클릭 시)
 window.onEditTerminal = function(e, poiId) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -514,6 +624,7 @@ window.onEditTerminal = function(e, poiId) {
     if (isStart) {
       startTrailName = formatted;
       specialMarkersMap['start'].name = formatted;
+      specialMarkersMap['start'].customName = true; // drawRoute()의 원점회귀 자동 이름 덮어쓰기를 막는 플래그
       const inputEl = document.getElementById('input-start-name');
       if (inputEl) inputEl.value = formatted;
       if (loadedPoiList && loadedPoiList.length > 0) loadedPoiList[0].name = formatted;
@@ -718,8 +829,9 @@ function makeCalloutMarker(position, strokeColor, label, poiItem, offsetIndex = 
        ondblclick="${isTerminal ? `window.onEditTerminal(event, '${item.id}')` : `window.onEditPoi(event, '${item.id}')`}"
        style="position:absolute; left:${curDx}px; top:${curDy}px; transform:translate(-50%, -50%); pointer-events:auto; cursor:move; user-select:none; white-space:nowrap; font-size:11.5px; font-weight:700; color:#ffffff; background:${strokeColor}; padding:3.5px 8px; border-radius:6px; box-shadow:0 2px 7px rgba(0,0,0,0.38); border:1.5px solid #ffffff; letter-spacing:-0.2px; z-index:3; display:inline-flex; align-items:center; gap:4px;"
        title="${isTerminal ? '클릭하거나 ✏️를 눌러 지명을 수정할 수 있습니다 (드래그하여 이동 가능)' : '더블클릭 또는 ✏️로 이름 수정 | 드래그해서 빈 공간으로 이동 | ✕ 클릭 시 즉시 삭제'}">
-    <span ${isTerminal ? `onclick="window.onEditTerminal(event, '${item.id}')" style="cursor:pointer;" title="클릭하여 지명 수정"` : ''}>${label}</span>
+    <span ${isTerminal ? `onclick="window.onEditTerminal(event, '${item.id}')" style="cursor:pointer;" title="클릭하여 지명 수정"` : ''}>${item.isJunction ? '🔗 ' : ''}${label}</span>
     ${!isTerminal ? `
+      <span class="poi-junction-btn" onmousedown="event.stopPropagation();" onclick="event.stopPropagation(); window.onToggleJunction(event, '${item.id}');" title="${item.isJunction ? `합류점${item.junctionOrder === 2 ? '2' : ''} 지정 해제` : '이 지점을 \'사탕막대형\' 코스의 합류점으로 지정(최대 2개 — 1번: 왕복/루프 분기점, 2번: 루프 안 돌출 왕복 분기점)'}" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px; background:${item.isJunction ? (item.junctionOrder === 2 ? '#dd6b20' : '#38a169') : 'rgba(255,255,255,0.92)'}; color:${item.isJunction ? '#ffffff' : '#2d3748'}; border:1px solid #cbd5e0; font-size:9.5px; cursor:pointer; padding:0; line-height:1; margin-left:3px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">${item.isJunction ? '🔗' + item.junctionOrder : '🔗'}</span>
       <span class="poi-edit-btn" onmousedown="event.stopPropagation();" onclick="event.stopPropagation(); window.onEditPoi(event, '${item.id}');" title="지명 수정" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px; background:rgba(255,255,255,0.92); color:#2d3748; border:1px solid #cbd5e0; font-size:9.5px; cursor:pointer; padding:0; line-height:1; margin-left:3px; box-shadow:0 1px 3px rgba(0,0,0,0.2);">✏️</span>
       <span class="poi-del-btn" onmousedown="event.stopPropagation();" onclick="event.stopPropagation(); window.onDeletePoi(event, '${item.id}');" title="지명 삭제" style="${isPoiEditMode ? 'display:inline-flex;' : 'display:none;'} align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; padding:0; line-height:1; margin-left:3px; box-shadow:0 1px 3px rgba(0,0,0,0.3);">✕</span>
     ` : (item.id === 'peak_top' ? `
@@ -840,9 +952,18 @@ function drawRoute(points, preserveView) {
     const isRoundTrip = !!(roundTripCbEl && roundTripCbEl.checked);
 
     if (isRoundTrip) {
-      startItem.name = '들·날머리 (원점회귀)';
+      // 버그 수정(2026-10-18): drawRoute()가 호출될 때마다(✏️로 지명을
+      // 고친 직후에도 onEditTerminal이 다시 drawRoute를 호출한다)
+      // startItem.name을 무조건 '들·날머리 (원점회귀)'로 덮어써서,
+      // 사용자가 "들·날머리 (중산리탐방)"처럼 직접 고친 이름이 같은
+      // 클릭 안에서 바로 원복되는 결함이 있었다 — peak_top의
+      // customName 가드(926줄)와 같은 패턴으로, 사용자가 한 번이라도
+      // 직접 수정했으면(customName=true) 자동 생성을 건너뛴다.
+      if (!startItem.customName) {
+        startItem.name = '들·날머리 (원점회귀)';
+      }
       // 날머리는 숨김 처리
-      endItem.deleted = true; 
+      endItem.deleted = true;
       currentMarkers.push(makeCalloutMarker(startLL, '#7b1fa2', startItem.name, startItem, 3, 150)); // 중앙 상단 보라색
     } else {
       // 🐛 2026-10-05 수정: 왕복 체크 상태에서 한 번이라도 drawRoute가
@@ -896,19 +1017,56 @@ function distToSegmentKm(p, a, b) {
   return { distKm: haversineKm(p, proj), t };
 }
 
-// 점 p가 경로 전체(points)와 가장 가까운 지점까지의 최단거리(km)와 경로 시작점 기준 진행거리(km) 계산
+// 점 p가 경로 전체(points)와 가장 가까운 지점까지의 최단거리(km)와 경로 시작점 기준 진행거리(km) 계산.
+//
+// 버그 수정(2026-10-20): 같은 실제 장소를 트랙이 두 번 지나가는 코스
+// (예: 사탕막대형의 왕복 구간 — 만남재를 "들어갈 때"와 "복귀할 때" 모두
+// 지나감)에서, 두 통과 지점의 GPS 오차가 수 미터 차이만 나도 "더 가까운"
+// 쪽(먼저 지나가는 길일 수도, 나중에 지나가는 길일 수도 있음)이 임의로
+// 선택돼 지점 순서가 뒤바뀌는 실사고가 있었다(병풍산 사례: 만남재가
+// 0.61km가 아니라 3.35km로 계산되어 마지막 순서로 밀림). 최단거리가
+// 거의 동일한(5m 이내) 후보가 여럿이면, 그중 경로상 가장 먼저 지나가는
+// (누적거리가 가장 작은) 세그먼트를 우선한다 — 산길 지명은 보통 "처음
+// 지나갈 때" 지점을 가리키는 것이 자연스럽기 때문이다.
 function getRouteProgressForPoint(p, points, cumDistances) {
+  const TIE_TOLERANCE_KM = 0.005; // 5m — 이 안에서는 "같은 거리"로 보고 먼저 나온 쪽을 유지
   let minDist = Infinity;
   let bestDistOnRoute = 0;
   for (let i = 0; i < points.length - 1; i++) {
     const res = distToSegmentKm(p, points[i], points[i + 1]);
-    if (res.distKm < minDist) {
+    if (res.distKm < minDist - TIE_TOLERANCE_KM) {
       minDist = res.distKm;
       const segLen = cumDistances[i + 1] - cumDistances[i];
       bestDistOnRoute = cumDistances[i] + segLen * res.t;
     }
   }
   return { minDistKm: minDist, routeDistKm: bestDistOnRoute };
+}
+
+// 사용자가 🔗(합류점)로 직접 확정한 지점 전용 — getRouteProgressForPoint의
+// "가장 가까운 쪽" 선택은 GPS 기록 오차 때문에 "먼저 지나가는 왕복 구간
+// 쪽"이 아니라 "나중에 지나가는 복귀 구간 쪽"을 고를 수 있다(병풍산 실측:
+// 들어가는 쪽 9.3m, 복귀 쪽 1.5m — 7.8m 차이는 5m 타이브레이크로도 못
+// 잡는다). 근접 반경(20m) 안의 모든 후보를 모은 뒤, 그중 경로상 가장
+// 먼저 나오는(routeDistKm이 가장 작은) 후보를 고른다 — 합류점은 구조상
+// 항상 "왕복 구간의 끝"이어야 하므로, 최단거리가 아니라 "가장 이른 통과
+// 시점"을 우선 기준으로 삼는다.
+function findEarliestRouteProgressForPoint(p, points, cumDistances) {
+  const MATCH_RADIUS_KM = 0.02; // 20m
+  let minDistOnRoute = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const res = distToSegmentKm(p, points[i], points[i + 1]);
+    if (res.distKm > MATCH_RADIUS_KM) continue;
+    const segLen = cumDistances[i + 1] - cumDistances[i];
+    const distOnRoute = cumDistances[i] + segLen * res.t;
+    if (distOnRoute < minDistOnRoute) minDistOnRoute = distOnRoute;
+  }
+  // 20m 이내 후보가 하나도 없으면(반경이 너무 좁았던 경우) 기존 최단거리
+  // 기준으로 폴백한다.
+  if (!Number.isFinite(minDistOnRoute)) {
+    return getRouteProgressForPoint(p, points, cumDistances).routeDistKm;
+  }
+  return minDistOnRoute;
 }
 
 let isAddingPoi = false;
@@ -926,14 +1084,22 @@ function renderPoiMarkers(poiFlow) {
   if (!poiFlow || poiFlow.length === 0) return;
 
   // "갈림길 숨기기"는 데이터(loadedPoiList)를 지우거나 초기화하지 않는다 —
-  // 화면 렌더링 단계에서만 갈림길 카테고리를 건너뛴다. 그래서 체크를
-  // 풀면 사용자가 직접 수정해둔 갈림길들이 그 상태 그대로 다시 나타난다.
+  // 화면 렌더링 단계에서만 갈림길을 건너뛴다. 그래서 체크를 풀면 사용자가
+  // 직접 수정해둔 갈림길들이 그 상태 그대로 다시 나타난다.
+  //
+  // 버그 수정(2026-10-22): category(내부 분류값)로 숨길지 판단하면, 자동
+  // 채굴로 category가 '갈림길'로 찍힌 지점의 이름을 사용자가 "환희대"처럼
+  // 실제 지명으로 바꿔도 category는 그대로 '갈림길'로 남아있어 계속
+  // 숨겨지는 실사고가 있었다(사용자 지시: "갈림길 포함된 것만 숨기면
+  // 돼"). category가 아니라 "이름 자체에 '갈림길'이라는 글자가 들어있는지"
+  // 로 판단한다 — 이름을 실제 지명으로 바꾼 순간부터는 더 이상 숨김
+  // 대상이 아니게 된다.
   const hideJunctionsCheck = document.getElementById('hideJunctions');
   const hideJunctions = !!(hideJunctionsCheck && hideJunctionsCheck.checked);
 
   poiFlow.forEach((item, idx) => {
     if (item.isTerminal) return; // 들머리/날머리는 drawRoute에서 표시
-    if (hideJunctions && item.category === '갈림길') return;
+    if (hideJunctions && (item.name || '').includes('갈림길')) return;
     const pos = new naver.maps.LatLng(item.lat, item.lon);
     let bg = '#4a5568';
     if (item.category === '사찰') bg = '#805ad5';
@@ -941,11 +1107,17 @@ function renderPoiMarkers(poiFlow) {
     else if (item.category === '고개') bg = '#d69e2e';
     else if (item.category === '갈림길') bg = '#3182ce';
     else if (item.category === '조망/명소') bg = '#dd6b20';
+    else if (item.category === '삼거리/사거리') bg = '#718096';
 
     const label = `${item.icon || '📍'} ${item.name}${item.ele ? ` (${item.ele}m)` : ''}`;
     const marker = makeCalloutMarker(pos, bg, label, item, idx, 120);
     currentPoiMarkers.push(marker);
   });
+
+  // 지명이 바뀔 때마다(불러오기/추가/삭제/이름수정) 코스 문장도 같이 갱신 —
+  // renderPoiMarkers가 모든 지명 변경 경로의 공통 호출 지점이라 여기 한
+  // 곳에서만 처리하면 충분하다.
+  saveCourseFlowToSummary();
 }
 
 function updatePoiStatusText() {
@@ -1041,9 +1213,18 @@ function addPoiAtLocation(lat, lon, name) {
   } else if (name.endsWith('대') || name.endsWith('바위') || name.includes('전망')) {
     category = '조망/명소';
     icon = '🪨';
-  } else if (name.includes('삼거리') || name.includes('사거리') || name.includes('갈림길')) {
+  } else if (name.includes('갈림길')) {
+    // "갈림길 숨기기" 체크박스는 category === '갈림길'인 지점만 숨긴다.
+    // 예전에는 "삼거리"/"사거리"도 여기 묶여서 같이 숨겨졌는데, 삼거리·
+    // 사거리는 실제 지명(이정표에 적힌 고유명사)이라 지도에 남아있어야
+    // 한다는 지적(2026-10-16: "갈림길 이 문자가 들어간것만 숨김 처리")에
+    // 따라 "갈림길"이라는 글자가 실제로 들어간 이름만 이 카테고리로
+    // 묶는다.
     category = '갈림길';
     icon = '🔀';
+  } else if (name.includes('삼거리') || name.includes('사거리')) {
+    category = '삼거리/사거리';
+    icon = '🪧';
   }
 
   const newPoi = {
@@ -1131,9 +1312,43 @@ async function initRoutePOIs(points, forceAutoMine) {
   const startPt = points[0];
   const endPt = points[points.length - 1];
 
-  // 1. 원점회귀 코스 여부 판단 (시작점과 끝점이 280m 이내)
-  const distStartEnd = haversineKm(startPt, endPt);
-  const isRoundTrip = distStartEnd <= 0.28;
+  // 1. 원점회귀 코스 여부 — "🔁 이 코스는 왕복(원점회귀)입니다" 체크박스가
+  // 유일한 기준이다(2026-10-20 수정, 사용자 확인: "원점회귀 체크 박스가
+  // 선택이 되면 들,날머리로 통합하는 거야 / 이것을 선택하기 전까지는
+  // 들머리, 날머리 따로 관리해야 해"). 이전엔 좌표 근접성(280m 이내)만
+  // 보고 자동으로 "들·날머리"를 붙이고 체크박스까지 강제로 켰는데, 이
+  // 코스처럼 들머리·날머리가 실제로는 다른 지점인데 우연히 280m 이내로
+  // 가까운 편도 코스에서 체크박스를 안 켰는데도 "들·날머리"로 잘못
+  // 통합되는 실사고가 있었다.
+  const roundTripCheckboxInit = document.getElementById('isRoundTripCheckbox');
+  const isRoundTrip = !!(roundTripCheckboxInit && roundTripCheckboxInit.checked);
+
+  // 버그 수정(2026-10-19): 왕복(들머리→반환점→들머리로 되짚어오는) 전체가
+  // 실측 좌표로 기록된 GPX(거림 사례)는 트랙 위에 같은 실제 장소(예:
+  // 장터목대피소)의 좌표가 "올라갈 때"와 "내려올 때" 두 번 나타난다.
+  // getRouteProgressForPoint는 트랙 전체에서 최단거리 세그먼트 하나만
+  // 고르는데, GPS 오차로 "내려오는 길" 쪽이 근소하게 더 가까우면 그
+  // 지점의 routeDistKm이 실제 등산 순서가 아니라 하산 중 거리로 계산돼
+  // 지점 순서가 완전히 뒤섞이는 실사고가 있었다(세석대피소가 맨 마지막,
+  // 장터목대피소가 중간으로 나옴 — 실제로는 반대). POI 좌표 매칭은
+  // 왕복 트랙의 전반부(들머리→반환점)만 대상으로 해서 이 혼동을 막는다.
+  //
+  // 버그 수정(2026-10-20): 이 "절반만 쓰기"는 순수 왕복(outback)에만
+  // 맞는 가정이다 — 사탕막대형(lollipop)처럼 들머리=날머리(원점회귀)지만
+  // "왕복 구간(짧음) + 루프 구간"으로 이루어진 코스는 왕복처럼 50:50으로
+  // 대칭이 아니라서, 트랙 포인트 절반 지점이 실제 루프의 끝과 일치하지
+  // 않는다. 이 경우 poiMatchPoints가 루프 뒷부분을 통째로 잘라버려 그
+  // 구간 지점들의 routeDistKm이 깨지고, builder 랜드마크 매칭까지
+  // 실패하는 2차 피해가 있었다(병풍산 사례: 지형 특징 섹션이 통째로
+  // 빠짐). courseShape 드롭다운이 명시적으로 'outback'일 때만 절반
+  // 자르기를 적용하고, 그 외(lollipop/loop/드롭다운 없음)는 트랙 전체를
+  // 그대로 쓴다.
+  const courseShapeSelEl = document.getElementById('concept-map-course-shape');
+  const isOutbackShape = !!(courseShapeSelEl && courseShapeSelEl.value === 'outback');
+  const halfIdx = isOutbackShape ? Math.floor(points.length / 2) : points.length - 1;
+  const poiMatchPoints = isOutbackShape ? points.slice(0, halfIdx + 1) : points;
+  const poiMatchCumDist = cumDist.slice(0, halfIdx + 1);
+  const poiMatchMaxDist = poiMatchCumDist[poiMatchCumDist.length - 1];
 
   // 2. 파일명(gpxBaseName) 단어 분석 (주차장, 일주문, 탐방지원센터, 사찰명, 마을 등)
   const tokens = (gpxBaseName || '').split(/[\s_\-]+/).filter(t => t.length >= 2);
@@ -1143,12 +1358,61 @@ async function initRoutePOIs(points, forceAutoMine) {
   let startFacility = matchedTokens.length >= 1 ? matchedTokens[0] : '';
   let endFacility = isRoundTrip ? startFacility : (matchedTokens.length >= 2 ? matchedTokens[matchedTokens.length - 1] : '');
 
+  // 🐛 2026-10-17 수정: gpx-map에서 들머리/날머리 지명을 수정해 GPX로 저장한
+  // 뒤(buildNavGpxXml이 startTrailName/endTrailName을 <wpt>로 기록), gpx-editor
+  // 에서 그 GPX를 수정하고 다시 gpx-map으로 불러오면 사용자가 고친 지명이
+  // 사라지고 파일명/좌표 기반 추측 이름("들머리 (출발)" 등)으로 되돌아가는
+  // 버그가 있었다. 원인: updateTrailNamesUI()가 points.waypoints(GPX에 이미
+  // 저장된 wpt)를 전혀 참조하지 않고 항상 새로 지명을 생성했기 때문이다.
+  // 트랙의 시작/끝 좌표와 아주 가까운(50m 이내) wpt가 있으면, 그게 이전에
+  // 저장된 들머리/날머리 지명이므로 자동 생성보다 우선한다.
+  const savedWpts = points.waypoints || [];
+  const findSavedNameNear = (pt) => {
+    let best = null, bestD = Infinity;
+    savedWpts.forEach(w => {
+      const d = haversineKm(pt, w);
+      if (d < bestD) { bestD = d; best = w; }
+    });
+    return (best && bestD <= 0.05) ? best.name : null;
+  };
+  const savedStartName = findSavedNameNear(startPt);
+  const savedEndName = isRoundTrip ? null : findSavedNameNear(endPt);
+
   function updateTrailNamesUI() {
-    if (isRoundTrip) {
-      startTrailName = startFacility ? `들머리 (${startFacility} - 원점회귀)` : `들머리 (원점회귀)`;
-      endTrailName = `날머리 (원점회귀)`;
+    if (savedStartName) {
+      // 버그 수정(2026-10-20): GPX에 과거(들·날머리 통일 규칙이 생기기
+      // 전)에 저장된 "들머리 (주차장)" 같은 구버전 이름이 그대로 남아있는
+      // 코스가 있었다(병풍산 사례) — 지금은 원점회귀면 "들·날머리"로
+      // 시작해야 하는데, "저장된 이름 우선" 보호 로직이 그 구버전 이름을
+      // 그대로 써버려 원점회귀 코스인데도 "들·날머리"가 안 붙는 문제가
+      // 있었다. 원점회귀 코스에서 저장된 이름에 "들·날머리"가 없으면
+      // "들머리" 부분만 "들·날머리"로 보정한다 — 사용자가 직접 지은
+      // 지명(예: "들·날머리 (중산리탐방)")은 이미 포함돼 있으므로 그대로
+      // 존중되고, 구버전 자동생성 이름만 보정 대상이 된다.
+      if (isRoundTrip && !savedStartName.includes('들·날머리')) {
+        startTrailName = savedStartName.replace(/^들머리/, '들·날머리');
+      } else {
+        startTrailName = savedStartName;
+      }
+    } else if (isRoundTrip) {
+      // 버그 수정(2026-10-19): 입력창 기본값은 "들머리 (...)"(가운데점
+      // 없음)로 채워지는데, 실제 지도 라벨(drawRoute() 921줄)은 "들·날머리
+      // (원점회귀)"(가운데점 있음)로 그려져 서로 달랐다. 사용자가 입력창에
+      // 보이는 "들머리 (성삼재)"를 그대로 두고 일부만 고치면, 지도의
+      // "들·날머리" 표기가 사라지고 가운데점 없는 값으로 바뀌어 "수정하면
+      // 들·날머리가 없어진다"는 혼란이 있었다 — 원점회귀 코스의 기본
+      // 표기를 "들·날머리"로 통일해 입력창과 지도가 항상 같은 문자열을
+      // 보여주게 한다.
+      startTrailName = startFacility ? `들·날머리 (${startFacility} - 원점회귀)` : `들·날머리 (원점회귀)`;
     } else {
       startTrailName = startFacility ? `들머리 (${startFacility})` : '들머리 (출발)';
+    }
+
+    if (isRoundTrip) {
+      endTrailName = startTrailName;
+    } else if (savedEndName) {
+      endTrailName = savedEndName;
+    } else {
       endTrailName = endFacility ? `날머리 (${endFacility})` : '날머리 (도착)';
     }
 
@@ -1159,6 +1423,11 @@ async function initRoutePOIs(points, forceAutoMine) {
 
     specialMarkersMap['start'].name = startTrailName;
     specialMarkersMap['end'].name = endTrailName;
+    // GPX에 저장된 지명을 복원한 경우는 drawRoute()의 원점회귀 자동
+    // 이름으로 덮어쓰이면 안 되므로 customName 플래그를 세팅한다. 반대로
+    // 저장된 이름이 없는 새 GPX 최초 로드라면 이전 코스에서 남은
+    // customName 플래그를 지워, 원점회귀 자동 이름이 정상 동작하게 한다.
+    specialMarkersMap['start'].customName = !!savedStartName;
   }
 
   updateTrailNamesUI();
@@ -1206,7 +1475,7 @@ async function initRoutePOIs(points, forceAutoMine) {
       // (버그 수정) 파일 재로드 시, 시스템이 자동 생성하는 스페셜 마커가 일반 마커로 중복 생성되는 현상(지명 증식) 방지
       if (w.name && (w.name.includes('들머리') || w.name.includes('날머리') || w.name.includes('최고고도') || w.name.includes('최고지점'))) return;
 
-      const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: w.lat, lon: w.lon }, points, cumDist);
+      const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: w.lat, lon: w.lon }, poiMatchPoints, poiMatchCumDist);
       // User waypoints are never filtered by distance
       // if (routeDistKm < 0.10 || routeDistKm > totalDist - 0.10) return;
 
@@ -1222,9 +1491,15 @@ async function initRoutePOIs(points, forceAutoMine) {
       } else if (name.endsWith('대') || name.endsWith('바위') || name.includes('전망')) {
         category = '조망/명소';
         icon = '🪨';
-      } else if (name.includes('삼거리') || name.includes('사거리') || name.includes('갈림길')) {
+      } else if (name.includes('갈림길')) {
+        // "갈림길 숨기기" 체크박스는 category === '갈림길'인 지점만 숨긴다
+        // (2026-10-16: 삼거리/사거리는 실제 지명이라 숨기지 않아야 한다는
+        // 지적). "갈림길"이라는 글자가 실제로 들어간 이름만 이 카테고리로.
         category = '갈림길';
         icon = '🔀';
+      } else if (name.includes('삼거리') || name.includes('사거리')) {
+        category = '삼거리/사거리';
+        icon = '🪧';
       }
 
       intermediate.push({
@@ -1287,7 +1562,7 @@ async function initRoutePOIs(points, forceAutoMine) {
       if (startFacility && c.name.includes(startFacility) && haversineKm(startPt, c) <= 0.3) return;
       if (endFacility && c.name.includes(endFacility) && haversineKm(endPt, c) <= 0.3) return;
   
-      const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: c.lat, lon: c.lon }, points, cumDist);
+      const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: c.lat, lon: c.lon }, poiMatchPoints, poiMatchCumDist);
       // 등산로에서 직선거리 최대 100m 이내의 봉우리, 고개, 사찰, 조망
       // 명소까지만 발굴한다. 650m였을 때는 능선이 여러 갈래로 갈라지는
       // 지역(예: 수통골-빈계산 코스)에서 실제로는 지나가지 않는 인접
@@ -1297,8 +1572,8 @@ async function initRoutePOIs(points, forceAutoMine) {
       // 더 좁힌 값 — 등산로 폭+GPS 오차를 감안하면서도 실제로 경로가
       // 스치듯 지나가는 지점만 남긴다.
       if (minDistKm <= 0.10) {
-        if (routeDistKm < 0.12 || routeDistKm > totalDist - 0.12) return;
-  
+        if (routeDistKm < 0.12 || routeDistKm > poiMatchMaxDist - 0.12) return;
+
         const dedupeKey = `${c.name}_${Math.round(routeDistKm * 3)}`;
         if (seenNames.has(dedupeKey) || seenNames.has(c.name)) return;
         seenNames.add(dedupeKey);
@@ -1343,9 +1618,9 @@ async function initRoutePOIs(points, forceAutoMine) {
     const JUNCTION_MATCH_RADIUS_KM = 0.01; // 10m
     if (window.MountainJunctions && window.MountainJunctions.length > 0) {
       window.MountainJunctions.forEach((j, jIdx) => {
-        const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: j.lat, lon: j.lon }, points, cumDist);
+        const { minDistKm, routeDistKm } = getRouteProgressForPoint({ lat: j.lat, lon: j.lon }, poiMatchPoints, poiMatchCumDist);
         if (minDistKm > JUNCTION_MATCH_RADIUS_KM) return;
-        if (routeDistKm < 0.02 || routeDistKm > totalDist - 0.02) return; // 들머리/날머리 바로 근처는 제외
+        if (routeDistKm < 0.02 || routeDistKm > poiMatchMaxDist - 0.02) return; // 들머리/날머리 바로 근처는 제외
 
         // 좌표 기준 중복 방지(연인산 사례처럼 "갈림길" 이름이 반복돼도
         // 전부 살아남아야 한다 — 이름이 아니라 실제 좌표로만 중복을 판정).
@@ -1432,6 +1707,61 @@ async function initRoutePOIs(points, forceAutoMine) {
   }
 }
 
+// 버그 수정(2026-10-20): "왕복 트랙은 전반부만 써서 POI 거리를 계산한다"는
+// 규칙(initRoutePOIs 1232번 줄 참고)이 "코스 형태" 드롭다운 값을 참조하는데,
+// 이 드롭다운은 보통 GPX를 불러와 지도를 본 "뒤에" 사용자가 고른다(병풍산
+// 사례: "맵 형태 보고 코스 형태 선택하지" — GPX 로드보다 드롭다운 선택이
+// 항상 나중이라는 피드백). GPX를 다시 업로드하라고 요구하지 않고, 드롭다운을
+// 바꿀 때마다 이미 추출된 loadedPoiList의 각 항목 routeDistKm만 가볍게
+// 재계산한다 — 사용자가 지도에서 직접 추가/수정/삭제한 POI 목록 자체는
+// 건드리지 않고(이름, 🔗 합류점 지정, dx/dy 위치 등 전부 보존), 거리값만
+// 다시 맞춘다.
+function recomputePoiRouteDistances() {
+  if (!loadedPoints || loadedPoints.length < 2 || !loadedPoiList || !loadedPoiList.length) return;
+
+  const cumDist = [0];
+  let totalDist = 0;
+  for (let i = 1; i < loadedPoints.length; i++) {
+    totalDist += haversineKm(loadedPoints[i - 1], loadedPoints[i]);
+    cumDist.push(totalDist);
+  }
+
+  const courseShapeSelEl = document.getElementById('concept-map-course-shape');
+  const isOutbackShape = !!(courseShapeSelEl && courseShapeSelEl.value === 'outback');
+  const halfIdx = isOutbackShape ? Math.floor(loadedPoints.length / 2) : loadedPoints.length - 1;
+  const poiMatchPoints = isOutbackShape ? loadedPoints.slice(0, halfIdx + 1) : loadedPoints;
+  const poiMatchCumDist = cumDist.slice(0, halfIdx + 1);
+
+  loadedPoiList.forEach(p => {
+    if (p.isTerminal) return; // 들머리/날머리는 0/totalDist 고정값을 그대로 둔다
+    if (p.isJunction) {
+      // 버그 수정(2026-10-20): 합류점(🔗)은 같은 실제 장소를 트랙이 두 번
+      // 지나가는 지점이다(왕복 구간 쪽 1번, 루프 복귀 쪽 1번). 좌표
+      // 최단거리만으로는 어느 쪽이 "진짜 왕복 구간 쪽"인지 가를 수 없다
+      // — GPS 기록 오차로 복귀 쪽이 오히려 더 가깝게 찍히는 경우가 실제로
+      // 있었다(병풍산 실측: 들어가는 쪽 9.3m, 복귀 쪽 1.5m — 단순 최단거리로는
+      // 복귀 쪽을 골라 전체 순서가 뒤집혔다). 사용자가 🔗로 직접 "이 지점이
+      // 합류점"이라고 확정했다면, 여러 근접 후보 중 routeDistKm이 가장 작은
+      // (들머리에서 가장 가까운, 즉 왕복 구간 쪽) 후보로 고정한다 — 사탕막대형
+      // 구조상 합류점은 항상 "왕복 구간의 끝"이지 "루프를 다 돈 뒤 복귀하는
+      // 지점"이 아니기 때문이다.
+      p.routeDistKm = findEarliestRouteProgressForPoint({ lat: p.lat, lon: p.lon }, poiMatchPoints, poiMatchCumDist);
+    } else {
+      const { routeDistKm } = getRouteProgressForPoint({ lat: p.lat, lon: p.lon }, poiMatchPoints, poiMatchCumDist);
+      p.routeDistKm = routeDistKm;
+    }
+  });
+  loadedPoiList.sort((a, b) => {
+    if (a.isTerminal && a.id === 'start') return -1;
+    if (b.isTerminal && b.id === 'start') return 1;
+    if (a.isTerminal && a.id === 'end') return 1;
+    if (b.isTerminal && b.id === 'end') return -1;
+    return (a.routeDistKm || 0) - (b.routeDistKm || 0);
+  });
+  renderPoiList(loadedPoiList);
+  if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
+}
+
 // 산행요약 생성(hiking_summary.html)이 자동으로 채워 쓸 수 있도록
 // 산행지/산행일자/거리&시간을 localStorage에 넘겨둔다. 서로 다른 iframe에서
 // 로드되는 별개 페이지라 직접 DOM 접근이 불가능해 localStorage를 매개로 사용.
@@ -1465,6 +1795,1214 @@ function saveHandoffToSummary(mountainName, stats) {
   }
 }
 
+// 들머리 → (봉우리/고개/산/정상 지명만) → 날머리 순으로 이어붙여
+// "코스" 문장을 만든다. 2026-10-14: hiking_summary.html의 "코스" 칸이
+// 지금까지 builder.html에서만 채워졌는데, gpx-map에서 지도에 찍은
+// 지명으로도 바로 채우고 싶다는 요청으로 추가. "최고지점"
+// 스페셜마커(specialMarkersMap.peak_top)는 기본적으로 꺼져 있고
+// 사용자가 켜도 이름이 "최고지점" 그대로인 경우가 많아 코스 문장에
+// 넣지 않는다 — loadedPoiList 안에 실제 지명(이름에 "봉"/"산"/
+// "정상"/"재"/"령"/"고개"가 들어간 것)만 들머리~날머리 사이에 끼운다.
+function isCourseFlowName(name) {
+  if (!name) return false;
+  return /봉|산|정상|재$|령$|고개/.test(name);
+}
+
+function buildCourseFlowText() {
+  const startName = (specialMarkersMap['start'] && specialMarkersMap['start'].name) || '';
+  const endName = (specialMarkersMap['end'] && specialMarkersMap['end'].name) || '';
+
+  const middleNames = (loadedPoiList || [])
+    .filter(p => !p.isTerminal && isCourseFlowName(p.name))
+    .sort((a, b) => (a.routeDistKm || 0) - (b.routeDistKm || 0))
+    .map(p => p.name);
+
+  const flow = [startName, ...middleNames, endName].filter(Boolean);
+  if (flow.length < 2) return ''; // 들머리/날머리조차 없으면 의미 있는 문장이 안 됨
+  return flow.join(' → ');
+}
+
+function saveCourseFlowToSummary() {
+  const courseText = buildCourseFlowText();
+  if (!courseText) return;
+  try {
+    const raw = localStorage.getItem(SUMMARY_HANDOFF_KEY);
+    const existing = raw ? JSON.parse(raw) : {};
+    existing.course = courseText;
+    localStorage.setItem(SUMMARY_HANDOFF_KEY, JSON.stringify(existing));
+  } catch (e) {
+    // localStorage 실패는 조용히 무시
+  }
+}
+
+// ----------------------------------------------------------------------
+// 📘 builder.html JSON 연동 (2026-10-14)
+// builder.html이 만든 산행가이드 JSON(sections[i].detail.bullets 안의
+// 랜드마크 설명, sceneryHighlights)을 gpx-map에서 불러와 개념도
+// 프롬프트의 "배경 볼거리" 재료로 쓴다. 두 도구는 서로 다른 데이터를
+// 쓰므로(gpx-map=좌표 기반 POI, builder=산 전체 서술형 가이드) 직접
+// 연결고리가 없다 — 이름 텍스트 매칭으로 가볍게 이어붙인다.
+let loadedBuilderData = null;
+
+// GPX를 새로 불러왔을 때, 제목 입력창이 비어있으면 파일명을 기본값으로
+// 채운다(사용자가 이미 적어둔 값은 덮어쓰지 않는다).
+function fillConceptMapTitleDefault(baseName) {
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  if (titleInputEl && !titleInputEl.value.trim() && baseName) {
+    titleInputEl.value = baseName.replace(/_/g, ' ').trim();
+  }
+}
+
+function setBuilderJsonStatus(text, isOk) {
+  const el = document.getElementById('builder-json-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isOk ? '#2f855a' : '#718096';
+}
+
+function applyBuilderJson(jsonText) {
+  let data;
+  try {
+    data = JSON.parse(jsonText);
+  } catch (e) {
+    alert('JSON 파싱에 실패했습니다. builder.html에서 복사한 전체 JSON인지 확인해주세요.\n(' + e.message + ')');
+    return false;
+  }
+  if (!data || !Array.isArray(data.sections)) {
+    alert('이 JSON에는 sections 배열이 없습니다. builder.html에서 생성한 JSON이 맞는지 확인해주세요.');
+    return false;
+  }
+  loadedBuilderData = data;
+  const landmarkCount = data.sections.reduce((sum, s) => sum + ((s.detail && s.detail.bullets) ? s.detail.bullets.length : 0), 0);
+  setBuilderJsonStatus(`✅ "${data.mountainName || '산 이름 없음'}" 불러옴 — 구간 ${data.sections.length}개, 랜드마크 설명 ${landmarkCount}개`, true);
+
+  // 제목 입력창이 비어있을 때만 자동으로 채운다 — 사용자가 이미 코스 구분을
+  // 적어뒀다면 builder를 나중에 불러와도 그 값을 지우지 않는다.
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  if (titleInputEl && !titleInputEl.value.trim() && data.mountainName) {
+    titleInputEl.value = data.mountainName;
+  }
+  return true;
+}
+
+// 같은 브라우저에서 builder.html을 먼저 썼다면 초안이 localStorage에 남아있을 수 있다.
+// 자동으로 밀어넣지는 않고(엉뚱한 산 데이터가 섞일 위험), 있으면 버튼으로 알려만 준다.
+function tryAutoDetectBuilderDraft() {
+  try {
+    const raw = localStorage.getItem('hikingGuideBuilderDraft');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.sections)) return;
+    const el = document.getElementById('builder-json-status');
+    if (!el || loadedBuilderData) return;
+    el.innerHTML = `🔎 같은 브라우저에 builder 초안("${data.mountainName || '이름 없음'}")이 있습니다. <a href="#" id="link-use-builder-draft" style="color:#805ad5; font-weight:700;">이걸 사용</a>`;
+    const link = document.getElementById('link-use-builder-draft');
+    if (link) link.addEventListener('click', (e) => {
+      e.preventDefault();
+      applyBuilderJson(raw);
+    });
+  } catch (e) {
+    // 초안이 없거나 깨져 있으면 조용히 무시 — 자동감지는 부가기능일 뿐이다.
+  }
+}
+
+// loadedPoiList의 지점 이름이 builder 랜드마크 이름을 포함하거나 포함되면
+// 매칭으로 본다(예: 지도 지점 "백련사"와 builder bullet.strong "백련사" 일치,
+// 또는 "백련사 일주문"처럼 한쪽이 다른 쪽을 포함하는 경우도 허용).
+// GPX 지도 지점 이름과 builder 랜드마크 이름(bullets[].strong)은 서로 다른
+// 작업에서 붙인 이름이라 "대청봉" vs "대청봉 정상석", "봉정암" vs
+// "봉정암(사리탑)"처럼 토씨가 다른 경우가 흔하다. 공백·괄호 안 내용을
+// 제거한 뒤 비교해 느슨하게 매칭한다(2026-10-14 수정 — 원래는 완전
+// 포함관계만 봐서 이런 변형을 거의 다 놓쳐, builder 배경 설명이 결과
+// 프롬프트에 거의 반영되지 않는 결함이 있었다).
+function normalizeForMatch(name) {
+  return (name || '').replace(/\s+/g, '').replace(/\([^)]*\)/g, '');
+}
+
+function findBuilderLandmarksForPoi(poiName) {
+  if (!loadedBuilderData || !poiName) return [];
+  const normPoi = normalizeForMatch(poiName);
+  if (!normPoi) return [];
+  const found = [];
+  loadedBuilderData.sections.forEach(s => {
+    if (!s.detail || !Array.isArray(s.detail.bullets)) return;
+    s.detail.bullets.forEach(b => {
+      if (!b.strong || b.strong === '구간' || b.strong === '특징') return; // 랜드마크만, 메타 bullet 제외
+      const name = b.strong.trim();
+      if (!name) return;
+      const normName = normalizeForMatch(name);
+      if (!normName) return;
+      if (normPoi.includes(normName) || normName.includes(normPoi)) {
+        found.push({ name, desc: b.p || '' });
+      }
+    });
+  });
+  return found;
+}
+
+// 모든 section의 [누적시작거리, 누적끝거리] 범위를 한 번 계산해둔다.
+// section.distanceKm은 "그 구간의 길이"(누적값이 아님)라서, 0번부터
+// 러닝섬해야 실제 코스상 구간 범위가 나온다(builder.html 847~865,
+// distanceKm 필드 — 2026-10-16 조사 확인).
+function buildBuilderSectionRanges() {
+  if (!loadedBuilderData || !Array.isArray(loadedBuilderData.sections)) return [];
+  let cum = 0;
+  return loadedBuilderData.sections.map(s => {
+    const len = typeof s.distanceKm === 'number' && s.distanceKm > 0 ? s.distanceKm : 0;
+    const range = { startKm: cum, endKm: cum + len, section: s };
+    cum += len;
+    return range;
+  });
+}
+
+// findBuilderLandmarksForPoi()는 "경유지 이름과 정확히 일치하는 랜드마크"만
+// 찾아서, builder가 모은 랜드마크 대부분(구간 설명 속에만 있고 GPX 경유지
+// 이름과 글자가 다른 것들)을 놓치는 문제가 있었다(2026-10-16 실사고:
+// "16개 랜드마크 중 1개만 프롬프트에 반영됨"). 이름이 아니라 "이 waypoint가
+// 코스상 몇 km 지점인지"로 해당 구간을 찾아 그 구간의 랜드마크 전부를
+// 돌려주는 방식으로 보완한다 — 이름 매칭보다 더 많은 랜드마크를 건지되,
+// section.distanceKm 합이 실제 GPX 총거리와 정확히 일치한다는 보장은 없어
+// (builder가 사람이 입력한 근사치일 수 있음) 약간의 오차를 허용해 범위를
+// 넉넉하게 잡는다.
+function findBuilderLandmarksNearDistance(routeDistKm, ranges) {
+  if (routeDistKm === null || routeDistKm === undefined || !ranges.length) return [];
+  const TOLERANCE_KM = 0.3; // 거리 추정 오차 허용폭
+  const match = ranges.find(r => routeDistKm >= r.startKm - TOLERANCE_KM && routeDistKm <= r.endKm + TOLERANCE_KM);
+  if (!match || !match.section.detail || !Array.isArray(match.section.detail.bullets)) return [];
+  return match.section.detail.bullets
+    .filter(b => b.strong && b.strong !== '구간' && b.strong !== '특징' && b.strong.trim())
+    .map(b => ({ name: b.strong.trim(), desc: b.p || '' }));
+}
+
+// GPX 기록 고도는 GPS 센서 측정치라 공식 표기 고도(국토지리정보원 고시값,
+// 정상석/이정표 표기값)와 수십m씩 차이 나는 경우가 흔하다("결과물에
+// 나오는 높이값이 gpx 값이야, 공식값이 아니고" — 2026-10-16 지적). builder
+// 데이터에서 공식 고도를 찾아 GPX 값 대신 쓸 수 있으면 그쪽을 우선한다.
+//
+// 1순위: section.altitude — "그 구간이 끝나는 지점의 고도"로 builder가
+// 직접 입력한 값(2026-10-16 조사 확인, builder.html 717/859). 거리 범위의
+// endKm 근처(해당 구간 끝=보통 그 구간의 대표 지점)에 있는 waypoint에
+// 매칭한다.
+// 2순위: 랜드마크 설명 텍스트에 "해발 837m", "837m 봉" 처럼 박혀있는 고도
+// 숫자를 정규식으로 추출 — section.altitude가 없거나(예: 중간 경유지라
+// 구간 끝 지점이 아닌 경우) 텍스트에만 공식 고도가 언급된 경우를 보완.
+function findOfficialAltitudeForWaypoint(waypointName, routeDistKm, ranges, landmarks) {
+  const normWp0 = normalizeForMatch(waypointName);
+  // 버그 수정(2026-10-20): builder의 section.distanceKm 합계가 실제 GPX
+  // 총거리와 전혀 다른 경우(병풍산 사례: 구간 합 7.5km vs 실제 GPX
+  // 4.1km — 거의 2배 차이)가 있다. 이땐 거리 기반 매칭(끝 지점 0.15km
+  // 이내)이 아예 범위를 못 잡거나 엉뚱한 구간에 걸린다. 거리보다 먼저,
+  // 지점 이름을 정확히 포함하는 cardTitle이 있는지 전체 구간에서 찾고
+  // (예: 지점 "병풍산" ↔ 구간 "병풍산주능선"), 있으면 거리와 무관하게
+  // 그 구간의 고도를 최우선으로 쓴다 — 이름이 명시적으로 일치하는 것보다
+  // 더 강한 증거는 없기 때문이다.
+  if (ranges.length && normWp0) {
+    const directNameMatch = ranges.find(r => {
+      const title = normalizeForMatch(r.section.cardTitle || '');
+      return title && (title.includes(normWp0) || normWp0.includes(title))
+        && typeof r.section.altitude === 'number' && r.section.altitude > 0;
+    });
+    if (directNameMatch) return directNameMatch.section.altitude;
+  }
+  if (ranges.length && routeDistKm !== null && routeDistKm !== undefined) {
+    const ALT_TOLERANCE_KM = 0.15; // "구간 끝 지점"으로 볼 수 있는 근접 범위
+    const candidates = ranges.filter(r => Math.abs(routeDistKm - r.endKm) <= ALT_TOLERANCE_KM
+      && typeof r.section.altitude === 'number' && r.section.altitude > 0);
+    if (candidates.length) return candidates[0].section.altitude;
+  }
+  // 랜드마크 설명 속 "해발 837m" / "837m" / "고도 837m" 패턴 탐색.
+  // 이름이 waypoint와 가장 가까운 랜드마크부터 우선 검사한다.
+  const normWp = normalizeForMatch(waypointName);
+  const sorted = (landmarks || []).slice().sort((a, b) => {
+    const aMatch = normalizeForMatch(a.name) === normWp ? 0 : 1;
+    const bMatch = normalizeForMatch(b.name) === normWp ? 0 : 1;
+    return aMatch - bMatch;
+  });
+  for (const l of sorted) {
+    const text = `${l.name} ${l.desc}`;
+    const m = text.match(/(?:해발\s*)?(\d{3,4})\s*m(?!\w)/);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (val > 0 && val < 9000) return val;
+    }
+  }
+  return null;
+}
+
+// concept-map-output 텍스트영역(지금은 좌표 데이터 전용)의 내용을 복사한다.
+// 이름은 구버전 "프롬프트" 시절 그대로 쓰되(버튼 id도 btn-concept-map-copy
+// 그대로 재사용), 실제로는 좌표 데이터 복사에 쓰인다.
+function copyConceptMapPrompt() {
+  const output = document.getElementById('concept-map-output');
+  if (!output.value) return;
+  navigator.clipboard.writeText(output.value).then(() => {
+    const copyBtn = document.getElementById('btn-concept-map-copy');
+    const origText = copyBtn.textContent;
+    copyBtn.textContent = '✅ 복사되었습니다!';
+    setTimeout(() => { copyBtn.textContent = origText; }, 2000);
+  }).catch(() => {
+    output.select();
+    document.execCommand('copy');
+  });
+}
+
+// buildConceptMapPrompt()와 동일한 전제(들머리/날머리/중간경유지/고도/원점회귀
+// 여부)를 공유하지만, 텍스트 프롬프트가 아니라 좌표 기반 SVG를 직접 그리기
+// 위한 데이터만 추출한다. AI 이미지 생성 모델이 지명 중복·고도 역전·화살표
+// 방향 반전을 반복해서(2026-10-15, 설악산 비선대 중복 등) 텍스트 프롬프트
+// 개선만으로는 더 이상 정확도를 높이기 어렵다고 판단해, SVG 직접 렌더링으로
+// 전환했다 — 좌표를 그대로 투영해서 그리므로 이런 오류가 구조적으로 불가능하다.
+function buildConceptMapData() {
+  if (!loadedPoints || loadedPoints.length < 2) return null;
+
+  // 버그 수정(2026-10-20): POI의 routeDistKm은 GPX를 처음 불러올 때
+  // initRoutePOIs()가 계산해서 localStorage draft에 그대로 박제된다.
+  // 이후 거리 계산 로직 자체를 고쳐도(또는 사용자가 코스 형태 드롭다운을
+  // 만지지 않으면) 박제된 옛 값이 그대로 남아 "코드를 고쳤는데도 다음 .md
+  // 생성 결과가 안 바뀐다"는 혼란이 있었다(병풍산 사례) — 좌표 데이터를
+  // 만드는 이 함수가 호출될 때마다 항상 현재 코스 형태 기준으로 거리를
+  // 다시 계산해, 사용자가 별도 조작 없이도 매번 최신 상태로 생성되게 한다.
+  recomputePoiRouteDistances();
+
+  const stats = computeStats(loadedPoints);
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  const customTitle = titleInputEl ? titleInputEl.value.trim() : '';
+  const mountainName = customTitle
+    || (loadedBuilderData && loadedBuilderData.mountainName)
+    || (gpxBaseName || '').replace(/_/g, ' ').trim() || '이 산';
+
+  const HUNDRED_LABELS = { forest: '산림청', blackyak: '블랙야크', wolgansan: '월간산', hanguksanha: '한국산하' };
+  const hundredBadges = (loadedBuilderData && Array.isArray(loadedBuilderData.hundredMountainBadges))
+    ? loadedBuilderData.hundredMountainBadges
+    : [];
+  const hundredText = hundredBadges.length
+    ? hundredBadges.map(key => HUNDRED_LABELS[key] || key).join(', ') + ' 100대명산'
+    : '';
+
+  const startItem = specialMarkersMap['start'];
+  const endItem = specialMarkersMap['end'];
+  const roundTripCbEl = document.getElementById('isRoundTripCheckbox');
+  const isRoundTrip = !!(roundTripCbEl && roundTripCbEl.checked);
+
+  // courseShape: "편도/왕복(갔던 길 그대로)/원점회귀(루프)"를 사용자가 직접
+  // 고르는 상시 노출 드롭다운 값을 그대로 쓴다(2026-10-16 요청) — 기존
+  // isRoundTrip 체크박스 하나로는 "들머리=날머리인 코스"가 실제로 같은
+  // 길을 되짚어오는 왕복인지, 다른 길로 도는 루프인지 구분이 안 됐다.
+  // 둘은 개념도에서 완전히 다르게 그려야 한다(왕복은 선 하나를 공유+
+  // 반대방향 화살표 2개, 루프는 한 바퀴 도는 원형 경로). 이 드롭다운은
+  // 체크박스와 독립적으로 동작한다(기존 track_viewer 유턴 로직은 체크박스
+  // 쪽만 그대로 쓰므로 영향 없음) — 숨겼다 보였다 하니 사용자가 못 찾는다는
+  // 피드백(2026-10-16)에 따라 상시 노출로 바꾸고 체크박스 연동을 끊었다.
+  const courseShapeEl = document.getElementById('concept-map-course-shape');
+  const courseShape = (courseShapeEl && courseShapeEl.value) || (isRoundTrip ? 'outback' : 'oneway');
+
+  const startName = (startItem && startItem.name) || startTrailName || '들머리';
+  const endName = isRoundTrip ? startName : ((endItem && endItem.name) || endTrailName || '날머리');
+
+  const seenPoiNames = new Set();
+  // 버그 수정(2026-10-17): "갈림길" 카테고리 지점은 보통 좌표 표에서
+  // 제외하지만(자동 추출된 교차점이 너무 많아 복잡해지는 것을 막는
+  // 용도), 🔗로 "합류점" 지정한 지점은 꼬리+고리형(lollipop) 코스의
+  // 핵심 데이터라 반드시 포함해야 한다 — 사용자가 자동 추출된 "갈림길"
+  // POI의 이름을 "합류점"으로 바꾸고 🔗 지정까지 했는데도, 카테고리가
+  // 여전히 '갈림길'로 남아있어 이 필터에 걸려 좌표 표에서 통째로
+  // 빠지는 실사고가 있었다(가리산 사례).
+  //
+  // 버그 수정(2026-10-19): 위 조건으로도 "피아골삼거리"처럼 실제 지명이
+  // 붙은 지점이 빠지는 사례가 또 나왔다(성삼재-노고단-피아골 코스) —
+  // category가 '갈림길'로 남아있는데 🔗 지정도 안 된 경우였다. 반면
+  // "코스 텍스트 자동 생성"(generateCourseText())은 카테고리와 무관하게
+  // loadedPoiList의 모든 비-terminal 항목을 그대로 쓰기 때문에 이런
+  // 누락이 없었다 — 그쪽 결과가 항상 정확하다는 사용자 확인에 따라,
+  // 좌표 데이터도 "이름이 아직 기본값 '갈림길'인 미명명 지점"만 제외하고
+  // 나머지는 카테고리와 무관하게 전부 포함하도록 통일한다.
+  const middlePois = (loadedPoiList || [])
+    .filter(p => !p.isTerminal && p.name !== '갈림길')
+    .sort((a, b) => (a.routeDistKm || 0) - (b.routeDistKm || 0))
+    .filter(p => {
+      if (seenPoiNames.has(p.name)) return false;
+      seenPoiNames.add(p.name);
+      return true;
+    });
+
+  // 버그 수정(2026-10-19): 왕복(outback) GPX 중에는 편도 구간만 기록된
+  // 것도 있고(공작산 사례), 들머리→반환점→들머리 근처까지 왕복 전체가
+  // 이미 실측 좌표로 기록된 것도 있다(거림 사례) — 트랙 마지막 점이
+  // 첫 점 근처(200m 이내)로 되돌아왔는지로 둘을 구분한다. 편도만 기록된
+  // 트랙은 마지막 점이 반환점(정상 등)이라 들머리에서 멀리 떨어져 있다.
+  const outbackStartEndKm = (courseShape === 'outback' && loadedPoints.length > 1)
+    ? haversineKm(loadedPoints[0], loadedPoints[loadedPoints.length - 1])
+    : null;
+  const outbackAlreadyFullyRecorded = outbackStartEndKm !== null && outbackStartEndKm <= 0.2;
+
+  // 왕복(outback)이면서 편도만 기록된 경우에만 거리/시간을 2배 보정한다
+  // (왕복인데도 편도 거리만 보여주는 실사고가 있었다 — 공작산 사례: 실제
+  // 왕복 2.74×2=5.48km인데 "총 거리: 약 2.7km"로 표시됨). 이미 왕복
+  // 전체가 기록된 트랙에 또 2배를 하면 거림 사례처럼 거리가 부풀려진다.
+  const needsOutbackDoubling = courseShape === 'outback' && !outbackAlreadyFullyRecorded;
+  const durationMsForDisplay = (needsOutbackDoubling && stats.durationMs !== null)
+    ? stats.durationMs * 2 : stats.durationMs;
+  const totalMinutes = durationMsForDisplay !== null ? Math.round(durationMsForDisplay / 60000) : null;
+  const durationText = totalMinutes !== null ? formatDuration(durationMsForDisplay) : '정보 없음';
+
+  // 경로 라인은 트랙 전체(loadedPoints)의 lat/lon을 그대로 쓰고, 경유지는
+  // 라벨 배치용으로만 별도 좌표를 들고 있는다 — 둘 다 같은 위경도 좌표계라서
+  // 같은 투영식을 쓰면 라벨이 항상 실제 선 위의 정확한 위치에 맞게 찍힌다.
+  const trackLatLon = loadedPoints.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele }));
+  // builder에서 불러온 코스별 볼거리(랜드마크 설명)를 각 지점에 붙인다 —
+  // "산이 특징이 없다"는 피드백(2026-10-16)에 따라, 좌표만으로는 알 수
+  // 없는 "이 봉우리는 암릉이다" 같은 실제 정보를 보강한다. 이름이 정확히
+  // 일치하는 랜드마크(findBuilderLandmarksForPoi)를 우선 붙이고, 거리
+  // 기반 매칭(findBuilderLandmarksNearDistance)으로 그 구간에 속한
+  // 나머지 랜드마크도 보충한다 — 이름 매칭만 쓰면 건너편 16개 중 1개만
+  // 걸리는 실사고가 있었다(2026-10-16, 보해산 사례).
+  const builderSectionRanges = buildBuilderSectionRanges();
+  const usedLandmarkKeys = new Set(); // 같은 구간에 여러 waypoint가 있을 때 랜드마크가 중복으로 안 붙게
+  function collectLandmarksFor(name, routeDistKm) {
+    const byName = findBuilderLandmarksForPoi(name);
+    const byDist = findBuilderLandmarksNearDistance(routeDistKm, builderSectionRanges);
+    const combined = [...byName, ...byDist];
+    const unique = [];
+    combined.forEach(l => {
+      const key = l.name + '|' + l.desc;
+      if (usedLandmarkKeys.has(key)) return;
+      usedLandmarkKeys.add(key);
+      unique.push(l);
+    });
+    return unique;
+  }
+  // 공식 고도(builder section.altitude 또는 랜드마크 설명 속 "해발 ○○m")가
+  // 있으면 GPX 기록 고도 대신 그쪽을 쓴다. eleIsOfficial로 출처를 표시해
+  // 좌표 표에서도 구분할 수 있게 한다(2026-10-16 요청: "공식값으로 할 수
+  // 있을까?").
+  function applyOfficialAltitude(wp, routeDistKm) {
+    const official = findOfficialAltitudeForWaypoint(wp.name, routeDistKm, builderSectionRanges, wp.landmarks);
+    if (official !== null) {
+      wp.ele = official;
+      wp.eleIsOfficial = true;
+    }
+    return wp;
+  }
+
+  const waypoints = [];
+  const start0 = { name: startName, lat: loadedPoints[0].lat, lon: loadedPoints[0].lon, ele: loadedPoints[0].ele, role: 'start', seq: 1, routeDistKm: 0 };
+  start0.landmarks = collectLandmarksFor(startName, 0);
+  applyOfficialAltitude(start0, 0);
+  waypoints.push(start0);
+  let seq = 2;
+  middlePois.forEach(p => {
+    const wp = { name: p.name, lat: p.lat, lon: p.lon, ele: p.ele, category: p.category, role: 'mid', seq: seq++, routeDistKm: p.routeDistKm };
+    if (p.isJunction) { wp.isJunction = true; wp.junctionOrder = p.junctionOrder; }
+    wp.landmarks = collectLandmarksFor(p.name, p.routeDistKm);
+    applyOfficialAltitude(wp, p.routeDistKm);
+    waypoints.push(wp);
+  });
+  if (!isRoundTrip) {
+    const last = loadedPoints[loadedPoints.length - 1];
+    const endWp = { name: endName, lat: last.lat, lon: last.lon, ele: last.ele, role: 'end', seq: seq++, routeDistKm: stats.totalKm };
+    endWp.landmarks = collectLandmarksFor(endName, stats.totalKm);
+    applyOfficialAltitude(endWp, stats.totalKm);
+    waypoints.push(endWp);
+  } else {
+    waypoints.push({ name: startName, lat: loadedPoints[0].lat, lon: loadedPoints[0].lon, ele: loadedPoints[0].ele, role: 'end', seq: seq++, routeDistKm: stats.totalKm, isReturnPoint: true, landmarks: [] });
+  }
+
+  // 특정 지점에 묶이지 않는, 산 전체를 대표하는 절경/특징 문구(builder의
+  // sceneryHighlights). 지점별 랜드마크로 안 걸린 코스 전반의 지형 특징
+  // (예: "능선 전체가 암릉지대", "가을 억새가 유명")을 화풍 묘사에 반영한다.
+  const sceneryHighlights = (loadedBuilderData && Array.isArray(loadedBuilderData.sceneryHighlights))
+    ? loadedBuilderData.sceneryHighlights.slice()
+    : [];
+
+  // 왕복(outback)이면서 편도만 기록된 경우에만 총거리를 2배 보정한다
+  // (판별 로직과 배경 설명은 위쪽 needsOutbackDoubling 정의부 참고).
+  const totalKmForDisplay = needsOutbackDoubling ? stats.totalKm * 2 : stats.totalKm;
+
+  return {
+    mountainName, hundredText, isRoundTrip, courseShape, startName, endName,
+    totalKm: totalKmForDisplay, durationText, outbackDoubled: needsOutbackDoubling,
+    maxAlt: stats.maxAlt, minAlt: stats.minAlt,
+    trackLatLon, waypoints, sceneryHighlights
+  };
+}
+
+// 지점 좌표·거리·고도 데이터를 사람이 읽기 쉬운 텍스트(마크다운 표)로
+// 정리한다. SVG로 직접 배치를 그리던 접근(레이아웃 알고리즘이 반복
+// 실패)을 버리고, "정확한 데이터 + 지도 캡처 이미지를 NotebookLM 같은
+// 외부 AI 도구에 소스로 주고 그쪽에서 개념도를 만들게 한다"는 방향으로
+// 바꿨다(2026-10-15 결정) — 배치·디자인은 더 이상 이 코드가 책임지지
+// 않고, 이 코드는 "정확한 원자료를 만드는 것"까지만 책임진다.
+// 2026-10-16: 사용자가 외부에서 직접 다듬은 프롬프트(STRICT STYLE LOCK /
+// STRICT DATA LOCK 구조)를 그대로 템플릿으로 채택했다. 기존 버전과 차이:
+// (1) "기준 이미지 화풍 고정"을 명시적 섹션으로 분리 — 생성할 때마다
+//     그림체가 바뀌는 문제("그림스타일이 자꾸 변해서")를 겨냥, 사용자가
+//     참고 이미지를 함께 첨부하는 것을 전제로 한다.
+// (2) 원본 데이터 표를 "수정 금지" 섹션으로 명확히 구분하고, 표에 없는
+//     값(예: 고도 미기록 지점)은 "표시하지 말라"고 명시 — 빈 칸을 AI가
+//     임의로 추정해 채우는 사고를 막는다.
+// (3) 원점회귀 코스에서 "총거리 ÷ 2"와 "표에 기록된 편도 거리"가 실제로는
+//     다를 수 있다는 점을 숨기지 않고 "임의로 통일·보정하지 말 것"으로
+//     명시 — 거리 데이터 왜곡을 막는 핵심 조항.
+// (4) 고도-수직배치, 화살표 왕복 표현(같은 선 공유 + 반대방향 화살표 2개,
+//     타원/순환 경로 금지)을 구체적으로 규정.
+// (5) 프롬프트 끝에 "최종 검수" 체크리스트를 넣어 AI가 스스로 재점검하게
+//     한다.
+const COURSE_SHAPE_LABEL = { oneway: '편도', outback: '왕복(갔던 길 그대로 되돌아옴)', loop: '원점회귀(다른 길로 한 바퀴 도는 루프)', lollipop: '사탕막대형(원점회귀 — 중간 지점에서 작은 루프를 돈 뒤 같은 길로 되돌아옴)' };
+
+// 🎨 코스 형태별 화풍 기준 이미지 — 경로 모양이 다르면 참고할 도해도 달라야
+// 한다(편도=V자, 왕복=I자, 원점회귀=C자, 꼬리+고리형=Y자). 2026-10-18에는
+// Y자형 하나만 고정해서 썼는데, 편도/왕복/원점회귀 코스에 Y자형 분기 도해를
+// 그대로 주니 AI가 없는 분기점을 만들어내는 문제가 있어 4종으로 분리했다.
+const COURSE_SHAPE_STYLE_IMAGE = {
+  oneway:   { file: 'V자형 개념도.jpg', label: 'V자형(편도)' },
+  outback:  { file: 'I자형 개념도.png', label: 'I자형(왕복)' },
+  loop:     { file: 'C자형 개념도.jpg', label: 'C자형(원점회귀)' },
+  lollipop: { file: 'Y자형 개념도.png', label: 'Y자형(사탕막대형)' }
+};
+
+function getStyleSampleImageInfo(courseShape) {
+  return COURSE_SHAPE_STYLE_IMAGE[courseShape] || COURSE_SHAPE_STYLE_IMAGE.oneway;
+}
+
+function getStyleSampleDownloadName(courseShape) {
+  const info = getStyleSampleImageInfo(courseShape);
+  const ext = info.file.slice(info.file.lastIndexOf('.'));
+  return `화풍기준_${info.label}${ext}`;
+}
+
+// 현재 선택된 코스 형태에 맞춰 "화풍 기준 이미지 다운로드" 버튼의
+// href/download/버튼 라벨을 갱신한다. select change 핸들러와
+// updateConceptMapUI() 양쪽에서 호출해 드롭다운이 바뀔 때마다 즉시 반영한다.
+function updateStyleSampleLink() {
+  const linkEl = document.getElementById('btn-style-sample-download');
+  if (!linkEl) return;
+  const shapeSelect = document.getElementById('concept-map-course-shape');
+  const courseShape = shapeSelect ? shapeSelect.value : 'oneway';
+  const info = getStyleSampleImageInfo(courseShape);
+  linkEl.href = './style/' + encodeURIComponent(info.file);
+  linkEl.download = getStyleSampleDownloadName(courseShape);
+  linkEl.textContent = `🎨 화풍 기준 이미지 다운로드 (${info.label})`;
+}
+
+function buildConceptCoordinateText() {
+  const data = buildConceptMapData();
+  if (!data) return '';
+  const wps = data.waypoints;
+  const lines = [];
+  const styleImageInfo = getStyleSampleImageInfo(data.courseShape);
+  const styleImageDownloadName = getStyleSampleDownloadName(data.courseShape);
+  // isReturnPoint 지점의 표기 — 왕복(outback)은 "같은 길로 돌아온 지점"이라
+  // "회귀점"이, 루프(loop)/꼬리+고리형(lollipop)은 실제로 원점회귀니
+  // "원점회귀"가 더 정확한 표현이다(2026-10-16: 왕복과 원점회귀 구분 요청,
+  // 2026-10-17: "꼬리 달린 고리형"을 네 번째 형태로 추가).
+  const returnLabel = (data.courseShape === 'loop' || data.courseShape === 'lollipop') ? '원점회귀' : '회귀점(왕복)';
+  // 버그 수정(2026-10-17): startName 자체가 이미 "들·날머리 (원점회귀)"처럼
+  // "(원점회귀)"를 포함하고 있을 때, 아래에서 returnLabel을 또 괄호로
+  // 덧붙이면 "들·날머리 (원점회귀) (원점회귀)"처럼 중복되는 실사고가
+  // 있었다. 이름에 이미 같은 라벨이 들어있으면 접미사를 생략한다.
+  function withReturnLabel(name) {
+    return name.includes(`(${returnLabel})`) ? name : `${name} (${returnLabel})`;
+  }
+
+  lines.push(`# ${data.mountainName} 산행 개념도 생성 프롬프트`);
+  lines.push('## STRICT STYLE LOCK · STRICT DATA LOCK');
+  lines.push('');
+  // 🔒 2026-10-17 추가: 사용자가 외부에서 받아온 "NotebookLM 산행 개념도
+  // 제작 절대 작업지시서" 전문. 아래 섹션들에 흩어진 개별 규칙(지명
+  // 오탈자 방지, 거리 임의 보정 금지 등)보다 더 포괄적인 "소스 원문
+  // 절대 준수" 원칙을 프롬프트 맨 앞, 최우선 순위로 못박기 위해 추가한다.
+  // 이후 섹션의 세부 규칙과 겹치는 내용이 있어도 그대로 둔다 — AI에게
+  // 같은 취지를 여러 각도로 반복 강조하는 것은 중복 낭비가 아니라
+  // 프롬프트 엔지니어링에서 흔히 쓰이는 강화 기법이다.
+  lines.push('# NotebookLM 산행 개념도 제작 절대 작업지시서');
+  lines.push('');
+  // 버그 수정(2026-10-21): 아래에 규칙이 10개 넘게 나열되면서, 그중 정말
+  // 중요한 두 가지(정확성, 구간별 특징 묘사)가 다른 세부 규칙들에 묻혀
+  // 우선순위가 흐려지는 문제가 있었다 — 사용자 지시: "1 정확한 정보는
+  // 필수. 지명, 경로 순서, 거리 / 2. 구간별 특징이 잘 나오게 그림과
+  // 설명으로 묘사 / 이게 가장 중요해". 모든 세부 규칙보다 먼저, 이 두
+  // 가지가 이 작업의 최종 목표임을 한 번 더 명확히 선언한다.
+  lines.push('## 0. 이 작업의 2가지 최우선 원칙');
+  lines.push('');
+  lines.push('아래에 상세 규칙이 여러 개 나오지만, 이 작업이 궁극적으로 달성해야 하는 목표는 다음 두 가지뿐이다. 세부 규칙 중 어느 것이 서로 부딪히는 것처럼 보이면, 이 두 원칙을 기준으로 판단한다.');
+  lines.push('');
+  lines.push('**원칙 1. 정확한 정보 — 지명, 경로 순서, 거리는 절대 틀리면 안 된다.** 소스에 기록된 지명의 글자, 지점이 등장하는 순서, 누적거리·고도 숫자를 한 글자, 한 순번, 한 자릿수도 틀리지 않고 그대로 재현한다. 이것이 이 작업에서 가장 중요하고, 어떤 미적 판단보다도 우선한다.');
+  lines.push('');
+  lines.push('**원칙 2. 구간별 특징을 그림과 설명 양쪽으로 생생하게 묘사한다.** 모든 구간을 똑같이 밋밋한 산길로 그리지 않는다 — 소스에 그 구간의 지형·볼거리·자연환경 설명이 있으면, 그 내용을 그림(작은 삽화)으로도, 짧은 설명 문구로도 함께 표현해 구간마다 다른 느낌이 나게 한다. 단, 소스에 없는 내용을 지어내서 채우지는 않는다(원칙 1과 상충하지 않는 범위에서만).');
+  lines.push('');
+  lines.push('## 1. 최우선 원칙: 소스 원문 절대 준수');
+  lines.push('');
+  lines.push('이 작업은 새로운 산행 경로나 지명을 창작하는 작업이 아니다.');
+  lines.push('');
+  lines.push('**제공된 소스에 기록된 정보를 그대로 시각화하는 작업이다.**');
+  lines.push('');
+  lines.push('다음 규칙은 디자인, 가독성, 미적 완성도보다 우선한다. 어떤 경우에도 이 규칙을 위반하지 않는다.');
+  lines.push('');
+  lines.push('### 규칙 1. 소스에 없는 정보는 절대 만들지 마라.');
+  lines.push('');
+  lines.push('- 소스에 없는 등산 경로를 새로 만들지 마라.');
+  lines.push('- 소스에 없는 봉우리, 산 이름, 지명, 갈림길, 쉼터, 시설물을 추가하지 마라.');
+  lines.push('- 소스에 없는 거리, 고도, 시간, 숫자, 방향을 만들지 마라.');
+  lines.push('- 소스에 없는 설명, 안내 문구, 제목, 범례, 주석을 만들지 마라.');
+  lines.push('- 지형이나 그림의 빈 공간을 채우기 위해 새로운 정보를 만들어 넣지 마라.');
+  lines.push('- 정보가 불명확하거나 누락되어 있으면 추측하지 말고 생략하라.');
+  lines.push('');
+  lines.push('### 규칙 2. 한글을 절대로 임의로 생성하거나 변형하지 마라.');
+  lines.push('');
+  lines.push('한글의 자음과 모음 하나하나가 원본과 정확히 일치해야 한다.');
+  lines.push('');
+  lines.push('- 원본에 있는 지명을 다른 단어로 바꾸지 마라.');
+  lines.push('- 자음과 모음의 순서나 조합을 바꾸지 마라.');
+  lines.push('- 받침을 임의로 추가하거나 삭제하지 마라.');
+  lines.push('- 비슷하게 보이는 다른 글자로 대체하지 마라.');
+  lines.push('- 맞춤법을 임의로 교정하거나 문장을 다듬지 마라.');
+  lines.push('- 원본 문구를 요약하거나 축약하거나 의역하지 마라.');
+  lines.push('- 원본에 없는 한글, 영문, 숫자, 기호를 이미지에 삽입하지 마라.');
+  lines.push('');
+  lines.push('**예를 들어 소스에 \'장군봉\'이라고 적혀 있다면 반드시 \'장군봉\'이어야 한다. 비슷하게 보이는 다른 글자나 잘못 조합된 자모는 허용하지 않는다.**');
+  lines.push('');
+  lines.push('이 규칙은 제목, 지명, 거리 표시, 범례, 표지판, 설명 문구 등 이미지에 표시되는 모든 문자에 예외 없이 적용한다.');
+  lines.push('');
+  lines.push('### 규칙 3. 경로를 창작하지 마라.');
+  lines.push('');
+  lines.push('- 소스에 기록된 경로만 표현하라.');
+  lines.push('- 경로의 연결 순서와 분기 구조를 임의로 변경하지 마라.');
+  lines.push('- 실제로 존재하지 않는 지름길이나 우회로를 추가하지 마라.');
+  lines.push('- 그림을 더 아름답게 만들기 위해 경로를 추가하거나 삭제하지 마라.');
+  lines.push('- 소스에 없는 출발점, 도착점, 중간 경유지를 만들지 마라.');
+  lines.push('- 확인할 수 없는 경로 연결은 추측하지 마라.');
+  lines.push('');
+  lines.push('지형의 입체적인 표현은 허용하지만, 그 표현이 실제 경로와 지점의 관계를 바꾸어서는 안 된다.');
+  lines.push('');
+  lines.push('### 규칙 4. 모든 문자는 소스에서 검증된 것만 사용하라.');
+  lines.push('');
+  lines.push('이미지를 생성하기 전에 소스에 존재하는 모든 텍스트를 먼저 확인하라.');
+  lines.push('');
+  lines.push('1. 원본에 기록된 제목과 지명을 확인한다.');
+  lines.push('2. 거리, 고도, 숫자 및 안내 문구를 확인한다.');
+  lines.push('3. 실제 이미지에 사용할 수 있는 텍스트만 확정한다.');
+  lines.push('4. 확정된 텍스트를 임의로 수정하지 않고 그대로 사용한다.');
+  lines.push('5. 확실하게 확인할 수 없는 문자는 생성하지 않는다.');
+  lines.push('');
+  lines.push('원본에 없는 문자를 디자인상의 이유로 추가하는 행위는 금지한다.');
+  lines.push('');
+  lines.push('### 규칙 5. 시각적 완성도보다 정보의 정확성이 우선한다.');
+  lines.push('');
+  lines.push('그림이 다소 단순해지더라도 원본을 훼손하지 마라.');
+  lines.push('');
+  lines.push('- 빈 공간이 생겨도 괜찮다.');
+  lines.push('- 장식이 부족해도 괜찮다.');
+  lines.push('- 글자나 지명을 생략해야 한다면 불확실한 글자를 만들어 넣지 마라.');
+  lines.push('- 확인되지 않은 정보를 그럴듯하게 표현하지 마라.');
+  lines.push('');
+  lines.push('**잘못된 정보가 포함된 아름다운 그림보다, 정보가 정확한 단순한 그림이 훨씬 우수하다.**');
+  lines.push('');
+  lines.push('## 2. 최종 검수 의무');
+  lines.push('');
+  lines.push('이미지 생성 전후에 다음 항목을 점검하라.');
+  lines.push('');
+  lines.push('- 모든 지명이 소스에 실제로 존재하는가?');
+  lines.push('- 모든 한글의 자음과 모음이 원본과 일치하는가?');
+  lines.push('- 소스에 없는 문구나 숫자가 추가되지 않았는가?');
+  lines.push('- 경로와 분기 구조를 임의로 바꾸지 않았는가?');
+  lines.push('- 불명확한 정보를 추측하여 채우지 않았는가?');
+  lines.push('');
+  lines.push('한 항목이라도 확인할 수 없다면 정확하다고 주장하지 마라. 확인되지 않은 항목을 명시하고, 가능한 경우 해당 텍스트나 표현을 생략하라.');
+  lines.push('');
+  lines.push('## 3. 최종 명령');
+  lines.push('');
+  lines.push('이 작업에서 가장 중요한 것은 그림의 아름다움이 아니라 원본의 충실한 재현이다.');
+  lines.push('');
+  lines.push('소스는 참고 자료가 아니다. 소스가 유일한 정보의 기준이다.');
+  lines.push('');
+  lines.push('**소스에 없는 정보는 0개, 창작한 경로는 0개, 임의로 만든 문구는 0개, 잘못된 한글은 0개여야 한다.**');
+  lines.push('');
+  lines.push('이 조건을 지키면서 산행 개념도를 제작하라.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 1. 작업 지시');
+  lines.push('');
+  lines.push(`"${styleImageDownloadName}"(함께 첨부된 파일)와 아래 "2. 절대 고정 화풍" 섹션에 적힌 스펙을 그대로 따라 「${data.mountainName} 산행 개념도」를 제작한다.`);
+  lines.push('');
+  lines.push('이 작업은 새로운 디자인을 창작하는 작업이 아니다. 아래 화풍 스펙을 그대로 따르는 삽화가가 같은 시리즈의 그림을 매번 새로 그리는 것처럼, 화풍은 고정하고 산행 데이터만 변경한다.');
+  lines.push('');
+  lines.push('산행 경로의 정확성을 최우선으로 하며, 그림의 미적 완성도를 위해 지점 순서, 경로, 고도, 화살표 방향, 거리, 지명을 변경하지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 2. 절대 고정 화풍 — MASTER STYLE LOCK');
+  lines.push('');
+  const shapeStructureNote = {
+    oneway: '또한 그 이미지는 "들머리에서 날머리까지 한 방향으로 쭉 이어지는" 편도(V자형) 구조를 실제로 어떻게 그려야 하는지 보여주는 정답 도해이기도 하다 — 분기점이나 고리 없이 한 줄기 경로로 그릴 것.',
+    outback: '또한 그 이미지는 "들머리에서 정상(반환점)까지 올라갔다가 같은 길로 그대로 내려오는" 왕복(I자형) 구조를 실제로 어떻게 그려야 하는지 보여주는 정답 도해이기도 하다 — 왕복 구간은 같은 선 위에 반대 방향 화살표 2개로 표현하고, 별도의 고리나 갈림길을 만들지 말 것.',
+    loop: '또한 그 이미지는 "들머리에서 출발해 다른 길로 한 바퀴 돌아 같은 지점으로 복귀하는" 원점회귀(C자형) 구조를 실제로 어떻게 그려야 하는지 보여주는 정답 도해이기도 하다 — 경로가 한 번도 겹치지 않는 고리 모양으로 그릴 것.',
+    lollipop: '또한 그 이미지는 "들머리에서 합류점까지는 왕복 구간, 합류점부터는 들어가는 길과 나오는 길이 다른 루프 구간"인 사탕막대형(Y자형) 구조를 실제로 어떻게 그려야 하는지 보여주는 정답 도해이기도 하다 — 단, 이 산의 정확한 합류점 위치는 아래 "5. 경로 구조"에서 거리 데이터로 직접 계산하고, 그 이미지 속 분기점 위치를 그대로 베끼지 않는다.'
+  }[data.courseShape] || '';
+  lines.push(`**매우 중요(화풍 기준 이미지): 함께 첨부된 "${styleImageDownloadName}"가 이 화풍의 유일한 정답 이미지다.** 종이 질감, 선 굵기와 색, 산·숲·바위의 채색 방식, 글자 손글씨체, 라벨 말풍선·리본 모양, 장식(솔방울·낙엽·깃발·배지) 종류와 배치 밀도를 전부 그 이미지에서 그대로 베껴온다. ${shapeStructureNote} 단, 그 이미지 속의 산 이름·지명·거리·고도 숫자·"코스 형태" 문구(그 샘플에 적힌 코스 형태 명칭이 무엇이든)는 전혀 다른 산의 것이므로 절대 가져오지 않는다 — **그 이미지에 "코스 형태" 글자가 적혀 있더라도, 이번 산 그림에는 "코스 형태" 항목 자체를 글자로 적지 않는다.** 화풍과 구조만 베끼고, 모든 지명·숫자·좌표·문구는 아래 "4. 원본 산행 데이터"를 따른다.`);
+  lines.push('');
+  lines.push('아래 텍스트 스펙은 이미지만으로 전달하기 어려운 세부 수치(정확한 색상 코드 등)를 보충하는 것이다. 이미지와 텍스트가 서로 다르게 읽히는 부분이 있으면 이미지를 우선한다.');
+  lines.push('');
+  lines.push('**배경/바탕**');
+  lines.push('- 아이보리~베이지색 종이 질감 배경(#f7f0e3 전후 톤), 미세한 종이결과 얼룩 자국.');
+  lines.push('- 화면 테두리를 따라 짙은 갈색 손그림 이중선 액자(모서리가 살짝 말린 종이 느낌의 장식)를 두른다.');
+  lines.push('');
+  lines.push('**선/색**');
+  lines.push('- 모든 윤곽선은 짙은 갈색(#4a3426 전후) 손그림 펜선, 두껍지 않고 살짝 떨리는 듯한 자연스러운 선.');
+  lines.push('- 산은 황토색·베이지·연한 회갈색(#c9a876, #d9c3a0 계열)의 능선과 바위로, 음영은 수채화 번짐처럼 부드럽게.');
+  lines.push('- 숲/나무는 탁한 올리브그린·세이지그린(#8a9a6b, #6f7d52 계열), 뾰족한 침엽수 실루엣 위주.');
+  lines.push('- 하늘이 보이는 장면이면 연한 하늘색 구름을 손그림 소용돌이 모양으로 군데군데 배치.');
+  lines.push('- 등산로(경로선)는 산 표면과 구분되는 짙은 갈색 굵은 손그림 띠로, 가장자리에 작은 돌멩이·흙 질감 디테일을 점점이 찍는다.');
+  lines.push('');
+  lines.push('**글자**');
+  lines.push('- 제목은 화면 상단 중앙, 굵고 둥근 손글씨체 검정~짙은 갈색.');
+  lines.push('- 산행 기본 정보(거리/시간/고도/코스형태)는 손그림 메모지/명찰 모양의 작은 정보 상자에 아이콘(신발·시계·산·순환 화살표 등 단순한 선 아이콘)과 함께 정리.');
+  lines.push('- 지점 라벨은 이름과 숫자만 간결하게, 손그림 말풍선이나 리본 모양 배경 위에.');
+  lines.push('');
+  lines.push('**장식**');
+  lines.push('- 솔방울, 도토리, 낙엽, 작은 바위, 발자국 같은 자연물 장식을 화면 여백에 듬성듬성 배치(과하지 않게).');
+  lines.push('- 등산객 캐릭터, 이정표, 대피소/사찰 같은 작은 건물 아이콘을 지점 근처에 선택적으로 추가 가능.');
+  lines.push('- 들머리는 초록/연두 계열, 날머리(또는 원점회귀 복귀 지점)는 빨강/코랄 계열의 원형 또는 리본 뱃지로 시각적으로 구분.');
+  lines.push('- 봉우리 정상에는 작은 깃발 아이콘을 꽂아 표시.');
+  lines.push('');
+  lines.push('**전체 인상**: 국립공원 안내판이나 여행 스케치북에서 볼 법한, 따뜻하고 아기자기하지만 정보는 명확하게 읽히는 손그림 수채화 파노라마.');
+  lines.push('');
+  lines.push('**절대 금지**: 3D 렌더링, 사진, 위성지도, 매끈한 벡터 일러스트, 플랫 디자인, 애니메이션, 웹툰, 과장된 만화풍, 네온색, 강렬한 원색, 두꺼운 검정 외곽선, 과도한 장식, 새로운 디자인 콘셉트, **표/엑셀 그리드 형태로 데이터를 정리하는 것(고도·거리 비교표, 칸으로 나뉜 데이터 패널 등), 일반적인 PPT·인포그래픽 느낌의 깔끔한 카드/배너 레이아웃**.');
+  lines.push('');
+  lines.push('기준 이미지를 첨부했든 안 했든, 이전에 생성된 결과물과 테두리 장식·배경 질감·글자체·뱃지 모양이 달라지지 않도록 위 스펙을 매번 동일하게 적용할 것.');
+  lines.push('');
+  lines.push('기준 이미지의 화풍을 임의로 개선하거나 현대화하거나 재해석하지 않는다. 매번 다른 스타일을 시도하지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 3. 산행 기본 정보 — 원문 그대로 사용');
+  lines.push('');
+  lines.push(`- 제목: ${data.mountainName} 산행 개념도`);
+  lines.push(`- 코스 형태: ${COURSE_SHAPE_LABEL[data.courseShape] || '편도'} (※ 이 항목은 경로를 어떻게 그릴지 판단하는 참고용 정보일 뿐, 이미지 안에 "코스 형태" 글자나 그 값을 글자로 표기하지 않는다)`);
+  lines.push(`- 출발지: ${data.startName}`);
+  // 버그 수정(2026-10-17): "반환점 = 순번상 마지막 중간 지점"이라는 가정은
+  // 단순 왕복(outback — 끝까지 갔다가 그대로 되돌아옴)에서만 성립한다.
+  // 꼬리+고리형(lollipop)은 중간에 작은 루프가 끼어있어 "마지막 지점"이
+  // 곧 반환점이 아니므로, 여기서는 "반환점" 대신 사용자가 지정한 합류점
+  // (없으면 생략)을 표시한다 — 이전엔 lollipop에서도 "반환점: 무쇠말재"가
+  // 찍혀 "꼬리+고리형"이라는 코스 설명과 모순되는 문구가 나오는 실사고가
+  // 있었다.
+  if (data.courseShape === 'outback') {
+    lines.push(`- 반환점: ${wps.length >= 2 ? wps[wps.length - 2].name : '-'}`);
+  } else if (data.courseShape === 'lollipop') {
+    const junctionWps = wps.filter(w => w.isJunction).sort((a, b) => (a.junctionOrder || 0) - (b.junctionOrder || 0));
+    if (junctionWps.length === 1) {
+      lines.push(`- 합류점(왕복/루프 분기점): ${junctionWps[0].name}`);
+    } else if (junctionWps.length >= 2) {
+      lines.push(`- 합류점1(왕복/루프 분기점): ${junctionWps[0].name}`);
+      lines.push(`- 합류점2(루프 안 돌출 왕복 분기점): ${junctionWps[1].name}`);
+    }
+  }
+  lines.push(`- 도착지: ${data.isRoundTrip ? data.startName : data.endName}`);
+  lines.push(`- 총 거리: 약 ${data.totalKm.toFixed(1)}km`);
+  lines.push(`- 예상 소요시간: ${data.durationText}`);
+  if (data.maxAlt !== null) lines.push(`- 최고 고도: 약 ${Math.round(data.maxAlt)}m`);
+  lines.push('');
+  lines.push('제목은 상단에 크게 배치한다. 산행 정보는 기준 이미지처럼 간결한 정보 상자에 정리한다.');
+  lines.push('');
+  lines.push('**매우 중요(코스 형태 비표기): 정보 상자에 "코스 형태" 항목 자체를 넣지 않는다.** 총 거리, 예상 소요시간, 최고 고도 등 나머지 항목만 정보 상자에 표시하고, 코스 형태 명칭이나 설명 문구는 그림 어디에도 글자로 적지 않는다.');
+  lines.push('');
+  lines.push('**매우 중요(제목 아래 부제 금지 — 반복 위반 사례 있음): 제목 바로 아래에 어떤 형태로든 한 줄짜리 요약·부제 문장을 새로 만들어 넣지 않는다.** 금지 대상 예시(전부 과거에 실제로 잘못 생성된 사례다): "○○ 출발 - △△ - □□ 정상 - 출발지 복귀, 순환형(○자형) 코스 핵심 정보 시각화", "대관령 ○○ 원점회귀 산행 코스의 핵심 경로, 구간별 고도 및 누적 거리, 주요 지형적 특징을 한눈에 파악". 이런 문장은 산 이름 하나만 바꿔서 매번 비슷하게 또 만들어지곤 했는데, 전부 소스에 없는 창작 문구다(규칙 1 위반, 원칙 1 위반). 제목 바로 아래에는 제목과 정보 상자 사이에 아무 문장도 넣지 않는다 — 산행 정보는 오직 "3. 산행 기본 정보"에 나열된 항목(총 거리/예상 소요시간/최고 고도 등)만 정보 상자 안에 짧게 표시한다.');
+  lines.push('');
+  lines.push('문구와 수치를 임의로 변경하거나 새 설명을 추가하지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 4. 원본 산행 데이터 — 수정 금지');
+  lines.push('');
+  const hasAnyOfficialEle = wps.some(w => w.eleIsOfficial);
+  if (hasAnyOfficialEle) {
+    lines.push('고도(m) 열에 "(GPX)" 표시가 없는 값은 공식 표기 고도(정상석·이정표 기준)이고, "(GPX)" 표시가 있는 값은 GPX 기록 고도(GPS 측정치, 공식값과 다를 수 있음)다. 가능하면 공식 고도를 기준으로 삼는다.');
+    lines.push('');
+  }
+  // 버그 수정(2026-10-21): 구간거리·고도변화·경사(%) 열은 좌표표와 그림
+  // 라벨 양쪽에서 "고도·누적거리와 중복되는 말"이라는 사용자 지적으로
+  // 완전히 제거했다 — 지점 라벨은 "지명 [고도 Xm / 누적 Xkm]" 수준으로
+  // 간결해야 하는데, 세부 증분 수치까지 좌표표에 있으면 AI가 그 전부를
+  // 라벨에 욱여넣는 경향이 있었다(선자령 사례).
+  lines.push('| 순번 | 지점명 | 위도 | 경도 | 고도(m) | 누적거리(km) |');
+  lines.push('|---|---|---|---|---|---|');
+  wps.forEach(w => {
+    const nameText = w.isReturnPoint ? withReturnLabel(w.name) : w.name;
+    let eleText = '미제공';
+    if (w.ele !== null && w.ele !== undefined) {
+      eleText = Math.round(w.ele) + (w.eleIsOfficial ? '' : (hasAnyOfficialEle ? ' (GPX)' : ''));
+    }
+    const distText = (w.routeDistKm !== undefined && w.routeDistKm !== null) ? w.routeDistKm.toFixed(2) : '-';
+    lines.push(`| ${w.seq} | ${nameText} | ${w.lat.toFixed(6)} | ${w.lon.toFixed(6)} | ${eleText} | ${distText} |`);
+  });
+  lines.push('');
+  lines.push('`미제공` 또는 `-`는 해당 값을 표시하지 말라는 뜻이다. 누락된 값을 추정하거나 계산하여 채우지 않는다. 좌표는 그림 안에 표시하지 않는다.');
+  lines.push('');
+
+  // 산/지점별 실제 지형 특징(builder JSON) — "산이 특징이 없다"는 피드백
+  // (2026-10-16)에 따라 추가. GPX 좌표만으로는 "이 봉우리가 암봉인지
+  // 흙산인지" 같은 질감을 알 수 없으므로, builder에서 불러온 실제 랜드마크
+  // 설명을 넣어 지형 묘사에 반영한다. builder 데이터가 없으면 이 섹션
+  // 전체를 생략한다(없는 정보를 지어내지 않기 위해).
+  const hasAnyLandmark = wps.some(w => w.landmarks && w.landmarks.length > 0) || data.sceneryHighlights.length > 0;
+  if (hasAnyLandmark) {
+    lines.push('---');
+    lines.push('');
+    lines.push('### 4-1. 실제 지형 특징 (참고 자료 — builder에서 수집한 설명)');
+    lines.push('');
+    lines.push('아래는 각 지점의 실제 지형·경관 설명이다. 이 설명에 맞게 그 지점 주변 산세(바위/흙/능선 모양 등)를 묘사에 반영하되, 설명에 없는 디테일을 과도하게 창작하지는 말 것.');
+    lines.push('');
+    wps.forEach(w => {
+      if (w.landmarks && w.landmarks.length > 0) {
+        w.landmarks.forEach(l => {
+          lines.push(`- **${w.name}** 부근 — ${l.name}: ${l.desc}`);
+        });
+      }
+    });
+    if (data.sceneryHighlights.length > 0) {
+      lines.push('');
+      lines.push('코스 전체를 대표하는 특징(특정 지점에 한정되지 않음):');
+      data.sceneryHighlights.forEach(h => lines.push(`- ${h}`));
+    }
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('');
+  lines.push('### 5. 경로 구조 — 최우선 규칙');
+  lines.push('');
+  lines.push('**매우 중요(번호 순서 = 경로 순서): 아래 지점마다 매길 번호(1, 2, 3...)는 장식이 아니라 "실제로 걷는 순서"다.** 경로선은 반드시 1번 지점에서 시작해 2번, 3번, 4번 순서로 번호가 커지는 방향으로만 이어 그린다. 번호가 매겨진 순서를 무시하고 지도상 가까운 지점끼리 먼저 잇거나(예: 1번과 3번을 먼저 연결하고 2번을 나중에 잇는 것), 번호 순서를 건너뛰거나 뒤섞어 연결하면 절대 안 된다 — 지점을 다 그린 뒤에는 번호를 1부터 끝까지 순서대로 손가락으로 짚어가며 선이 끊기지 않고 그 순서 그대로 이어지는지 반드시 재확인한다.');
+  lines.push('');
+  // 버그 수정(2026-10-20): isReturnPoint 필터링은 왕복(outback) 전용이다
+  // — 왕복은 "순서: 들머리→정상"만 보여주고 "정상에서 같은 길로 돌아온다"는
+  // 별도 문장으로 설명하므로 복귀 지점을 순서 목록에서 뺀다. 그런데
+  // 원점회귀(loop)는 등산로와 하산로가 다른 길이라 복귀 지점(날머리)이
+  // "마지막으로 실제로 도착하는 지점"이지 왕복처럼 생략 가능한 반복이
+  // 아니다 — 이 필터링을 loop에도 그대로 적용해 "순서:" 줄에서 날머리가
+  // 통째로 빠지고, AI가 날머리 라벨 자체를 누락하고 출발지 주차장을
+  // 두 곳으로 따로 그리는 실사고가 있었다(선자령 사례). loop일 때는
+  // 복귀 지점도 순서에 포함한다.
+  const flowNames = wps.filter(w => data.courseShape === 'loop' || !w.isReturnPoint).map(w => w.name);
+  // 2026-10-16 실사고: 지점이 지도상 좁은 구역에 몰려 있으면(예: 정상
+  // 부근에 봉우리 5~6개가 수백m 간격으로 붙어있는 경우) AI가 공간이
+  // 부족하다고 판단해 중간 지점 몇 개를 조용히 건너뛰고 앞뒤 지점만
+  // 이어버리는 오류가 있었다(장터목대피소 다음 촛대봉이 바로 나오고
+  // 연화봉·연하선경·화장봉·삼신봉이 통째로 누락됨). "표에 없는 지명을
+  // 추가하지 말라"는 지시만으로는 "있는 지명을 생략하지 말라"가 저절로
+  // 따라오지 않으므로, 정확한 지점 수를 못 박고 반대 방향 규칙을 명시한다.
+  lines.push(`**총 ${flowNames.length}개 지점을 하나도 빠짐없이 전부 표시한다.** 지점이 좁은 구역에 몰려 있어도 생략하거나 합치지 않는다 — 공간이 부족하면 라벨 크기를 줄이거나 선을 구불구불하게 늘여서라도 모든 지점을 거쳐가는 경로로 그릴 것. 순서상 인접한 두 지점(예: 6번과 11번)을 곧바로 연결하고 그 사이 지점(7~10번)을 건너뛰는 것은 절대 금지.`);
+  lines.push('');
+  if (data.courseShape === 'outback') {
+    // 왕복(갔던 길 그대로): 들머리=날머리, 올라간 선 그대로 되짚어 내려온다.
+    // 핵심은 "선을 하나만 그리고 방향만 반대로"다 — 루프와 가장 혼동되는
+    // 지점이라 "절대 금지" 목록에서 순환/루프/평행선을 명시적으로 막는다.
+    lines.push(`이번 산행은 **동일 경로 왕복(갔던 길 그대로 되돌아옴)**이다.`);
+    lines.push('');
+    lines.push(`등산 순서: ${flowNames.join(' → ')}`);
+    lines.push(`하산 순서: ${flowNames.slice().reverse().join(' → ')}`);
+    lines.push('');
+    lines.push(`${data.startName}에서 출발하여 ${flowNames[flowNames.length - 1]}까지 오른 다음, 올라갈 때 이용한 바로 그 길을 되짚어 ${data.startName}로 돌아온다.`);
+    lines.push('');
+    lines.push('**그림의 경로 구조**');
+    lines.push('- 지점 순번(1부터)이 작을수록 왼쪽, 클수록 오른쪽에 가도록 배치한다(순번이 섞여 배치되지 않게).');
+    lines.push(`- 마지막 경유지(순번이 가장 큰 중간 지점, 반환점)에서 같은 경로를 따라 ${data.startName}로 돌아오는 구조를 명확하게 표현한다.`);
+    lines.push('- 등산과 하산은 하나의 동일한 경로선을 공유한다.');
+    lines.push('- 서로 반대 방향을 가리키는 작은 화살표로 왕복 방향을 표현한다.');
+    lines.push('');
+    lines.push('**절대 금지**: 다른 길로 돌아오는 순환 코스 / 타원형 또는 원형 경로 / 등산로와 별도로 그린 하산로 / 반환점에서 끝나는 편도 경로 / 경로 교차 또는 지점 순서 변경 / 등산과 하산 화살표가 모두 같은 방향을 가리키는 오류.');
+    lines.push('');
+    lines.push('왕복 경로를 두 개의 평행한 선으로 그리지 않는다. 동일한 길을 양방향으로 걷는 구조여야 한다.');
+  } else if (data.courseShape === 'loop') {
+    // 원점회귀(루프): 왕복과 달리 등산로/하산로가 서로 다른 길이다 —
+    // "같은 선 공유" 규칙을 걸면 오히려 틀린 그림이 되므로 반대로 지시한다.
+    lines.push(`이번 산행은 **원점회귀(다른 길로 한 바퀴 도는 루프 코스)**다.`);
+    lines.push('');
+    lines.push(`순서: ${flowNames.join(' → ')}`);
+    lines.push('');
+    lines.push(`${data.startName}에서 출발해 한 바퀴를 돌아 다시 ${data.startName} 근처로 돌아온다. 왕복처럼 같은 길을 되짚어오는 것이 아니라, 등산로와 하산로가 서로 다른 길이다.`);
+    lines.push('');
+    lines.push('**그림의 경로 구조**');
+    lines.push('- 지점 순번(1부터)을 따라 하나의 폐곡선(원형 또는 타원형에 가까운 루프)을 그린다.');
+    lines.push('- 화살표는 순번 순서를 따라 루프를 도는 한 방향(시계방향 또는 반시계방향 중 하나)으로만 일관되게 표시한다.');
+    lines.push(`- **매우 중요(출발지=도착지, 주차장 1개): 위 "순서" 목록의 첫 지점과 마지막 지점은 이름이 같은 "${data.startName}"이며, 실제로 같은 장소(주차장 1곳)다.** 지도 양쪽에 똑같은 이름의 지점을 두 번 그리지 말고, 반드시 하나의 지점에서 경로가 출발해서 한 바퀴를 돈 뒤 그 같은 지점으로 돌아와 닫히는 폐곡선으로 그린다 — 들머리용 주차장과 날머리용 주차장을 별개의 장소처럼 두 곳에 그리면 안 된다.`);
+    lines.push('');
+    lines.push('**절대 금지**: 같은 선을 왕복하는 것처럼 그리는 것(왕복과 혼동 금지) / 경로가 중간에 끊기거나 교차하는 것 / 화살표가 루프 중간에 반대 방향으로 바뀌는 것 / 출발지와 도착지를 서로 다른 두 곳의 지점(예: 주차장 2개)으로 그리는 것.');
+  } else if (data.courseShape === 'lollipop') {
+    // 꼬리+고리형(lollipop): 들머리=날머리(원점회귀)이지만 단순 왕복(outback)도
+    // 완전한 루프(loop)도 아니다 — 들머리에서 한 구간(꼬리)을 걸어 어느
+    // 지점(합류점)에 도달한 뒤, 거기서 작은 루프를 한 바퀴 돌고, 다시
+    // 그 합류점을 지나 꼬리 구간을 똑같이 되짚어 들머리로 돌아온다
+    // (2026-10-17 추가: "왕복인데 중간에 작은 루프가 끼어있다"는 실제
+    // 코스 형태를 표현할 방법이 없었다 — 사용자 사례: 가리산 산행,
+    // 무쇠말재에서 가리산~가삽고개 소규모 루프를 돌고 같은 꼬리 구간으로
+    // 하산). 어느 지점이 정확한 합류점인지는 코드가 임의로 단정하지
+    // 않고, 좌표·거리·지형 데이터를 근거로 AI가 스스로 판단하게 한다.
+    const junctionWps = wps.filter(w => w.isJunction).sort((a, b) => (a.junctionOrder || 0) - (b.junctionOrder || 0));
+    const junctionWp = junctionWps[0]; // 1번 합류점: 왕복/루프 분기점
+    const junctionWp2 = junctionWps[1]; // 2번 합류점(선택): 루프 안 돌출 왕복 분기점
+    // 버그 수정(2026-10-19): "사탕막대형/P자/롤리팝" 같은 비유 표현이
+    // 들어간 이전 버전은 AI가 실제 거리 데이터를 분석하기보다 "사탕막대처럼
+    // 생긴 그림"이라는 단어 이미지에 꽂혀, 막대 구간 없이 전체를 뭉뚱그려
+    // 동그란 루프 하나로 그리는 결함이 있었다(천관산연대봉 사례). 비유는
+    // 코스 형태 명칭("사탕막대형")에서만 한 번 쓰고, 경로 작도 지시는
+    // 비유를 배제한 채 "어느 구간이 왕복이고 어느 구간이 순수 루프인지"를
+    // 거리 데이터로 직접 계산하게 하는 산술적 지시로 바꾼다.
+    //
+    // 확장(2026-10-20): 병풍산 사례처럼 루프 구간 안에 또 다른 돌출 왕복
+    // (정상을 찍고 같은 길로 루프 선까지 되돌아오는 구간)이 있는 코스는
+    // 합류점 1개로는 표현이 안 됐다. 사용자가 🔗를 2개(1번=왕복/루프
+    // 분기점, 2번=루프 안 돌출 왕복 분기점) 지정하면, 이 두 번째 분기점도
+    // "추정"이 아니라 "확정된 사실"로 명시한다.
+    lines.push(`이번 산행은 **사탕막대형(원점회귀) 코스**다 — 들머리와 날머리는 같은 지점이지만, 단순히 같은 길을 왕복하는 것도, 처음부터 끝까지 완전히 다른 길을 도는 순수 루프도 아니다.`);
+    lines.push('');
+    lines.push(`순서: ${flowNames.join(' → ')}`);
+    lines.push('');
+    lines.push(`${data.startName}에서 출발해 한동안 걸어 들어간 뒤, 어느 지점(합류점)에서 작은 루프를 한 바퀴 돌고, 다시 그 합류점을 지나 들어올 때와 똑같은 길로 되짚어 ${data.startName}로 돌아온다.`);
+    lines.push('');
+    lines.push('**그림의 경로 구조 — 아래 순서대로 직접 계산해서 그릴 것**');
+    if (junctionWp) {
+      // 사용자가 지도에서 직접 지정한 합류점(🔗 버튼) — 추측이 아니라
+      // 확정값이므로 "직접 판단"이 아니라 단정 문구로 지시한다.
+      lines.push(`1. **매우 중요(합류점 확정): "${junctionWp.name}"이 왕복 구간과 루프 구간이 나뉘는 합류점이다 — 이는 추정이 아니라 확정된 사실이다.** ${data.startName}부터 "${junctionWp.name}"까지는 왕복 구간, "${junctionWp.name}"부터 다시 "${junctionWp.name}"으로 돌아오기까지는 루프 구간이다.`);
+    } else {
+      lines.push('1. 아래 "4. 원본 산행 데이터" 표의 누적거리 열을 보고, 전체 지점 중 등산로가 두 갈래로 나뉘었다가 다시 같은 지점에서 합쳐지는 삼거리/갈림길 지점(좌표가 거의 같은 두 행이 있는지)을 찾아 그 지점을 합류점으로 확정한다. 이 산술적 판단을 생략하고 임의로 합류점을 정하지 않는다.');
+    }
+    lines.push(`2. ${data.startName}부터 합류점까지는 왕복 구간이므로, 들어가는 길과 나오는 길을 완전히 같은 선 위에 겹쳐 그리고 반대 방향 화살표 2개로 왕복을 표현한다.`);
+    lines.push('3. 합류점부터 다시 합류점으로 돌아오기까지는 루프 구간이므로, 들어가는 길과 나오는 길을 서로 다른 선으로 그린다(겹쳐 그리지 않는다) — 이 구간에 속한 중간 지점들(위 "순서" 목록에서 합류점 뒤에 나열된 지점들)을 그 선 위에 실제 거리 순서대로 모두 배치한다.');
+    lines.push(`4. 합류점 라벨은 왕복 구간과 루프 구간이 만나는 지점에 단 한 번만 표시한다.`);
+    if (junctionWp2) {
+      lines.push(`5. **매우 중요(두 번째 분기점 확정): "${junctionWp2.name}"은 루프 구간 안에서 또 한 번 갈라지는 돌출 왕복 분기점이다 — 이는 추정이 아니라 확정된 사실이다.** 루프 선 위의 "${junctionWp2.name}"에서 따로 갈라져 나가 정상(또는 막다른 지점)을 찍고, 같은 길로 되짚어 "${junctionWp2.name}"으로 돌아와 다시 루프 선을 잇는다 — 이 구간은 루프 둘레 위의 평범한 경유지가 아니라, 루프 선에서 바깥으로 뻗어나간 뒤 똑같은 길로 되돌아오는 작은 가지(왕복선 + 반대방향 화살표 2개)로 그린다.`);
+    } else {
+      lines.push('5. **매우 중요(루프 안의 돌출 왕복 지점 확인): 루프 구간에 속한 중간 지점들 중 "막다른 봉우리/정상"이 있는지 반드시 확인한다.** 아래 "4. 원본 산행 데이터" 표에서, 루프 구간의 마지막 중간 지점에서 그다음 행(들머리 복귀)으로 넘어갈 때 누적거리가 그 지점까지의 누적거리 증가폭보다 뚜렷이 크게 점프한다면, 그 지점은 "루프 선 위의 한 경유지"가 아니라 "루프 선에서 따로 갈라져 나가 정상을 찍고 같은 길로 되짚어 루프 선으로 돌아오는 별도의 작은 왕복 돌출부"다. 이 경우 그 지점을 루프의 원 둘레 위에 그냥 찍지 말고, 루프 선에서 바깥으로 뻗어나간 뒤 똑같은 길로 되돌아오는 작은 가지(왕복선 + 반대방향 화살표 2개)로 그린다 — 데이터 상 그런 지점이 없다면 이 지시는 무시하고 평범한 루프로 그린다.');
+    }
+    lines.push('');
+    lines.push('**절대 금지**: 왕복 구간을 생략하고 전체를 하나의 단순 원형/타원형 루프로 그리는 것 / 루프 구간을 생략하고 전체를 하나의 단순 왕복(직선 왕복)으로 그리는 것 / 왕복 구간과 루프 구간의 들어가는 선·나오는 선을 구분 없이 전부 겹쳐 그리는 것 / 루프 안의 돌출 왕복 지점(5번 참고)을 루프 둘레 위의 평범한 경유지로 뭉개서 그리는 것 / 경로가 중간에 끊기거나 불필요하게 교차하는 것 / 합류점을 거리 데이터와 무관하게 임의로 정하는 것 / 고도가 표에 명시된 지점의 고도 숫자를 다른 값으로 바꾸는 것.');
+  } else {
+    lines.push('이번 산행은 **편도 코스**다.');
+    lines.push('');
+    lines.push(`순서: ${flowNames.join(' → ')}`);
+    lines.push('');
+    lines.push('**그림의 경로 구조**');
+    lines.push('- 지점 순번(1부터)이 작을수록 왼쪽(또는 시작점 쪽), 클수록 오른쪽(또는 끝점 쪽)에 가도록 일관된 방향으로 배치한다.');
+    lines.push('- 매우 중요(화살표 방향): 모든 화살표·경로선은 반드시 순번이 작은 지점에서 큰 지점으로만 향해야 한다. 화살표 머리가 거꾸로 향하거나 순서가 중간에 뒤바뀌면 절대 안 된다.');
+    lines.push('');
+    lines.push('**절대 금지**: 경로 교차, 지점 순서 변경, 화살표 방향이 중간에 뒤바뀌는 것, 시작점과 끝점을 하나로 합치는 것.');
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 6. 고도와 지형의 수직 관계');
+  lines.push('');
+  lines.push('고도가 높은 지점은 그림에서 더 높게 배치한다.');
+  lines.push('');
+  const eleKnown = wps.filter(w => w.ele !== null && w.ele !== undefined).sort((a, b) => b.ele - a.ele);
+  eleKnown.forEach(w => lines.push(`- ${w.name}: ${Math.round(w.ele)}m`));
+  const eleUnknown = wps.filter(w => w.ele === null || w.ele === undefined);
+  eleUnknown.forEach(w => lines.push(`- ${w.name}: 고도 미제공`));
+  lines.push('');
+  lines.push('표에 기록된 고도의 높낮이 관계를 반드시 그대로 지킬 것(순서를 뒤집지 말 것). 고도가 미제공인 지점의 높이는 임의로 정하지 않는다.');
+  lines.push('');
+  lines.push('산행 파노라마의 형태를 자연스럽게 단순화할 수 있지만, 알려진 고도 관계를 뒤집지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 7. 거리 데이터 — 임의 보정 금지');
+  lines.push('');
+  lines.push(`상단 총거리 표기는 반드시 "총 거리: 약 ${data.totalKm.toFixed(1)}km"로 한다.`);
+  lines.push('');
+  if (data.courseShape === 'outback' && data.outbackDoubled) {
+    // 버그 수정(2026-10-17): GPX에는 편도 구간(들머리→반환점)만 실측
+    // 좌표로 기록되고, 반환점 이후 하산은 "왕복" 체크박스로만 표시되는
+    // 구조다(좌표를 두 번 걷지 않음). 즉 위 좌표 표의 "반환점까지 누적
+    // 거리"가 곧 편도 거리이고, 총거리(data.totalKm)는 코드가 이미 그
+    // 값을 정확히 2배 보정한 것이다 — "두 배로 계산하면 표기 총거리와
+    // 다를 수 있다"던 예전 경고는 GPX가 왕복 전체를 실측했다는 틀린
+    // 전제였다. 이제는 "다를 수 있다"가 아니라 "정확히 같다"고 알려준다.
+    const turnPoint = wps.length >= 2 ? wps[wps.length - 2] : null;
+    if (turnPoint) {
+      lines.push(`원본 GPX 트랙은 들머리에서 반환점(${turnPoint.name})까지의 편도 구간(누적거리 ${turnPoint.routeDistKm.toFixed(2)}km)만 실측 좌표로 기록되어 있다. 하산(반환점→들머리)은 등산로와 동일한 길을 그대로 되짚는 왕복이므로, 총거리 약 ${data.totalKm.toFixed(1)}km는 이 편도 거리를 정확히 2배 한 값이다.`);
+      lines.push('');
+      lines.push(`- 총거리는 약 ${data.totalKm.toFixed(1)}km로 표시한다(편도 거리를 다시 그대로 쓰지 않는다).`);
+      lines.push('- 예상 소요시간도 왕복 전체(등산+하산) 기준으로 이미 제공된 값을 그대로 쓴다.');
+    }
+  } else if (data.courseShape === 'outback') {
+    // 버그 수정(2026-10-19): 이 GPX는 들머리→반환점→들머리 근처까지
+    // 왕복 전체가 이미 실측 좌표로 기록되어 있어(트랙 마지막 점이 첫
+    // 점 근처로 되돌아옴) 2배 보정을 하지 않았다 — 거림 사례에서 이미
+    // 왕복 전체인 20.06km에 또 2배를 해 40.1km로 부풀려지는 실사고가
+    // 있었다.
+    lines.push(`원본 GPX 트랙은 들머리에서 반환점을 거쳐 들머리 근처로 되돌아오는 왕복 구간 전체가 실측 좌표로 기록되어 있다. 총거리 약 ${data.totalKm.toFixed(1)}km는 이 기록값을 그대로 쓴 것이며(편도 거리를 2배 한 값이 아니다), 임의로 다시 2배 하거나 절반으로 바꾸지 않는다.`);
+    lines.push('');
+    lines.push(`- 총거리는 약 ${data.totalKm.toFixed(1)}km로 표시한다.`);
+    lines.push('- 예상 소요시간도 이미 제공된 값을 그대로 쓴다.');
+  } else {
+    lines.push('원본 표에 기록된 누적거리 수치를 그대로 사용하고, 임의로 반올림하거나 다른 값으로 통일하지 않는다.');
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 8. 지명과 텍스트 — 오탈자 방지');
+  lines.push('');
+  lines.push('표시할 지점명:');
+  wps.forEach(w => {
+    let junctionTag = '';
+    if (w.isJunction) junctionTag = w.junctionOrder === 2 ? ' (합류점2)' : ' (합류점)';
+    lines.push(`- ${w.isReturnPoint ? withReturnLabel(w.name) : w.name}${junctionTag}`);
+  });
+  lines.push('');
+  lines.push('표시할 고도(고도가 제공된 지점만):');
+  eleKnown.forEach(w => lines.push(`- ${Math.round(w.ele)}m`));
+  lines.push('');
+  lines.push('이외의 지명과 수치를 임의로 추가하지 않는다. 고도가 미제공인 지점의 고도는 표시하지 않는다. 좌표는 표시하지 않는다.');
+  lines.push('');
+  lines.push('**매우 중요(지점 라벨 간결화): 지점 라벨에는 "번호 + 지명 + 고도 + 누적거리"만 표시한다.** 구간거리, 고도변화(+Xm), 경사(%) 같은 세부 증분 수치는 고도·누적거리와 겹치는 정보이므로 그림 어디에도 적지 않는다. 단, 번호(1, 2, 3...)는 반드시 모든 지점 라벨에 표시한다 — "간결하게"는 세부 증분 수치를 빼라는 뜻이지, 번호를 빼라는 뜻이 아니다.');
+  lines.push('');
+  const startEleText = (wps[0] && wps[0].ele !== null && wps[0].ele !== undefined) ? `${Math.round(wps[0].ele)}m` : '';
+  lines.push(`**매우 중요(마지막 지점의 누적거리 누락 금지): 마지막 지점(원점회귀로 돌아오는 지점, 위 표의 ${wps.length}번)의 라벨에도 그 지점의 공식 누적거리(= 총 완주 거리, ${data.totalKm.toFixed(2)}km)를 반드시 표시한다.** 출발지와 도착지가 이름·고도는 같아도(둘 다 "${data.startName}"${startEleText ? ', ' + startEleText : ''}), 누적거리는 서로 다르다(출발=0.00km, 도착=${data.totalKm.toFixed(2)}km) — 도착 지점 라벨에 0.00km를 재사용하거나 누적거리 자체를 생략하면 안 된다.`);
+  lines.push('');
+  lines.push('한글 지명, 숫자, 단위를 변형하거나 비슷한 글자로 대체하지 않는다. 임의의 영문, 설명문, 로고, 서명, 워터마크, 장식용 글자를 추가하지 않는다.');
+  lines.push('');
+  lines.push('글씨는 기준 이미지처럼 자연스럽고 굵은 손글씨풍으로 표현하되, 가독성을 최우선으로 한다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  // 2026-10-16: AI가 글자를 "그림으로" 그리는 과정에서 초성/중성/종성
+  // 조합이 비슷한 글자로 깨지는 오류(예: "완료"→"완류", "정상"→"장상")가
+  // 있다는 지적에 따라 전용 섹션을 추가했다. 사용자가 직접 다듬은 문구를
+  // 그대로 템플릿화했다 — "오타 방지를 핑계로 그림 디테일을 단순화하지
+  // 말라"는 전제가 핵심이라 임의로 축약하지 않는다.
+  lines.push('### 8-1. 한글 표기 정확성 및 일러스트 품질 규칙');
+  lines.push('');
+  lines.push('**1. 그림 품질 유지**');
+  lines.push('- 산악 지형, 등산로, 능선, 나무, 바위, 하늘, 수채화 질감 등 일러스트의 완성도를 최우선 수준으로 유지한다.');
+  lines.push('- 한글 오타를 방지한다는 이유로 그림의 디테일, 색감, 장식, 구도 또는 표현력을 단순화하지 않는다.');
+  lines.push('- 그림과 한글 모두 완성도 높은 결과물을 제작한다.');
+  lines.push('');
+  lines.push('**2. 한글 음절 정확성**');
+  lines.push('- 모든 한글은 실제 한국어의 올바른 철자로 표기한다.');
+  lines.push('- 특히 초성·중성·종성의 조합을 정확하게 표현한다.');
+  lines.push('- 예를 들어 "완료"를 "완류"로, "정상"을 "장상"으로 잘못 표기하지 않는다.');
+  lines.push('- 받침, 모음, 자음이 비슷한 글자 사이에서 발생하는 오타를 집중적으로 방지한다.');
+  lines.push('- 지명, 산 이름, 지점명, 설명 문구는 자연스러운 한국어 표기를 사용한다.');
+  lines.push('');
+  lines.push('**3. 원문 보존**');
+  lines.push('- 제공된 원본 데이터와 문구를 그대로 사용한다.');
+  lines.push('- 지명과 숫자를 임의로 바꾸거나 비슷한 글자로 대체하지 않는다.');
+  lines.push('- 임의의 문구를 추가하거나 기존 문구를 생략하지 않는다.');
+  lines.push('');
+  lines.push('**4. 최종 검수**');
+  lines.push('- 이미지 완성 후 모든 한글 문구를 다시 확인한다.');
+  lines.push('- "완료/완류", "정상/장상"처럼 자모가 비슷한 글자의 오타를 중점적으로 점검한다.');
+  lines.push('- 오타가 발견되면 해당 글자를 올바르게 수정한 뒤 최종 결과물을 완성한다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 9. 화면 구성과 장식');
+  lines.push('');
+  lines.push('- 가로형 파노라마 구성.');
+  lines.push('- 상단에 큰 제목과 간결한 산행 정보 상자.');
+  lines.push(hasAnyLandmark
+    ? '- 중앙에 산 능선과 명확한 경로. 위 "실제 지형 특징" 섹션의 설명을 반영해 봉우리마다 다른 지형 질감(암봉/바위 능선/흙산/완만한 능선 등)으로 구분해서 그릴 것 — 모든 봉우리를 똑같은 모양으로 반복해서 그리지 말 것.'
+    : '- 중앙에 산 능선과 명확한 경로. 봉우리마다 높이와 생김새(뾰족함, 바위 노출 정도, 능선 굴곡)에 자연스러운 변화를 줘서 모든 봉우리가 서로 다르게 보이도록 할 것 — 똑같은 모양을 반복해서 찍어내지 말 것.');
+  lines.push('- **매우 중요(구간별 특색 표현): 각 구간(지점과 지점 사이 경로)마다 그 구간을 대표하는 지형·볼거리·자연환경 요소를 최소 1가지는 반드시 그림으로 표현한다** — 소스에 그 구간을 설명하는 내용이 있으면(위 "실제 지형 특징" 섹션 또는 지점명 자체) 그 내용을 작은 삽화로 묘사하고(예: 암릉 구간이면 바위 능선, 숲길 구간이면 나무, 계곡 구간이면 물줄기), 모든 구간을 똑같이 밋밋한 산길로만 반복해서 그리지 않는다. 단, 소스에 없는 지형·시설물을 새로 지어내지는 않는다(규칙 1).');
+  lines.push('- 주요 지점 가까이에 지명과 제공된 고도를 배치.');
+  lines.push(`- 출발 표식(${data.startName})과 도착 표식(${data.isRoundTrip ? data.startName : data.endName})을 서로 다른 색으로 구분한다.`);
+  lines.push('- 경로와 지점 라벨이 겹치지 않도록 한다.');
+  lines.push('- 장식은 기준 이미지와 비슷한 양으로 제한한다. 장식이 경로, 화살표, 지명, 고도를 가리면 장식을 줄인다.');
+  lines.push('');
+  lines.push('기준 이미지에 없는 실제 지형이나 시설물을 새로 만들지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 10. 최종 검수');
+  lines.push('');
+  lines.push('이미지를 완성하기 전에 다음을 확인한다.');
+  lines.push('');
+  lines.push('1. 기준 이미지와 동일한 화풍인가?');
+  lines.push(`2. ${flowNames.join(' → ')} 순서인가? 중간에 생략되거나 건너뛴 지점 없이 정확히 ${flowNames.length}개 지점이 모두 그림에 있는가? 지점에 매긴 번호(1,2,3...)를 순서대로 따라가 봤을 때 경로선이 그 번호 순서 그대로 끊김 없이 이어지는가, 아니면 번호가 뒤섞여 연결되었는가? (지점을 세어서, 번호 순서대로 짚어가며 확인할 것)`);
+  if (data.courseShape === 'outback') {
+    lines.push(`3. 반환점에서 동일한 경로를 따라 ${data.startName}로 돌아오는가?`);
+    lines.push('4. 등산과 하산이 같은 경로선을 공유하는가?');
+    lines.push('5. 등산 화살표와 하산 화살표가 반대 방향인가?');
+    lines.push('6. 별도의 하산로 또는 순환(루프) 경로를 만들지 않았는가?');
+  } else if (data.courseShape === 'loop') {
+    lines.push(`3. 등산로와 하산로가 서로 다른 길로, 하나의 폐곡선(루프)을 이루는가?`);
+    lines.push('4. 화살표가 루프를 따라 한 방향(시계/반시계 중 하나)으로만 일관되는가?');
+    lines.push('5. 왕복처럼 같은 선을 겹쳐 그리지 않았는가?');
+  } else if (data.courseShape === 'lollipop') {
+    lines.push(`3. 들머리~합류점 구간은 같은 선을 양방향 화살표로 왕복하고, 합류점부터 합류점까지는 들어가는 선과 나오는 선이 서로 다른 루프로 그려졌는가? (전체를 하나의 단순 원형으로 뭉뚱그리지 않았는지 반드시 확인)`);
+    lines.push('4. 왕복 구간과 루프 구간이 뚜렷이 구분되는가(전체가 하나의 단순 루프나 단순 왕복으로 뭉개지지 않았는가)?');
+    lines.push('5. 루프 구간의 들어가는 선과 나오는 선이 겹치지 않고 서로 다른가?');
+    lines.push('6. 루프 구간 안에 거리 데이터상 "돌출 왕복 지점"(5번 지시 참고)이 있다면, 그 지점을 루프 둘레의 평범한 경유지가 아니라 루프에서 따로 뻗어나간 작은 왕복 가지로 그렸는가? 그 지점의 고도 숫자가 표에 기록된 값과 정확히 일치하는가?');
+  } else {
+    lines.push('3. 모든 화살표가 순번이 작은 지점에서 큰 지점으로만 향하는가?');
+  }
+  lines.push('7. 표에 기록된 고도 높낮이 관계가 뒤집히지 않았는가?');
+  lines.push('8. 고도가 미제공인 지점에 임의로 고도를 추가하지 않았는가?');
+  lines.push(`9. 총거리가 약 ${data.totalKm.toFixed(1)}km로 표시되었는가?`);
+  lines.push('10. 원본 거리값을 임의로 계산하거나 수정하지 않았는가?');
+  lines.push('11. 지명, 숫자, 단위에 오류가 없는가?');
+  lines.push(`12. "${styleImageDownloadName}"와 비교했을 때 종이질감·선·채색·글자체·라벨 모양이 같은 화풍인가? 그 이미지의 지명·숫자를 베끼지는 않았는가?`);
+  lines.push('13. 정보 상자나 그림 어디에도 "코스 형태" 항목(명칭·설명 문구)이 글자로 적혀 있지 않은가?');
+  lines.push('14. 모든 구간에 지형·볼거리·자연환경 중 최소 1가지 특색이 그림으로 표현되어, 구간마다 다르게 보이는가? (똑같은 밋밋한 산길이 반복되지 않았는지 확인)');
+  lines.push('15. 제목 바로 아래를 다시 확인: 한 줄짜리 요약·부제 문장이 단 하나라도 있는가? (예: "○○ 출발 - △△ - 복귀", "핵심 경로를 한눈에 파악" 같은 문구) 있다면 그것은 소스에 없는 창작 문구이므로 완전히 삭제한다. 제목과 정보 상자 사이는 비어 있어야 한다.');
+  lines.push(`16. 모든 지점 라벨에 번호(1, 2, 3...)가 빠짐없이 적혀 있는가? 마지막 지점(원점회귀 도착 지점)의 라벨에 0.00km가 아니라 실제 누적거리(${data.totalKm.toFixed(2)}km)가 적혀 있는가?`);
+  lines.push('17. "예상 소요시간" 같은 항목 이름을 "소요시간"처럼 줄여 쓰지 않았는가? "3. 산행 기본 정보"에 적힌 항목 이름 그대로 썼는가?');
+  lines.push('');
+  lines.push('오류가 있다면 스타일을 변경하지 말고 해당 오류만 수정한다.');
+  lines.push('');
+  lines.push('## 최종 명령');
+  lines.push('');
+  lines.push(`**첨부된 "${styleImageDownloadName}"의 화풍·경로 구조와 "2. 절대 고정 화풍" 섹션의 텍스트 스펙을 함께 기준으로 삼아 화풍을 고정하고, 산행 데이터만 정확하게 반영하라.**`);
+  lines.push('');
+  lines.push('화풍을 새롭게 해석하지 않는다. 경로를 창작하지 않는다. 지명과 수치를 변경하지 않는다. 데이터 정확성을 장식보다 우선한다.');
+
+  return lines.filter((l, i) => !(l === '' && lines[i - 1] === '')).join('\n');
+}
+
+function showConceptCoordinateText() {
+  // "왕복(원점회귀)" 체크박스는 꺼져 있는데 코스 형태 드롭다운에서
+  // 왕복/원점회귀를 선택한 모순 상태를 미리 알려준다 — 체크박스는 좌표
+  // 데이터의 실제 구조(들머리=날머리 처리)를 결정하고, 드롭다운은 그
+  // 데이터를 "어떻게 그릴지" 지시문만 바꾸는 서로 다른 역할이라, 체크박스를
+  // 안 켜면 드롭다운에서 왕복/루프를 골라도 좌표 데이터 자체는 편도로
+  // 만들어진다(2026-10-16: 드롭다운 상시 노출로 바꾸며 생긴 불일치 가능성).
+  const roundTripCb = document.getElementById('isRoundTripCheckbox');
+  const shapeSelect = document.getElementById('concept-map-course-shape');
+  if (roundTripCb && shapeSelect && !roundTripCb.checked && shapeSelect.value !== 'oneway') {
+    const proceed = window.confirm('"코스 형태"를 왕복/원점회귀로 선택하셨는데, 위쪽 "왕복(원점회귀)" 체크박스가 꺼져 있습니다.\n체크박스가 꺼져 있으면 좌표 데이터 자체가 편도 구조로 만들어집니다.\n\n그래도 계속할까요? (왕복/원점회귀 코스라면 먼저 체크박스를 켜는 것을 권장합니다)');
+    if (!proceed) return;
+  }
+  const text = buildConceptCoordinateText();
+  if (!text) {
+    alert('먼저 GPX를 불러와 코스를 지도에 그려주세요.');
+    return;
+  }
+  const output = document.getElementById('concept-map-output');
+  const copyBtn = document.getElementById('btn-concept-map-copy');
+  const note = document.getElementById('concept-map-note');
+  const downloadBtn = document.getElementById('btn-concept-coord-download');
+  if (output) {
+    output.value = text;
+    output.style.display = 'block';
+    output.focus();
+    output.select();
+  }
+  if (copyBtn) copyBtn.style.display = 'block';
+  if (downloadBtn) downloadBtn.style.display = 'block';
+  if (note) note.style.display = 'block';
+}
+
+function downloadConceptCoordinateText() {
+  const text = buildConceptCoordinateText();
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const base = (gpxBaseName || 'concept-map').replace(/[\\/:*?"<>|]/g, '_');
+  a.href = url;
+  a.download = `${base}_좌표데이터.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// 📦 개념도 준비 통합: "전체캡쳐" + "화풍 기준 이미지" + ".md 좌표 데이터"를
+// 버튼 하나로 순서대로 다운로드한다. 브라우저가 연속 다운로드를 하나로
+// 묶어서 막는 걸 피하려고 각 다운로드 사이에 짧은 지연을 둔다.
+async function prepareConceptMapBundle() {
+  const btn = document.getElementById('btn-concept-prepare-all');
+  const statusBox = document.getElementById('concept-prepare-all-status');
+  const text = buildConceptCoordinateText();
+  if (!text) {
+    alert('먼저 GPX를 불러와 코스를 지도에 그려주세요.');
+    return;
+  }
+
+  btn.disabled = true;
+  statusBox.style.display = 'block';
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  try {
+    statusBox.textContent = '⏳ 1/3 지도를 캡처하는 중입니다...';
+    const dataUrl = await captureMapAsDataUrl();
+    const mapLink = document.createElement('a');
+    mapLink.download = (gpxBaseName || 'hiking_route') + '_map.jpg';
+    mapLink.href = dataUrl;
+    mapLink.click();
+    await wait(600);
+
+    statusBox.textContent = '⏳ 2/3 화풍 기준 이미지를 받는 중입니다...';
+    const styleLink = document.getElementById('btn-style-sample-download');
+    if (styleLink) styleLink.click();
+    await wait(600);
+
+    statusBox.textContent = '⏳ 3/3 좌표 데이터(.md)를 받는 중입니다...';
+    downloadConceptCoordinateText();
+    await wait(300);
+
+    statusBox.textContent = '✅ 지도 이미지·화풍 기준 이미지·좌표 데이터(.md) 3개 파일을 모두 받았습니다. 이 3개를 함께 NotebookLM 등 AI 도구에 올려주세요.';
+  } catch (err) {
+    statusBox.textContent = '⚠ 준비 중 오류: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => {
+      if (statusBox.textContent.includes('✅')) statusBox.style.display = 'none';
+    }, 6000);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // 📋 좌표 데이터 — 지도는 기존 "전체캡쳐" 버튼으로 캡처하고, 이 버튼은
+  // 좌표·거리·고도·경사 데이터와 생성 요청 프롬프트 텍스트만 만든다.
+  // "좌표값하고 지도하고 같이 notebookLM에게 주고 제작"(2026-10-15 결정).
+  const coordTextBtn = document.getElementById('btn-concept-coord-text');
+  const copyBtn = document.getElementById('btn-concept-map-copy');
+  const downloadBtn = document.getElementById('btn-concept-coord-download');
+  const prepareAllBtn = document.getElementById('btn-concept-prepare-all');
+  if (coordTextBtn) coordTextBtn.addEventListener('click', showConceptCoordinateText);
+  if (copyBtn) copyBtn.addEventListener('click', copyConceptMapPrompt);
+  if (downloadBtn) downloadBtn.addEventListener('click', downloadConceptCoordinateText);
+  if (prepareAllBtn) prepareAllBtn.addEventListener('click', prepareConceptMapBundle);
+
+  // 📘 builder JSON 파일 선택
+  const fileInput = document.getElementById('builder-json-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => applyBuilderJson(evt.target.result);
+      reader.readAsText(file);
+      fileInput.value = ''; // 같은 파일을 다시 선택해도 change가 또 발생하도록
+    });
+  }
+
+  // 📘 builder JSON 텍스트 붙여넣기 토글 + 적용
+  const pasteBtn = document.getElementById('btn-builder-json-paste');
+  const pasteBox = document.getElementById('builder-json-paste-box');
+  if (pasteBtn && pasteBox) {
+    pasteBtn.addEventListener('click', () => {
+      pasteBox.style.display = pasteBox.style.display === 'none' ? 'block' : 'none';
+      if (pasteBox.style.display === 'block') pasteBox.focus();
+    });
+    pasteBox.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const text = pasteBox.value.trim();
+        if (text && applyBuilderJson(text)) {
+          pasteBox.value = '';
+          pasteBox.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  tryAutoDetectBuilderDraft();
+});
+
 // GPX 텍스트(로컬 파일이든 GitHub에서 받아온 것이든)를 파싱해 지도에
 // 그리고 모든 관련 상태를 갱신하는 공통 로직. 로컬 파일 선택(handleGPXFile)과
 // "보관된 코스 가져오기"(loadTrackFromGitHub) 양쪽에서 재사용한다
@@ -1489,7 +3027,13 @@ function loadGpxFromText(text, baseName) {
     clearPoiMarkers();
     loadedPoiList = [];
     resetPoiHistory(); // 새 코스를 불러오면 이전 코스의 실행취소 기록은 의미가 없다
-    specialMarkersMap['peak_top'].deleted = false;
+    // 2026-10-13: GPX를 새로 가져올 때 "최고지점" 마커가 매번 자동으로
+    // 켜져서 생성되던 것을 끔(사용자 요청, "최고지점 자동 생성 자체를
+    // 끄는 것"). 기존에는 여기서 deleted=false로 매번 리셋해 강제로
+    // 다시 켰다 — 이제는 기본을 꺼진 상태(true)로 시작한다. 들머리/
+    // 날머리는 이 플래그와 무관하므로 그대로 보인다. 최고지점을 다시
+    // 켜고 싶으면 지명 편집 화면에서 수동으로 추가하면 된다.
+    specialMarkersMap['peak_top'].deleted = true;
     delete specialMarkersMap['peak_top'].name;
     delete specialMarkersMap['peak_top'].dx;
     delete specialMarkersMap['peak_top'].dy;
@@ -1512,6 +3056,9 @@ function loadGpxFromText(text, baseName) {
     saveBtn.disabled = false;
     savePartialBtn.disabled = false;
     document.getElementById('btn-clear-gpx').disabled = false;
+    document.getElementById('btn-concept-coord-text').disabled = false;
+    document.getElementById('btn-concept-prepare-all').disabled = false;
+    fillConceptMapTitleDefault(gpxBaseName);
 
     saveHandoffToSummary(gpxBaseName, stats);
     saveGpxDraft(points, gpxBaseName);
@@ -1696,6 +3243,23 @@ function clearGpx() {
   const courseOutput = document.getElementById('course-text-output');
   if (courseOutput) { courseOutput.value = ''; courseOutput.style.display = 'none'; }
 
+  // 개념도 관련 상태도 함께 초기화 — 새 GPX를 불러올 때 이전 코스의
+  // 제목·builder 데이터가 남아 섞이지 않도록 한다.
+  document.getElementById('btn-concept-coord-text').disabled = true;
+  document.getElementById('btn-concept-prepare-all').disabled = true;
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  if (titleInputEl) titleInputEl.value = '';
+  const conceptOutput = document.getElementById('concept-map-output');
+  if (conceptOutput) { conceptOutput.value = ''; conceptOutput.style.display = 'none'; }
+  const conceptCopyBtn = document.getElementById('btn-concept-map-copy');
+  if (conceptCopyBtn) conceptCopyBtn.style.display = 'none';
+  const conceptDownloadBtn = document.getElementById('btn-concept-coord-download');
+  if (conceptDownloadBtn) conceptDownloadBtn.style.display = 'none';
+  const conceptNote = document.getElementById('concept-map-note');
+  if (conceptNote) conceptNote.style.display = 'none';
+  loadedBuilderData = null;
+  setBuilderJsonStatus('불러온 builder 데이터 없음', false);
+
   if (map) {
     map.setCenter(new naver.maps.LatLng(36.5, 127.8));
     map.setZoom(7);
@@ -1781,7 +3345,10 @@ function restoreGpxDraftIfAny() {
       if (inputEndEl) inputEndEl.value = endTrailName;
     } else {
       loadedPoiList = [];
-      specialMarkersMap['peak_top'].deleted = false;
+      // 2026-10-13: 위 GPX 가져오기 경로와 동일하게 최고지점 자동
+      // 생성을 끈다(저장된 코스에 specialMarkersMap이 없어 이 분기로
+      // 오는 경우).
+      specialMarkersMap['peak_top'].deleted = true;
       delete specialMarkersMap['peak_top'].name;
       delete specialMarkersMap['peak_top'].dx;
       delete specialMarkersMap['peak_top'].dy;
@@ -1813,6 +3380,9 @@ function restoreGpxDraftIfAny() {
     saveBtn.disabled = false;
     savePartialBtn.disabled = false;
     document.getElementById('btn-clear-gpx').disabled = false;
+    document.getElementById('btn-concept-coord-text').disabled = false;
+    document.getElementById('btn-concept-prepare-all').disabled = false;
+    fillConceptMapTitleDefault(gpxBaseName);
     if (hasSavedPoi) {
       renderPoiList(loadedPoiList);
       renderPoiMarkers(loadedPoiList);
@@ -1837,25 +3407,37 @@ function restoreGpxDraftIfAny() {
 // 라이브러리로 교체해 경로선까지 정상적으로 포함된 캡처를 확인했다.
 // JPG 저장: html-to-image 라이브러리를 통해 네이버 지도와 SVG 경로선, 지명 라벨을 고화질 캡처
 const captureFilter = (node) => { if (node.tagName === 'IMG' && node.src && node.src.includes('ssl.pstatic.net')) return false; return true; };
-  async function saveAsJPG() {
+
+// 지도 캡처 자체(data URL 생성)와 "다운로드"를 분리했다 — SVG 개념도의
+// 배경으로 같은 캡처를 재사용하려면(2026-10-15 요청: 지형도 위에 경로를
+// 겹쳐 그리고 싶다는 요청) 파일 다운로드 없이 data URL만 받는 경로가
+// 필요하기 때문. saveAsJPG()는 이 함수에 다운로드 트리거만 얹는다.
+async function captureMapAsDataUrl() {
+  const mapDiv = document.getElementById('map');
+  mapDiv.classList.add('capturing');
+  try {
+    return await htmlToImage.toJpeg(mapDiv, { filter: captureFilter,
+      quality: 0.95,
+      pixelRatio: 2, // 화질을 2배로 선명하게 유지
+      backgroundColor: '#f0f4f8'
+    });
+  } finally {
+    mapDiv.classList.remove('capturing');
+  }
+}
+
+async function saveAsJPG() {
   const saveWarnBox = document.getElementById('save-warn-box');
   const saveInfoBox = document.getElementById('save-info-box');
   const btn = document.getElementById('btn-save-jpg');
-  const mapDiv = document.getElementById('map');
 
   saveWarnBox.style.display = 'none';
   saveInfoBox.style.display = 'block';
   saveInfoBox.textContent = '⏳ 지도를 캡처하는 중입니다. 잠시만 기다려주세요...';
   btn.disabled = true;
-  mapDiv.classList.add('capturing');
 
   try {
-    const dataUrl = await htmlToImage.toJpeg(mapDiv, { filter: captureFilter,
-      quality: 0.95,
-      pixelRatio: 2, // 화질을 2배로 선명하게 유지
-      backgroundColor: '#f0f4f8'
-    });
-
+    const dataUrl = await captureMapAsDataUrl();
     const link = document.createElement('a');
     link.download = (gpxBaseName || 'hiking_route') + '_map.jpg';
     link.href = dataUrl;
@@ -1867,7 +3449,6 @@ const captureFilter = (node) => { if (node.tagName === 'IMG' && node.src && node
     saveWarnBox.style.display = 'block';
     saveWarnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message;
   } finally {
-    mapDiv.classList.remove('capturing');
     btn.disabled = false;
     setTimeout(() => {
       if (saveInfoBox.textContent.includes('✅')) {
@@ -2118,6 +3699,8 @@ const inputStartName = document.getElementById('input-start-name');
 if (inputStartName) {
   inputStartName.addEventListener('input', () => {
     startTrailName = inputStartName.value.trim() || '들머리';
+    specialMarkersMap['start'].name = startTrailName;
+    specialMarkersMap['start'].customName = true; // drawRoute()의 원점회귀 자동 이름 덮어쓰기를 막는 플래그(onEditTerminal과 동일 패턴)
     if (loadedPoiList && loadedPoiList.length > 0) {
       loadedPoiList[0].name = startTrailName;
     }
@@ -2152,7 +3735,10 @@ if (btnResetPoi) {
     // (korea_pois.js)이 강제로 다시 돌게 한다. 이 플래그를 넘기지 않는
     // 다른 모든 로드 경로(파일 불러오기, 보관된 코스 가져오기 등)는
     // 기존처럼 wpt가 있으면 자동 채굴을 건너뛰어 수정된 지명을 보존한다.
-    specialMarkersMap['peak_top'].deleted = false;
+    //
+    // 2026-10-13: 최고지점 자동 채굴을 쓰지 않기로 해, 여기서도 더 이상
+    // 강제로 다시 켜지 않는다(true로 유지).
+    specialMarkersMap['peak_top'].deleted = true;
     delete specialMarkersMap['peak_top'].dx;
     delete specialMarkersMap['peak_top'].dy;
     delete specialMarkersMap['start'].dx;
@@ -2594,6 +4180,46 @@ restoreGpxDraftIfAny();
     }
   }
 
+  {
+    // 좌표로 지명 직접 추가 — 입력값을 검증한 뒤 기존 addPoiAtLocation()을
+    // 그대로 호출한다(지도 클릭 추가와 동일한 경로).
+    const addByCoordBtn = document.getElementById('btn-add-poi-by-coord');
+    const latInput = document.getElementById('input-poi-coord-lat');
+    const lonInput = document.getElementById('input-poi-coord-lon');
+    const nameInput = document.getElementById('input-poi-coord-name');
+    function handleAddPoiByCoord() {
+      if (!loadedPoints || loadedPoints.length < 2) {
+        alert('먼저 GPX 파일을 불러와주세요.');
+        return;
+      }
+      const lat = parseFloat(latInput.value);
+      const lon = parseFloat(lonInput.value);
+      const name = nameInput.value.trim();
+      if (!Number.isFinite(lat) || lat < 33 || lat > 39) {
+        alert('위도 값이 올바르지 않습니다 (한반도 범위: 33~39).');
+        return;
+      }
+      if (!Number.isFinite(lon) || lon < 124 || lon > 132) {
+        alert('경도 값이 올바르지 않습니다 (한반도 범위: 124~132).');
+        return;
+      }
+      if (!name) {
+        alert('지명을 입력해주세요.');
+        return;
+      }
+      addPoiAtLocation(lat, lon, name);
+      latInput.value = '';
+      lonInput.value = '';
+      nameInput.value = '';
+    }
+    if (addByCoordBtn && latInput && lonInput && nameInput) {
+      addByCoordBtn.addEventListener('click', handleAddPoiByCoord);
+      [latInput, lonInput, nameInput].forEach(el => {
+        el.addEventListener('keydown', e => { if (e.key === 'Enter') handleAddPoiByCoord(); });
+      });
+    }
+  }
+
   document.getElementById('btn-export-nav-gpx').addEventListener('click', exportNavGpx);
   const navFilenameInputEl = document.getElementById('input-nav-filename');
   if (navFilenameInputEl) {
@@ -2624,6 +4250,44 @@ restoreGpxDraftIfAny();
     endInput.placeholder = checked ? '예: 희운각대피소 (비우면 지명 없음)' : '예: 날머리 (원점회귀)';
     if (checked && /날머리|도착/.test(endInput.value)) endInput.value = '';
     if (hint) hint.style.display = checked ? 'block' : 'none';
+    // 코스 형태 드롭다운은 항상 보이는 독립 입력칸이다(2026-10-16: "여기에
+    // 드롭다운 메뉴로 만들어줘, 다른 것하고 구분이 되게" — 숨겼다 보였다
+    // 하니 사용자가 못 찾았다는 피드백에 따라 상시 노출로 변경). 체크박스를
+    // 끄면 편도로, 켜면 왕복으로 드롭다운 기본값만 자동으로 맞춰주되,
+    // 사용자가 이미 직접 골라둔 값은 덮어쓰지 않는다(처음 한 번만 자동).
+    const shapeSelect = document.getElementById('concept-map-course-shape');
+    if (shapeSelect && !shapeSelect.dataset.userTouched) {
+      shapeSelect.value = checked ? 'outback' : 'oneway';
+      updateStyleSampleLink();
+    }
+
+    // 버그 수정(2026-10-21): "GPX를 먼저 불러오고 지도를 본 뒤에 원점회귀
+    // 여부를 판단해 체크박스를 켠다"가 정상적인 사용 순서인데(사용자 지적:
+    // "맵을 불러오고 그 맵을 보고 원점회귀 선택할지 결정하는 거야"), 들머리
+    // 이름의 "들·날머리" 보정은 initRoutePOIs()(GPX 로드 시점)에서만 한 번
+    // 계산되고 저장돼, 로드 이후 체크박스만 눌러서는 이름이 전혀 갱신되지
+    // 않는 문제가 있었다(선자령 사례: 체크박스를 켰는데도 "들머리 (주차장)"
+    // 그대로 남음). 체크박스를 토글할 때마다 들머리 이름도 그 자리에서
+    // 다시 계산한다 — 사용자가 직접 수정한 이름(customName)은 그대로 두고,
+    // 자동생성된 이름만 "들머리"↔"들·날머리"로 보정한다.
+    if (loadedPoints && specialMarkersMap['start'] && !specialMarkersMap['start'].customName) {
+      const startItemSync = specialMarkersMap['start'];
+      if (checked && !startTrailName.includes('들·날머리')) {
+        startTrailName = startTrailName.replace(/^들머리/, '들·날머리');
+      } else if (!checked && startTrailName.includes('들·날머리')) {
+        let body = startTrailName.replace(/^들·날머리\s*/, '');
+        body = body.replace(/\(([^)]*?)\s*-\s*원점회귀\)/, (m, p1) => p1.trim() ? '(' + p1.trim() + ')' : '');
+        body = body.replace(/\(\s*원점회귀\s*\)/, '');
+        startTrailName = ('들머리' + (body ? ' ' + body : '')).trim();
+      }
+      startItemSync.name = startTrailName;
+      const inputStartEl = document.getElementById('input-start-name');
+      if (inputStartEl) inputStartEl.value = startTrailName;
+      if (checked) endTrailName = startTrailName;
+      if (specialMarkersMap['end']) specialMarkersMap['end'].name = endTrailName;
+      drawRoute(loadedPoints, true);
+      renderPoiMarkers(loadedPoiList);
+    }
   }
   const roundTripCheckboxEl = document.getElementById('isRoundTripCheckbox');
   window.syncRoundTripCheckboxUI = syncRoundTripCheckboxUI;
@@ -2634,6 +4298,15 @@ restoreGpxDraftIfAny();
       if (loadedPoints) saveGpxDraft(loadedPoints, gpxBaseName, loadedPoiList);
     });
     syncRoundTripCheckboxUI(); // 페이지 로드 시(자동저장 복원 등) 초기 상태 반영
+  }
+  const courseShapeSelectEl = document.getElementById('concept-map-course-shape');
+  if (courseShapeSelectEl) {
+    courseShapeSelectEl.addEventListener('change', () => {
+      courseShapeSelectEl.dataset.userTouched = '1'; // 이후로는 체크박스 변경에 자동으로 안 끌려감
+      updateStyleSampleLink();
+      recomputePoiRouteDistances(); // "왕복"으로 바꾸면/바꾸지 않으면 POI 거리 매칭 기준이 달라지므로 즉시 재계산
+    });
+    updateStyleSampleLink(); // 페이지 로드 시 현재 선택값 기준으로 초기 링크 설정
   }
 
 

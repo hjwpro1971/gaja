@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>등산로 지도 링크 생성기 (스마트폰 바로열기)</title>
+  <!-- 2026-10-13 추가: window.__DEFAULT_GH_TOKEN(서버 저장 PAT)을 쓰려면
+       이 스크립트가 로드되어 있어야 한다 — 누락되어 있어서 "GitHub 연동
+       토큰(PAT) 설정" 모달이 항상 빈 입력칸으로 떠 매번 새로 입력해야
+       했다. -->
+  <script src="gh_token.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -513,8 +518,11 @@
   let selectedFilesQueue = []; // [{ file, status: 'pending'|'uploading'|'done'|'error', errorMsg: '' }]
 
   // 토큰 모달 관리
+  // 2026-10-13: gh_token.js가 서버에 저장해 둔 window.__DEFAULT_GH_TOKEN을
+  // localStorage에 저장된 값이 없을 때 기본값으로 쓴다 — 전에는 매번
+  // 빈칸으로 떠서 다시 입력해야 했다.
   function openTokenModal() {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     document.getElementById('ghTokenInput').value = token;
     document.getElementById('tokenModal').classList.add('active');
   }
@@ -711,7 +719,7 @@
 
   // 일괄 업로드 실행
   async function startBatchUpload() {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     if (!token) {
       alert('GitHub 토큰이 설정되지 않았습니다.\n[🔑 깃허브 토큰 설정] 창에서 토큰을 먼저 입력해주세요.');
       openTokenModal();
@@ -1074,7 +1082,7 @@
     const sel = document.getElementById('presetTracksSelect');
     const filename = sel ? sel.value : '';
     if (!filename) { alert('삭제할 산행 코스를 왼쪽 목록에서 먼저 선택해주세요.'); return; }
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || (window.__DEFAULT_GH_TOKEN || '');
     if (!token) { alert('깃허브 파일 삭제 권한이 없습니다!\n화면 아래 [🔐 깃허브 토큰] 버튼을 눌러주세요.'); return; }
     if (!confirm('정말로 [' + filename + '] 코스를 깃허브 서버에서 영구 삭제하시겠습니까?\n(이 작업은 되돌릴 수 없습니다!)')) return;
     
@@ -1106,6 +1114,84 @@
     navigator.clipboard.writeText(smsText).then(() => showToast('📝 문자로 보낼 준비 완료! 문자 창이나 카톡방에 [붙여넣기] 하세요.'));
   }
 
+  // 🔗 2026-10-05 추가(사용자 요청: "카톡으로 받은 메세지를 복사해서 다른 사람에게 보내면 링크를 열 수
+  // 있도록") — 카톡 "나와의 채팅"의 링크는 버튼에만 걸려 있어 메시지를 복사하면 링크가 빠진다.
+  // 본문에 링크를 넣어야 하는데 카톡 본문 한도가 200자라 원본 링크(약 380자, 괄호·한글 포함)는 못 넣는다.
+  // 외부 단축 서비스는 사용자 환경에서 연결이 안 됐으므로(da.gd), 우리 GitHub Pages에 "지도로 보내주는
+  // 짧은 중계 페이지"를 만든다: https://hjwpro1971.github.io/gaja/go/<8자>.html (약 50자, 영문·숫자뿐).
+  // 🗂️ 사용자 지시: 정리하기 쉽도록 중계 페이지는 전부 저장소의 go/ 폴더에만 올린다.
+  // 같은 코스(같은 링크)는 항상 같은 파일명이 되도록 주소에서 이름을 계산한다 — 다시 보내도 파일이 늘지 않는다.
+  const GH_GO_PATH = 'go';
+  const KAKAO_TEXT_LIMIT = 200;
+  function hashToCode(str) {
+    const fnv = (s, seed) => { let h = seed >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; };
+    const a = fnv(str, 2166136261).toString(36);
+    const b = fnv(str.split('').reverse().join(''), 2166136261 ^ 0x9e3779b9).toString(36);
+    return (a + b).replace(/[^a-z0-9]/g, '').padEnd(8, '0').slice(0, 8);
+  }
+  function buildRelayHtml(targetUrl) {
+    const esc = targetUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">'
+      + '<title>등산지도 열기</title><meta http-equiv="refresh" content="0;url=' + esc + '">'
+      + '<script>location.replace(' + JSON.stringify(targetUrl).replace(/</g, '\\u003c') + ');<\/script></head>'
+      + '<body style="font-family:sans-serif;text-align:center;padding:40px"><p>🗺️ 등산지도를 여는 중입니다…</p>'
+      + '<p><a href="' + esc + '">열리지 않으면 여기를 누르세요</a></p></body></html>';
+  }
+  function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  // 중계 페이지를 go/ 폴더에 올리고(없을 때만) 짧은 주소를 돌려준다. 실패하면 null — 호출부는 예전처럼 버튼만 보낸다.
+  async function createShareRelayLink(targetUrl) {
+    if (!/^https:\/\/hjwpro1971\.github\.io\//.test(targetUrl)) return null;
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY) || (window.__DEFAULT_GH_TOKEN || '');
+    if (!token) return null;
+    const code = hashToCode(targetUrl);
+    const path = GH_GO_PATH + '/' + code + '.html';
+    const api = 'https://api.github.com/repos/' + GH_REPO_OWNER + '/' + GH_REPO_NAME + '/contents/' + path;
+    const liveUrl = 'https://' + GH_REPO_OWNER + '.github.io/' + GH_REPO_NAME + '/' + path;
+    const html = buildRelayHtml(targetUrl);
+    const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
+    try {
+      let sha = null;
+      const getRes = await fetch(api + '?t=' + Date.now(), { headers });
+      if (getRes.ok) {
+        const cur = await getRes.json();
+        sha = cur.sha;
+        // 이미 같은 내용이면 새로 올리지 않는다(커밋이 늘지 않게)
+        if (cur.content && cur.content.replace(/\s/g, '') === utf8ToBase64(html)) return liveUrl;
+      }
+      const payload = { message: 'Add share link ' + path + ' via GPX Maker', content: utf8ToBase64(html) };
+      if (sha) payload.sha = sha;
+      const putRes = await fetch(api, { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify(payload) });
+      if (!putRes.ok) return null;
+      return liveUrl;
+    } catch (e) { return null; }
+  }
+  // GitHub Pages는 올린 직후 1분 안팎 뒤에 열린다 — 받는 사람이 404를 보지 않도록 열릴 때까지 기다린다(최대 maxMs).
+  async function waitUntilLive(url, maxMs) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      try { const r = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) return true; } catch (e) {}
+      await new Promise(res => setTimeout(res, 3000));
+    }
+    return false;
+  }
+  // 문구 + 링크를 200자 안에 맞춘다 — 링크는 절대 자르지 않고 문구만 줄인다.
+  // 링크가 없으면 예전처럼 사용자가 쓴 문구(비어 있으면 서버 기본 문구)만 보낸다.
+  function buildKakaoShareMessage(courseName, customMessage, shareUrl) {
+    const custom = (customMessage || '').trim();
+    if (!shareUrl) return custom;
+    const base = custom || ('⛰️ [' + courseName + ' 오프라인 등산지도]\n\n아! 토요일은 산에 가자!, 오프라인 산행경로 지도입니다');
+    const block = '\n\n🗺️ ' + shareUrl;
+    const budget = KAKAO_TEXT_LIMIT - block.length;
+    const head = base.length > budget ? base.slice(0, Math.max(0, budget - 1)).trimEnd() + '…' : base;
+    return head + block;
+  }
+
   async function sendToKakaoTalk() {
     const finalUrl = document.getElementById('finalUrlText').innerText.trim();
     if (!finalUrl) return alert('먼저 코스를 선택해주세요.');
@@ -1120,11 +1206,19 @@
     if (btn) btn.innerHTML = '⏳ 전송 중...';
 
     try {
-      const res = await fetch('https://hjwpro.vercel.app/api/gpx-kakao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ courseName: courseName, url: finalUrl, message: customMessage.trim() }) });
+      if (btn) btn.innerHTML = '⏳ 링크 준비 중...';
+      const shareUrl = await createShareRelayLink(finalUrl);
+      const live = shareUrl ? await waitUntilLive(shareUrl, 90000) : false;
+      const message = buildKakaoShareMessage(courseName, customMessage, shareUrl);
+      if (btn) btn.innerHTML = '⏳ 전송 중...';
+      const res = await fetch('https://hjwpro.vercel.app/api/gpx-kakao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ courseName: courseName, url: finalUrl, message: message }) });
       const data = await res.json();
       if (data.ok || data.isSuccess) {
         if (btn) btn.innerHTML = '✅ 전송 완료!';
-        showToast('🎉 카카오톡 "나와의 채팅"으로 전송되었습니다!');
+        showToast(!shareUrl
+          ? '🎉 전송되었습니다! (짧은 링크를 만들지 못해 버튼으로만 열립니다)'
+          : (live ? '🎉 카카오톡 "나와의 채팅"으로 전송되었습니다! (복사해도 열리는 링크 포함)'
+                  : '🎉 전송되었습니다! (링크가 열리기까지 1~2분 걸릴 수 있습니다)'));
         setTimeout(() => { if(btn) btn.innerHTML = '💬 카카오톡으로 전송하기'; }, 3000);
         return;
       }
