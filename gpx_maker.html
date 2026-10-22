@@ -478,7 +478,12 @@
 
     sel.innerHTML = `<option value="">-- 보관된 코스 목록 (${files.length}개 등록됨) --</option>`;
     files.forEach(name => {
-      const cleanName = name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+      // 🐛 2026-10-22 수정(사용자 신고: "천관산 A코스"와 "천관산_A코스"가
+      // 서로 다른 실제 파일인데 목록에 같은 이름으로 중복 표시됨) — 기존에는
+      // _를 공백으로 바꿔 표시해(가독성 목적), 파일명에 공백과 언더스코어가
+      // 둘 다 쓰인 서로 다른 파일이 화면에서 구분 안 됐다. 확장자만 떼고
+      // 원본 파일명 그대로 보여준다.
+      const cleanName = name.replace(/\.gpx$/i, '');
       const opt = document.createElement('option');
       opt.value = name;
       opt.textContent = `⛰️ ${cleanName}`;
