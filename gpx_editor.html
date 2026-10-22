@@ -3220,6 +3220,20 @@ ${trkpts}    </trkseg>
     anomalyMarkers = [];
     closeValidationPanel();
 
+    // 🐛 2026-10-23 수정(사용자 신고: "전체 초기화 했는데 잔상이 남아") —
+    // 트랙 선/경유지 마커 외에, 편집 중 생성될 수 있는 다른 레이어들이
+    // clearAllPoints에서 전혀 정리되지 않아 초기화 후에도 화면에 남아
+    // 있었다. vertex 핸들(트랙 위 흰 점)과 박스 재라우팅/후보비교
+    // 미리보기, 헤맴 구간 하이라이트, 소스별 색상 오버레이까지 전부
+    // 함께 지운다.
+    if (vertexMarkerGroup) vertexMarkerGroup.clearLayers();
+    clearBoxRelinkPreview();
+    clearBoxCandidatesPreview();
+    lingeringLines.forEach(l => map.removeLayer(l));
+    lingeringLines = [];
+    sourceOverlayLines.forEach(l => map.removeLayer(l));
+    sourceOverlayLines = [];
+
     document.getElementById('totalDist').innerText = '0.0 km';
     document.getElementById('pointCount').innerText = '0 개';
     document.getElementById('estTime').innerText = '0분';
