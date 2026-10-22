@@ -3369,6 +3369,11 @@ ${trkpts}    </trkseg>
     dropdown.style.display = 'flex';
   }
 
+  // 검색으로 이동한 위치를 가리키는 임시 핀. 경유지로 찍은 마커
+  // (markerLayers)와는 다른 "여기가 검색 결과 지점입니다" 표시 전용
+  // 참고 마커라 별도 변수로 관리한다 — 다음 검색 시 이전 핀을 지운다.
+  let searchResultMarker = null;
+
   function selectLocation(lat, lon, title, region) {
     const targetLat = parseFloat(lat);
     const targetLon = parseFloat(lon);
@@ -3377,7 +3382,18 @@ ${trkpts}    </trkseg>
       return;
     }
     if (map) {
-      map.setView([targetLat, targetLon], 14);
+      // 🐛 2026-10-23 수정(사용자 신고: "찾아서 이동했다고 했는데 지도에
+      // 뭐라도 표기를 해 주던지") — setView만 하면 지도가 해당 좌표로
+      // 이동은 하지만 화면에 아무 표시가 없어 정확히 어디인지 알 수
+      // 없었다. 임시 핀 마커를 찍어 눈에 보이게 한다.
+      if (searchResultMarker) { map.removeLayer(searchResultMarker); searchResultMarker = null; }
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:26px; height:26px; transform:translate(-50%,-100%); font-size:26px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5));">📍</div>`,
+        iconSize: [0, 0]
+      });
+      searchResultMarker = L.marker([targetLat, targetLon], { icon, interactive: false }).addTo(map);
+      map.setView([targetLat, targetLon], 16);
     }
     const dropdown = document.getElementById('searchResultsDropdown');
     if (dropdown) dropdown.style.display = 'none';
