@@ -1873,7 +1873,19 @@ async function initRoutePOIs(points, forceAutoMine) {
       // 더 좁힌 값 — 등산로 폭+GPS 오차를 감안하면서도 실제로 경로가
       // 스치듯 지나가는 지점만 남긴다.
       if (minDistKm <= 0.10) {
-        if (routeDistKm < 0.12 || routeDistKm > poiMatchMaxDist - 0.12) return;
+        // 🐛 2026-10-23 수정(사용자 신고: 왕복 코스에서 "축령산" 정상이
+        // 자동채굴에 하나도 안 뜸) — 들머리/날머리 120m 이내는 "이미
+        // 날머리 이름으로 중복 표시된다"는 가정으로 제외해왔는데, 왕복
+        // (원점회귀 전 절반) 코스는 반환점 자체가 곧 정상인 경우가 많다.
+        // 이 경우 코스에서 가장 중요한 지명이 날머리 근접 필터에 걸려
+        // 통째로 사라지는 부작용이 있었다(축령산 사례: 정상이 날머리와
+        // 15m 거리). 봉우리/산/정상 이름은 이 제외 필터에서 예외로 둔다
+        // — 들머리/날머리 자체와 똑같은 이름일 때만(이미 날머리 이름으로
+        // 표시 중이므로) 계속 제외한다.
+        const isPeakName = c.name.endsWith('봉') || c.name.endsWith('산') || c.name.includes('정상');
+        const isNearTerminal = routeDistKm < 0.12 || routeDistKm > poiMatchMaxDist - 0.12;
+        if (isNearTerminal && !isPeakName) return;
+        if (isNearTerminal && isPeakName && (c.name === startFacility || c.name === endFacility)) return;
 
         const dedupeKey = `${c.name}_${Math.round(routeDistKm * 3)}`;
         if (seenNames.has(dedupeKey) || seenNames.has(c.name)) return;
