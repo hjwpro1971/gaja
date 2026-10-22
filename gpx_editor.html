@@ -3283,6 +3283,34 @@ ${trkpts}    </trkseg>
     dropdown.innerHTML = '<div class="res-empty">🔍 검색 중입니다...</div>';
     dropdown.style.display = 'flex';
 
+    // 🪧 2026-10-23 추가(사용자 신고: "추암 주차장"을 검색해도 안 나온다) —
+    // OSM Nominatim에는 "추암주차장"처럼 소규모 국내 시설이 등록돼 있지
+    // 않은 경우가 많다. 네이버 지도(map.naver.com)에는 실제로 등록돼
+    // 있으므로, 네이버 지역검색 API(nas-tools가 /api/naver-search로 중계
+    // — CORS 때문에 브라우저에서 직접 호출 불가, naver_search.py 참고)를
+    // 먼저 조회해 더 정확한 국내 POI 결과를 우선 보여주고, 그 뒤 기존
+    // Nominatim 결과로 보강한다(네이버 API 키가 없거나 호출 실패해도
+    // Nominatim 경로는 그대로 동작 — 폴백 유지).
+    try {
+      const naverRes = await fetch(`/api/naver-search?q=${encodeURIComponent(q)}`);
+      if (naverRes.ok) {
+        const naverData = await naverRes.json();
+        (naverData.items || []).forEach(item => {
+          const isDup = matchedList.some(m => calcDistanceKm(m.lat, m.lon, item.lat, item.lon) < 0.1);
+          if (!isDup) {
+            matchedList.push({
+              title: item.title,
+              region: item.roadAddress || item.address || '대한민국',
+              lat: item.lat,
+              lon: item.lon
+            });
+          }
+        });
+      }
+    } catch(err) {
+      console.warn('네이버 지역검색 지연:', err);
+    }
+
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' 대한민국')}&countrycodes=kr&limit=6&addressdetails=1`;
       const res = await fetch(url);
