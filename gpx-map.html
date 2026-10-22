@@ -183,6 +183,19 @@
           <button class="btn" id="btn-add-poi-by-coord" type="button" style="font-size:12px; font-weight:700; white-space:nowrap; background:#2c7a7b; border-color:#2c7a7b; color:#ffffff;">+ 추가</button>
         </div>
       </div>
+
+      <!-- 산림청 100대명산 공식 이정표(nas-tools mountain_poi.db, SIGN
+           카테고리) 참고용 오버레이. 자동 지명 채굴(korea_pois.js)이나
+           편집 대상인 loadedPoiList와는 완전히 분리된 읽기 전용 레이어다
+           — 공식 이정표는 "참고"일 뿐 코스 지명 편집에 끼어들면 안 되므로
+           (2026-10-23 설계), 저장(GPX 내보내기)에도 포함되지 않는다.
+           작은 회색 점 마커 + title(네이티브 호버 툴팁)로 이정표 방향
+           정보(signpost1~4)를 보여준다. -->
+      <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #cbd5e0;">
+        <div style="font-size:11.5px; color:#718096; margin-bottom:6px;">🪧 산림청 공식 이정표 (참고용) — 점을 클릭하면 라벨이 계속 보이고, 펼쳐진 라벨은 드래그해서 위치를 옮길 수 있습니다.</div>
+        <button class="btn" id="btn-load-signposts" type="button" style="width:100%; font-size:12.5px; font-weight:700; background:#4a5568; border-color:#4a5568; color:#ffffff;">📍 이정표 불러오기</button>
+        <div id="signpost-status" style="font-size:11px; color:#718096; margin-top:6px;"></div>
+      </div>
         </fieldset>
 
     <fieldset id="junction-collect-fieldset">
@@ -1005,6 +1018,294 @@ let currentPoiMarkers = [];
 let loadedPoiList = [];
 let startTrailName = '들머리';
 let endTrailName = '날머리';
+
+// 🪧 산림청 100대명산 공식 이정표(nas-tools mountain_poi.db) 참고용
+// 오버레이 마커. loadedPoiList(사용자가 편집하는 코스 지명)와 완전히
+// 분리된 레이어 — 저장(GPX 내보내기)에 포함되지 않고, 버튼을 눌러야만
+// 불러오며 트랙 재렌더링(drawRoute)에 영향받지 않는다(2026-10-23 설계).
+let currentSignpostMarkers = [];
+// 이정표 데이터 본체 — {id, name, lat, lon, lines, pinned, dx, dy}.
+// pinned=false(기본): 작은 점 마커 + title(네이티브 호버 툴팁)만.
+// pinned=true(점 클릭으로 ON): makeCalloutMarker와 같은 구조의 상시 노출
+// 라벨 박스로 바뀌고, 라벨을 드래그해 위치(dx/dy, 핀 좌표 자체는 불변)를
+// 옮길 수 있다(2026-10-23 요청 — "박스 위치만 변경하고 보여주도록").
+let currentSignposts = [];
+let signpostUidCounter = 0;
+
+// nas-tools API는 /api/ 로 Apache 리버스 프록시가 걸려 있어(.gaja-conf/
+// tls.conf), 상대경로만 쓰면 이 페이지가 어떤 IP/프로토콜로 열려도 항상
+// 같은 출처로 요청이 나간다(gpx_editor.html의 HIKINGBOT_API_BASE와 동일
+// 원칙 — IP 하드코딩 금지, 혼합콘텐츠 차단 회피).
+const SIGNPOST_API_BASE = '';
+
+// GPX 원본의 signpost1~4("목적지명;방향코드")를 사람이 읽기 쉬운 화살표
+// 문구로 바꾼다. 방향코드는 산림청 100대명산 GPX 확장 필드 값 그대로—
+// 정확한 코드-방향 매핑 공식 문서를 찾지 못해, 실제 샘플 데이터(계룡산)에
+// 등장한 코드만 매핑하고 나머지는 코드를 그대로 보여준다(틀린 방향을
+// 단정적으로 보여주는 것보다 안전).
+const SIGNPOST_DIR_LABEL = {
+  UT: '↑', ST: '↑', TL: '↖', TR: '↗', BR: '↘', BL: '↙', LT: '←', RT: '→'
+};
+function formatSignpostLine(raw) {
+  if (!raw) return '';
+  const [dest, code] = raw.split(';');
+  const arrow = SIGNPOST_DIR_LABEL[(code || '').trim()] || '';
+  return `${arrow ? arrow + ' ' : ''}${(dest || '').trim()}`.trim();
+}
+
+function clearSignpostMarkers() {
+  currentSignpostMarkers.forEach(m => m.setMap(null));
+  currentSignpostMarkers = [];
+  currentSignposts = [];
+}
+
+function findSignpostById(id) {
+  return currentSignposts.find(s => s.id === id) || null;
+}
+
+// 핀(점) 전용 작은 원형 마커 — pinned=false일 때. 클릭하면 ON(라벨 고정)으로 전환.
+function makeSignpostDotHtml(item) {
+  return `<div onclick="window.onToggleSignpostPin('${item.id}')" style="width:12px; height:12px; border-radius:50%; background:#4a5568; border:2px solid #ffffff; box-shadow:0 1px 3px rgba(0,0,0,0.4); cursor:pointer;" title="${item.lines.join('\n')}\n\n(클릭하면 라벨이 계속 표시됩니다)"></div>`;
+}
+
+// pinned=true일 때 — makeCalloutMarker(지명 라벨)와 동일한 핀+점선+
+// 드래그 가능 라벨 구조를 그대로 재사용한다. 다만 저장/실행취소/삭제·
+// 이름수정 버튼은 없다(이정표는 참고용 읽기 전용 데이터라 편집 대상이
+// 아니다 — dx/dy로 라벨 위치만 옮길 수 있다).
+function makeSignpostCalloutHtml(item) {
+  const strokeColor = '#4a5568';
+  const curDx = item.dx !== undefined ? item.dx : 0;
+  const curDy = item.dy !== undefined ? item.dy : -50;
+
+  const len = Math.hypot(curDx, curDy) || 1;
+  const targetX = (curDx / len) * 6;
+  const targetY = (curDy / len) * 6;
+
+  const svgCenter = 150;
+  const sX = svgCenter + curDx;
+  const sY = svgCenter + curDy;
+  const eX = svgCenter + targetX;
+  const eY = svgCenter + targetY;
+
+  const lineDx = eX - sX;
+  const lineDy = eY - sY;
+  const lineHyp = Math.hypot(lineDx, lineDy) || 1;
+  const uX = lineDx / lineHyp;
+  const uY = lineDy / lineHyp;
+  const tipX = eX;
+  const tipY = eY;
+  const baseX = eX - uX * 8;
+  const baseY = eY - uY * 8;
+  const p1X = baseX - uY * 4.5;
+  const p1Y = baseY + uX * 4.5;
+  const p2X = baseX + uY * 4.5;
+  const p2Y = baseY - uX * 4.5;
+
+  const bodyLines = item.lines.slice(1).map(l => `<div style="font-size:10px; font-weight:500; opacity:0.92;">${l}</div>`).join('');
+
+  return `
+<div style="position:relative; width:0; height:0; pointer-events:none;">
+  <div onclick="window.onToggleSignpostPin('${item.id}')" style="position:absolute; left:-6px; top:-6px; width:12px; height:12px; border-radius:50%; background:#ffffff; border:2.5px solid ${strokeColor}; box-shadow:0 1px 4px rgba(0,0,0,0.5); pointer-events:auto; z-index:2; cursor:pointer;" title="클릭하면 라벨이 다시 숨겨집니다"></div>
+
+  <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute; left:-${svgCenter}px; top:-${svgCenter}px; width:${svgCenter*2}px; height:${svgCenter*2}px; overflow:visible; pointer-events:none; z-index:1;">
+    <line id="sign_bgline_${item.id}" x1="${sX}" y1="${sY}" x2="${baseX}" y2="${baseY}" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+    <polygon id="sign_bgarrow_${item.id}" points="${tipX},${tipY} ${p1X},${p1Y} ${p2X},${p2Y}" fill="#ffffff" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+    <line id="sign_fgline_${item.id}" x1="${sX}" y1="${sY}" x2="${baseX}" y2="${baseY}" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" />
+    <polygon id="sign_fgarrow_${item.id}" points="${tipX},${tipY} ${p1X},${p1Y} ${p2X},${p2Y}" fill="${strokeColor}" />
+  </svg>
+
+  <div id="sign_box_${item.id}"
+       onmousedown="window.onStartSignpostLabelDrag(event, '${item.id}')"
+       ontouchstart="window.onStartSignpostLabelDrag(event, '${item.id}')"
+       style="position:absolute; left:${curDx}px; top:${curDy}px; transform:translate(-50%, -50%); pointer-events:auto; cursor:move; user-select:none; white-space:nowrap; font-size:11.5px; font-weight:700; color:#ffffff; background:${strokeColor}; padding:3.5px 8px; border-radius:6px; box-shadow:0 2px 7px rgba(0,0,0,0.38); border:1.5px solid #ffffff; letter-spacing:-0.2px; z-index:3;"
+       title="드래그해서 라벨 위치만 옮길 수 있습니다 (핀 위치는 그대로 유지)">
+    🪧 ${item.lines[0]}
+    ${bodyLines}
+  </div>
+</div>`;
+}
+
+function renderSignpostMarkers() {
+  currentSignpostMarkers.forEach(m => m.setMap(null));
+  currentSignpostMarkers = currentSignposts.map(item => new naver.maps.Marker({
+    position: new naver.maps.LatLng(item.lat, item.lon),
+    map,
+    icon: {
+      content: item.pinned ? makeSignpostCalloutHtml(item) : makeSignpostDotHtml(item),
+      anchor: item.pinned ? new naver.maps.Point(0, 0) : new naver.maps.Point(6, 6)
+    },
+    zIndex: item.pinned ? 55 : 50
+  }));
+}
+
+// 점(또는 ON 상태 핀)을 클릭하면 라벨 고정 상태를 토글한다.
+window.onToggleSignpostPin = function(id) {
+  const item = findSignpostById(id);
+  if (!item) return;
+  item.pinned = !item.pinned;
+  if (item.pinned && item.dx === undefined) {
+    item.dx = 0;
+    item.dy = -50;
+  }
+  renderSignpostMarkers();
+};
+
+// 라벨 드래그로 dx/dy만 옮긴다 — 핀의 실제 좌표(lat/lon)는 절대 바뀌지
+// 않는다(2026-10-23 요청: "박스 위치만 변경"). onStartPoiLabelDrag와
+// 구조는 같지만 loadedPoiList/savePoiHistory/saveGpxDraft를 전혀 건드리지
+// 않는 독립 버전 — 이정표는 저장/실행취소 대상이 아니다.
+window.onStartSignpostLabelDrag = function(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (map) map.setOptions({ draggable: false });
+
+  const item = findSignpostById(id);
+  if (!item) return;
+
+  const boxEl = document.getElementById('sign_box_' + id);
+  const bgLineEl = document.getElementById('sign_bgline_' + id);
+  const fgLineEl = document.getElementById('sign_fgline_' + id);
+  const bgArrowEl = document.getElementById('sign_bgarrow_' + id);
+  const fgArrowEl = document.getElementById('sign_fgarrow_' + id);
+
+  const startMouseX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0].clientX);
+  const startMouseY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0].clientY);
+  const initDx = item.dx !== undefined ? item.dx : 0;
+  const initDy = item.dy !== undefined ? item.dy : -50;
+
+  function handleMove(moveEvent) {
+    const curMouseX = moveEvent.clientX !== undefined ? moveEvent.clientX : (moveEvent.touches && moveEvent.touches[0].clientX);
+    const curMouseY = moveEvent.clientY !== undefined ? moveEvent.clientY : (moveEvent.touches && moveEvent.touches[0].clientY);
+    const deltaX = curMouseX - startMouseX;
+    const deltaY = curMouseY - startMouseY;
+
+    const curDx = Math.round(initDx + deltaX);
+    const curDy = Math.round(initDy + deltaY);
+
+    if (boxEl) {
+      boxEl.style.left = curDx + 'px';
+      boxEl.style.top = curDy + 'px';
+    }
+
+    const len = Math.hypot(curDx, curDy) || 1;
+    const targetX = (curDx / len) * 6;
+    const targetY = (curDy / len) * 6;
+
+    const svgCenter = 150;
+    const sX = svgCenter + curDx;
+    const sY = svgCenter + curDy;
+    const eX = svgCenter + targetX;
+    const eY = svgCenter + targetY;
+
+    const lineDx = eX - sX;
+    const lineDy = eY - sY;
+    const lineHyp = Math.hypot(lineDx, lineDy) || 1;
+    const uX = lineDx / lineHyp;
+    const uY = lineDy / lineHyp;
+    const tipX = eX;
+    const tipY = eY;
+    const baseX = eX - uX * 8;
+    const baseY = eY - uY * 8;
+    const p1X = baseX - uY * 4.5;
+    const p1Y = baseY + uX * 4.5;
+    const p2X = baseX + uY * 4.5;
+    const p2Y = baseY - uX * 4.5;
+
+    if (bgLineEl) { bgLineEl.setAttribute('x1', sX); bgLineEl.setAttribute('y1', sY); bgLineEl.setAttribute('x2', baseX); bgLineEl.setAttribute('y2', baseY); }
+    if (fgLineEl) { fgLineEl.setAttribute('x1', sX); fgLineEl.setAttribute('y1', sY); fgLineEl.setAttribute('x2', baseX); fgLineEl.setAttribute('y2', baseY); }
+    const polyPoints = `${tipX},${tipY} ${p1X},${p1Y} ${p2X},${p2Y}`;
+    if (bgArrowEl) bgArrowEl.setAttribute('points', polyPoints);
+    if (fgArrowEl) fgArrowEl.setAttribute('points', polyPoints);
+  }
+
+  function handleEnd(endEvent) {
+    window.removeEventListener('mousemove', handleMove);
+    window.removeEventListener('mouseup', handleEnd);
+    window.removeEventListener('touchmove', handleMove);
+    window.removeEventListener('touchend', handleEnd);
+    if (map) map.setOptions({ draggable: true });
+
+    const endMouseX = endEvent.clientX !== undefined ? endEvent.clientX : (endEvent.changedTouches && endEvent.changedTouches[0].clientX) || startMouseX;
+    const endMouseY = endEvent.clientY !== undefined ? endEvent.clientY : (endEvent.changedTouches && endEvent.changedTouches[0].clientY) || startMouseY;
+    item.dx = Math.round(initDx + (endMouseX - startMouseX));
+    item.dy = Math.round(initDy + (endMouseY - startMouseY));
+  }
+
+  window.addEventListener('mousemove', handleMove, { passive: false });
+  window.addEventListener('mouseup', handleEnd);
+  window.addEventListener('touchmove', handleMove, { passive: false });
+  window.addEventListener('touchend', handleEnd);
+};
+
+// 현재 로드된 트랙(loadedPoints)의 bounding box(여유 반경 포함) 안에 있는
+// 공식 이정표(SIGN)만 nas-tools 전체 POI 중에서 걸러 지도에 찍는다.
+// 산 이름으로 매칭하지 않는 이유: GPX 파일명이 "밀양_재약산_A코스"처럼
+// 산 이름이 맨 앞에 안 오거나, 100대명산 DB에 등록 안 된 산/코스일 수
+// 있기 때문 — mountain_poi.py의 get_all()이 이미 같은 이유로 좌표 기반
+// 폴백을 위해 만들어져 있다(서버 주석 2026-09-26 참고).
+async function loadSignpostsNearRoute() {
+  const statusEl = document.getElementById('signpost-status');
+  if (!loadedPoints || loadedPoints.length < 2) {
+    if (statusEl) statusEl.textContent = '먼저 GPX 파일을 불러와주세요.';
+    return;
+  }
+
+  clearSignpostMarkers();
+  if (statusEl) statusEl.textContent = '⏳ 공식 이정표를 불러오는 중입니다...';
+
+  const MARGIN_DEG = 0.01; // 약 1.1km 여유
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  loadedPoints.forEach(p => {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+  });
+  minLat -= MARGIN_DEG; maxLat += MARGIN_DEG;
+  minLon -= MARGIN_DEG; maxLon += MARGIN_DEG;
+
+  try {
+    const res = await fetch(`${SIGNPOST_API_BASE}/api/poi?category=SIGN`);
+    if (!res.ok) throw new Error('서버 응답 오류: ' + res.status);
+    const data = await res.json();
+    const items = (data.items || []).filter(p =>
+      p.lat >= minLat && p.lat <= maxLat && p.lon >= minLon && p.lon <= maxLon
+    );
+
+    if (items.length === 0) {
+      if (statusEl) statusEl.textContent = '이 구간 근처에 등록된 공식 이정표가 없습니다.';
+      return;
+    }
+
+    currentSignposts = items.map(item => {
+      // 소제목은 원본 wpt 이름("갈림길", "갈림길 19" 등 GPX 원본 그대로라
+      // 파일마다 번호가 들쭉날쭉함)이 아니라 "이정표"로 통일한다
+      // (2026-10-23 요청) — 이 레이어는 산림청 공식 이정표 표지판을
+      // 보여주는 용도이므로, 실제 표지판에 적힌 정보(signpost1~4)만
+      // 핵심이고 내부 관리용 wpt 이름은 사용자에게 의미가 없다.
+      const lines = ['이정표'];
+      [item.signpost1, item.signpost2, item.signpost3, item.signpost4]
+        .map(formatSignpostLine)
+        .filter(Boolean)
+        .forEach(line => lines.push(line));
+      return {
+        id: 'signpost_' + (++signpostUidCounter),
+        name: item.name || '이정표',
+        lat: item.lat,
+        lon: item.lon,
+        lines,
+        pinned: false
+      };
+    });
+    renderSignpostMarkers();
+
+    if (statusEl) statusEl.textContent = `✅ 공식 이정표 ${currentSignposts.length}개를 불러왔습니다. 점을 클릭하면 라벨이 계속 보이고(다시 클릭하면 숨김), 펼쳐진 라벨은 드래그해서 위치를 옮길 수 있습니다.`;
+  } catch (e) {
+    console.warn('이정표 조회 실패:', e);
+    if (statusEl) statusEl.textContent = '❌ 이정표를 불러오지 못했습니다: ' + e.message;
+  }
+}
 
 // 점 p와 선분 (a, b) 사이의 최단거리(km) 및 투영 비율 t 계산
 function distToSegmentKm(p, a, b) {
@@ -3025,6 +3326,9 @@ function loadGpxFromText(text, baseName) {
     // initRoutePOIs가 기본값을 덮어쓴 뒤 아래에서 다시 한 번 채운다.
     applyLoadedRoundTripState(points);
     clearPoiMarkers();
+    clearSignpostMarkers(); // 이전 코스의 공식 이정표가 새 코스 위에 남아있으면 안 된다
+    const signpostStatusEl = document.getElementById('signpost-status');
+    if (signpostStatusEl) signpostStatusEl.textContent = '';
     loadedPoiList = [];
     resetPoiHistory(); // 새 코스를 불러오면 이전 코스의 실행취소 기록은 의미가 없다
     // 2026-10-13: GPX를 새로 가져올 때 "최고지점" 마커가 매번 자동으로
@@ -3225,6 +3529,9 @@ function clearGpx() {
 
   clearMapLayers();
   clearPoiMarkers();
+  clearSignpostMarkers();
+  const signpostStatusEl = document.getElementById('signpost-status');
+  if (signpostStatusEl) signpostStatusEl.textContent = '';
   loadedPoints = null;
   loadedPoiList = [];
   gpxBaseName = 'gpx';
@@ -4217,6 +4524,13 @@ restoreGpxDraftIfAny();
       [latInput, lonInput, nameInput].forEach(el => {
         el.addEventListener('keydown', e => { if (e.key === 'Enter') handleAddPoiByCoord(); });
       });
+    }
+  }
+
+  {
+    const loadSignpostsBtn = document.getElementById('btn-load-signposts');
+    if (loadSignpostsBtn) {
+      loadSignpostsBtn.addEventListener('click', loadSignpostsNearRoute);
     }
   }
 
