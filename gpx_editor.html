@@ -2420,7 +2420,38 @@
     const outBearing = calcBearingDeg(exitPt.lat, exitPt.lon, points[afterExitIdx].lat, points[afterExitIdx].lon);
     const dirDiff = shortestAngleDiffDeg(inBearing, outBearing);
 
-    return dirDiff >= directionDiffThresholdDeg ? 'turnaround' : 'loiter';
+    if (dirDiff >= directionDiffThresholdDeg) return 'turnaround';
+
+    // 🐛 2026-10-22 수정(사용자 신고: "정제 미리보기 눌렀더니 환희대 근처
+    // 경로가 완전히 다르게 바뀐다") — dirDiff만으로는 "환희대 같은 명소를
+    // 왕복으로 다녀온 뒤 비슷한 방향으로 계속 진행하는 스퍼(갈래길)"를
+    // 걸러내지 못한다(진입/이탈 직후 방향이 거의 같아 dirDiff가 작게
+    // 나옴 — 실측 23.7도). "진입점에서 가장 멀리 벗어난 거리"로도 못
+    // 잡는다 — 스퍼가 진입→이탈 직선과 거의 같은 방향으로 뻗어있으면
+    // (실측 비율 1.08배) 벗어난 거리 자체는 크지 않기 때문이다.
+    //
+    // 실제로 왕복한 스퍼는 "갔던 길을 거의 그대로 되짚어 돌아온다" —
+    // 클러스터 내부에서 인덱스(트랙 진행 순서)는 멀리 떨어져 있는데
+    // 좌표는 가까운 점 쌍이 있으면(실측: idx 671↔704, 33칸 차이에
+    // 9~14m 이내) 이것이 "되짚기"의 직접적인 증거다. 이런 자기경로
+    // 겹침이 있으면 "서성임"이 아니라 "뚜렷한 지점을 다녀온 것"이므로
+    // turnaround로 보존해 사용자가 그린/선택한 경로 모양을 지킨다.
+    const SELF_OVERLAP_DIST_M = 20;
+    const SELF_OVERLAP_MIN_IDX_GAP = 10;
+    let hasSelfOverlap = false;
+    for (let a = startIdx; a <= endIdx && !hasSelfOverlap; a++) {
+      for (let b = a + SELF_OVERLAP_MIN_IDX_GAP; b <= endIdx; b++) {
+        if (calcDistanceM(points[a].lat, points[a].lon, points[b].lat, points[b].lon) <= SELF_OVERLAP_DIST_M) {
+          hasSelfOverlap = true;
+          break;
+        }
+      }
+    }
+    if (hasSelfOverlap) {
+      return 'turnaround';
+    }
+
+    return 'loiter';
   }
 
   // 🐛 2026-10-02 수정(사용자 지시: "서봉 정점 좌표를 기준으로 해.
@@ -2644,7 +2675,20 @@
     //    최근접 지점의 routeDistance를 강제 삽입 대상으로 수집한다.
     const WPT_MATCH_RADIUS_M = 30;
     const WPT_CLUSTER_INDEX_GAP = 10; // track_viewer.html의 ROUNDTRIP_CLUSTER_INDEX_GAP과 동일 원칙(왕복 가는 길/오는 길 구분)
-    const forcedDistances = new Set();
+    // 🐛 2026-10-22 수정(사용자 신고: "정제 미리보기 눌렀더니 환희대 근처가
+    // 원상복귀됐다") — 갈림길이 촘촘한 지점(환희대 주변 "갈림길"×2 +
+    // "진죽봉" 등이 서로 30m 이내)에서는 각 waypoint가 독립적으로 자기
+    // 강제점을 routeDistance 기준 가까운 위치에 추가해, compressStationaryClusters가
+    // 방금 3점으로 압축한 구간에 다시 여러 강제점이 몰려 재조밀화됐다.
+    // routeDistance 기준으로도 WPT_MATCH_RADIUS_M 이내면 이미 추가된
+    // 강제점과 "사실상 같은 위치"로 보고 중복 추가하지 않는다.
+    const forcedDistancesSorted = [];
+    function addForcedDistance(d) {
+      for (const existing of forcedDistancesSorted) {
+        if (Math.abs(existing - d) <= WPT_MATCH_RADIUS_M) return;
+      }
+      forcedDistancesSorted.push(d);
+    }
     (forcedKeepPoints || []).forEach(w => {
       const near = [];
       for (let i = 0; i < points.length; i++) {
@@ -2664,11 +2708,12 @@
             const d = calcDistanceM(points[near[g]].lat, points[near[g]].lon, w.lat, w.lon);
             if (d < bestD) { bestD = d; bestIdx = near[g]; }
           }
-          forcedDistances.add(cum[bestIdx]);
+          addForcedDistance(cum[bestIdx]);
           groupStart = k;
         }
       }
     });
+    const forcedDistances = new Set(forcedDistancesSorted);
 
     // 3) 보간 유틸: 누적거리 targetM에 해당하는 좌표를 cum 배열에서 찾아 선형보간
     function interpAt(targetM) {
