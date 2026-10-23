@@ -54,6 +54,8 @@
   .course-rotate-label { font-size: 10.5px; color: #718096; flex: 1; }
   .course-rotate-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 8px; font-size: 13px; cursor: pointer; flex-shrink: 0; line-height: 1; }
   .course-rotate-btn:hover { background: #e2e8f0; }
+  .course-roundtrip-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0; line-height: 1.4; }
+  .course-roundtrip-btn:hover { background: #e2e8f0; }
 
   .color-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
@@ -499,8 +501,16 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 찾을 수 있게 한다.
       const arrowDomId = `arrow_${course._uid}_${thisArrowIdx}`;
 
+      // 🐛 2026-10-23 수정(사용자 신고: "경로와 화살표가 겹쳐") — 화살표도
+      // 트랙 좌표 그대로 찍으면 경로선과 완전히 포개진다. 글자와 같은 쪽
+      // (side)으로 작게(ARROW_OFFSET_KM) 띄워 경로선에서 살짝 비켜나게
+      // 하되, 글자(LABEL_OFFSET_BASE_KM)보다는 훨씬 가깝게 둬서 화살표가
+      // "이 지점 근처"라는 위치 정보는 그대로 유지한다.
+      const ARROW_OFFSET_KM = 0.015; // 약 15m
+      const arrowPos = offsetLatLon(here, autoBearing + angleAdjust + side * 90, ARROW_OFFSET_KM);
+
       const arrowMarker = new naver.maps.Marker({
-        position: new naver.maps.LatLng(here.lat, here.lon),
+        position: new naver.maps.LatLng(arrowPos.lat, arrowPos.lon),
         map,
         icon: {
           content: `<div id="${arrowDomId}" style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:grab;">${arrowChar}</div>`,
@@ -518,7 +528,15 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 글자는 진행방향 기준 좌/우(side) 중 이 코스에 고정된 쪽으로,
       // offsetKm만큼 띄운 위치에 배치 — 경로선/화살표와 겹치지 않으면서도
       // 같은 코스 안에서는 항상 같은 쪽에 붙어 일관되게 보인다.
-      const labelPos = offsetLatLon(here, bearing + side * 90, offsetKm);
+      // 🐛 2026-10-23 수정(사용자 신고: "화살표 방향이 돌아가는데 문자까지
+      // 같이 돌아가서 경로에 문제가 나오게 됨") — 기존엔 화살표의 실제
+      // 회전각(bearing, 개별 드래그 보정 포함)을 기준으로 글자 위치를
+      // 계산해, 화살표를 돌리면 글자도 같이 밀려 경로선과 겹쳤다. 글자는
+      // "자동 계산된 원래 진행방향"(autoBearing + 코스 전체 보정, 개별
+      // 화살표 드래그 보정은 제외)만 기준으로 삼아, 화살표를 아무리
+      // 돌려도 항상 경로에서 일정하게 떨어진 고정 위치를 유지한다.
+      const labelBaseBearing = autoBearing + angleAdjust;
+      const labelPos = offsetLatLon(here, labelBaseBearing + side * 90, offsetKm);
       markers.push(new naver.maps.Marker({
         position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
         map,
@@ -566,9 +584,14 @@ function renderAllCourses(preserveView) {
     // 너무 촘촘하거나 너무 성기지 않게 자동 조정한다.
     const label = extractCourseLabel(course, idx);
     const intervalKm = Math.max(0.3, ((course.stats && course.stats.totalKm) || 1) / 8);
-    const courseStart = course.points[0];
-    const courseEnd = course.points[course.points.length - 1];
-    const courseIsRoundTrip = haversineKm(courseStart, courseEnd) <= 0.28;
+    // 🐛 2026-10-23 수정(사용자 신고: "C코스는 <-> 으로 되어 있는데
+    // 왕복회귀라고 그런것 같아... 편도인데 들머리 날머리가 같아서 오해가
+    // 발생한것 같아") — 들머리-날머리 좌표가 가깝다고(280m 이내) 자동으로
+    // ↔(왕복)로 판정하던 것을 없앴다. 편도인데 우연히 들머리/날머리가
+    // 가까운 코스(원점회귀 종주 등)를 왕복으로 잘못 표시하는 오판이 있었다.
+    // 기본값은 항상 →(편도)이고, 실제 왕복 구간이 있는 코스만 사용자가
+    // 코스 목록의 토글 버튼으로 ↔로 직접 지정한다(course.isRoundTripManual).
+    const courseIsRoundTrip = !!course.isRoundTripManual;
     mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx, course));
 
     // 들머리/날머리 마커
@@ -775,6 +798,10 @@ function renderCourseList() {
         <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 반시계로 15도 회전">↺</button>
         <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 시계로 15도 회전">↻</button>
       </div>
+      <div class="course-item-row2">
+        <span class="course-rotate-label">화살표 표시: ${course.isRoundTripManual ? '↔ 왕복' : '→ 편도'}</span>
+        <button class="course-roundtrip-btn" type="button" title="이 코스를 왕복(↔)/편도(→)로 전환합니다">${course.isRoundTripManual ? '→ 편도로' : '↔ 왕복으로'}</button>
+      </div>
     `;
     // 🧭 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 수정하게 해 줘
     // 화살표 돌릴수 있도록") — 자동 계산된 진행방향 화살표가 지형상
@@ -801,6 +828,16 @@ function renderCourseList() {
       courses.splice(idx, 1);
       renderCourseList();
       renderAllCourses();
+    });
+    // 2026-10-23 추가(사용자 요청: "C코스는 <-> 가 아니라 -> 이것으로
+    // 변경해 주고 대신 내가 화살표를 <-> 변경할 수 있게 해 줘") — 들머리/
+    // 날머리 좌표만 보고 자동으로 왕복 판정하던 걸 없앴으므로, 실제
+    // 왕복 구간이 있는 코스는 이 버튼으로 사용자가 직접 지정한다.
+    item.querySelector('.course-roundtrip-btn').addEventListener('click', () => {
+      pushHistory();
+      course.isRoundTripManual = !course.isRoundTripManual;
+      renderCourseList();
+      renderAllCourses(true);
     });
     el.appendChild(item);
   });
