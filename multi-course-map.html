@@ -393,11 +393,15 @@ function initMap() {
       return;
     }
     if (labelAddModeCourse) {
+      // 2026-10-23 수정(사용자 요청: "글자 추가 버튼 클릭 후 연속적으로
+      // 글자 추가 하게 해 줘. 지금은 한번 클릭 글자 추가 한번 클릭 글자
+      // 추가") — 유턴 추가와 달리 글자는 한 코스에 여러 개 찍는 일이
+      // 흔하므로, 찍을 때마다 모드를 끄지 않고 버튼을 다시 눌러야(또는
+      // 다른 코스의 버튼을 눌러야) 꺼지게 한다.
       const course = labelAddModeCourse;
       if (!course.manualLabels) course.manualLabels = [];
       pushHistory();
       course.manualLabels.push({ lat: e.coord.y, lon: e.coord.x });
-      setLabelAddMode(null);
       renderAllCourses(true);
       return;
     }
@@ -632,9 +636,14 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
         icon: {
           content: `<div id="${arrowDomId}" style="width:${arrowSize}px;height:${arrowSize}px;display:flex;align-items:center;justify-content:center;transform:rotate(${bearing}deg);cursor:grab;">
             <svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(arrowSize * 0.9)}" height="${Math.round(arrowSize * 0.9)}" viewBox="0 0 24 24">
-              <line x1="12" y1="${isRoundTripChar ? 4 : 20}" x2="12" y2="11" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+              ${isRoundTripChar ? `
+              <line x1="12" y1="7" x2="12" y2="17" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+              <path d="M12 0 L18 9 L12 6 L6 9 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
+              <path d="M12 24 L18 15 L12 18 L6 15 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
+              ` : `
+              <line x1="12" y1="20" x2="12" y2="11" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
               <path d="M12 0 L20 16 L12 12 L4 16 Z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
-              ${isRoundTripChar ? '<path d="M12 24 L20 8 L12 12 L4 8 Z" fill="' + color + '" stroke="#ffffff" stroke-width="1.2"/>' : ''}
+              `}
             </svg>
           </div>`,
           anchor: new naver.maps.Point(arrowSize / 2, arrowSize / 2)
