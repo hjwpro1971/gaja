@@ -41,15 +41,18 @@
 
   /* 코스 목록 카드 */
   .course-item {
-    display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+    padding: 8px 10px; margin-bottom: 6px;
     background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12.5px;
   }
+  .course-item-row1 { display: flex; align-items: center; gap: 8px; }
+  .course-item-row2 { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; }
   .course-swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
   .course-name { flex: 1; font-weight: 700; color: #2d3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .course-meta { font-size: 10.5px; color: #718096; }
   .course-del-btn { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 3px 7px; font-size: 11px; cursor: pointer; flex-shrink: 0; }
   .course-del-btn:hover { background: #fecaca; }
-  .course-rotate-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 6px; font-size: 12px; cursor: pointer; flex-shrink: 0; line-height: 1; }
+  .course-rotate-label { font-size: 10.5px; color: #718096; flex: 1; }
+  .course-rotate-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 8px; font-size: 13px; cursor: pointer; flex-shrink: 0; line-height: 1; }
   .course-rotate-btn:hover { background: #e2e8f0; }
 
   .color-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -447,7 +450,7 @@ function renderAllCourses() {
     const courseIsRoundTrip = haversineKm(courseStart, courseEnd) <= 0.28;
     mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx, course.angleOffsetDeg));
 
-    // 들머리/날머리 마커만 표시(코스가 많으면 중간 wpt까지 다 찍으면 지도가 너무 복잡해짐)
+    // 들머리/날머리 마커
     const start = course.points[0];
     const end = course.points[course.points.length - 1];
     [{ pt: start, label: course.name + ' 시작' }, { pt: end, label: course.name + ' 끝' }].forEach(({ pt, label }) => {
@@ -459,6 +462,32 @@ function renderAllCourses() {
           anchor: new naver.maps.Point(6, 6)
         },
         title: label
+      });
+      mapMarkers.push(marker);
+    });
+
+    // 2026-10-23 수정(사용자 신고: "지명이 맵이 있는데 그 지명이 안
+    // 나오네") — 들머리/날머리만 찍고 중간 wpt(억새능선, 헬리포트 등
+    // gpx-map.html에서 편집해둔 지명)는 생략해왔는데, 실제로 그 지명
+    // 데이터가 GPX에 있으면 보여달라는 요청으로 바뀌었다("로직을
+    // 변경했잖아. 지명을 넣어줘. 그리고 내가 수정하면 돼" — 복잡해
+    // 보이면 사용자가 직접 조정하겠다는 전제). 들머리/날머리 자체는
+    // 위에서 이미 표시했으니 중복 방지로 제외하고 나머지만 작은 점
+    // +라벨로 표시한다.
+    (course.waypoints || []).forEach(w => {
+      const isTerminal = haversineKm(w, start) <= 0.03 || haversineKm(w, end) <= 0.03;
+      if (isTerminal) return;
+      const marker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(w.lat, w.lon),
+        map,
+        icon: {
+          content: `<div style="display:flex; align-items:center; gap:3px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:${course.color};border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.4); flex-shrink:0;"></div>
+            <span style="font-size:11px; font-weight:700; color:${course.color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${w.name || ''}</span>
+          </div>`,
+          anchor: new naver.maps.Point(4, 4)
+        },
+        title: w.name || ''
       });
       mapMarkers.push(marker);
     });
@@ -566,12 +595,17 @@ function renderCourseList() {
     const item = document.createElement('div');
     item.className = 'course-item';
     item.innerHTML = `
-      <span class="course-swatch" style="background:${course.color};"></span>
-      <span class="course-name" title="${course.name}">${course.name}</span>
-      <span class="course-meta">${course.stats.totalKm.toFixed(1)}km</span>
-      <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 반시계로 15도 회전">↺</button>
-      <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 시계로 15도 회전">↻</button>
-      <button class="course-del-btn" type="button">삭제</button>
+      <div class="course-item-row1">
+        <span class="course-swatch" style="background:${course.color};"></span>
+        <span class="course-name" title="${course.name}">${course.name}</span>
+        <span class="course-meta">${course.stats.totalKm.toFixed(1)}km</span>
+        <button class="course-del-btn" type="button">삭제</button>
+      </div>
+      <div class="course-item-row2">
+        <span class="course-rotate-label">화살표 방향 보정: <span class="course-rotate-deg">${course.angleOffsetDeg || 0}</span>°</span>
+        <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 반시계로 15도 회전">↺</button>
+        <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 시계로 15도 회전">↻</button>
+      </div>
     `;
     // 🧭 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 수정하게 해 줘
     // 화살표 돌릴수 있도록") — 자동 계산된 진행방향 화살표가 지형상
@@ -579,12 +613,15 @@ function renderCourseList() {
     // angleOffsetDeg를 버튼으로 ±15도씩 조절한다. 0으로 시작하고
     // 저장소에 없으면 자동 생성.
     const [rotateCcwBtn, rotateCwBtn] = item.querySelectorAll('.course-rotate-btn');
+    const degEl = item.querySelector('.course-rotate-deg');
     rotateCcwBtn.addEventListener('click', () => {
       course.angleOffsetDeg = ((course.angleOffsetDeg || 0) - 15 + 360) % 360;
+      if (degEl) degEl.textContent = course.angleOffsetDeg;
       renderAllCourses();
     });
     rotateCwBtn.addEventListener('click', () => {
       course.angleOffsetDeg = ((course.angleOffsetDeg || 0) + 15) % 360;
+      if (degEl) degEl.textContent = course.angleOffsetDeg;
       renderAllCourses();
     });
     item.querySelector('.course-del-btn').addEventListener('click', () => {
