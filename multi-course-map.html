@@ -969,23 +969,23 @@ async function captureMapImage() {
   const origText = btn.textContent;
   btn.textContent = '⏳ 캡처 중...';
 
-  // 🐛 2026-10-23 수정(사용자 요청: "화면에 보이는 것만 켭쳐하는게 아니라
-  // 지도 뷰는 다 켭쳑를 해야지 다만 문자와 화살표크기, 위치도 그대로 해야
-  // 하고") — 전체 코스가 보이도록 fitAllCourses()로 줌을 다시 축소하되,
-  // 축소된 비율(2^(원래줌 - 캡처줌))만큼 renderScaleFactor를 키워 글자/
-  // 화살표 오프셋·폰트 크기도 함께 키운다 — 네이버 지도는 줌 1레벨 차이당
-  // 같은 거리(km)가 화면에서 2배씩 작게/크게 보이는 식이라, 이 배율을
-  // 그대로 renderScaleFactor에 반영하면 줌이 달라져도 "화면에 찍히는
-  // 픽셀 크기"는 편집하던 화면과 동일하게 유지된다.
+  // 🐛 2026-10-23 재수정(사용자 확인: "크기도 지도와 함께 작아지게 하고
+  // 위치만 편집할 때와 동일한 상대위치를 유지") — 직전 시도(renderScaleFactor
+  // 로 글자/화살표를 축소 비율만큼 "다시 키우기")는 역효과였다. 전체
+  // 코스가 담기도록 줌이 축소되면 봉우리 이름 등 지도 자체 글씨도 함께
+  // 작아지는데, 화살표/A·B·C만 "편집할 때 픽셀 크기"로 고정해버리면
+  // 지형 대비 상대적으로 점점 커져 서로 겹쳐 보였다(실측: 캡처 jpg를
+  // 100%로 열어보니 확인됨). renderScaleFactor는 쓰지 않고(기본값 1
+  // 그대로), fitAllCourses()로 축소된 지도 위에 화살표/글자도 똑같이
+  // 자연스럽게 작아지도록 그대로 재렌더링한다. 라벨의 "핀 기준 상대
+  // 벡터" 저장 방식(거리+방위각)은 그대로 유지돼, 위치(상대 배치)만은
+  // 편집할 때와 동일하게 보존된다.
   const originalZoom = map.getZoom();
   const originalCenter = map.getCenter();
   try {
     fitAllCourses();
     await new Promise(resolve => setTimeout(resolve, 300)); // fitBounds 레이아웃 안정화 대기
-
-    const capturedZoom = map.getZoom();
-    renderScaleFactor = Math.pow(2, originalZoom - capturedZoom);
-    renderAllCourses(true); // preserveView=true — 방금 fitBounds로 잡은 뷰를 유지한 채 스케일만 다시 그림
+    renderAllCourses(true); // preserveView=true — 방금 fitBounds로 잡은 뷰를 유지한 채 다시 그림
     await new Promise(resolve => setTimeout(resolve, 300)); // 재렌더링 레이아웃 안정화 대기
 
     const dataUrl = await htmlToImage.toJpeg(mapDiv, {
