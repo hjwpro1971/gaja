@@ -49,6 +49,8 @@
   .course-meta { font-size: 10.5px; color: #718096; }
   .course-del-btn { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 3px 7px; font-size: 11px; cursor: pointer; flex-shrink: 0; }
   .course-del-btn:hover { background: #fecaca; }
+  .course-rotate-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 6px; font-size: 12px; cursor: pointer; flex-shrink: 0; line-height: 1; }
+  .course-rotate-btn:hover { background: #e2e8f0; }
 
   .color-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
@@ -362,18 +364,25 @@ function offsetLatLon(pt, bearingDegVal, distKm) {
 // 기준 좌/우"로 코스마다 하나씩 고정하고(짝수 인덱스=왼쪽, 홀수=오른쪽),
 // 코스가 3개 이상이면 같은 쪽끼리 띄우는 거리를 점점 늘려(25m, 50m,
 // 75m...) 여러 코스가 같은 길을 몰려 지나가도 글자가 겹치지 않게 한다.
-const LABEL_OFFSET_BASE_KM = 0.025; // 약 25m
-function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx) {
+// 2026-10-23 추가 조정(사용자 피드백: "A 크기 좀 더 작게 해 주고 경로에서
+// 더 벗어나게 해 줘" + "화살표 방향을 내가 수정하게 해 줘") — 글자는
+// 다시 줄이고 경로에서 더 멀리 띄운다. 화살표는 계속 자동(진행방향)으로
+// 그리되, 코스별 angleOffsetDeg(사이드바 "방향 보정" 다이얼로 조절, 기본
+// 0)를 bearing에 더해 사용자가 눈으로 보고 돌릴 수 있게 한다 — 자동
+// 계산이 지형 특성상 어색하게 나오는 구간을 코스 단위로 통째로 보정.
+const LABEL_OFFSET_BASE_KM = 0.045; // 약 45m
+function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx, angleOffsetDeg) {
   const markers = [];
   const arrowChar = isRoundTrip ? '↔' : '→';
   const side = courseIdx % 2 === 0 ? 1 : -1; // +1=진행방향 왼쪽(+90도), -1=오른쪽(-90도)
   const rank = Math.floor(courseIdx / 2); // 같은 쪽에서 몇 번째인지(0,1,2,...)
   const offsetKm = LABEL_OFFSET_BASE_KM * (rank + 1);
+  const angleAdjust = angleOffsetDeg || 0;
   let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
   for (let i = 1; i < points.length; i++) {
     distSinceLast += haversineKm(points[i - 1], points[i]);
     if (distSinceLast >= intervalKm) {
-      const bearing = bearingDeg(points[i - 1], points[i]);
+      const bearing = (bearingDeg(points[i - 1], points[i]) + angleAdjust + 360) % 360;
       const here = points[i];
 
       markers.push(new naver.maps.Marker({
@@ -394,8 +403,8 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
         position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
         map,
         icon: {
-          content: `<div style="display:inline-block; font-size:26px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
-          anchor: new naver.maps.Point(14, 14)
+          content: `<div style="display:inline-block; font-size:17px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
+          anchor: new naver.maps.Point(9, 9)
         },
         zIndex: 60
       }));
@@ -436,7 +445,7 @@ function renderAllCourses() {
     const courseStart = course.points[0];
     const courseEnd = course.points[course.points.length - 1];
     const courseIsRoundTrip = haversineKm(courseStart, courseEnd) <= 0.28;
-    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx));
+    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx, course.angleOffsetDeg));
 
     // 들머리/날머리 마커만 표시(코스가 많으면 중간 wpt까지 다 찍으면 지도가 너무 복잡해짐)
     const start = course.points[0];
@@ -560,8 +569,24 @@ function renderCourseList() {
       <span class="course-swatch" style="background:${course.color};"></span>
       <span class="course-name" title="${course.name}">${course.name}</span>
       <span class="course-meta">${course.stats.totalKm.toFixed(1)}km</span>
+      <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 반시계로 15도 회전">↺</button>
+      <button class="course-rotate-btn" type="button" title="이 코스 화살표 방향을 시계로 15도 회전">↻</button>
       <button class="course-del-btn" type="button">삭제</button>
     `;
+    // 🧭 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 수정하게 해 줘
+    // 화살표 돌릴수 있도록") — 자동 계산된 진행방향 화살표가 지형상
+    // 어색하게 나오는 코스를 통째로 보정할 수 있도록, 코스별
+    // angleOffsetDeg를 버튼으로 ±15도씩 조절한다. 0으로 시작하고
+    // 저장소에 없으면 자동 생성.
+    const [rotateCcwBtn, rotateCwBtn] = item.querySelectorAll('.course-rotate-btn');
+    rotateCcwBtn.addEventListener('click', () => {
+      course.angleOffsetDeg = ((course.angleOffsetDeg || 0) - 15 + 360) % 360;
+      renderAllCourses();
+    });
+    rotateCwBtn.addEventListener('click', () => {
+      course.angleOffsetDeg = ((course.angleOffsetDeg || 0) + 15) % 360;
+      renderAllCourses();
+    });
     item.querySelector('.course-del-btn').addEventListener('click', () => {
       if (!confirm(`"${course.name}" 코스를 목록에서 삭제할까요?`)) return;
       courses.splice(idx, 1);
