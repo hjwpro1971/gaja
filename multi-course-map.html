@@ -424,6 +424,32 @@ function bearingDeg(a, b) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
+// 🐛 2026-10-23 수정(사용자 신고: "봉황봉 b 코스 화살표가 왜 경로 반대
+// 방향으로 나와" → "무조건 순방향으로 화살표를 만들면 돼") — 화살표
+// 방향을 바로 인접한 두 GPX 포인트(points[i-1]→points[i])만으로
+// 계산하면, 그 두 포인트 사이 간격이 GPS 노이즈 수준으로 좁을 때(트랙이
+// 미세하게 지그재그치는 지점) 전체 경로 흐름과 반대 방향이 우연히
+// 나올 수 있다. 대신 i를 중심으로 누적거리 기준 앞/뒤로 최소
+// STABLE_BEARING_KM만큼 떨어진 두 지점을 찾아 그 구간 전체의 평균
+// 방향을 쓴다 — 코스 전체가 한 방향으로 쭉 이어진 트랙이라면(왕복
+// 구간의 반환점 등 실제로 방향이 바뀌는 지점이 아닌 한) 항상 코스의
+// 진행 방향과 일치한다.
+const STABLE_BEARING_KM = 0.03; // 약 30m
+function stableBearingAt(points, cumDist, i) {
+  const herecum = cumDist[i];
+  let backIdx = i;
+  while (backIdx > 0 && herecum - cumDist[backIdx - 1] < STABLE_BEARING_KM) backIdx--;
+  let fwdIdx = i;
+  while (fwdIdx < points.length - 1 && cumDist[fwdIdx + 1] - herecum < STABLE_BEARING_KM) fwdIdx++;
+  if (backIdx === fwdIdx) {
+    // 트랙 양끝 바로 근처라 충분한 구간을 못 구한 경우(들머리/날머리
+    // 코앞) — 기존처럼 바로 인접한 포인트로 폴백.
+    backIdx = Math.max(0, i - 1);
+    fwdIdx = Math.min(points.length - 1, i);
+  }
+  return bearingDeg(points[backIdx], points[fwdIdx]);
+}
+
 // 코스 이름("천관산 A코스" 등 자유 텍스트)에서 라벨로 쓸 영문 한 글자를
 // 뽑는다. 없으면 코스 등록 순서(1번째=A, 2번째=B, ...)로 폴백한다
 // (2026-10-23 요청 — 경로를 따라 "A→"를 반복 표시해 진행방향과 코스를
@@ -611,7 +637,7 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       const isThisArrowRoundTrip = course.arrowTypeOverrides[thisArrowIdx] !== undefined
         ? course.arrowTypeOverrides[thisArrowIdx]
         : isRoundTrip;
-      const autoBearing = bearingDeg(points[i - 1], points[i]);
+      const autoBearing = stableBearingAt(points, cumDist, i);
       const bearing = (autoBearing + angleAdjust + individualAdjust + 360) % 360;
       const here = points[i];
       // 2026-10-23 수정(사용자 요청: "화살표만 내가 잡고 돌리수 있게 해")
