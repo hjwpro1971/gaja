@@ -153,7 +153,8 @@
     <fieldset>
       <legend>2️⃣ 모은 코스 목록</legend>
       <div id="course-list" style="font-size:12.5px; color:#a0aec0;">아직 추가된 코스가 없습니다.</div>
-      <button class="btn" id="btn-fit-all" type="button" style="width:100%; margin-top:10px;" disabled>🔍 전체 코스 한눈에 보기</button>
+      <button class="btn" id="btn-undo-edit" type="button" style="width:100%; margin-top:10px;" disabled title="화살표 회전, 지명 삭제 등 최근 편집을 한 단계씩 되돌립니다">↩️ 편집 취소(되돌리기)</button>
+      <button class="btn" id="btn-fit-all" type="button" style="width:100%; margin-top:8px;" disabled>🔍 전체 코스 한눈에 보기</button>
       <button class="btn" id="btn-capture-map" type="button" style="width:100%; margin-top:8px;" disabled>🗺️ 지도 캡처 다운로드 (AI에 참고 이미지로 첨부)</button>
       <div class="warn-box" id="capture-warn-box"></div>
       <p class="sub" style="margin:8px 0 0;">💡 이 캡처 이미지를 꼭 프롬프트와 함께 Gemini에 첨부하세요. 프롬프트에 "이 지도 이미지의 선 모양을 그대로 베껴서 그려달라"는 지시가 포함되어 있어, 이미지를 같이 주면 실제 경로 모양이 훨씬 정확하게 반영됩니다.</p>
@@ -246,6 +247,31 @@ let courses = [];
 let map = null;
 let mapPolylines = [];
 let mapMarkers = [];
+
+// ↩️ 실행취소 히스토리(사용자 요청: "복귀 취소 버튼도 있어야 하고") —
+// 화살표 회전/지명 삭제/코스 삭제처럼 편집성 동작 직전에 courses 전체를
+// 깊은 복사해 스택에 쌓는다. courses 안에는 순수 데이터(숫자/문자열/
+// 배열/객체)만 있고 naver.maps.Marker 같은 비직렬화 객체는 없으므로
+// JSON 왕복 복사로 충분히 안전하다. 스택 크기를 과하게 키우지 않도록
+// 상한을 둔다.
+let editHistory = [];
+const EDIT_HISTORY_LIMIT = 30;
+function pushHistory() {
+  editHistory.push(JSON.parse(JSON.stringify(courses)));
+  if (editHistory.length > EDIT_HISTORY_LIMIT) editHistory.shift();
+  updateUndoButtonState();
+}
+function undoLastEdit() {
+  if (editHistory.length === 0) return;
+  courses = editHistory.pop();
+  renderCourseList();
+  renderAllCourses(true);
+  updateUndoButtonState();
+}
+function updateUndoButtonState() {
+  const btn = document.getElementById('btn-undo-edit');
+  if (btn) btn.disabled = editHistory.length === 0;
+}
 
 // ----------------------------------------------------------------------
 // GPX 파싱 (gpx-map.html의 parseGPX와 동일 로직 — 재사용)
@@ -374,29 +400,50 @@ function offsetLatLon(pt, bearingDegVal, distKm) {
 // 0)를 bearing에 더해 사용자가 눈으로 보고 돌릴 수 있게 한다 — 자동
 // 계산이 지형 특성상 어색하게 나오는 구간을 코스 단위로 통째로 보정.
 const LABEL_OFFSET_BASE_KM = 0.045; // 약 45m
-function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx, angleOffsetDeg) {
+
+// 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 개별도 조절할 수
+// 있게 해 줘. 전체를 한꺼번에 하는게 아니고") — 코스 전체 angleOffsetDeg
+// 하나로는 특정 구간 화살표만 따로 못 돌렸다. 화살표마다 코스 안에서의
+// 순번(arrowIdx)을 고유 식별자로 매겨 course.arrowOverrides[arrowIdx]에
+// 개별 보정각을 저장한다. renderAllCourses가 다시 그려도 같은 순서로
+// 화살표가 생성되므로 arrowIdx가 안정적으로 유지된다(코스 자체를 더
+// 편집하기 전까지는). 클릭하면 15도씩 회전하고, pushHistory로 실행취소
+// 가능한 액션으로 기록한다.
+function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx, course) {
   const markers = [];
   const arrowChar = isRoundTrip ? '↔' : '→';
   const side = courseIdx % 2 === 0 ? 1 : -1; // +1=진행방향 왼쪽(+90도), -1=오른쪽(-90도)
   const rank = Math.floor(courseIdx / 2); // 같은 쪽에서 몇 번째인지(0,1,2,...)
   const offsetKm = LABEL_OFFSET_BASE_KM * (rank + 1);
-  const angleAdjust = angleOffsetDeg || 0;
+  const angleAdjust = course.angleOffsetDeg || 0;
+  if (!course.arrowOverrides) course.arrowOverrides = {};
   let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
+  let arrowIdx = 0;
   for (let i = 1; i < points.length; i++) {
     distSinceLast += haversineKm(points[i - 1], points[i]);
     if (distSinceLast >= intervalKm) {
-      const bearing = (bearingDeg(points[i - 1], points[i]) + angleAdjust + 360) % 360;
+      const thisArrowIdx = arrowIdx++;
+      const individualAdjust = course.arrowOverrides[thisArrowIdx] || 0;
+      const bearing = (bearingDeg(points[i - 1], points[i]) + angleAdjust + individualAdjust + 360) % 360;
       const here = points[i];
 
-      markers.push(new naver.maps.Marker({
+      const arrowMarker = new naver.maps.Marker({
         position: new naver.maps.LatLng(here.lat, here.lon),
         map,
         icon: {
-          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1;">${arrowChar}</div>`,
+          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:pointer;">${arrowChar}</div>`,
           anchor: new naver.maps.Point(14, 14)
         },
-        zIndex: 60
-      }));
+        zIndex: 60,
+        title: '클릭하면 이 화살표만 15도 회전합니다'
+      });
+      naver.maps.Event.addListener(arrowMarker, 'click', () => {
+        const prev = course.arrowOverrides[thisArrowIdx] || 0;
+        pushHistory();
+        course.arrowOverrides[thisArrowIdx] = (prev + 15) % 360;
+        renderAllCourses(true);
+      });
+      markers.push(arrowMarker);
 
       // 글자는 진행방향 기준 좌/우(side) 중 이 코스에 고정된 쪽으로,
       // offsetKm만큼 띄운 위치에 배치 — 경로선/화살표와 겹치지 않으면서도
@@ -418,7 +465,11 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
   return markers;
 }
 
-function renderAllCourses() {
+// preserveView: true면 fitBounds를 건너뛰어 사용자가 보고 있던 확대/
+// 위치를 그대로 유지한다(gpx-map.html의 drawRoute와 동일 원칙) — 화살표
+// 회전이나 지명 삭제처럼 "이미 보고 있는 화면에서" 편집하는 액션은 매번
+// 전체 코스가 보이게 화면이 축소되면 오히려 불편하다.
+function renderAllCourses(preserveView) {
   clearMapLayers();
   if (!map || courses.length === 0) return;
 
@@ -448,7 +499,7 @@ function renderAllCourses() {
     const courseStart = course.points[0];
     const courseEnd = course.points[course.points.length - 1];
     const courseIsRoundTrip = haversineKm(courseStart, courseEnd) <= 0.28;
-    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx, course.angleOffsetDeg));
+    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx, course));
 
     // 들머리/날머리 마커
     const start = course.points[0];
@@ -474,6 +525,11 @@ function renderAllCourses() {
     // 보이면 사용자가 직접 조정하겠다는 전제). 들머리/날머리 자체는
     // 위에서 이미 표시했으니 중복 방지로 제외하고 나머지만 작은 점
     // +라벨로 표시한다.
+    // 2026-10-23 추가(사용자 요청: "지명도 삭제 할 수 있게 해 줘") — 점을
+    // 클릭하면 확인 후 course.waypoints에서 바로 제거한다. wpt 자체에
+    // 고유 id가 없는 GPX 원본이 많아, 같은 좌표/이름 조합(wRef)으로
+    // 배열에서 정확히 이 항목만 찾아 지운다(splice는 인덱스가 재렌더링
+    // 때마다 바뀔 수 있어 쓰지 않는다).
     (course.waypoints || []).forEach(w => {
       const isTerminal = haversineKm(w, start) <= 0.03 || haversineKm(w, end) <= 0.03;
       if (isTerminal) return;
@@ -481,19 +537,26 @@ function renderAllCourses() {
         position: new naver.maps.LatLng(w.lat, w.lon),
         map,
         icon: {
-          content: `<div style="display:flex; align-items:center; gap:3px;">
+          content: `<div style="display:flex; align-items:center; gap:3px; cursor:pointer;">
             <div style="width:8px;height:8px;border-radius:50%;background:${course.color};border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.4); flex-shrink:0;"></div>
             <span style="font-size:11px; font-weight:700; color:${course.color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${w.name || ''}</span>
           </div>`,
           anchor: new naver.maps.Point(4, 4)
         },
-        title: w.name || ''
+        title: `클릭하면 "${w.name || '이 지명'}"을 삭제합니다`
+      });
+      naver.maps.Event.addListener(marker, 'click', () => {
+        if (!confirm(`"${w.name || '이 지명'}"을 삭제할까요?`)) return;
+        pushHistory();
+        const i = course.waypoints.indexOf(w);
+        if (i !== -1) course.waypoints.splice(i, 1);
+        renderAllCourses(true);
       });
       mapMarkers.push(marker);
     });
   });
 
-  map.fitBounds(bounds);
+  if (!preserveView) map.fitBounds(bounds);
 }
 
 function fitAllCourses() {
@@ -615,17 +678,20 @@ function renderCourseList() {
     const [rotateCcwBtn, rotateCwBtn] = item.querySelectorAll('.course-rotate-btn');
     const degEl = item.querySelector('.course-rotate-deg');
     rotateCcwBtn.addEventListener('click', () => {
+      pushHistory();
       course.angleOffsetDeg = ((course.angleOffsetDeg || 0) - 15 + 360) % 360;
       if (degEl) degEl.textContent = course.angleOffsetDeg;
-      renderAllCourses();
+      renderAllCourses(true);
     });
     rotateCwBtn.addEventListener('click', () => {
+      pushHistory();
       course.angleOffsetDeg = ((course.angleOffsetDeg || 0) + 15) % 360;
       if (degEl) degEl.textContent = course.angleOffsetDeg;
-      renderAllCourses();
+      renderAllCourses(true);
     });
     item.querySelector('.course-del-btn').addEventListener('click', () => {
       if (!confirm(`"${course.name}" 코스를 목록에서 삭제할까요?`)) return;
+      pushHistory();
       courses.splice(idx, 1);
       renderCourseList();
       renderAllCourses();
@@ -719,6 +785,7 @@ document.getElementById('btn-add-course').addEventListener('click', () => {
 
 document.getElementById('btn-fit-all').addEventListener('click', fitAllCourses);
 document.getElementById('btn-capture-map').addEventListener('click', captureMapImage);
+document.getElementById('btn-undo-edit').addEventListener('click', undoLastEdit);
 
 // ----------------------------------------------------------------------
 // 📂 보관된 코스(GitHub tracks/) 가져오기 — gpx-map.html과 동일한 저장소를
