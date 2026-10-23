@@ -552,6 +552,7 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
   const sortedTargets = [...targetDists].sort((a, b) => a - b);
 
   let arrowIdx = 0;
+  let labelIdx = 0;
   let targetPtr = 0;
   // 🐛 2026-10-23 수정(사용자 신고: "글씨가 겹쳐서 안 보여") — 지명 보장
   // 기능(직전 커밋)으로 화살표가 촘촘해지면서, 화살표마다 매번 그리던
@@ -642,17 +643,34 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 돌려도 항상 경로에서 일정하게 떨어진 고정 위치를 유지한다.
       if (cumDist[i] - lastLabelDist >= intervalKm) {
         lastLabelDist = cumDist[i];
-        const labelBaseBearing = autoBearing + angleAdjust;
-        const labelPos = offsetLatLon(here, labelBaseBearing + side * 90, offsetKm);
-        markers.push(new naver.maps.Marker({
+        const thisLabelIdx = labelIdx++;
+        if (!course.labelOverrides) course.labelOverrides = {};
+        // 2026-10-23 추가(사용자 요청: "글자 A, B, C 로 이동가능하게 해
+        // 줘") — 자동 계산 위치(offsetLatLon)를 기본값으로 쓰되, 한 번
+        // 이동한 적 있으면 그 저장된 좌표를 그대로 쓴다. 네이버 마커
+        // 자체를 draggable로 두면 dragend에서 새 좌표를 바로 얻을 수
+        // 있어, gpx_editor의 화면 픽셀 dx/dy 방식보다 간단하면서도 지도
+        // 줌/팬에 항상 정확히 붙어 있다(좌표 기준이라 축척이 안 변함).
+        const defaultLabelPos = offsetLatLon(here, autoBearing + angleAdjust + side * 90, offsetKm);
+        const savedOverride = course.labelOverrides[thisLabelIdx];
+        const labelPos = savedOverride || defaultLabelPos;
+        const labelMarker = new naver.maps.Marker({
           position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
           map,
+          draggable: true,
           icon: {
-            content: `<div style="display:inline-block; font-size:17px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
+            content: `<div style="display:inline-block; font-size:17px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1; cursor:move;">${label}</div>`,
             anchor: new naver.maps.Point(9, 9)
           },
-          zIndex: 60
-        }));
+          zIndex: 60,
+          title: '드래그해서 이 글자만 원하는 위치로 옮길 수 있습니다'
+        });
+        naver.maps.Event.addListener(labelMarker, 'dragstart', () => { pushHistory(); });
+        naver.maps.Event.addListener(labelMarker, 'dragend', () => {
+          const pos = labelMarker.getPosition();
+          course.labelOverrides[thisLabelIdx] = { lat: pos.y, lon: pos.x };
+        });
+        markers.push(labelMarker);
       }
       }
     }
