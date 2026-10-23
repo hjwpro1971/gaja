@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>설악산처럼 코스가 여러 개인 산 - 통합 개념도 생성기</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #2d3748; }
+  .layout { display: flex; min-height: 100vh; }
+  .side-pane { width: clamp(300px, 28vw, 380px); min-width: 300px; flex-shrink: 0; background: #ffffff; border-right: 1px solid #e2e8f0; padding: 24px; overflow-y: auto; max-height: 100vh; }
+  .main-pane { flex: 1; min-width: 0; padding: 24px; display: flex; flex-direction: column; }
+  @media (max-width: 820px) {
+    .layout { flex-direction: column; }
+    .side-pane { width: 100%; min-width: 0; max-height: none; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .main-pane { max-height: none; }
+    #map { min-height: 420px; }
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { font-size: 12.5px; color: #718096; margin: 0 0 16px; line-height: 1.5; }
+  fieldset { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; padding: 14px; }
+  legend { font-size: 13px; font-weight: 700; color: #2b6cb0; padding: 0 6px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #4a5568; margin: 10px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=file], input[type=color], input[type=text] {
+    width: 100%; padding: 7px 9px; font-size: 13px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-family: inherit; background: #fff; color: #2d3748;
+  }
+  .btn { display: inline-block; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e0; background: #fff; color: #2d3748; cursor: pointer; }
+  .btn:hover { background: #f7fafc; }
+  .btn-primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; font-size: 14px; padding: 10px 18px; width: 100%; }
+  .btn-primary:hover { background: #2c5282; }
+  .btn-primary:disabled { background: #cbd5e0; border-color: #cbd5e0; cursor: not-allowed; }
+  .warn-box { display: none; background: #fff3cd; border: 1px solid #ffc107; color: #7a5c00; font-size: 12.5px; font-weight: 700; padding: 10px 14px; border-radius: 8px; margin-top: 12px; white-space: pre-line; }
+  .info-box { display: none; background: #ebf8ff; border: 1px solid #90cdf4; color: #2c5282; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-top: 12px; white-space: pre-line; }
+  #map { flex: 1; min-height: 500px; border-radius: 12px; border: 1px solid #e2e8f0; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row label { margin: 0; }
+
+  /* 코스 목록 카드 */
+  .course-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+    background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12.5px;
+  }
+  .course-swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.15); }
+  .course-name { flex: 1; font-weight: 700; color: #2d3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .course-meta { font-size: 10.5px; color: #718096; }
+  .course-del-btn { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 6px; padding: 3px 7px; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+  .course-del-btn:hover { background: #fecaca; }
+
+  .color-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .color-dot.selected { border-color: #1a202c; }
+
+  /* 📂 보관된 코스(GitHub tracks/) 가져오기 모달 — gpx-map.html과 동일 스타일 */
+  .track-picker-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 3000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .track-picker-modal {
+    background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 440px;
+    max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .track-picker-modal h2 { font-size: 16px; margin-bottom: 12px; }
+  .track-picker-modal input[type="text"] {
+    width: 100%; padding: 9px 10px; border: 1.5px solid #cbd5e0; border-radius: 8px; font-size: 13.5px; margin-bottom: 10px;
+  }
+  .track-picker-list { overflow-y: auto; flex: 1; border-top: 1px solid #e2e8f0; }
+  .track-picker-item {
+    padding: 10px 4px; border-bottom: 1px solid #edf2f7; cursor: pointer; font-size: 13.5px; color: #2d3748;
+  }
+  .track-picker-item:hover { background: #f7fafc; }
+  .track-picker-empty { color: #94a3b8; font-size: 12.5px; text-align: center; padding: 20px 0; }
+  .track-picker-close {
+    margin-top: 12px; align-self: flex-end; font-size: 12.5px; font-weight: 700;
+    background: transparent; border: 1px solid #cbd5e0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+  }
+
+  /* 🔗 공동 경로 지정 모달(2026-10-16 3차 개편) — 지도 위에 뜨는 모달.
+     코스 X의 "시작 지점~끝 지점"을 골라 "이 구간은 공동 경로다"라고
+     선언하는 카드형 UI. 지점 하나씩 이름을 매칭시키던 테이블 방식은
+     사용자에게 너무 세분화돼 있어 폐기했다. */
+  .name-edit-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 3100;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .name-edit-modal {
+    background: #fff; border-radius: 14px; padding: 20px 22px; width: 100%; max-width: 760px;
+    max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .name-edit-modal h2 { font-size: 16px; margin: 0 0 6px; }
+  .name-edit-modal .sub { margin: 0 0 12px; }
+  #shared-route-declarations { overflow-y: auto; flex: 1; min-height: 60px; }
+  .shared-route-card {
+    border: 1.5px solid #cbd5e0; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; background: #f7fafc;
+  }
+  .shared-route-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .shared-route-card-head b { font-size: 13px; color: #2d3748; }
+  .shared-route-remove-btn {
+    background: transparent; border: none; color: #e53e3e; font-size: 12px; cursor: pointer; font-weight: 700;
+  }
+  .shared-route-course-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; }
+  .shared-route-course-row .course-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .shared-route-course-row span.course-name { min-width: 80px; color: #4a5568; flex-shrink: 0; }
+  .shared-route-course-row select {
+    flex: 1; font-size: 12.5px; padding: 4px 6px; border: 1px solid #cbd5e0; border-radius: 5px; min-width: 0;
+  }
+  .shared-route-final-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e0; font-size: 12.5px; }
+  .shared-route-final-row input[type="text"] {
+    flex: 1; font-size: 12.5px; padding: 4px 6px; border: 1px solid #cbd5e0; border-radius: 5px; min-width: 0;
+  }
+  #btn-add-shared-route {
+    background: transparent; border: 1.5px dashed #a0aec0; color: #4a5568; font-size: 12.5px;
+  }
+  .name-edit-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .name-edit-footer button {
+    font-size: 13px; font-weight: 700; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  }
+  #btn-name-edit-cancel { background: transparent; border: 1px solid #cbd5e0; color: #4a5568; }
+  #btn-name-edit-confirm { background: #2c7a7b; border: 1px solid #2c7a7b; color: #fff; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="side-pane">
+    <h1>⛰️ 통합 개념도 생성기</h1>
+    <p class="sub">설악산처럼 같은 산에 코스가 여러 개 있을 때, GPX를 하나씩 불러와 전부 모은 뒤 한 장의 개념도 프롬프트로 합쳐줍니다.<br>
+    <a href="./gpx-map.html" style="color:#2b6cb0;">↩ 단일 코스 편집은 GPX 경로 지도 생성기로</a></p>
+
+    <fieldset>
+      <legend>1️⃣ 코스 추가</legend>
+      <label for="gpxFile">GPX 파일 선택</label>
+      <input type="file" id="gpxFile" accept=".gpx">
+      <button class="btn" id="btn-open-track-picker" type="button" style="width:100%; margin-top:8px;">📂 보관된 코스에서 가져오기</button>
+
+      <label for="input-course-name">코스 이름</label>
+      <input type="text" id="input-course-name" placeholder="예: A1(한계령-대청봉-백담사)">
+
+      <label>코스 색상</label>
+      <div class="color-palette" id="color-palette"></div>
+
+      <div class="warn-box" id="add-warn-box"></div>
+      <button class="btn btn-primary" id="btn-add-course" type="button" disabled style="margin-top:12px;">➕ 코스 목록에 추가</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>2️⃣ 모은 코스 목록</legend>
+      <div id="course-list" style="font-size:12.5px; color:#a0aec0;">아직 추가된 코스가 없습니다.</div>
+      <button class="btn" id="btn-fit-all" type="button" style="width:100%; margin-top:10px;" disabled>🔍 전체 코스 한눈에 보기</button>
+      <button class="btn" id="btn-capture-map" type="button" style="width:100%; margin-top:8px;" disabled>🗺️ 지도 캡처 다운로드 (AI에 참고 이미지로 첨부)</button>
+      <div class="warn-box" id="capture-warn-box"></div>
+      <p class="sub" style="margin:8px 0 0;">💡 이 캡처 이미지를 꼭 프롬프트와 함께 Gemini에 첨부하세요. 프롬프트에 "이 지도 이미지의 선 모양을 그대로 베껴서 그려달라"는 지시가 포함되어 있어, 이미지를 같이 주면 실제 경로 모양이 훨씬 정확하게 반영됩니다.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>3️⃣ builder 산행가이드 연동 (선택, 산 전체 공통 1회)</legend>
+      <div id="builder-json-status" style="font-size:11.5px; color:#718096; margin-bottom:6px;">불러온 builder 데이터 없음</div>
+      <div class="row">
+        <label class="btn" style="flex:1; text-align:center; margin:0; cursor:pointer;">
+          📂 파일 선택
+          <input type="file" id="builder-json-file" accept=".json,application/json" style="display:none;">
+        </label>
+        <button class="btn" id="btn-builder-json-paste" type="button" style="flex:1;">📋 텍스트 붙여넣기</button>
+      </div>
+      <textarea id="builder-json-paste-box" rows="5" placeholder="builder.html에서 복사한 JSON을 여기에 붙여넣고 Enter" style="width:100%; display:none; margin-top:6px; resize:vertical; font-size:11.5px; font-family:monospace; padding:8px; border:1px solid #cbd5e0; border-radius:6px;"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>4️⃣ 통합 개념도 제목</legend>
+      <input type="text" id="concept-map-title-input" placeholder="예: 설악산 코스별 등산 개념도">
+    </fieldset>
+
+    <!-- 📐 2026-10-16: gpx-map.html(단일 코스)과 동일하게, SVG 직접 렌더링
+         문장형 프롬프트 대신 "좌표 표 + STRICT STYLE/DATA LOCK 생성 요청"
+         방식으로 전환했다 — 단일 코스 쪽에서 결과가 훨씬 안정적이었다.
+         통합(멀티코스) 버전은 코스별 상세 경사 표는 생략하고 좌표·코스
+         구분 중심으로 간결하게 구성한다. -->
+    <button class="btn" id="btn-concept-coord-text" type="button" disabled style="width:100%; font-weight:700; background:#2c7a7b; border-color:#2c7a7b; color:#ffffff;">📋 좌표 데이터 (NotebookLM용)</button>
+    <textarea id="concept-map-output" rows="14" style="width:100%; display:none; margin-top:8px; resize:vertical; font-size:12px; font-family:inherit; padding:8px; border:1px solid #cbd5e0; border-radius:6px; color:#2d3748;" readonly></textarea>
+    <button class="btn" id="btn-concept-map-copy" type="button" style="width:100%; display:none; margin-top:6px;">📋 복사</button>
+    <button class="btn" id="btn-concept-coord-download" type="button" style="width:100%; display:none; margin-top:6px;">⬇️ .md 파일로 다운로드</button>
+    <p class="sub" id="concept-map-note" style="display:none;">💡 위 "지도 캡처 다운로드" 이미지와 이 텍스트를 함께 NotebookLM 등 AI 도구에 소스로 올려서 통합 개념도 생성을 요청하세요.</p>
+  </div>
+
+  <div class="main-pane">
+    <div id="map"></div>
+  </div>
+</div>
+
+<!-- 📂 보관된 코스(GitHub tracks/) 가져오기 모달 -->
+<div class="track-picker-overlay" id="trackPickerOverlay" style="display:none;">
+  <div class="track-picker-modal">
+    <h2>📂 보관된 코스에서 가져오기</h2>
+    <input type="text" id="trackPickerSearch" placeholder="파일명으로 검색 (예: 재약산)">
+    <div class="track-picker-list" id="trackPickerList">
+      <p class="track-picker-empty">불러오는 중...</p>
+    </div>
+    <button class="track-picker-close" id="btnCloseTrackPicker" type="button">닫기</button>
+  </div>
+</div>
+
+<!-- 🔗 공동 구간 선언 모달: "좌표 데이터" 버튼 클릭 시 좌표 생성 전 띄운다.
+     구간 선택 드롭다운은 전부 "모든 코스를 통틀어 모든 지명을 합친 동일한
+     공통 리스트"를 쓴다(2026-10-16 8차 개편: "선택지는 모든 지명 다
+     보여지게 해. 모든 드롭다운 리스트가 다 동일해") — 코스마다 다른
+     목록을 보여줬더니 같은 지점을 찾기 어렵다는 피드백이 있었다. select
+     change 핸들러는 모달 전체를 재렌더하지 않아 "선택해도 먹통" 문제를
+     피한다. -->
+<div class="name-edit-overlay" id="nameEditOverlay" style="display:none;">
+  <div class="name-edit-modal">
+    <h2>🔗 공동 구간 지정</h2>
+    <p class="sub">지도에서 코스끼리 만나 같이 걷는 구간이 있으면, 아래에서 코스별로 "이 지점부터 이 지점까지"를 골라 공동 구간으로 지정하세요. 드롭다운은 모든 코스의 전체 지명을 동일하게 보여줍니다. 지정하지 않은 구간은 각 코스 고유 구간으로 남습니다.</p>
+    <div id="shared-route-declarations"></div>
+    <button class="btn" id="btn-add-shared-route" type="button" style="margin-top:4px; align-self:flex-start;">+ 공동 구간 추가</button>
+    <div class="name-edit-footer">
+      <button id="btn-name-edit-cancel" type="button">취소</button>
+      <button id="btn-name-edit-confirm" type="button">✅ 확인</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj&submodules=geocoder"></script>
+<!-- gpx-map.html과 동일한 라이브러리 — 네이버 지도의 SVG 경로선(Polyline)까지 안정적으로 캡처 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<script>
+// ----------------------------------------------------------------------
+// 설정 — gpx-map.html과 동일한 팔레트. 참조 개념도(덕유산 A/B/C코스)처럼
+// 코스마다 눈에 확실히 구분되는 색을 쓰기 위해 채도 높은 7색을 기본 제공.
+// ----------------------------------------------------------------------
+const COURSE_COLORS = ['#e53e3e', '#2b6cb0', '#805ad5', '#dd6b20', '#38a169', '#d53f8c', '#319795'];
+let selectedColor = COURSE_COLORS[0];
+
+// courses: [{ name, color, points, waypoints, stats }]
+// - points: GPX 트랙 전체 좌표 [{lat,lon,ele,time}]
+// - waypoints: GPX의 <wpt> 태그에서 읽은 지명 목록 [{lat,lon,name,ele}]
+//   (이 페이지는 gpx-map.html과 달리 OSM 자동 채굴을 하지 않는다 — 여러
+//   코스를 빠르게 모으는 게 목적이라, GPX에 이미 박혀있는 wpt만 신뢰한다)
+let courses = [];
+let map = null;
+let mapPolylines = [];
+let mapMarkers = [];
+
+// ----------------------------------------------------------------------
+// GPX 파싱 (gpx-map.html의 parseGPX와 동일 로직 — 재사용)
+// ----------------------------------------------------------------------
+function parseGPX(xmlText) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlText, 'application/xml');
+  const errorNode = xml.querySelector('parsererror');
+  if (errorNode) throw new Error('GPX XML 파싱 오류');
+
+  const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+  if (trkpts.length === 0) throw new Error('트랙 포인트(trkpt)를 찾을 수 없습니다.');
+
+  const points = trkpts.map(pt => {
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    const eleEl = pt.getElementsByTagName('ele')[0];
+    const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+    return { lat, lon, ele };
+  }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+  const wpts = Array.from(xml.getElementsByTagName('wpt')).map(wpt => {
+    const lat = parseFloat(wpt.getAttribute('lat'));
+    const lon = parseFloat(wpt.getAttribute('lon'));
+    const nameEl = wpt.getElementsByTagName('name')[0];
+    const name = nameEl ? nameEl.textContent.trim() : '';
+    const eleEl = wpt.getElementsByTagName('ele')[0];
+    const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+    return { lat, lon, name, ele };
+  }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
+
+  return { points, waypoints: wpts };
+}
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
+}
+
+function computeStats(points) {
+  let totalKm = 0;
+  for (let i = 1; i < points.length; i++) totalKm += haversineKm(points[i - 1], points[i]);
+  const elevations = points.map(p => p.ele).filter(e => e !== null && e !== undefined);
+  const maxAlt = elevations.length ? Math.max(...elevations) : null;
+  return { totalKm, maxAlt };
+}
+
+// ----------------------------------------------------------------------
+// 지도 초기화 및 렌더링
+// ----------------------------------------------------------------------
+function initMap() {
+  map = new naver.maps.Map('map', {
+    center: new naver.maps.LatLng(36.5, 127.8),
+    zoom: 7,
+  });
+}
+
+function clearMapLayers() {
+  mapPolylines.forEach(p => p.setMap(null));
+  mapPolylines = [];
+  mapMarkers.forEach(m => m.setMap(null));
+  mapMarkers = [];
+}
+
+function bearingDeg(a, b) {
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// 코스 이름("천관산 A코스" 등 자유 텍스트)에서 라벨로 쓸 영문 한 글자를
+// 뽑는다. 없으면 코스 등록 순서(1번째=A, 2번째=B, ...)로 폴백한다
+// (2026-10-23 요청 — 경로를 따라 "A→"를 반복 표시해 진행방향과 코스를
+// 한눈에 구분하기 위함).
+function extractCourseLabel(course, idx) {
+  const m = /[A-Za-z]/.exec(course.name || '');
+  if (m) return m[0].toUpperCase();
+  return String.fromCharCode(65 + (idx % 26)); // A, B, C, ...
+}
+
+// 경로를 따라 intervalKm 간격으로 "A→" 라벨을 진행방향으로 회전시켜
+// 반복 배치한다. placeDirectionArrows(gpx-map.html)와 같은 원리이되
+// 화살표 도형 대신 코스 라벨 텍스트를 쓴다.
+function placeCourseLabels(points, label, color, intervalKm) {
+  const markers = [];
+  let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
+  for (let i = 1; i < points.length; i++) {
+    distSinceLast += haversineKm(points[i - 1], points[i]);
+    if (distSinceLast >= intervalKm) {
+      const bearing = bearingDeg(points[i - 1], points[i]);
+      const pos = new naver.maps.LatLng(points[i].lat, points[i].lon);
+      markers.push(new naver.maps.Marker({
+        position: pos,
+        map,
+        icon: {
+          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:13px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${label}→</div>`,
+          anchor: new naver.maps.Point(10, 10)
+        },
+        zIndex: 60
+      }));
+      distSinceLast = 0;
+    }
+  }
+  return markers;
+}
+
+function renderAllCourses() {
+  clearMapLayers();
+  if (!map || courses.length === 0) return;
+
+  // 네이버 지도 API의 LatLngBounds()는 gpx-map.html에서 확인된 바와 같이
+  // 인자 없이 생성하면 isEmpty() 등 정상 메서드가 없는 객체가 나온다
+  // (2026-10-16 실사고: "Uncaught TypeError: bounds.isEmpty is not a
+  // function"). 반드시 초기 좌표 2개를 넘겨 생성해야 한다.
+  const firstPt = courses[0].points[0];
+  const firstLL = new naver.maps.LatLng(firstPt.lat, firstPt.lon);
+  const bounds = new naver.maps.LatLngBounds(firstLL, firstLL);
+
+  courses.forEach((course, idx) => {
+    const path = course.points.map(p => new naver.maps.LatLng(p.lat, p.lon));
+    path.forEach(ll => bounds.extend(ll));
+
+    const polyline = new naver.maps.Polyline({
+      map, path, strokeColor: course.color, strokeWeight: 5, strokeOpacity: 0.85
+    });
+    mapPolylines.push(polyline);
+
+    // 2026-10-23 추가: 경로를 따라 "A→" 식으로 코스 라벨을 반복 표시해,
+    // 여러 코스가 겹쳐 지날 때도 어느 색이 어느 코스고 어느 방향으로
+    // 가는지 지도만 보고 구분할 수 있게 한다. 간격은 코스 총거리에 맞춰
+    // 너무 촘촘하거나 너무 성기지 않게 자동 조정한다.
+    const label = extractCourseLabel(course, idx);
+    const intervalKm = Math.max(0.3, ((course.stats && course.stats.totalKm) || 1) / 8);
+    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm));
+
+    // 들머리/날머리 마커만 표시(코스가 많으면 중간 wpt까지 다 찍으면 지도가 너무 복잡해짐)
+    const start = course.points[0];
+    const end = course.points[course.points.length - 1];
+    [{ pt: start, label: course.name + ' 시작' }, { pt: end, label: course.name + ' 끝' }].forEach(({ pt, label }) => {
+      const marker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(pt.lat, pt.lon),
+        map,
+        icon: {
+          content: `<div style="width:12px;height:12px;border-radius:50%;background:${course.color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>`,
+          anchor: new naver.maps.Point(6, 6)
+        },
+        title: label
+      });
+      mapMarkers.push(marker);
+    });
+  });
+
+  map.fitBounds(bounds);
+}
+
+function fitAllCourses() {
+  if (!map || courses.length === 0) return;
+  const firstPt = courses[0].points[0];
+  const firstLL = new naver.maps.LatLng(firstPt.lat, firstPt.lon);
+  const bounds = new naver.maps.LatLngBounds(firstLL, firstLL);
+  courses.forEach(c => c.points.forEach(p => bounds.extend(new naver.maps.LatLng(p.lat, p.lon))));
+  map.fitBounds(bounds);
+}
+
+// 🗺️ 현재 지도(네이버 지도 + 색상별 코스 선)를 이미지로 캡처해 다운로드한다.
+// AI 이미지 생성에 "지형 기준으로 삼을 참고 이미지"로 함께 첨부하면, 텍스트
+// 프롬프트만으로 좌표를 추측해 그리는 것보다 실제 지형과 더 비슷하게 나올
+// 수 있다(gpx-map.html의 전체캡쳐와 동일한 html-to-image 방식 재사용,
+// 2026-10-14 요청).
+const captureFilter = (node) => { if (node.tagName === 'IMG' && node.src && node.src.includes('ssl.pstatic.net')) return false; return true; };
+
+async function captureMapImage() {
+  const warnBox = document.getElementById('capture-warn-box');
+  const btn = document.getElementById('btn-capture-map');
+  const mapDiv = document.getElementById('map');
+  warnBox.style.display = 'none';
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '⏳ 캡처 중...';
+
+  try {
+    fitAllCourses();
+    // fitBounds가 지도를 다시 그리는 동안 약간의 지연을 둬 캡처 시점에
+    // 레이아웃이 안정되게 한다.
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    const dataUrl = await htmlToImage.toJpeg(mapDiv, {
+      filter: captureFilter,
+      quality: 0.95,
+      pixelRatio: 2,
+      backgroundColor: '#f0f4f8'
+    });
+
+    const link = document.createElement('a');
+    link.download = '통합코스_지도캡처.jpg';
+    link.href = dataUrl;
+    link.click();
+  } catch (err) {
+    warnBox.textContent = '⚠ 지도 캡처 실패: ' + err.message;
+    warnBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+// ----------------------------------------------------------------------
+// 코스 목록 UI
+// ----------------------------------------------------------------------
+function renderColorPalette() {
+  const el = document.getElementById('color-palette');
+  el.innerHTML = '';
+  COURSE_COLORS.forEach(color => {
+    const dot = document.createElement('div');
+    dot.className = 'color-dot' + (color === selectedColor ? ' selected' : '');
+    dot.style.background = color;
+    dot.addEventListener('click', () => {
+      selectedColor = color;
+      renderColorPalette();
+    });
+    el.appendChild(dot);
+  });
+}
+
+function nextAutoColor() {
+  // 아직 안 쓰인 색을 우선 추천(코스 추가할 때마다 자동으로 다른 색이 기본 선택되게)
+  const used = new Set(courses.map(c => c.color));
+  const free = COURSE_COLORS.find(c => !used.has(c));
+  return free || COURSE_COLORS[courses.length % COURSE_COLORS.length];
+}
+
+function renderCourseList() {
+  const el = document.getElementById('course-list');
+  const fitBtn = document.getElementById('btn-fit-all');
+  const promptBtn = document.getElementById('btn-concept-coord-text');
+  const captureBtn = document.getElementById('btn-capture-map');
+
+  if (courses.length === 0) {
+    el.innerHTML = '아직 추가된 코스가 없습니다.';
+    fitBtn.disabled = true;
+    promptBtn.disabled = true;
+    captureBtn.disabled = true;
+    return;
+  }
+
+  fitBtn.disabled = false;
+  promptBtn.disabled = false;
+  captureBtn.disabled = false;
+
+  el.innerHTML = '';
+  courses.forEach((course, idx) => {
+    const item = document.createElement('div');
+    item.className = 'course-item';
+    item.innerHTML = `
+      <span class="course-swatch" style="background:${course.color};"></span>
+      <span class="course-name" title="${course.name}">${course.name}</span>
+      <span class="course-meta">${course.stats.totalKm.toFixed(1)}km</span>
+      <button class="course-del-btn" type="button">삭제</button>
+    `;
+    item.querySelector('.course-del-btn').addEventListener('click', () => {
+      if (!confirm(`"${course.name}" 코스를 목록에서 삭제할까요?`)) return;
+      courses.splice(idx, 1);
+      renderCourseList();
+      renderAllCourses();
+    });
+    el.appendChild(item);
+  });
+}
+
+// ----------------------------------------------------------------------
+// 코스 추가
+// ----------------------------------------------------------------------
+let pendingGpxData = null; // { points, waypoints } — 파일 선택 직후 파싱된 결과, "추가" 버튼 누르기 전 임시 보관
+
+// GPX 텍스트를 받아 "코스 추가" 입력폼(pendingGpxData/이름/색상)을 채우는
+// 공용 처리기. 로컬 파일 선택과 "보관된 코스에서 가져오기"(GitHub) 양쪽이
+// 이 함수를 공유한다 — 둘 다 결국 "GPX 텍스트 + 기본 이름"을 얻는 것이므로.
+function loadGpxTextIntoAddForm(text, baseName) {
+  const warnBox = document.getElementById('add-warn-box');
+  const addBtn = document.getElementById('btn-add-course');
+  warnBox.style.display = 'none';
+  pendingGpxData = null;
+  addBtn.disabled = true;
+
+  try {
+    const data = parseGPX(text);
+    if (data.points.length < 2) throw new Error('유효한 좌표가 2개 미만입니다.');
+    pendingGpxData = data;
+    addBtn.disabled = false;
+
+    // 코스 이름 입력창이 비어있으면 파일명으로 기본값 채움
+    const nameInput = document.getElementById('input-course-name');
+    if (!nameInput.value.trim()) {
+      nameInput.value = baseName.replace(/_/g, ' ');
+    }
+    // 아직 안 쓰인 색을 자동 선택
+    selectedColor = nextAutoColor();
+    renderColorPalette();
+    return true;
+  } catch (err) {
+    warnBox.textContent = '⚠ GPX 파싱 실패: ' + err.message;
+    warnBox.style.display = 'block';
+    return false;
+  }
+}
+
+document.getElementById('gpxFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    loadGpxTextIntoAddForm(evt.target.result, file.name.replace(/\.gpx$/i, ''));
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('btn-add-course').addEventListener('click', () => {
+  if (!pendingGpxData) return;
+  const nameInput = document.getElementById('input-course-name');
+  const name = nameInput.value.trim();
+  const warnBox = document.getElementById('add-warn-box');
+  if (!name) {
+    warnBox.textContent = '⚠ 코스 이름을 입력해주세요.';
+    warnBox.style.display = 'block';
+    return;
+  }
+  if (courses.some(c => c.name === name)) {
+    warnBox.textContent = '⚠ 이미 같은 이름의 코스가 있습니다. 이름을 다르게 해주세요.';
+    warnBox.style.display = 'block';
+    return;
+  }
+
+  const stats = computeStats(pendingGpxData.points);
+  courses.push({
+    name,
+    color: selectedColor,
+    points: pendingGpxData.points,
+    waypoints: pendingGpxData.waypoints,
+    stats
+  });
+
+  // 입력 상태 초기화 (다음 코스를 바로 이어서 추가할 수 있게)
+  pendingGpxData = null;
+  nameInput.value = '';
+  document.getElementById('gpxFile').value = '';
+  document.getElementById('btn-add-course').disabled = true;
+  warnBox.style.display = 'none';
+
+  renderCourseList();
+  renderAllCourses();
+});
+
+document.getElementById('btn-fit-all').addEventListener('click', fitAllCourses);
+document.getElementById('btn-capture-map').addEventListener('click', captureMapImage);
+
+// ----------------------------------------------------------------------
+// 📂 보관된 코스(GitHub tracks/) 가져오기 — gpx-map.html과 동일한 저장소를
+// 공유한다. 설악산처럼 코스가 여러 개인 산은 이미 gaja/tracks/ 폴더에
+// 코스별로 GPX가 따로 올라가 있을 가능성이 높아, 매번 로컬 파일을 다시
+// 찾지 않고 여기서 바로 골라 추가할 수 있게 한다(2026-10-14 요청).
+// 공개 저장소라 목록 조회/다운로드는 토큰 없이 가능하다.
+// ----------------------------------------------------------------------
+const GH_REPO_OWNER = 'hjwpro1971';
+const GH_REPO_NAME = 'gaja';
+let trackPickerFiles = null;
+
+async function fetchTrackPickerFiles() {
+  if (trackPickerFiles) return trackPickerFiles;
+  const url = `https://api.github.com/repos/${GH_REPO_OWNER}/${GH_REPO_NAME}/contents/tracks`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/vnd.github.v3+json' } });
+  if (!res.ok) throw new Error(`GitHub 목록 조회 실패 (HTTP ${res.status})`);
+  const data = await res.json();
+  trackPickerFiles = (Array.isArray(data) ? data : [])
+    .filter(f => f.type === 'file' && /\.gpx$/i.test(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return trackPickerFiles;
+}
+
+function renderTrackPickerList(files, keyword) {
+  const listEl = document.getElementById('trackPickerList');
+  const kw = (keyword || '').trim().toLowerCase();
+  const filtered = kw ? files.filter(f => f.name.toLowerCase().includes(kw)) : files;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<p class="track-picker-empty">일치하는 코스가 없습니다.</p>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  filtered.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'track-picker-item';
+    item.textContent = f.name.replace(/\.gpx$/i, '');
+    item.onclick = () => selectTrackFromPicker(f);
+    listEl.appendChild(item);
+  });
+}
+
+async function selectTrackFromPicker(file) {
+  const listEl = document.getElementById('trackPickerList');
+  listEl.innerHTML = '<p class="track-picker-empty">⏳ 불러오는 중...</p>';
+  try {
+    const res = await fetch(file.download_url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const baseName = file.name.replace(/\.gpx$/i, '') || 'gpx';
+    const ok = loadGpxTextIntoAddForm(text, baseName);
+    closeTrackPicker();
+    if (!ok) {
+      alert('이 GPX 파일을 "코스 추가" 폼에 불러오지 못했습니다. 아래 경고 메시지를 확인해주세요.');
+    }
+  } catch (err) {
+    listEl.innerHTML = `<p class="track-picker-empty">⚠ 불러오기 실패: ${err.message}</p>`;
+  }
+}
+
+async function openTrackPicker() {
+  document.getElementById('trackPickerOverlay').style.display = 'flex';
+  document.getElementById('trackPickerSearch').value = '';
+  const listEl = document.getElementById('trackPickerList');
+  listEl.innerHTML = '<p class="track-picker-empty">불러오는 중...</p>';
+  try {
+    const files = await fetchTrackPickerFiles();
+    renderTrackPickerList(files, '');
+  } catch (err) {
+    listEl.innerHTML = `<p class="track-picker-empty">⚠ 목록을 불러오지 못했습니다: ${err.message}</p>`;
+  }
+}
+
+function closeTrackPicker() {
+  document.getElementById('trackPickerOverlay').style.display = 'none';
+}
+
+document.getElementById('btn-open-track-picker').addEventListener('click', openTrackPicker);
+document.getElementById('btnCloseTrackPicker').addEventListener('click', closeTrackPicker);
+document.getElementById('trackPickerOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'trackPickerOverlay') closeTrackPicker();
+});
+document.getElementById('trackPickerSearch').addEventListener('input', (e) => {
+  if (trackPickerFiles) renderTrackPickerList(trackPickerFiles, e.target.value);
+});
+
+// ----------------------------------------------------------------------
+// 📘 builder.html JSON 연동 (산 전체 공통, 1회만 불러오면 모든 코스에 공유)
+// ----------------------------------------------------------------------
+let loadedBuilderData = null;
+
+function setBuilderJsonStatus(text, isOk) {
+  const el = document.getElementById('builder-json-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isOk ? '#2f855a' : '#718096';
+}
+
+function applyBuilderJson(jsonText) {
+  let data;
+  try {
+    data = JSON.parse(jsonText);
+  } catch (e) {
+    alert('JSON 파싱에 실패했습니다. builder.html에서 복사한 전체 JSON인지 확인해주세요.\n(' + e.message + ')');
+    return false;
+  }
+  if (!data || !Array.isArray(data.sections)) {
+    alert('이 JSON에는 sections 배열이 없습니다. builder.html에서 생성한 JSON이 맞는지 확인해주세요.');
+    return false;
+  }
+  loadedBuilderData = data;
+  const landmarkCount = data.sections.reduce((sum, s) => sum + ((s.detail && s.detail.bullets) ? s.detail.bullets.length : 0), 0);
+  setBuilderJsonStatus(`✅ "${data.mountainName || '산 이름 없음'}" 불러옴 — 구간 ${data.sections.length}개, 랜드마크 설명 ${landmarkCount}개`, true);
+
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  if (titleInputEl && !titleInputEl.value.trim() && data.mountainName) {
+    titleInputEl.value = data.mountainName + ' 코스별 등산 개념도';
+  }
+  return true;
+}
+
+// GPX wpt 이름과 builder 랜드마크 이름(bullets[].strong)은 서로 다른
+// 사람/도구가 따로 붙인 이름이라 "대청봉" vs "대청봉 정상석", "봉정암"
+// vs "봉정암(사리탑)"처럼 토씨가 다른 경우가 흔하다. 공백·괄호 안 내용을
+// 제거한 뒤 비교해 느슨하게 매칭한다(2026-10-14 수정 — 원래는 완전
+// 포함관계만 봐서 이런 변형을 거의 다 놓쳤다).
+function normalizeForMatch(name) {
+  return (name || '').replace(/\s+/g, '').replace(/\([^)]*\)/g, '');
+}
+
+function findBuilderLandmarksForPoi(poiName) {
+  if (!loadedBuilderData || !poiName) return [];
+  const normPoi = normalizeForMatch(poiName);
+  if (!normPoi) return [];
+  const found = [];
+  loadedBuilderData.sections.forEach(s => {
+    if (!s.detail || !Array.isArray(s.detail.bullets)) return;
+    s.detail.bullets.forEach(b => {
+      if (!b.strong || b.strong === '구간' || b.strong === '특징') return;
+      const name = b.strong.trim();
+      if (!name) return;
+      const normName = normalizeForMatch(name);
+      if (!normName) return;
+      if (normPoi.includes(normName) || normName.includes(normPoi)) {
+        found.push({ name, desc: b.p || '' });
+      }
+    });
+  });
+  return found;
+}
+
+document.getElementById('builder-json-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => applyBuilderJson(evt.target.result);
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+const pasteBtn = document.getElementById('btn-builder-json-paste');
+const pasteBox = document.getElementById('builder-json-paste-box');
+pasteBtn.addEventListener('click', () => {
+  pasteBox.style.display = pasteBox.style.display === 'none' ? 'block' : 'none';
+  if (pasteBox.style.display === 'block') pasteBox.focus();
+});
+pasteBox.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const text = pasteBox.value.trim();
+    if (text && applyBuilderJson(text)) {
+      pasteBox.value = '';
+      pasteBox.style.display = 'none';
+    }
+  }
+});
+
+// ----------------------------------------------------------------------
+// 🎨 통합 개념도 프롬프트 생성
+// 여러 코스를 색상별로 구분해 한 장에 겹쳐 그리도록 지시한다. 각 코스는
+// GPX의 wpt(들머리/날머리/중간지점)만 신뢰해서 쓰고, 공통 지형 요소
+// (최고봉, builder 랜드마크, sceneryHighlights)는 코스 구분 없이 산 전체
+// 배경으로 한 번만 묘사하게 해 같은 설명이 코스마다 중복되지 않게 한다.
+// ----------------------------------------------------------------------
+function formatDuration(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  return `${hours}시간 ${minutes}분`;
+}
+
+// GPX의 wpt들을 트랙(points) 순서에 맞춰 정렬한다. 각 wpt에서 가장 가까운
+// 트랙 포인트의 인덱스를 찾아 그 순서로 정렬하는 근사치 방식.
+function sortWaypointsAlongTrack(course) {
+  return (course.waypoints || []).slice().sort((a, b) => {
+    const idxOf = (w) => {
+      let best = 0, bestD = Infinity;
+      course.points.forEach((p, i) => {
+        const d = haversineKm(p, w);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return best;
+    };
+    return idxOf(a) - idxOf(b);
+  });
+}
+
+// waypoint가 트랙상 몇 km 지점인지(들머리에서부터 누적거리) 계산한다.
+// 가장 가까운 트랙 포인트 인덱스까지의 누적거리로 근사한다 — 좌표 기반
+// 통합 개념도 프롬프트(buildMultiCourseCoordinateText)에서 코스별 순번·
+// 누적거리 표를 만드는 데 쓴다.
+function computeWaypointRouteDistances(course) {
+  const cum = [0];
+  for (let i = 1; i < course.points.length; i++) {
+    cum.push(cum[i - 1] + haversineKm(course.points[i - 1], course.points[i]));
+  }
+  return (w) => {
+    let best = 0, bestD = Infinity;
+    course.points.forEach((p, i) => {
+      const d = haversineKm(p, w);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return cum[best];
+  };
+}
+
+// 코스별 "들머리→...→날머리" 지명 순서를 뽑고, 연속된 두 지점(구간)을
+// key로 만든다. 설악산 사례처럼 여러 코스가 같은 능선 구간(예: 대청봉→
+// 중청봉→소청봉)을 그대로 공유하는 경우, 그 구간들을 모든 코스에서 각각
+// 다시 나열하면 (a) 프롬프트에 같은 지명이 여러 번 찍혀 AI가 "같은
+// 지점인데 다른 곳"으로 오인해 중복 라벨을 그리고 (b) 경유지 목록이
+// 쓸데없이 길어진다(실제 사고: 2026-10-14, "끝청"/"봉정암(사리탑)" 등이
+// 결과 이미지에 두 번씩 그려짐). 그래서 구간 단위로 중복을 감지해 공유
+// 구간은 별도 섹션에 한 번만 적고, 코스별 섹션에서는 그 구간을 생략한다.
+// 사용자가 "좌표 데이터" 생성 전 지명 편집 패널에서 직접 고친 이름들.
+// 코스 인덱스별로 { 원본이름: 새이름 } 맵을 들고 있는다. 예전엔 50m 이내
+// 지점을 코드가 자동으로 같은 이름으로 통일했는데, 같은 코스 안에 있던
+// 서로 다른 두 지점(예: "노루목"과 "노루목삼거리")까지 하나로 뭉개버리는
+// 부작용이 있었다(2026-10-16 실사고) — 자동 판단을 걷어내고, 통일이
+// 필요한지/어떻게 할지는 사용자가 직접 정하게 한다.
+const pointNameOverrides = {}; // { [courseIndex]: { [원본이름]: 새이름 } }
+
+function applyNameOverride(courseIdx, originalName, newName) {
+  const trimmed = (newName || '').trim();
+  if (!pointNameOverrides[courseIdx]) pointNameOverrides[courseIdx] = {};
+  if (!trimmed || trimmed === originalName) {
+    delete pointNameOverrides[courseIdx][originalName];
+  } else {
+    pointNameOverrides[courseIdx][originalName] = trimmed;
+  }
+}
+
+function resolvePointName(courseIdx, originalName) {
+  const map = pointNameOverrides[courseIdx];
+  return (map && map[originalName]) ? map[originalName] : originalName;
+}
+
+// 🔗 "공동 구간" 지정(2026-10-16 10차 개편) — 처음엔 공동 구간의 중간
+// 경유지를 "생략"했는데, 사용자 피드백대로 그건 틀린 접근이었다("공동구간에
+// 있는 지명을 생략하는것이 아니라 하나의 경로로 통일하면 돼. A 코스이던지
+// B 코스이던지 하나로 그리면 돼"). 올바른 동작은: 선언마다 range가 있는
+// 코스 중 "기준 코스"(가장 먼저 선택된 코스)를 고르고, 그 코스의 시작~끝
+// 사이 경유지(이름+좌표)를 다른 코스들의 같은 구간에 그대로 복사해 넣는
+// 것이다. 그 결과 두 좌표표가 그 구간에서 완전히 동일한 지점 목록을
+// 갖게 되어, 그림도 하나의 선으로 합쳐진다.
+// { id, ranges: [{ courseIdx, startName, endName }], canonicalStart, canonicalEnd }
+let sharedRouteDeclarations = [];
+
+function addSharedRouteDeclaration() {
+  sharedRouteDeclarations.push({
+    id: `route${sharedRouteDeclarations.length}_${Date.now()}`,
+    ranges: [],
+    canonicalStart: '',
+    canonicalEnd: ''
+  });
+}
+
+function removeSharedRouteDeclaration(id) {
+  sharedRouteDeclarations = sharedRouteDeclarations.filter(r => r.id !== id);
+}
+
+// 코스 하나의 "원본" 지점 목록(override 전, 공동구간 치환 전)을 좌표까지
+// 포함해 순서대로 돌려준다 — 들머리/날머리 anchor(course.points[0]/[last])도
+// 포함해야 그 지점을 기준으로 구간 치환을 할 수 있다.
+function buildRawFullPoints(courseIdx) {
+  const course = courses[courseIdx];
+  const wpts = sortWaypointsAlongTrack(course);
+  const distOf = computeWaypointRouteDistances(course);
+  const startPt = course.points[0];
+  const endPt = course.points[course.points.length - 1];
+  const isRoundTrip = haversineKm(startPt, endPt) <= 0.28;
+  const startName = wpts.length ? wpts[0].name : `들머리(${course.name})`;
+  const endName = isRoundTrip ? startName : (wpts.length > 1 ? wpts[wpts.length - 1].name : `날머리(${course.name})`);
+  const startPtEle = (startPt.ele !== null && startPt.ele !== undefined) ? startPt.ele : null;
+  const endPtEle = (endPt.ele !== null && endPt.ele !== undefined) ? endPt.ele : null;
+  const anchorPoints = [{ name: startName, lat: startPt.lat, lon: startPt.lon, ele: startPtEle, routeDistKm: 0 }];
+  if (!isRoundTrip) {
+    anchorPoints.push({ name: endName, lat: endPt.lat, lon: endPt.lon, ele: endPtEle, routeDistKm: distOf(endPt) });
+  }
+  const seen = new Set();
+  return [...anchorPoints, ...wpts].filter(w => {
+    if (seen.has(w.name)) return false;
+    seen.add(w.name);
+    return true;
+  }).map(w => ({ name: w.name, lat: w.lat, lon: w.lon, ele: w.ele, routeDistKm: w.routeDistKm !== undefined ? w.routeDistKm : distOf(w) }))
+    .sort((a, b) => a.routeDistKm - b.routeDistKm);
+}
+
+// 공동 구간 선언마다, 각 코스의 fullPoints에서 "시작~끝 구간"을 기준
+// 코스(그 선언에서 가장 먼저 range가 등록된 코스)의 같은 구간 경유지로
+// 교체한다. courseIdx → 치환된 fullPoints 맵을 돌려준다.
+// 드롭다운이 전체 코스 공통 리스트라, 다른 코스의 지명을 골랐을 수
+// 있다(2026-10-16 설계: "선택지는 모든 지명 다 보여지게 해"). 이건
+// "이 코스의 들머리/날머리도 사실상 그 이름으로 봐도 된다"는 선언이므로,
+// 고른 이름이 이 코스의 실제 지점 목록에 없으면 이 코스의 진짜 들머리
+// (시작 칸을 골랐을 때) 또는 날머리(끝 칸을 골랐을 때)로 대신 매칭한다.
+function resolveRangeEndpointIndex(points, chosenName, course, isStartField) {
+  const idx = points.findIndex(p => p.name === chosenName);
+  if (idx !== -1) return idx;
+  const { startName, endName } = getOriginalWaypointNamesForCourse(course);
+  const fallbackName = isStartField ? startName : endName;
+  return points.findIndex(p => p.name === fallbackName);
+}
+
+function applySharedRouteGeometryReplacement() {
+  const rawByCourse = {};
+  courses.forEach((_, ci) => { rawByCourse[ci] = buildRawFullPoints(ci); });
+
+  sharedRouteDeclarations.forEach(decl => {
+    // courseIdx 순으로 정렬해 "기준 코스"가 항상 결정론적으로(가장 먼저
+    // 추가된 코스, 보통 코스 1) 선택되게 한다 — UI에서 드롭다운을 고른
+    // 순서(배열 push 순서)에 의존하면 사용자가 B코스를 먼저 선택했을 때
+    // 기준이 뒤바뀌어 혼란을 줄 수 있다.
+    const validRanges = decl.ranges
+      .filter(r => r.startName && r.endName && courses[r.courseIdx])
+      .slice()
+      .sort((a, b) => a.courseIdx - b.courseIdx);
+    if (validRanges.length < 2) return;
+    const refRange = validRanges[0];
+    const refCourse = courses[refRange.courseIdx];
+    const refPoints = rawByCourse[refRange.courseIdx];
+    const refSi = resolveRangeEndpointIndex(refPoints, refRange.startName, refCourse, true);
+    const refEi = resolveRangeEndpointIndex(refPoints, refRange.endName, refCourse, false);
+    if (refSi === -1 || refEi === -1) {
+      console.debug('[공동구간] 기준 코스에서 지점을 찾지 못함', refRange, refPoints.map(p => p.name));
+      return;
+    }
+    const refLo = Math.min(refSi, refEi), refHi = Math.max(refSi, refEi);
+    const refMidpoints = refPoints.slice(refLo + 1, refHi); // 기준 코스의 시작~끝 사이 중간 경유지(좌표 포함)
+
+    validRanges.slice(1).forEach(range => {
+      const course = courses[range.courseIdx];
+      const points = rawByCourse[range.courseIdx];
+      const si = resolveRangeEndpointIndex(points, range.startName, course, true);
+      const ei = resolveRangeEndpointIndex(points, range.endName, course, false);
+      if (si === -1 || ei === -1) {
+        console.debug('[공동구간] 대상 코스에서 지점을 찾지 못함', range, points.map(p => p.name));
+        return;
+      }
+      const lo = Math.min(si, ei), hi = Math.max(si, ei);
+      const forward = si <= ei; // 이 코스가 start→end 방향으로 걷는지, 반대 방향인지
+      const midToInsert = forward ? refMidpoints : refMidpoints.slice().reverse();
+      rawByCourse[range.courseIdx] = [
+        ...points.slice(0, lo + 1),
+        ...midToInsert,
+        ...points.slice(hi)
+      ];
+      console.debug('[공동구간] 치환 적용', { courseIdx: range.courseIdx, inserted: midToInsert.map(p => p.name) });
+    });
+  });
+
+  return rawByCourse;
+}
+
+// 공동 구간 선언을 override로 변환해 적용한다. 드롭다운이 전체 코스
+// 공통 리스트라, 다른 코스의 지명을 골랐을 수도 있다 — 이건 "이 코스의
+// 이 지점도 사실상 그 이름으로 봐도 된다"는 개념도용 선언이므로 거부하지
+// 않는다(2026-10-16 9차 수정: "개념도인데 뭔 상관이야.. 동일구간이야.
+// 코스 하나로 통일하면 되잖아" — 사용자 피드백). 선택한 이름이 그 코스에
+// 이미 있으면 그 지점 이름을 바꾸고, 없으면 그 코스의 실제 들머리(시작
+// 칸) 또는 날머리(끝 칸) 이름에 덮어씌운다.
+function applySharedRouteDeclarationsToOverrides() {
+  const skippedReasons = [];
+  sharedRouteDeclarations.forEach((decl, idx) => {
+    const label = `공동 구간 ${idx + 1}`;
+    if (!decl.canonicalStart || !decl.canonicalEnd) {
+      skippedReasons.push(`${label}: "공동 지명"을 입력하지 않았습니다.`);
+      return;
+    }
+    const validRanges = decl.ranges.filter(r => r.startName && r.endName && courses[r.courseIdx]);
+    if (validRanges.length < 2) {
+      skippedReasons.push(`${label}: 2개 이상 코스에서 지점을 선택해야 합니다(현재 ${validRanges.length}개).`);
+      return;
+    }
+    validRanges.forEach(range => {
+      const course = courses[range.courseIdx];
+      const { names, startName: courseStartName, endName: courseEndName } = getOriginalWaypointNamesForCourse(course);
+      const startOrig = names.includes(range.startName) ? range.startName : courseStartName;
+      const endOrig = names.includes(range.endName) ? range.endName : courseEndName;
+      applyNameOverride(range.courseIdx, startOrig, decl.canonicalStart);
+      applyNameOverride(range.courseIdx, endOrig, decl.canonicalEnd);
+    });
+  });
+  return skippedReasons;
+}
+
+function buildCourseSegmentInfo() {
+  // 공동 구간 선언에 따라 "시작~끝 구간"을 기준 코스의 경유지로 치환한
+  // fullPoints를 코스별로 먼저 구한다(2026-10-16 10차 개편 — 예전엔 중간
+  // 경유지를 생략했는데, "생략이 아니라 하나의 경로로 통일"하라는 피드백에
+  // 따라 치환 방식으로 바꿨다).
+  const replacedByCourse = applySharedRouteGeometryReplacement();
+
+  // 전체 코스 중 최고 고도(= 이 산의 정상)를 미리 구해둔다 — 정상이
+  // 경로 중간(분기점→정상→그다음 지점)에 있으면, 실제로는 "분기점에서
+  // 정상을 왕복하는 막다른 가지"인 경우가 많다(2026-10-16 실사고: 반야봉
+  // 삼거리→반야봉→노루목으로 이어지는 게 실제로는 반야봉삼거리에서 정상을
+  // 찍고 되돌아와 노루목으로 가는 구조인데, 일직선처럼 그려짐 — "A1/B
+  // 둘 다 반야봉을 지나치지 않고, 반야봉삼거리에서 정상으로 가는 가지가
+  // 따로 나온다"는 사용자 확인). 아래에서 그 분기점을 정상 뒤에 복제해
+  // "분기점→정상→분기점"으로 만들어, 좌표 표 자체가 왕복임을 명시하게
+  // 한다.
+  //
+  // 버그 수정(2026-10-16): course.stats.maxAlt는 GPX 트랙(trkpt) 전체에서
+  // 구한 최고 고도인데, 아래에서 비교할 p.ele는 waypoint(<wpt>, 좌표 표에
+  // 실제로 찍히는 지점)의 고도다. 트랙은 waypoint보다 훨씬 촘촘해서 두
+  // 값이 미세하게 달라(예: 1732.4m vs 1732m) 엄밀 비교(===)가 항상
+  // 실패했다 — 정상 왕복 삽입이 전혀 동작하지 않던 원인. waypoint 중
+  // 최고 고도를 "이 산의 정상"으로 다시 정의한다.
+  let overallMaxAlt = -Infinity;
+  courses.forEach(c => {
+    (c.waypoints || []).forEach(w => {
+      if (w.ele !== null && w.ele !== undefined && w.ele > overallMaxAlt) overallMaxAlt = w.ele;
+    });
+  });
+
+  return courses.map((course, courseIdx) => {
+    const startPt = course.points[0];
+    const endPt = course.points[course.points.length - 1];
+    const isRoundTrip = haversineKm(startPt, endPt) <= 0.28;
+
+    // 지명 편집(override)을 적용한다 — 원본 이름 기준으로 저장된
+    // pointNameOverrides를 치환된 fullPoints 각 지점에 반영한다.
+    const replacedPoints = replacedByCourse[courseIdx].map(p => ({
+      ...p,
+      name: resolvePointName(courseIdx, p.name)
+    }));
+
+    // 같은 지명이 두 번 이상 찍히는 경우(왕복 구간, 공동 구간 치환으로
+    // 생긴 중복 등)는 처음 등장만 남기고 생략한다 — 안 그러면 지도에 같은
+    // 라벨이 두 번 그려진다(2026-10-14 실사고: "천당폭포"가 두 곳에 찍힘).
+    const seenForPoints = new Set();
+    let fullPoints = replacedPoints.filter(p => {
+      if (seenForPoints.has(p.name)) return false;
+      seenForPoints.add(p.name);
+      return true;
+    });
+
+    // "개념도"는 큰 지명(봉우리·주요 삼거리·대피소 등)만 담으면 충분하고,
+    // "갈림길"처럼 그 자체로 의미 없는 범용 제네릭 명칭은 복잡도만 높인다
+    // (2026-10-16 사용자 피드백: "개념도야 개념도.. 큰 지명만 있어도 돼.
+    // 일반 갈림길 필요없고 봉우리 이름"). 들머리/날머리(fullPoints의 첫/
+    // 끝)는 절대 걸러내지 않는다 — 그건 "갈림길"이어도 경로의 시작/끝
+    // 자체이므로 지워지면 좌표 표에서 들머리/날머리가 통째로 빠진다.
+    if (fullPoints.length > 2) {
+      const first = fullPoints[0], last = fullPoints[fullPoints.length - 1];
+      fullPoints = fullPoints.filter((p, i) => p === first || p === last || p.name !== '갈림길');
+    }
+
+    // 정상(overallMaxAlt)이 경로 중간에 있고 들머리/날머리가 아니라면,
+    // 그 직전 지점(분기점)을 정상 바로 뒤에 복제해 "분기점→정상→분기점"
+    // 구조로 만든다 — 좌표 표만 보고도 "여기는 왕복"이라는 걸 알 수 있게.
+    const summitIdx = fullPoints.findIndex((p, i) => i > 0 && i < fullPoints.length - 1 && p.ele !== null && p.ele !== undefined && Math.round(p.ele) === Math.round(overallMaxAlt));
+    if (summitIdx !== -1) {
+      const branchPoint = fullPoints[summitIdx - 1];
+      fullPoints = [
+        ...fullPoints.slice(0, summitIdx + 1),
+        { ...branchPoint, routeDistKm: fullPoints[summitIdx].routeDistKm + 0.001 },
+        ...fullPoints.slice(summitIdx + 1)
+      ];
+    }
+    const fullNames = fullPoints.map(p => p.name);
+    const startName = fullNames[0];
+    const endName = isRoundTrip ? startName : fullNames[fullNames.length - 1];
+
+    // 연속된 지명 쌍(segment)을 순서대로 뽑는다. 방향 구분 없이 비교하도록
+    // 정렬된 key를 쓴다(코스마다 걷는 방향이 반대일 수 있으므로 — 예:
+    // A코스는 한계령→대청봉, B코스는 대청봉→한계령 방향).
+    const segments = [];
+    for (let i = 0; i < fullNames.length - 1; i++) {
+      const a = fullNames[i], b = fullNames[i + 1];
+      const key = [a, b].sort().join('|||');
+      segments.push({ a, b, key });
+    }
+
+    // 이름→고도 매핑.
+    const eleByName = {};
+    fullPoints.forEach(p => {
+      if (p.ele !== null && p.ele !== undefined) eleByName[p.name] = Math.round(p.ele);
+    });
+
+    return { course, isRoundTrip, startName, endName, fullNames, fullPoints, segments, eleByName };
+  });
+}
+
+function buildMultiCourseConceptMapPrompt() {
+  if (courses.length === 0) return '';
+
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  const title = (titleInputEl ? titleInputEl.value.trim() : '') || '이 산 코스별 등산 개념도';
+
+  const HUNDRED_LABELS = { forest: '산림청', blackyak: '블랙야크', wolgansan: '월간산', hanguksanha: '한국산하' };
+  const hundredBadges = (loadedBuilderData && Array.isArray(loadedBuilderData.hundredMountainBadges))
+    ? loadedBuilderData.hundredMountainBadges
+    : [];
+  const hundredText = hundredBadges.length
+    ? hundredBadges.map(key => HUNDRED_LABELS[key] || key).join(', ') + ' 100대명산'
+    : '';
+
+  // 전체 코스 중 최고 고도 지점을 "이 산의 정상"으로 간주해 구도 중심에 둔다.
+  let overallMaxAlt = -Infinity;
+  courses.forEach(c => { if (c.stats.maxAlt !== null && c.stats.maxAlt > overallMaxAlt) overallMaxAlt = c.stats.maxAlt; });
+  const maxAltText = overallMaxAlt > -Infinity ? `${Math.round(overallMaxAlt)}m` : '정보 없음';
+
+  const unusedHighlights = (loadedBuilderData && Array.isArray(loadedBuilderData.sceneryHighlights))
+    ? loadedBuilderData.sceneryHighlights.slice()
+    : [];
+
+  const courseInfos = buildCourseSegmentInfo();
+
+  // 구간(key) → 그 구간을 지나는 코스 이름 목록
+  const segmentOwners = new Map();
+  courseInfos.forEach(info => {
+    info.segments.forEach(seg => {
+      if (!segmentOwners.has(seg.key)) segmentOwners.set(seg.key, { a: seg.a, b: seg.b, courses: new Set() });
+      segmentOwners.get(seg.key).courses.add(info.course.name);
+    });
+  });
+  // 2개 이상 코스가 공유하는 구간만 "공유 구간"으로 취급
+  const sharedSegmentKeys = new Set(
+    Array.from(segmentOwners.entries()).filter(([, v]) => v.courses.size >= 2).map(([k]) => k)
+  );
+
+  const lines = [];
+  lines.push(`아래는 같은 산에 있는 서로 다른 등산 코스 ${courses.length}개의 실제 GPX 데이터다. 첨부한 참조 이미지와 동일한 화풍으로, 이 코스들을 전부 색상으로 구분해 한 장의 "통합 산행 개념도"로 그려줘.`);
+  lines.push('');
+  lines.push('【 중요: 지형 정확도보다 가독성 우선 】');
+  lines.push('- 이건 실측 지도가 아니라 등산 안내용 상징적 일러스트다. 실제 위성/등고선 지형과 100% 일치하지 않아도 되니, 아래 지점 순서·연결 관계만 정확히 지키고 산세는 자연스럽고 보기 좋게 그려줘.');
+  lines.push('- 매우 중요: 이 프롬프트와 함께 실제 지도를 캡처한 이미지를 첨부했다면, 그건 단순 참고가 아니라 "그릴 정답"이다. 그 이미지에 이미 색깔별 선으로 그려진 코스의 굽이·꺾이는 지점·교차/합류 위치(평면상 위치)를 최대한 그대로 베껴서, 그 선의 모양을 따라 일러스트 선을 그려줘. 능선·계곡의 좌우 배치나 꺾이는 방향을 임의로 바꾸거나 단순화해서 다른 모양으로 그리지 말 것. 단, 상하 높낮이(고도)는 지도 이미지가 아니라 아래 각 코스의 "고도 순서" 숫자를 반드시 따를 것 — 지도는 "어디로 꺾이는지"만 알려주고 "얼마나 높은지"는 알려주지 않는다. 지도 이미지가 없다면 이 지시는 무시해도 된다.');
+  lines.push('- 모든 한글 지명은 오탈자나 글자가 뭉개짐 없이 또렷하고 정확하게 표기해줘. 라벨 박스 폭을 지명 길이에 맞춰 충분히 크게 그려서 글자가 잘리거나 겹치지 않게 할 것.');
+  lines.push('- 매우 중요: 아래 각 코스에 적힌 지명·코스명·숫자(거리·고도)는 반드시 아래 텍스트에 적힌 글자를 한 글자도 바꾸지 말고 그대로 복사해서 라벨에 쓸 것. 발음이 비슷한 다른 한자어로 바꾸거나, 새로운 획을 추가/생략하거나, 임의로 지명을 창작하지 말 것.');
+  lines.push('- 지도/코스 설명과 무관한 장식적 말풍선이나 상상으로 지어낸 안내문은 넣지 말 것 — 아래 데이터에 없는 지명·문구를 새로 만들어내지 말 것.');
+  lines.push('');
+  lines.push('【 화풍/스타일 — 참조 이미지와 반드시 동일하게 】');
+  lines.push('- 산 전체를 비스듬히 내려다보는 3D 조감도(버드아이뷰) 구도. 여러 코스가 교차·합류하는 지점까지 한눈에 보이도록 넓은 범위를 담을 것');
+  lines.push('- 부드러운 수채화 질감, 파스텔톤의 초록~연두 산세, 등고선에 따른 자연스러운 명암 단차');
+  lines.push('- 하늘은 맑고 부드러운 수채화 톤의 하늘색 그러데이션에 뭉게구름만 자연스럽게 배치 (해·달 등 의인화된 캐릭터는 넣지 말 것)');
+  lines.push('- 나침반/방위 표시(N·S·E·W 등 동서남북 기호나 로즈 모양 나침반)는 절대 넣지 말 것');
+  lines.push('- 화면 구도: 이 프롬프트와 함께 실제 지도를 캡처한 이미지를 첨부했다면, 화면 배치도 그 지도 이미지를 그대로 따를 것 — 억지로 "정상은 가운데" 같은 틀에 맞추려고 지도와 다르게 비틀지 말 것. 지도 이미지가 없을 때만, 산 정상을 화면 중앙 부근에 두고 여러 코스의 들머리가 자연스럽게 모여드는 구도로 구성할 것.');
+  lines.push('- 각 코스 고유 구간은 그 코스의 지정 색으로, 공유 구간(아래 "공유 구간" 섹션)은 중립적인 회색 선 하나로만 그리고 그 위에 공유하는 코스명을 작게 병기할 것 — 같은 구간을 색깔별로 여러 겹 그려 선이 두꺼워지거나 뭉개지지 않게 할 것');
+  lines.push('- 매우 중요(화살표 방향): 각 코스의 화살표는 처음부터 끝까지 단 하나의 일관된 진행 방향만 가리켜야 한다 — 아래 각 코스의 "구간 순서" 번호 그대로, 들머리(1번)에서 날머리(마지막 번호)로 이어지는 방향으로만 그릴 것. 코스 중간에 화살표 방향이 거꾸로 바뀌면 안 된다. 원점회귀 코스는 출발 지점에서 나가는 방향으로 시작해 한 바퀴를 돌아 같은 방향으로 계속 진행하며 다시 그 지점으로 들어오는 하나의 순환 방향을 유지할 것.');
+  lines.push('- 매우 중요(지명 창작 금지): 아래 각 코스 데이터에 없는 지명은 절대 새로 만들어 넣지 말 것. 특히 비슷한 글자로 지명을 살짝 바꿔치기하지 말 것(예: "형제봉"을 "형세봉"으로 바꾸는 식의 오류 금지) — 데이터에 있는 지명 수만큼만 라벨을 그릴 것.');
+  lines.push('- 각 지점명은 손글씨体 느낌의 둥근 한글 폰트로, 말풍선/라벨 박스에 담아 표시. 같은 지점명은 지도 전체에서 딱 한 번만 표시할 것(중복 라벨 금지)');
+  lines.push('- 좌측 상단 또는 하단에 "코스 안내" 박스를 두고, 범례 형태로 각 코스의 색상 동그라미 + 코스명 + 간단한 동선을 나열');
+  lines.push(hundredText
+    ? `- 상단 제목(산 이름 + "산행 개념도") 바로 아래에, 화면 가로 폭 전체를 가로지르는 길고 납작한 리본/배너 형태로 "${hundredText}" 문구를 크고 눈에 잘 띄게 표시`
+    : '- 상단에 큰 제목(산 이름 + "산행 개념도")');
+  lines.push('- 전체적으로 동화책 삽화 같은 따뜻하고 아기자기한 감성, 과하게 사실적이지 않게');
+  lines.push('');
+  lines.push('【 통합 제목 】 ' + title);
+  if (hundredText) lines.push(`【 100대명산 선정 】 ${hundredText}`);
+  lines.push(`【 이 산의 최고 고도 】 약 ${maxAltText}`);
+  lines.push('');
+
+  courseInfos.forEach((info, idx) => {
+    const { course, isRoundTrip, startName, endName, fullNames, segments, eleByName } = info;
+    lines.push(`【 코스 ${idx + 1}: ${course.name} — 고유 색상: ${course.color} 】`);
+    lines.push(`- 총 거리: 약 ${course.stats.totalKm.toFixed(1)}km, 코스 형태: ${isRoundTrip ? '원점회귀(왕복)' : '편도'}`);
+    lines.push(`- 들머리: ${startName}`);
+    if (!isRoundTrip) {
+      lines.push(`- 날머리: ${endName}`);
+    } else {
+      lines.push(`- 매우 중요(원점회귀): 이 코스는 들머리와 날머리가 서로 다른 지점이 아니라 완전히 같은 한 지점("${startName}")이다. 이 코스의 선은 그 한 지점에서 출발해 고리(루프) 모양으로 돌아 정확히 같은 지점으로 돌아와야 하며, 선의 양 끝이 다른 두 곳에서 끝나면 안 된다. 라벨도 "들머리"/"날머리"를 따로 만들지 말고 "${startName}" 하나로만 표시할 것.`);
+    }
+
+    // 이 코스 고유 구간(다른 코스와 안 겹치는 부분)만 나열하고, 공유 구간은
+    // "(공유 구간 — 아래 참조)"로 짧게만 표시해 지명이 중복되지 않게 한다.
+    if (segments.length) {
+      lines.push('- 구간 순서 (아래 "A → B" 순서 그대로가 실제로 걷는 방향이자 화살표가 가리켜야 할 방향이다. 중간에 방향을 거꾸로 그리지 말 것):');
+      let lastWasShared = false;
+      segments.forEach(seg => {
+        const isShared = sharedSegmentKeys.has(seg.key);
+        if (isShared) {
+          if (!lastWasShared) lines.push(`  - ${seg.a} → (이하 공유 구간 — 아래 "공유 구간" 섹션 참조)`);
+          lastWasShared = true;
+        } else {
+          lines.push(`  - ${seg.a} → ${seg.b}`);
+          const landmarks = findBuilderLandmarksForPoi(seg.b);
+          landmarks.forEach(l => lines.push(`      ▸ 배경 묘사: ${l.name} — ${l.desc}`));
+          lastWasShared = false;
+        }
+      });
+    }
+
+    // 매우 중요: 이 코스가 지나는 지점들의 고도를 순서대로 명시한다.
+    // 평면 위치(지도 이미지)와 고도(숫자)가 충돌할 때 AI가 지도 쪽만 보고
+    // 고도 역전을 그리는 사고가 실제로 있었다(2026-10-14, 봉정암 1218m을
+    // 소청봉 1550m보다 높게 그림) — 이 코스 안에서만이라도 고도 순서를
+    // 명확히 표로 줘서 그 코스 선을 그릴 때 참고하게 한다.
+    const eleNames = fullNames.filter(n => eleByName[n] !== undefined);
+    if (eleNames.length >= 2) {
+      lines.push('- 고도 순서(이 코스 안에서 들머리→날머리 높낮이, 지도 평면 위치보다 이 순서를 우선할 것):');
+      eleNames.forEach((n, i) => {
+        const arrow = i < eleNames.length - 1 ? (eleByName[eleNames[i + 1]] >= eleByName[n] ? ' ↗' : ' ↘') : '';
+        lines.push(`    ${n}: ${eleByName[n]}m${arrow}`);
+      });
+    }
+    lines.push('');
+  });
+
+  // 공유 구간 섹션 — 2개 이상 코스가 지나가는 구간을 한 번만 정리해서,
+  // 회색 1줄 + 해당 코스명 라벨로 그리도록 안내한다. 설악산처럼 대청봉·
+  // 중청봉·봉정암 등 핵심 랜드마크가 대부분 공유 구간에 몰리는 경우가
+  // 많아, 여기서도 반드시 배경 묘사를 함께 넣는다 — 이전에는 이 섹션에
+  // landmark 조회가 아예 빠져 있어 builder의 랜드마크 설명 대부분이
+  // 실제로는 프롬프트에 반영되지 않는 결함이 있었다(2026-10-14 발견).
+  const sharedList = Array.from(segmentOwners.values()).filter(v => v.courses.size >= 2);
+  const sharedLandmarkNames = new Set(); // 같은 지점명에 대해 중복으로 배경 묘사를 반복하지 않도록
+  if (sharedList.length) {
+    lines.push('【 공유 구간 — 2개 이상 코스가 함께 지나가는 길. 색깔별로 겹쳐 그리지 말고 회색 선 하나 + 코스명 라벨로만 표시 】');
+    sharedList.forEach(v => {
+      const courseLabel = Array.from(v.courses).join('·');
+      lines.push(`  - ${v.a} ↔ ${v.b}  (공유: ${courseLabel})`);
+      [v.a, v.b].forEach(name => {
+        if (sharedLandmarkNames.has(name)) return;
+        const landmarks = findBuilderLandmarksForPoi(name);
+        if (landmarks.length) {
+          sharedLandmarkNames.add(name);
+          landmarks.forEach(l => lines.push(`      ▸ ${name} 배경 묘사: ${l.name} — ${l.desc}`));
+        }
+      });
+    });
+    lines.push('');
+  }
+
+  if (unusedHighlights.length > 0) {
+    lines.push('【 이 산을 대표하는 절경(전체적인 배경 분위기에 자연스럽게 녹여낼 것, 특정 코스에 한정하지 말고 산 전체에 흩뿌릴 것) 】');
+    unusedHighlights.forEach(h => lines.push(`  - ${h}`));
+    lines.push('');
+  }
+
+  lines.push('위 코스들을 각각 지정된 색으로 구분해서 모두 지도 위에 그리고, 코스마다 들머리~경유지~날머리(또는 원점회귀)가 정확한 순서로 이어지게 해줘. 공유 구간은 반드시 위 안내대로 회색 1줄 + 코스명 라벨로만 표시하고, 같은 지명을 지도 어디에도 두 번 이상 그리지 말 것. 코스가 많아 지도가 복잡해지더라도, 색상 구분과 범례만으로 각 코스를 쉽게 구별할 수 있게 해줘.');
+
+  return lines.join('\n');
+}
+
+// ----------------------------------------------------------------------
+// 📋 좌표 데이터 기반 통합 개념도 프롬프트 (2026-10-16)
+// gpx-map.html(단일 코스)에서 SVG 직접 렌더링을 전부 걷어내고 "좌표 표 +
+// STRICT STYLE/DATA LOCK 생성 요청 프롬프트"로 바꾼 뒤 결과가 훨씬 안정적
+// 이었다 — 그 템플릿을 통합(멀티코스) 버전으로 확장한다. 단일 코스 버전과
+// 다른 점: "여러 코스를 한 장에, 색상으로 확실히 구분"이 핵심이라서
+// 코스별 상세 경사·고도변화 표는 생략하고(사용자 요청: "자세한 정보는
+// 필요없고 각 경로에 대한 구분이 확실히 되게") 좌표·순번·코스색만 담는다.
+// ----------------------------------------------------------------------
+function buildMultiCourseCoordinateText() {
+  if (courses.length === 0) return '';
+
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  const title = (titleInputEl ? titleInputEl.value.trim() : '') || '이 산 코스별 등산 개념도';
+
+  const HUNDRED_LABELS = { forest: '산림청', blackyak: '블랙야크', wolgansan: '월간산', hanguksanha: '한국산하' };
+  const hundredBadges = (loadedBuilderData && Array.isArray(loadedBuilderData.hundredMountainBadges))
+    ? loadedBuilderData.hundredMountainBadges
+    : [];
+  const hundredText = hundredBadges.length
+    ? hundredBadges.map(key => HUNDRED_LABELS[key] || key).join(', ') + ' 100대명산'
+    : '';
+
+  let overallMaxAlt = -Infinity;
+  courses.forEach(c => { if (c.stats.maxAlt !== null && c.stats.maxAlt > overallMaxAlt) overallMaxAlt = c.stats.maxAlt; });
+  const maxAltText = overallMaxAlt > -Infinity ? `약 ${Math.round(overallMaxAlt)}m` : '정보 없음';
+
+  const courseInfos = buildCourseSegmentInfo();
+
+  // 전체 코스 중 최고 고도 지점(= 이 산의 정상)을 찾아, 결과 이미지에서
+  // "구석에 처박힌 봉우리"가 아니라 "이 산의 핵심 랜드마크"로 보이게 만들
+  // 안내를 프롬프트에 명시한다(2026-10-16 실사고: 반야봉이 정상인데도
+  // 화면 오른쪽 가장자리에 조그맣게 그려짐). 또한 좌표 표 순번상 정상
+  // 앞뒤로 같은 인접 지점이 반복되면(A→정상→A) 그건 "삼거리에서 정상을
+  // 찍고 돌아내려오는 왕복(스퍼) 구간"이라는 뜻인데, 글자로만 나열하면
+  // AI가 이를 그냥 "지나가는 경유지"로 오해해 정상을 경로 중간의 평범한
+  // 한 점처럼 그린다 — 이 경우도 명시적으로 짚어준다.
+  // 여기서도 waypoint 최고 고도로 비교해야 한다(buildCourseSegmentInfo()
+  // 안의 동일 버그 수정과 같은 이유 — stats.maxAlt는 트랙 기준이라
+  // waypoint 고도와 미세하게 달라 엄밀 비교가 항상 실패했었다).
+  let summitAlt = -Infinity;
+  courses.forEach(c => {
+    (c.waypoints || []).forEach(w => {
+      if (w.ele !== null && w.ele !== undefined && w.ele > summitAlt) summitAlt = w.ele;
+    });
+  });
+  let summitInfo = null; // { name, alt, courseName, isSpur, spurBaseName }
+  courseInfos.forEach(info => {
+    info.fullPoints.forEach((p, i) => {
+      if (p.ele !== null && p.ele !== undefined && Math.round(p.ele) === Math.round(summitAlt)) {
+        const prev = info.fullPoints[i - 1];
+        const next = info.fullPoints[i + 1];
+        const isSpur = !!(prev && next && prev.name === next.name);
+        summitInfo = { name: p.name, alt: p.ele, courseName: info.course.name, isSpur, spurBaseName: isSpur ? prev.name : null };
+      }
+    });
+  });
+
+  // (2026-10-16: 여기 있던 "50m 이내 지점 이름 자동 통일" 로직은 삭제했다.
+  // 같은 코스 안에서 원래 서로 다른 두 지점(예: "노루목"과 "노루목삼거리")
+  // 까지 50m 반경에 같이 걸려 하나의 이름으로 뭉개버리는 부작용이 실제로
+  // 발생했다 — 코드가 "같은 지점인지"를 거리만으로 단정하는 건 위험하다는
+  // 교훈. 동일 지점 지명 통일이 필요하면 이제는 "좌표 데이터" 버튼을 누를
+  // 때 뜨는 지명 편집 패널에서 사용자가 직접 고친다 — buildCourseSegmentInfo()
+  // 안에서 이미 pointNameOverrides가 적용된 이름으로 courseInfos가 만들어진다.)
+
+  // 2026-10-16: 방위 규칙·들머리 상대 위치 비교 문장을 텍스트로만 지시해도
+  // AI가 두 들머리를 나란히 왼쪽에 몰아놓는 등 실제 지도 배치를 반복해서
+  // 무시했다("지도처럼 왼쪽에 성삼재B코스, 오른쪽 위에 뱀사골A코스..." —
+  // 실제로는 좌상/좌하/우상/우하로 흩어져야 하는데 결과는 그렇지 않았음).
+  // 상대 비교문보다 더 명시적인 "이 지점은 전체 캔버스를 9칸으로 나눴을
+  // 때 몇 번째 칸"이라는 절대 구역 지정으로 바꿔본다 — 모든 코스의 모든
+  // 지점을 한 좌표계에 모아 3x3 격자로 나누고, 각 지점의 칸 번호를 표로
+  // 준다.
+  const GRID_LABELS = [
+    ['좌상단', '상단 중앙', '우상단'],
+    ['좌측 중앙', '정중앙', '우측 중앙'],
+    ['좌하단', '하단 중앙', '우하단']
+  ];
+  function buildGridPlacementTable(infos) {
+    const allPts = [];
+    infos.forEach(info => info.fullPoints.forEach(p => allPts.push(p)));
+    if (allPts.length < 2) return null;
+    const lats = allPts.map(p => p.lat), lons = allPts.map(p => p.lon);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+    const latSpan = Math.max(maxLat - minLat, 1e-9);
+    const lonSpan = Math.max(maxLon - minLon, 1e-9);
+    // 경계값이 격자 밖(3)으로 안 튀도록 살짝 안쪽으로 당겨 clamp.
+    const cellOf = (p) => {
+      const col = Math.min(2, Math.max(0, Math.floor((p.lon - minLon) / lonSpan * 3)));
+      const rowFromTop = Math.min(2, Math.max(0, Math.floor((maxLat - p.lat) / latSpan * 3))); // 북쪽(위도 큰 쪽)이 위
+      return GRID_LABELS[rowFromTop][col];
+    };
+    return infos.map(info => ({
+      courseName: info.course.name,
+      rows: info.fullPoints.map(p => ({ name: p.name, cell: cellOf(p) }))
+    }));
+  }
+  const gridPlacement = buildGridPlacementTable(courseInfos);
+
+  // 구간(key) → 그 구간을 지나는 코스 이름 목록. 단일 코스 버전엔 없는
+  // 개념이라 그대로 재사용한다(buildMultiCourseConceptMapPrompt와 동일 로직).
+  const segmentOwners = new Map();
+  courseInfos.forEach(info => {
+    info.segments.forEach(seg => {
+      if (!segmentOwners.has(seg.key)) segmentOwners.set(seg.key, { a: seg.a, b: seg.b, courses: new Set() });
+      segmentOwners.get(seg.key).courses.add(info.course.name);
+    });
+  });
+
+  // 근접 들머리/날머리 "후보" 탐지 — segmentOwners는 "이름이 정확히
+  // 같은 지점"끼리만 공유로 묶는데, 서로 다른 GPX 파일의 날머리는 이름이
+  // 다르게 저장돼 있어도 실제로 가까운 경우가 있다(2026-10-16: "날머리는
+  // 공동경로야"). 다만 좌표가 가깝다는 사실만으로 같은 장소라고 코드가
+  // 단정하지는 않는다 — 실측 GPX라도 입구/주차장/정류장이 460m씩 떨어진
+  // 별개 지점일 수 있고, 이를 "같은 곳"이라 강제로 합치면 원본 데이터를
+  // 왜곡하는 것이기 때문이다(사용자 피드백: "좌표를 평균 내거나... 같은
+  // 장소가 아니라면 하나로 합치면 안 된다"). 그래서 이 거리 기준은
+  // "병합 명령"이 아니라 "AI가 지도 이미지·코스 흐름을 보고 공동 종점
+  // 여부를 직접 판단해야 할 후보를 추려주는 기준"으로만 쓴다 — 최종
+  // 판단과 원본 좌표 보존은 프롬프트의 "근접 들머리·날머리 판별 규칙"
+  // 섹션에서 AI에게 넘긴다.
+  const PROXIMITY_CANDIDATE_RADIUS_KM = 1.0; // 이 거리 안이면 "근접 종점 후보"로만 보고
+  const terminalPoints = []; // {courseName, role, name, lat, lon}
+  courseInfos.forEach(info => {
+    if (info.fullPoints.length === 0) return;
+    terminalPoints.push({ courseName: info.course.name, role: '들머리', ...info.fullPoints[0] });
+    if (!info.isRoundTrip) {
+      terminalPoints.push({ courseName: info.course.name, role: '날머리', ...info.fullPoints[info.fullPoints.length - 1] });
+    }
+  });
+  const proximityCandidateGroups = []; // 각 그룹 = 서로 가까운 종점들 + 실측 거리
+  const usedTerminal = new Set();
+  terminalPoints.forEach((p, i) => {
+    if (usedTerminal.has(i)) return;
+    const group = [p];
+    usedTerminal.add(i);
+    terminalPoints.forEach((q, j) => {
+      if (i === j || usedTerminal.has(j)) return;
+      if (haversineKm(p, q) <= PROXIMITY_CANDIDATE_RADIUS_KM) {
+        group.push(q);
+        usedTerminal.add(j);
+      }
+    });
+    // 이름이 이미 전부 같다면(공동 경로 지정에서 사용자가 직접 통일한
+    // 경우) "같은 곳인지 AI가 판단하라"는 안내 자체가 모순이다 — 사용자가
+    // 이미 확정한 사실을 다시 불확실한 것처럼 묻지 않는다(2026-10-16
+    // 실사고: "천왕봉산장" ↔ "천왕봉산장"처럼 이름이 같은데도 판별 규칙
+    // 섹션에 남아 있었음).
+    const allSameName = group.length >= 2 && group.every(g => g.name === group[0].name);
+    if (group.length >= 2 && !allSameName) proximityCandidateGroups.push(group);
+  });
+
+  const lines = [];
+  lines.push(`# ${title}`);
+  lines.push('## STRICT STYLE LOCK · STRICT DATA LOCK (통합 개념도 — 여러 코스)');
+  lines.push('');
+  lines.push('### 1. 작업 지시');
+  lines.push('');
+  lines.push(`첨부된 기준 이미지(참고할 화풍 샘플)의 화풍을 그대로 유지하여, 아래 ${courses.length}개 코스를 모두 담은 "${title}" 1장을 제작한다.`);
+  lines.push('');
+  lines.push('이것은 코스 하나짜리 개념도가 아니다 — 같은 산의 서로 다른 등산 코스 여러 개를 한 장에 겹쳐 그리는 "통합 개념도"다. 각 코스는 지정된 고유 색상으로 명확히 구분되어야 하며, 코스끼리 색이 섞이거나 어느 코스인지 헷갈리면 안 된다.');
+  lines.push('');
+  lines.push('이 작업은 새로운 디자인을 창작하는 작업이 아니다. 기준 이미지와 동일한 삽화가가 같은 시리즈의 그림을 그린 것처럼, 화풍은 고정하고 코스 데이터만 변경한다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 2. 절대 고정 화풍 — MASTER STYLE LOCK');
+  lines.push('');
+  lines.push('기준 이미지를 첨부했다면 그 이미지를 유일한 스타일 기준으로 삼는다. 첨부하지 않았거나 여러 번 생성해 화풍이 조금씩 달라졌다면, 아래 고정 스펙을 기준 이미지보다 우선해서 따른다.');
+  lines.push('');
+  lines.push('**배경/바탕**');
+  lines.push('- 아이보리~베이지색 종이 질감 배경(#f7f0e3 전후 톤), 미세한 종이결과 얼룩 자국.');
+  lines.push('- 화면 테두리를 따라 짙은 갈색 손그림 이중선 액자를 두른다.');
+  lines.push('');
+  lines.push('**선/색**');
+  lines.push('- 모든 윤곽선은 짙은 갈색(#4a3426 전후) 손그림 펜선.');
+  lines.push('- 산은 황토색·베이지·연한 회갈색(#c9a876, #d9c3a0 계열)의 능선과 바위로, 음영은 수채화 번짐처럼 부드럽게.');
+  lines.push('- 숲/나무는 탁한 올리브그린·세이지그린(#8a9a6b, #6f7d52 계열), 뾰족한 침엽수 실루엣 위주.');
+  lines.push('- 각 코스의 경로선은 아래 "코스 목록"에 지정된 고유 색으로 뚜렷하게 구분해서 그린다.');
+  lines.push('- 2개 이상 코스가 함께 지나는 공유 구간은 색을 겹쳐 칠하지 말고 중립적인 회색 선 하나로만 그리고, 그 위에 공유하는 코스명을 작게 병기한다.');
+  lines.push('- 매우 중요(등산로는 능선을 탄다, 계곡 바닥이 아니다): 등산로는 일반적으로 산등성이(능선)나 사면을 따라 이어지며, 움푹 파인 계곡·하천 바닥을 가로지르듯 그려지지 않는다. 경로선 주변 지형을 그릴 때 길 양옆을 깊게 파인 골짜기로 묘사하지 말고, 경로선이 산의 등줄기(능선) 위를 걷는 것처럼 지형의 높은 쪽을 따라가도록 산세를 그릴 것 — 좌표 표의 고도 숫자(올라갔다 내려가는 패턴)와 산 모양이 자연스럽게 맞아떨어지게 할 것.');
+  lines.push('');
+  lines.push('**글자 — 매우 중요(한글 깨짐 방지를 위해 라벨 글자는 AI가 직접 그리지 않는다)**');
+  lines.push('- 이미지 생성 AI는 작은 글씨의 한글(특히 여러 글자가 들어간 지점명)을 정확히 그리지 못하고 자모가 뭉개지거나 획이 깨지는 경우가 매우 흔하다. 이를 피하기 위해 아래 두 가지만 지킨다:');
+  lines.push('  1) 들머리·날머리·경유지·정상 등 각 지점의 라벨은 손그림 말풍선/리본 모양의 "빈 틀"만 그리고, 그 안에 글자는 전혀 넣지 않는다(완전히 비워둔다) — 지점 이름 텍스트는 나중에 사람이 별도로 입력할 것이다.');
+  lines.push('  2) 제목(산 이름 + "산행 개념도")과 범례(코스 안내 박스의 "Course A1" 같은 코스명)도 같은 이유로 글자를 그리지 않고 빈 박스/리본만 그린다.');
+  lines.push('- 지도 안의 다른 모든 글자(원본 지도에 있던 행정구역명·도로명·산 이름 등)도 전혀 베끼거나 다시 그리지 않는다 — 지명 텍스트가 들어갈 자리는 전부 빈 공간이나 빈 틀로 남긴다.');
+  lines.push('- 좌측 상단 또는 하단에 "코스 안내" 범례 박스(빈 틀)를 두되, 각 코스의 색상 동그라미만 그리고 코스명 글자는 비워둔다.');
+  lines.push('');
+  lines.push('**장식**: 솔방울·낙엽·작은 바위 같은 자연물 장식을 여백에 듬성듬성. 들머리는 초록 계열, 날머리(원점회귀 복귀 지점)는 빨강 계열 뱃지로 구분. 봉우리 정상엔 작은 깃발.');
+  lines.push('');
+  lines.push('**절대 금지**: 3D 렌더링, 사진, 위성지도, 매끈한 벡터 일러스트, 플랫 디자인, 애니메이션, 웹툰, 네온색, 두꺼운 검정 외곽선, 과도한 장식, 새로운 디자인 콘셉트. 서로 다른 코스를 같은 색으로 칠하는 것.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 3. 산행 기본 정보');
+  lines.push('');
+  lines.push(`- 제목: ${title}`);
+  if (hundredText) lines.push(`- 100대명산 선정: ${hundredText}`);
+  lines.push(`- 이 산의 최고 고도: ${maxAltText}`);
+  lines.push(`- 코스 수: ${courses.length}개`);
+  lines.push('');
+  lines.push('### 코스 목록 (범례에 반드시 이 색상·이름 그대로 사용)');
+  lines.push('');
+  lines.push('| 코스명 | 고유 색상 | 총거리(km) | 코스 형태 |');
+  lines.push('|---|---|---|---|');
+  courseInfos.forEach(info => {
+    lines.push(`| ${info.course.name} | ${info.course.color} | ${info.course.stats.totalKm.toFixed(1)} | ${info.isRoundTrip ? '원점회귀(왕복)' : '편도'} |`);
+  });
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 4. 코스별 좌표 데이터 — 수정 금지');
+  lines.push('');
+  lines.push('순번은 각 코스 안에서 실제로 걷는 순서다. 위도가 클수록 북쪽, 경도가 클수록 동쪽이다. 고도가 없는 지점은 표시하지 않는다.');
+  lines.push('');
+  courseInfos.forEach((info, idx) => {
+    lines.push(`**코스 ${idx + 1}: ${info.course.name} (색상: ${info.course.color})**`);
+    lines.push('');
+    lines.push('| 순번 | 지점명 | 위도 | 경도 | 고도(m) |');
+    lines.push('|---|---|---|---|---|');
+    info.fullPoints.forEach((p, i) => {
+      const eleText = (p.ele !== null && p.ele !== undefined) ? Math.round(p.ele) : '미제공';
+      lines.push(`| ${i + 1} | ${p.name} | ${p.lat.toFixed(6)} | ${p.lon.toFixed(6)} | ${eleText} |`);
+    });
+    if (info.isRoundTrip) {
+      lines.push('');
+      lines.push(`이 코스는 원점회귀(왕복)다 — 들머리(${info.startName})와 날머리는 완전히 같은 한 지점이며, 선은 그 한 지점에서 출발해 고리 모양으로 돌아 정확히 같은 지점으로 돌아와야 한다.`);
+    }
+    lines.push('');
+  });
+  lines.push('`미제공`은 해당 값을 표시하지 말라는 뜻이다. 누락된 값을 추정하거나 계산하여 채우지 않는다. 좌표는 그림 안에 표시하지 않는다.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 5. 공유 구간 — 2개 이상 코스가 함께 지나가는 길');
+  lines.push('');
+  const sharedList = Array.from(segmentOwners.values()).filter(v => v.courses.size >= 2);
+  if (sharedList.length) {
+    lines.push('아래 구간은 색깔별로 겹쳐 그리지 말고, 회색 선 하나 + 코스명 라벨로만 표시한다.');
+    lines.push('');
+    sharedList.forEach(v => {
+      const courseLabel = Array.from(v.courses).join(' · ');
+      lines.push(`- ${v.a} ↔ ${v.b}  (공유: ${courseLabel})`);
+    });
+  } else {
+    lines.push('공유 구간 없음 — 모든 코스가 서로 겹치지 않는 별개의 길이다.');
+  }
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 6. 경로 구조 — 최우선 규칙');
+  lines.push('');
+  // 2026-10-16: "좌표 우선"과 "3x3 칸 지정"을 둘 다 텍스트로만 지시하면
+  // AI가 둘을 동시에 정확히 만족시키기 어렵고, 그림의 균형을 맞추려고
+  // 들머리/날머리 위치를 슬쩍 옮기는 경향이 있다는 지적을 받았다. 제안된
+  // 해법대로 "들머리·날머리를 먼저 고정하고 나머지를 그 주변에 배치"하는
+  // 순서 규칙을 최우선으로 추가한다.
+  lines.push('**매우 중요(들머리·날머리 위치 절대 고정) — 다른 모든 규칙보다 우선한다:**');
+  lines.push('');
+  lines.push('1. 그림을 그리기 전에 모든 코스의 들머리와 날머리 위치를 먼저 확정한다.');
+  lines.push('2. 각 들머리와 날머리는 아래 좌표 표·칸 배치의 상대적 위치에 따라 캔버스에 배치한다.');
+  lines.push('3. 들머리·날머리의 위치를 먼저 고정한 뒤, 나머지 경유지와 경로를 연결한다.');
+  lines.push('4. 제목, 범례, 산봉우리, 장식의 배치를 위해 들머리·날머리를 이동하지 않는다.');
+  lines.push('5. 코스가 보기 좋게 보이도록 경로를 변형하거나 시작점과 끝점의 위치를 바꾸지 않는다.');
+  lines.push('6. 좌표 관계와 아래 칸 배치가 충돌하면 임의로 해석하지 말고 좌표 관계를 우선한다.');
+  lines.push('7. 모든 지점의 위치가 확정된 후에만 산악 배경, 나무, 바위, 라벨과 장식을 그린다.');
+  lines.push('');
+  if (proximityCandidateGroups.length) {
+    // 2026-10-16: 처음엔 "좌표가 가까우면 자동으로 같은 지점"이라고
+    // 코드가 강제로 선언했는데, 사용자 피드백대로 이건 위험한 가정이다
+    // (460m 거리를 "같은 장소"로 단정할 근거가 코드엔 없다 — 실제로
+    // 같은 주차장 구역인지, 그냥 가까운 별개 지점인지는 지도를 봐야
+    // 안다). 그래서 "병합 확정"이 아니라 "판단에 필요한 사실(좌표,
+    // 실측 거리)만 제공하고 최종 판단은 AI가 지도 이미지·코스 흐름을
+    // 보고 하게" 바꿨다 — 원본 좌표/이름은 그대로 두고 어느 쪽으로
+    // 그릴지만 AI 재량에 맡긴다.
+    lines.push('**근접 들머리·날머리 판별 규칙 — 아래 종점들은 좌표가 가까워서 "같은 장소일 가능성이 있는 후보"로 추려진 것이다. 좌표가 가깝다는 이유만으로 자동으로 합치지 말 것:**');
+    lines.push('');
+    lines.push('- 각 지점의 이름, 원본 좌표, 다른 지점과의 직선거리는 아래와 같다.');
+    lines.push('- 제공된 지도 캡처 이미지에서 두 지점의 실제 위치, 주변 지형, 도로 및 등산로 연결 관계를 확인할 것.');
+    lines.push('- 좌표 정보와 지도 이미지, 코스 흐름(어느 길이 어디로 이어지는지)을 종합해서 공동 종점(같은 한 장소)으로 표현할지, 가깝지만 별개인 두 종점으로 표현할지 직접 판단할 것.');
+    lines.push('- 동일 장소라는 근거가 불충분하면 별개의 종점으로 유지할 것 — 거리가 가깝다는 것만으로 동일 장소라고 확정하지 말 것.');
+    lines.push('- 지도 이미지로도 명확히 판단할 수 없다면 임의로 확정하지 말고, 두 지점을 가깝게(그러나 구분되게) 배치하는 쪽을 택할 것.');
+    lines.push('- 어떤 판단을 하든 위 좌표 표의 원본 좌표·지명은 변경하지 않는다. 시각적 배치를 이유로 지리적 위치를 임의로 옮기거나 두 지점을 강제로 합치지 않는다.');
+    lines.push('');
+    proximityCandidateGroups.forEach(group => {
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          const a = group[i], b = group[j];
+          const distM = Math.round(haversineKm(a, b) * 1000);
+          lines.push(`- "${a.name}" (${a.courseName} ${a.role}, ${a.lat.toFixed(6)}, ${a.lon.toFixed(6)}) ↔ "${b.name}" (${b.courseName} ${b.role}, ${b.lat.toFixed(6)}, ${b.lon.toFixed(6)}) — 직선거리 약 ${distM}m`);
+        }
+      }
+    });
+    lines.push('');
+  }
+  lines.push('**매우 중요(방위 배치):**');
+  lines.push('- 모든 지점의 화면 배치는 위 좌표 표의 위도(lat)·경도(lon) 값과, 함께 첨부한 지도 캡처 이미지 속 실제 위치 관계를 그대로 따른다. 북쪽(위도가 큰 쪽)이 화면 위쪽, 남쪽이 아래쪽, 동쪽(경도가 큰 쪽)이 화면 오른쪽, 서쪽이 왼쪽이다.');
+  lines.push('- 지도 캡처 이미지를 첨부했다면 그것이 "그릴 정답"이다. 그 이미지 속에서 각 코스의 선이 어느 방향으로 꺾이고, 들머리들이 서로 어느 쪽에 있는지(왼쪽/오른쪽/위/아래)를 반드시 그대로 베껴서 배치할 것 — 구도를 보기 좋게 만들려고 좌우나 상하를 뒤집거나 임의로 재배치하지 말 것.');
+  lines.push('');
+  // 상대 비교문("A가 B보다 북쪽")만으로는 AI가 "둘 다 왼쪽 위에 나란히"
+  // 같은 틀린 배치를 반복했다(2026-10-16 실사고: 서로 다른 방향에 있어야
+  // 할 두 들머리를 같은 구역에 몰아 그림). 비교문 대신 "이 지점은 전체
+  // 캔버스를 9칸으로 나눴을 때 정확히 몇 번째 칸"이라는 절대 구역을
+  // 지정해 모호함을 없앤다.
+  if (gridPlacement) {
+    lines.push('- 아래는 전체 캔버스를 가로/세로 3등분(총 9칸)했을 때 각 지점이 정확히 어느 칸에 들어가야 하는지 표로 정리한 것이다. 이 칸 배치를 반드시 지킬 것 — 특히 서로 다른 칸에 있는 지점들이 같은 칸이나 인접하지 않은 칸으로 몰려 그려지면 안 된다:');
+    lines.push('');
+    gridPlacement.forEach(g => {
+      lines.push(`  [${g.courseName}]`);
+      g.rows.forEach(r => lines.push(`    - ${r.name} → ${r.cell}`));
+    });
+    lines.push('');
+    lines.push('  (참고: 3x3 칸 배열은 좌상단|상단 중앙|우상단 / 좌측 중앙|정중앙|우측 중앙 / 좌하단|하단 중앙|우하단 이다. 같은 칸에 여러 지점이 몰려도 상관없지만, 서로 다른 칸으로 지정된 지점들을 같은 칸에 몰아 그리지 말 것.)');
+  }
+  lines.push('');
+  // 2026-10-16 실사고: 반야봉(이 산의 정상, 최고 고도)이 좌표상 캔버스
+  // 가장자리 칸에 배치되면서, 결과 이미지에서도 "구석에 처박힌 조그만
+  // 봉우리"처럼 그려졌다 — 산 개념도에서 정상은 들머리 배치보다 더
+  // 핵심적인 랜드마크인데 그 비중이 전혀 반영되지 않았다. 또한 "반야봉
+  // 삼거리 → 반야봉 → (다시) 노루목" 순서(정상 앞뒤로 같은 지점이
+  // 반복)가 "삼거리에서 정상을 찍고 돌아내려오는 왕복(스퍼)"이라는 뜻을
+  // 텍스트만으로는 AI가 못 알아채, 정상을 그냥 지나가는 한 점처럼
+  // 그렸다 — 두 문제 모두 명시적으로 짚어준다.
+  if (summitInfo) {
+    lines.push(`**매우 중요(정상 강조): "${summitInfo.name}"(${Math.round(summitInfo.alt)}m)이 이 산의 최고봉(정상)이다.** 위 칸 배치표상 배치된 칸을 지키되, 그 칸 안에서 다른 경유지보다 눈에 띄게(더 큰 봉우리 실루엣 + 깃발 + 고도 표기를 뚜렷하게) 그려 "이 지도에서 가장 중요한 지점"임이 한눈에 보이게 할 것. 정상이 캔버스 가장자리 칸에 배치되더라도, 그 칸 안에서 배경 산세의 정점(가장 높은 봉우리 실루엣)으로 그려 구석에 묻히지 않게 할 것.`);
+    if (summitInfo.isSpur) {
+      lines.push(`**매우 중요(정상 왕복 구간): "${summitInfo.courseName}"의 좌표 표에서 "${summitInfo.spurBaseName}" → "${summitInfo.name}" → "${summitInfo.spurBaseName}" 순서로 같은 지점이 반복되는 것은 데이터 오류가 아니라, "${summitInfo.spurBaseName}"에서 정상 "${summitInfo.name}"까지 살짝 올라갔다가 같은 길로 되돌아 내려오는 막다른 왕복(스퍼) 구간이라는 뜻이다.** 이 구간은 "${summitInfo.spurBaseName}"에서 정상 쪽으로 짧게 가지처럼 뻗은 선으로 그리고(화살표는 올라가는 방향과 내려오는 방향 둘 다 표시하거나, 왕복임을 나타내는 점선으로), 정상을 지나는 길이 계속 이어지는 것처럼 일직선으로 그리지 말 것.`);
+    }
+    lines.push('');
+  }
+  lines.push('- 각 코스는 위 좌표 표의 순번 순서(1부터)를 그대로 따라 선으로 잇는다. 순서를 바꾸거나 중간 지점을 생략하지 않는다.');
+  lines.push('- 매우 중요(가짜 분기 금지): 각 코스는 좌표 표의 순번대로 끊김 없이 이어지는 하나의 선이다. 경유지 이름에 "갈림길"·"삼거리"·"안부" 같은 단어가 들어 있어도, 그건 그 지점의 고유 이름일 뿐 실제로 길이 여러 갈래로 나뉜다는 뜻이 아니다 — 좌표 표에 그 다음 순번으로 이어지는 지점이 하나만 있다면, 그 지점에서 다른 방향으로 갈라지는 점선이나 샛길을 임의로 추가해 그리지 말 것. 코스가 실제로 두 갈래로 나뉘는 것은 좌표 표에 분기를 나타내는 지점이 명시적으로 2번 이상 등장할 때뿐이다.');
+  lines.push('- 매우 중요(화살표 방향): 각 코스의 화살표는 처음부터 끝까지 하나의 일관된 방향(순번이 작은 지점→큰 지점)만 가리켜야 한다. 중간에 방향이 거꾸로 바뀌면 안 된다.');
+  lines.push('- 원점회귀 코스는 "같은 선을 공유 + 반대 방향 화살표 2개"로 표현하거나, 다른 길로 도는 루프라면 하나의 폐곡선으로 표현한다(실제 GPX 트랙 모양을 기준으로 판단).');
+  lines.push('- 여러 코스가 교차하거나 합류하는 지점은 그 위치가 서로 다른 코스에서도 같은 자리로 보이게(같은 좌표라면 같은 그림 위치에) 그린다.');
+  lines.push('');
+  lines.push('**절대 금지**: 코스 간 경로 교차·합류 관계를 무시하고 각 코스를 동떨어진 섬처럼 그리는 것 / 지점 순서 변경 / 화살표 방향이 중간에 뒤바뀌는 것 / 공유 구간을 코스별 색으로 겹쳐 칠해 선이 두꺼워지는 것 / 지도 캡처 이미지의 실제 배치를 무시하고 임의로 재구성하는 것 / "갈림길"·"삼거리" 같은 지점 이름만 보고 좌표 표에 없는 가짜 샛길이나 점선 분기를 임의로 그려 넣는 것.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 7. 라벨 배치 — 빈 틀만, 글자는 넣지 않는다');
+  lines.push('');
+  lines.push('위 좌표 표에 있는 지점마다 라벨 틀(말풍선/리본)을 하나씩 배치한다. 표에 없는 지점의 라벨을 새로 만들어 넣지 않는다. 같은 지명이 여러 코스에 겹쳐도(공유 구간) 지도에는 그 지점에 라벨 틀을 한 번만 둔다.');
+  lines.push('');
+  lines.push('매우 중요(정상 왕복 구간은 라벨도 한 번만): 같은 코스의 좌표 표 안에서 "A → 정상 → A"처럼 같은 지점이 연속으로 두 번 나오는 것은, 지점 A(분기점)에서 정상까지 짧게 올라갔다가 같은 길로 되돌아 내려오는 막다른 가지(스퍼) 구간이라는 뜻이다. 이 경우 정상으로 가는 길과 정상에서 돌아오는 길을 같은 지도 위치에 겹쳐서 가지처럼 짧게 그리고, 분기점 A의 라벨 틀은 지도에 한 번만 둔다(정상 전후로 두 번 두지 않는다) — 정상을 본선 위의 한 점으로 착각해 일직선으로 그리지 말 것.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('### 8. 최종 검수');
+  lines.push('');
+  lines.push('1. 기준 이미지와 동일한 화풍인가?');
+  lines.push(`2. ${courses.length}개 코스가 모두 각자의 지정 색으로 뚜렷이 구분되는가?`);
+  lines.push('3. 공유 구간이 회색 1줄 + 코스명 라벨로만 표시되었는가(겹쳐 칠해지지 않았는가)?');
+  lines.push('4. 각 코스의 순번 순서가 끊기거나 생략된 지점 없이 모두 이어지는가?');
+  lines.push('5. 화살표 방향이 각 코스 안에서 일관되는가?');
+  lines.push('6. 라벨·제목·범례에 글자가 전혀 들어가지 않고 빈 틀로만 남아있는가(한글 자모 깨짐 방지)?');
+  lines.push('7. 범례(코스 안내 박스)에 모든 코스명과 색상이 빠짐없이 나열되었는가?');
+  lines.push('');
+  lines.push('오류가 있다면 스타일을 변경하지 말고 해당 오류만 수정한다.');
+
+  return lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n');
+}
+
+// 공동 경로 지정 모달에서 코스별 지점 선택 드롭다운에 쓸 "원본 이름
+// 순서 리스트"(override/skip 적용 전)를 코스별로 미리 구해둔다.
+// 드롭다운에 보여줄 지점 이름 목록을 "실제 좌표 데이터 표(buildCourseSegmentInfo)"와
+// 완전히 같은 기준으로 만든다 — 들머리/날머리 이름도 반드시 포함해야
+// "날머리끼리 통일" 같은 선택이 가능하다(2026-10-16 4차 수정: 드롭다운이
+// wpt 태그만 봐서 trkpt 기반 들머리/날머리 anchor 이름이 빠져 있었다).
+// 드롭다운에 보여줄 "이 코스의 전체 지점 이름" 목록 — 들머리/날머리를
+// ⭐로 맨 위에 강조한다(2026-10-16 4차 수정: 긴 경유지 목록 속에 묻혀
+// 찾기 어렵다는 문제가 있었다). buildCourseSegmentInfo()와 동일한 기준
+// (wpt 이름이 없으면 들머리/날머리 fallback)으로 만들어야 실제 좌표
+// 데이터 표에 나오는 이름과 드롭다운 선택지가 어긋나지 않는다.
+// 코스 하나의 지점 이름 목록(원본, override 적용 전)을 돌려준다.
+// buildCourseSegmentInfo()와 같은 기준(wpt 이름이 없으면 들머리/날머리
+// fallback)을 써야 실제 좌표 데이터 표와 어긋나지 않는다.
+function getOriginalWaypointNamesForCourse(course) {
+  const wptsRaw = sortWaypointsAlongTrack(course);
+  const startPt = course.points[0];
+  const endPt = course.points[course.points.length - 1];
+  const isRoundTrip = haversineKm(startPt, endPt) <= 0.28;
+  const startName = wptsRaw.length ? wptsRaw[0].name : `들머리(${course.name})`;
+  const endName = isRoundTrip ? startName : (wptsRaw.length > 1 ? wptsRaw[wptsRaw.length - 1].name : `날머리(${course.name})`);
+  const names = Array.from(new Set(wptsRaw.length ? wptsRaw.map(w => w.name) : [startName, endName]));
+  return { names, startName, endName };
+}
+
+// 모든 드롭다운이 똑같이 쓰는 "전체 코스 공통 지점 리스트"를 만든다
+// (2026-10-16 8차: "선택지는 모든 지명 다 보여지게 해. 모든 드롭다운
+// 리스트가 다 동일해" — 코스마다 다른 목록을 보여줬던 게 "같은 지점을
+// 찾기 어렵다"는 혼란을 낳았다). 코스별 들머리/날머리는 ⭐로 표시한다.
+function buildCommonPointOptionsHtml() {
+  const seen = new Set();
+  let html = '<option value="">(선택 안 함)</option>';
+  courses.forEach(course => {
+    const { names, startName, endName } = getOriginalWaypointNamesForCourse(course);
+    names.forEach(n => {
+      if (seen.has(n)) return;
+      seen.add(n);
+      const star = (n === startName || n === endName) ? '⭐ ' : '';
+      html += `<option value="${n}">${star}${n}</option>`;
+    });
+  });
+  return html;
+}
+
+// "좌표 데이터" 버튼을 누르면 곧바로 텍스트를 만들지 않고, 지도 위에 뜨는
+// 모달로 "공동 구간 지정" 화면을 먼저 띄운다. 코스별로 시작~끝 지점을
+// 고르면 그 구간이 다른 코스와 공유 구간으로 통일된다.
+function showConceptNameEditPanel() {
+  if (courses.length === 0) {
+    alert('먼저 코스를 하나 이상 추가해주세요.');
+    return;
+  }
+  if (sharedRouteDeclarations.length === 0 && courses.length >= 2) {
+    addSharedRouteDeclaration();
+  }
+  renderSharedRouteDeclarations();
+  document.getElementById('nameEditOverlay').style.display = 'flex';
+}
+
+function renderSharedRouteDeclarations() {
+  const wrap = document.getElementById('shared-route-declarations');
+  wrap.innerHTML = '';
+
+  if (courses.length < 2) {
+    wrap.innerHTML = '<p class="sub">코스가 2개 이상이어야 공동 구간을 지정할 수 있습니다.</p>';
+    return;
+  }
+
+  const commonOptionsHtml = buildCommonPointOptionsHtml();
+
+  sharedRouteDeclarations.forEach((decl, declIdx) => {
+    const card = document.createElement('div');
+    card.className = 'shared-route-card';
+
+    const head = document.createElement('div');
+    head.className = 'shared-route-card-head';
+    const title = document.createElement('b');
+    title.textContent = `공동 구간 ${declIdx + 1}`;
+    head.appendChild(title);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'shared-route-remove-btn';
+    removeBtn.textContent = '✕ 삭제';
+    removeBtn.addEventListener('click', () => {
+      removeSharedRouteDeclaration(decl.id);
+      renderSharedRouteDeclarations();
+    });
+    head.appendChild(removeBtn);
+    card.appendChild(head);
+
+    const canonicalStartInput = document.createElement('input');
+    const canonicalEndInput = document.createElement('input');
+
+    courses.forEach((course, courseIdx) => {
+      const existing = decl.ranges.find(r => r.courseIdx === courseIdx);
+
+      const row = document.createElement('div');
+      row.className = 'shared-route-course-row';
+
+      const dot = document.createElement('span');
+      dot.className = 'course-color-dot';
+      dot.style.background = course.color;
+      row.appendChild(dot);
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'course-name';
+      nameSpan.textContent = course.name;
+      row.appendChild(nameSpan);
+
+      const startSelect = document.createElement('select');
+      startSelect.innerHTML = commonOptionsHtml;
+      startSelect.value = existing ? existing.startName : '';
+
+      const toSpan = document.createElement('span');
+      toSpan.textContent = '~';
+      toSpan.style.color = '#a0aec0';
+      toSpan.style.flexShrink = '0';
+
+      const endSelect = document.createElement('select');
+      endSelect.innerHTML = commonOptionsHtml;
+      endSelect.value = existing ? existing.endName : '';
+
+      // select를 바꿔도 모달 전체를 다시 그리지 않는다 — 과거에 change마다
+      // 전체를 재호출했더니, 선택을 반영하는 도중 모든 select가 새 DOM으로
+      // 교체되면서 "선택해도 먹통"인 것처럼 보이는 버그가 있었다
+      // (2026-10-16 실사고). 이 select 자신의 값만 ranges 배열에 반영하고,
+      // "공동 지명" 자동 채움 input만 갱신하면 충분하다.
+      function syncRange() {
+        decl.ranges = decl.ranges.filter(r => r.courseIdx !== courseIdx);
+        if (startSelect.value && endSelect.value) {
+          decl.ranges.push({ courseIdx, startName: startSelect.value, endName: endSelect.value });
+        }
+        refreshCanonicalInputs();
+      }
+      startSelect.addEventListener('change', syncRange);
+      endSelect.addEventListener('change', syncRange);
+
+      row.appendChild(startSelect);
+      row.appendChild(toSpan);
+      row.appendChild(endSelect);
+      card.appendChild(row);
+    });
+
+    // 공동 지명은 선택된 시작/끝 이름이 코스 간에 전부 같으면 자동으로
+    // 채운다. 사용자가 직접 고친 뒤에는 선택이 바뀌어도 그 값을 덮어쓰지
+    // 않는다.
+    function refreshCanonicalInputs() {
+      const startCandidates = Array.from(new Set(decl.ranges.map(r => r.startName).filter(Boolean)));
+      const endCandidates = Array.from(new Set(decl.ranges.map(r => r.endName).filter(Boolean)));
+      if (!canonicalStartInput.dataset.manual) {
+        canonicalStartInput.value = startCandidates.length === 1 ? startCandidates[0] : '';
+        decl.canonicalStart = canonicalStartInput.value;
+      }
+      if (!canonicalEndInput.dataset.manual) {
+        canonicalEndInput.value = endCandidates.length === 1 ? endCandidates[0] : '';
+        decl.canonicalEnd = canonicalEndInput.value;
+      }
+      canonicalStartInput.placeholder = startCandidates.length > 1 ? `직접 입력 (후보: ${startCandidates.join(' / ')})` : '시작 지점 이름';
+      canonicalEndInput.placeholder = endCandidates.length > 1 ? `직접 입력 (후보: ${endCandidates.join(' / ')})` : '끝 지점 이름';
+    }
+
+    canonicalStartInput.type = 'text';
+    canonicalStartInput.value = decl.canonicalStart || '';
+    canonicalStartInput.addEventListener('input', () => {
+      canonicalStartInput.dataset.manual = '1';
+      decl.canonicalStart = canonicalStartInput.value.trim();
+    });
+    canonicalEndInput.type = 'text';
+    canonicalEndInput.value = decl.canonicalEnd || '';
+    canonicalEndInput.addEventListener('input', () => {
+      canonicalEndInput.dataset.manual = '1';
+      decl.canonicalEnd = canonicalEndInput.value.trim();
+    });
+    refreshCanonicalInputs();
+
+    const finalRow = document.createElement('div');
+    finalRow.className = 'shared-route-final-row';
+    const finalLabel = document.createElement('span');
+    finalLabel.textContent = '공동 지명:';
+    finalLabel.style.flexShrink = '0';
+    finalLabel.style.color = '#4a5568';
+    finalRow.appendChild(finalLabel);
+    finalRow.appendChild(canonicalStartInput);
+    const tildeSpan = document.createElement('span');
+    tildeSpan.textContent = '~';
+    tildeSpan.style.color = '#a0aec0';
+    finalRow.appendChild(tildeSpan);
+    finalRow.appendChild(canonicalEndInput);
+
+    card.appendChild(finalRow);
+    wrap.appendChild(card);
+  });
+}
+
+function applyConceptNameEditsAndGenerate() {
+  const skippedReasons = applySharedRouteDeclarationsToOverrides();
+  if (skippedReasons.length) {
+    const proceed = confirm(
+      '다음 공동 구간은 입력이 부족해 적용되지 않았습니다:\n\n' +
+      skippedReasons.join('\n') +
+      '\n\n이대로 계속 진행할까요? ("취소"를 누르면 돌아가서 다시 입력할 수 있습니다)'
+    );
+    if (!proceed) return;
+  }
+  document.getElementById('nameEditOverlay').style.display = 'none';
+  showConceptCoordinateText();
+}
+
+function cancelConceptNameEdit() {
+  document.getElementById('nameEditOverlay').style.display = 'none';
+}
+
+function showConceptCoordinateText() {
+  const text = buildMultiCourseCoordinateText();
+  const output = document.getElementById('concept-map-output');
+  const copyBtn = document.getElementById('btn-concept-map-copy');
+  const downloadBtn = document.getElementById('btn-concept-coord-download');
+  const note = document.getElementById('concept-map-note');
+  if (!text) {
+    alert('먼저 코스를 하나 이상 추가해주세요.');
+    return;
+  }
+  output.value = text;
+  output.style.display = 'block';
+  copyBtn.style.display = 'block';
+  if (downloadBtn) downloadBtn.style.display = 'block';
+  note.style.display = 'block';
+  output.focus();
+  output.select();
+}
+
+function downloadConceptCoordinateText() {
+  const text = buildMultiCourseCoordinateText();
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const titleInputEl = document.getElementById('concept-map-title-input');
+  const base = ((titleInputEl && titleInputEl.value.trim()) || 'multi-course').replace(/[\\/:*?"<>|]/g, '_');
+  a.href = url;
+  a.download = `${base}_좌표데이터.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function copyConceptMapPrompt() {
+  const output = document.getElementById('concept-map-output');
+  if (!output.value) return;
+  navigator.clipboard.writeText(output.value).then(() => {
+    const copyBtn = document.getElementById('btn-concept-map-copy');
+    const origText = copyBtn.textContent;
+    copyBtn.textContent = '✅ 복사되었습니다!';
+    setTimeout(() => { copyBtn.textContent = origText; }, 2000);
+  }).catch(() => {
+    output.select();
+    document.execCommand('copy');
+  });
+}
+
+document.getElementById('btn-concept-coord-text').addEventListener('click', showConceptNameEditPanel);
+document.getElementById('btn-name-edit-confirm').addEventListener('click', applyConceptNameEditsAndGenerate);
+document.getElementById('btn-name-edit-cancel').addEventListener('click', cancelConceptNameEdit);
+document.getElementById('btn-add-shared-route').addEventListener('click', () => {
+  addSharedRouteDeclaration();
+  renderSharedRouteDeclarations();
+});
+document.getElementById('nameEditOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'nameEditOverlay') cancelConceptNameEdit();
+});
+document.getElementById('btn-concept-map-copy').addEventListener('click', copyConceptMapPrompt);
+const coordDownloadBtnEl = document.getElementById('btn-concept-coord-download');
+if (coordDownloadBtnEl) coordDownloadBtnEl.addEventListener('click', downloadConceptCoordinateText);
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderColorPalette();
+  initMap();
+});
+</script>
+</body>
+</html>
