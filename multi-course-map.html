@@ -578,20 +578,20 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 찾을 수 있게 한다.
       const arrowDomId = `arrow_${course._uid}_${thisArrowIdx}`;
 
-      // 🐛 2026-10-23 수정(사용자 신고: "경로와 화살표가 겹쳐") — 화살표도
-      // 트랙 좌표 그대로 찍으면 경로선과 완전히 포개진다. 글자와 같은 쪽
-      // (side)으로 작게(ARROW_OFFSET_KM) 띄워 경로선에서 살짝 비켜나게
-      // 하되, 글자(LABEL_OFFSET_BASE_KM)보다는 훨씬 가깝게 둬서 화살표가
-      // "이 지점 근처"라는 위치 정보는 그대로 유지한다.
-      const ARROW_OFFSET_KM = 0.015; // 약 15m
+      // 🐛 2026-10-23 수정(사용자 신고: "화살표가 크고 겹치고") — 여러
+      // 코스가 같은 길을 몰려 지나는 구간(천주봉~환희대 등)에서, 화살표가
+      // 코스마다 같은 거리(15m)만 떨어져 있어 코스가 3개 겹치면 화살표
+      // 끼리도 부딪혔다. 글자처럼 rank(같은 쪽에서 몇 번째 코스인지)에
+      // 비례해 벌어지는 오프셋을 쓰고, 크기도 30px→18px로 줄였다.
+      const ARROW_OFFSET_KM = 0.015 * (rank + 1); // 약 15m, 20m, 25m...
       const arrowPos = offsetLatLon(here, autoBearing + angleAdjust + side * 90, ARROW_OFFSET_KM);
 
       const arrowMarker = new naver.maps.Marker({
         position: new naver.maps.LatLng(arrowPos.lat, arrowPos.lon),
         map,
         icon: {
-          content: `<div id="${arrowDomId}" style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:grab;">${arrowChar}</div>`,
-          anchor: new naver.maps.Point(14, 14)
+          content: `<div id="${arrowDomId}" style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:18px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:grab;">${arrowChar}</div>`,
+          anchor: new naver.maps.Point(9, 9)
         },
         zIndex: 60,
         title: '드래그해서 이 화살표만 원하는 방향으로 돌릴 수 있습니다'
@@ -606,7 +606,7 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 마커로, 화살표 바로 옆(회전과 무관하게 항상 같은 상대 위치)에
       // 작게 둔다. 클릭하면 이 화살표만 →/↔를 전환한다.
       const toggleDomId = `toggle_${course._uid}_${thisArrowIdx}`;
-      const togglePos = offsetLatLon(arrowPos, bearing + 90, 0.008); // 약 8m, 화살표 머리 옆
+      const togglePos = offsetLatLon(arrowPos, bearing + 90, 0.006); // 약 6m, 화살표 머리 옆(화살표 축소에 맞춰 함께 조정)
       const toggleMarker = new naver.maps.Marker({
         position: new naver.maps.LatLng(togglePos.lat, togglePos.lon),
         map,
