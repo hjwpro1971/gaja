@@ -519,12 +519,45 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
   // course.arrowTypeOverrides[arrowIdx] = true(↔)/false(→)/undefined
   // (코스 기본값 따름)로 관리한다.
   if (!course.arrowTypeOverrides) course.arrowTypeOverrides = {};
-  let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
+
+  // 2026-10-23 추가(사용자 요청: "갈림길 빼고 지명과 지명사이엔 화살표가
+  // 하나 이상은 들어가게 해 줘") — 기존엔 코스 총거리/8의 고정 간격으로만
+  // 화살표를 찍어, 지명이 촘촘히 몰린 구간은 그 사이에 화살표가 하나도
+  // 안 들어갈 수 있었다. "갈림길"을 제외한 지명(course.waypoints)마다
+  // 트랙 위 가장 가까운 지점의 누적거리를 구해, 기존 간격 배치 지점과
+  // 합집합으로 화살표를 찍는다 — 간격 배치만으로 그 지명 전후 구간에
+  // 이미 화살표가 있으면 중복으로 추가하지 않는다(최소 간격 이내는 skip).
+  const cumDist = [0];
+  for (let k = 1; k < points.length; k++) cumDist.push(cumDist[k - 1] + haversineKm(points[k - 1], points[k]));
+  const totalDist = cumDist[cumDist.length - 1];
+  const namedWptDists = (course.waypoints || [])
+    .filter(w => w.name && !w.name.includes('갈림길'))
+    .map(w => {
+      let bestIdx = 0, bestD = Infinity;
+      for (let k = 0; k < points.length; k++) {
+        const d = haversineKm(w, points[k]);
+        if (d < bestD) { bestD = d; bestIdx = k; }
+      }
+      return cumDist[bestIdx];
+    })
+    .filter(d => d > 0.05 && d < totalDist - 0.05); // 들머리/날머리 바로 근처는 제외(이미 그쪽 전용 마커가 있음)
+
+  const MIN_ARROW_GAP_KM = Math.min(intervalKm, 0.15); // 지명 보강 화살표끼리/간격 화살표와 너무 가깝게 겹치지 않도록
+  const targetDists = new Set();
+  for (let d = intervalKm; d < totalDist; d += intervalKm) targetDists.add(Math.round(d * 1000) / 1000);
+  namedWptDists.forEach(d => {
+    const tooClose = [...targetDists].some(t => Math.abs(t - d) < MIN_ARROW_GAP_KM);
+    if (!tooClose) targetDists.add(Math.round(d * 1000) / 1000);
+  });
+  const sortedTargets = [...targetDists].sort((a, b) => a - b);
+
   let arrowIdx = 0;
-  for (let i = 1; i < points.length; i++) {
-    distSinceLast += haversineKm(points[i - 1], points[i]);
-    if (distSinceLast >= intervalKm) {
+  let targetPtr = 0;
+  for (let i = 1; i < points.length && targetPtr < sortedTargets.length; i++) {
+    if (cumDist[i] >= sortedTargets[targetPtr]) {
       const thisArrowIdx = arrowIdx++;
+      targetPtr++;
+      {
       const individualAdjust = course.arrowOverrides[thisArrowIdx] || 0;
       const isThisArrowRoundTrip = course.arrowTypeOverrides[thisArrowIdx] !== undefined
         ? course.arrowTypeOverrides[thisArrowIdx]
@@ -612,8 +645,7 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
         },
         zIndex: 60
       }));
-
-      distSinceLast = 0;
+      }
     }
   }
   return markers;
