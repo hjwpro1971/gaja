@@ -3599,10 +3599,20 @@ const GPX_DRAFT_KEY = 'gpxMapDraft';
 // 로 지명을 트랙에서 처음부터 자동 재생성해, 편집한 내용이 통째로
 // 초기화된 것처럼 보였다(2026-09-20 실사고). loadedPoiList가 있으면
 // 그것도 함께 저장해, 복원 시 자동 재생성 대신 이 저장본을 그대로 쓴다.
+// 🐛 2026-10-23 수정(사용자 신고: "왜 다른 메뉴 갔다오면 작업한 것이
+// 다 지워져서 새로해야해") — 지금까지 localStorage 저장 실패(용량
+// 초과 등)를 조용히 catch로 삼켜왔다. 그래서 "분명 편집했는데 왜
+// 사라졌는지" 사용자가 원인을 알 방법이 없었다. 특히 time 필드까지
+// 포인트마다 ISO 문자열로 저장하던 게 트랙이 긴(수천 개 trkpt) 코스
+// 에서 용량을 불필요하게 많이 차지해 초과 가능성을 높였다 — 복원 후엔
+// 통계 재계산에 time이 쓰이지만, 그건 매번 GPX를 새로 불러올 때만
+// 필요하지 draft 복원 시점엔 거의 의미가 없어 저장에서 제외한다.
+// 실패하면 더는 조용히 넘어가지 않고 상단 경고 박스에 사용자가 보는
+// 상태로 알린다.
 function saveGpxDraft(points, baseName, poiList) {
   try {
     localStorage.setItem(GPX_DRAFT_KEY, JSON.stringify({
-      points: points.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele, time: p.time ? p.time.toISOString() : null })),
+      points: points.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele })),
       waypoints: points.waypoints || [],
       baseName,
       poiList: Array.isArray(poiList) ? poiList : null,
@@ -3612,9 +3622,30 @@ function saveGpxDraft(points, baseName, poiList) {
       turnName: (document.getElementById('input-end-name') || {}).value || '',
       specialMarkersMap: (typeof specialMarkersMap !== 'undefined') ? specialMarkersMap : null
     }));
+    clearDraftSaveWarning();
   } catch (e) {
-    // localStorage 용량 초과 등은 자동저장 실패로 조용히 넘어감(핵심 기능인 지도 생성에는 영향 없음)
+    console.warn('gpx draft 자동저장 실패:', e);
+    showDraftSaveWarning(e);
   }
+}
+
+// 자동저장 실패를 화면에 알리는 경고 배너. 경고 박스 자체를 매번 새로
+// 만들지 않고 재사용해 중복 알림이 쌓이지 않게 한다.
+function showDraftSaveWarning(err) {
+  let box = document.getElementById('draft-save-warn-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'draft-save-warn-box';
+    box.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:9999; background:#fed7d7; color:#822727; border:1px solid #fc8181; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:700; box-shadow:0 2px 8px rgba(0,0,0,0.25); max-width:90vw;';
+    document.body.appendChild(box);
+  }
+  box.textContent = `⚠ 편집 내용 자동저장 실패 — 지금 다른 페이지로 이동하면 작업이 사라집니다. 저장(GPX 다운로드)을 먼저 해두세요. (${err && err.name ? err.name : '저장 공간 부족으로 추정'})`;
+  box.style.display = 'block';
+}
+
+function clearDraftSaveWarning() {
+  const box = document.getElementById('draft-save-warn-box');
+  if (box) box.style.display = 'none';
 }
 
 function restoreGpxDraftIfAny() {
