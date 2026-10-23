@@ -940,11 +940,12 @@ async function captureMapImage() {
   btn.textContent = '⏳ 캡처 중...';
 
   try {
-    fitAllCourses();
-    // fitBounds가 지도를 다시 그리는 동안 약간의 지연을 둬 캡처 시점에
-    // 레이아웃이 안정되게 한다.
-    await new Promise(resolve => setTimeout(resolve, 400));
-
+    // 🐛 2026-10-23 수정(사용자 신고: "조금 확대하니 문자가 경로 붙고
+    // 이상하게 보여. 편집한 화면대로 보여야 하는데") — 캡처 직전에
+    // fitAllCourses()로 줌을 "전체 보기"로 강제 리셋했는데, 글자/화살표
+    // 오프셋은 좌표(km) 기준 고정값이라 줌이 달라지면 화면상 크기(픽셀)
+    // 비율이 달라져 사용자가 편집하던 화면과 다르게 보였다. 지금 보고
+    // 있는 줌/위치 그대로 캡처한다.
     const dataUrl = await htmlToImage.toJpeg(mapDiv, {
       filter: captureFilter,
       quality: 0.95,
