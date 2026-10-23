@@ -553,6 +553,12 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
 
   let arrowIdx = 0;
   let targetPtr = 0;
+  // 🐛 2026-10-23 수정(사용자 신고: "글씨가 겹쳐서 안 보여") — 지명 보장
+  // 기능(직전 커밋)으로 화살표가 촘촘해지면서, 화살표마다 매번 그리던
+  // 코스 라벨(A/B 글자)도 같이 촘촘해져 서로 겹쳤다. 화살표는 계속
+  // intervalKm보다 촘촘하게 찍되, 글자는 "마지막으로 그린 지점"과
+  // intervalKm 이상 떨어진 경우에만 그려 라벨 밀도를 분리한다.
+  let lastLabelDist = -Infinity;
   for (let i = 1; i < points.length && targetPtr < sortedTargets.length; i++) {
     if (cumDist[i] >= sortedTargets[targetPtr]) {
       const thisArrowIdx = arrowIdx++;
@@ -634,17 +640,20 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // "자동 계산된 원래 진행방향"(autoBearing + 코스 전체 보정, 개별
       // 화살표 드래그 보정은 제외)만 기준으로 삼아, 화살표를 아무리
       // 돌려도 항상 경로에서 일정하게 떨어진 고정 위치를 유지한다.
-      const labelBaseBearing = autoBearing + angleAdjust;
-      const labelPos = offsetLatLon(here, labelBaseBearing + side * 90, offsetKm);
-      markers.push(new naver.maps.Marker({
-        position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
-        map,
-        icon: {
-          content: `<div style="display:inline-block; font-size:17px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
-          anchor: new naver.maps.Point(9, 9)
-        },
-        zIndex: 60
-      }));
+      if (cumDist[i] - lastLabelDist >= intervalKm) {
+        lastLabelDist = cumDist[i];
+        const labelBaseBearing = autoBearing + angleAdjust;
+        const labelPos = offsetLatLon(here, labelBaseBearing + side * 90, offsetKm);
+        markers.push(new naver.maps.Marker({
+          position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
+          map,
+          icon: {
+            content: `<div style="display:inline-block; font-size:17px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
+            anchor: new naver.maps.Point(9, 9)
+          },
+          zIndex: 60
+        }));
+      }
       }
     }
   }
@@ -674,10 +683,15 @@ function renderAllCourses(preserveView) {
   // 이내"인 것들을 그룹으로 묶고 그룹당 1개(처음 등장한 코스/인덱스)만
   // 표시 대상으로 남긴다 — allowedWptKeys에 들어있는 (course._uid, wIdx)
   // 조합만 아래 코스별 루프에서 실제로 그린다.
+  // 2026-10-23 수정(사용자 요청: "갈림길은 지명에서 제외시켜줘. 아무런
+  // 의미가 없어") — "갈림길"이라는 이름 자체는 코스마다 여러 번 반복
+  // 등장하는 범용 명칭이라 지도에 표시해도 정보 가치가 없고, 오히려
+  // 실제 지명 라벨들끼리 겹치게 만드는 주원인이었다. wpt 수집 단계에서
+  // 아예 제외한다(화살표 배치 기준점으로도 이미 제외 중이던 것과 일관).
   const allWptEntries = [];
   courses.forEach(c => {
     (c.waypoints || []).forEach((w, wIdx) => {
-      if (!w.name) return;
+      if (!w.name || w.name.includes('갈림길')) return;
       allWptEntries.push({ course: c, wIdx, w });
     });
   });
