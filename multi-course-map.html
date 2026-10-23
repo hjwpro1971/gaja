@@ -56,6 +56,9 @@
   .course-rotate-btn:hover { background: #e2e8f0; }
   .course-roundtrip-btn { background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0; line-height: 1.4; }
   .course-roundtrip-btn:hover { background: #e2e8f0; }
+  .course-uturn-btn { width: 100%; background: #edf2f7; color: #2d3748; border: 1px solid #cbd5e0; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; cursor: pointer; }
+  .course-uturn-btn:hover { background: #e2e8f0; }
+  .course-uturn-btn.active { background: #2b6cb0; color: #ffffff; border-color: #2b6cb0; }
 
   .color-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
@@ -253,6 +256,19 @@ let mapMarkers = [];
 // 버튼이 보인다(course._uid + waypoints 배열 인덱스로 식별).
 let selectedWptKey = null;
 
+// 🔁 유턴(U자) 표시 수동 추가 모드(2026-10-23 요청: "봉 끝단에 유턴
+// 화살표를 추가 할 수 있게 해 줘. 수동으로... 화살표 유형이 2개 생긴거고
+// 내가 선택해서 추가할 수있게") — null이면 꺼진 상태, 코스 객체면 그
+// 코스에 유턴 표시를 추가하는 모드. 진행방향 화살표(placeCourseLabels가
+// 자동 간격으로 찍는 →/↔)와 완전히 별개의 두 번째 마커 유형으로,
+// course.uturnMarks: [{lat, lon}, ...]에 영구 저장된다.
+let uturnAddModeCourse = null;
+function setUturnAddMode(course) {
+  uturnAddModeCourse = course;
+  if (map) map.setCursor(course ? 'crosshair' : 'default');
+  renderCourseList();
+}
+
 // ↩️ 실행취소 히스토리(사용자 요청: "복귀 취소 버튼도 있어야 하고") —
 // 화살표 회전/지명 삭제/코스 삭제처럼 편집성 동작 직전에 courses 전체를
 // 깊은 복사해 스택에 쌓는다. courses 안에는 순수 데이터(숫자/문자열/
@@ -336,6 +352,19 @@ function initMap() {
   map = new naver.maps.Map('map', {
     center: new naver.maps.LatLng(36.5, 127.8),
     zoom: 7,
+  });
+
+  // 유턴 추가 모드일 때만 지도 클릭을 "이 위치에 유턴 표시 추가"로
+  // 처리한다(일반 상태에서는 지도를 눌러도 아무 일도 안 일어남 — 코스
+  // 보기 화면이라 클릭=편집은 모드가 켜졌을 때만 적용).
+  naver.maps.Event.addListener(map, 'click', (e) => {
+    if (!uturnAddModeCourse) return;
+    const course = uturnAddModeCourse;
+    if (!course.uturnMarks) course.uturnMarks = [];
+    pushHistory();
+    course.uturnMarks.push({ lat: e.coord.y, lon: e.coord.x });
+    setUturnAddMode(null); // 한 번 찍으면 모드 자동 종료(실수로 연속 추가 방지)
+    renderAllCourses(true);
   });
 }
 
@@ -479,12 +508,17 @@ function setupArrowDrag(domId, course, arrowIdx, autoBearingWithCourseAdjust) {
 // 가능한 액션으로 기록한다.
 function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx, course) {
   const markers = [];
-  const arrowChar = isRoundTrip ? '↔' : '→';
   const side = courseIdx % 2 === 0 ? 1 : -1; // +1=진행방향 왼쪽(+90도), -1=오른쪽(-90도)
   const rank = Math.floor(courseIdx / 2); // 같은 쪽에서 몇 번째인지(0,1,2,...)
   const offsetKm = LABEL_OFFSET_BASE_KM * (rank + 1);
   const angleAdjust = course.angleOffsetDeg || 0;
   if (!course.arrowOverrides) course.arrowOverrides = {};
+  // 2026-10-23 추가(사용자 요청: "즉죽봉, 구룡봉은 왕복구간이라서
+  // 화살표를 <-> 나와야 하는데 내가 변경하게 해 줘") — 코스 전체
+  // isRoundTripManual과 별개로, 화살표 하나하나를 →/↔로 전환할 수 있게
+  // course.arrowTypeOverrides[arrowIdx] = true(↔)/false(→)/undefined
+  // (코스 기본값 따름)로 관리한다.
+  if (!course.arrowTypeOverrides) course.arrowTypeOverrides = {};
   let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
   let arrowIdx = 0;
   for (let i = 1; i < points.length; i++) {
@@ -492,6 +526,10 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
     if (distSinceLast >= intervalKm) {
       const thisArrowIdx = arrowIdx++;
       const individualAdjust = course.arrowOverrides[thisArrowIdx] || 0;
+      const isThisArrowRoundTrip = course.arrowTypeOverrides[thisArrowIdx] !== undefined
+        ? course.arrowTypeOverrides[thisArrowIdx]
+        : isRoundTrip;
+      const arrowChar = isThisArrowRoundTrip ? '↔' : '→';
       const autoBearing = bearingDeg(points[i - 1], points[i]);
       const bearing = (autoBearing + angleAdjust + individualAdjust + 360) % 360;
       const here = points[i];
@@ -524,6 +562,34 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
       // 직후에는 아직 content가 렌더링되지 않았을 수 있으므로 다음
       // 프레임으로 미룬다.
       setTimeout(() => setupArrowDrag(arrowDomId, course, thisArrowIdx, autoBearing + angleAdjust), 0);
+
+      // ⇄ 타입 토글 버튼 — 화살표 회전(드래그)과 충돌하지 않도록 별도
+      // 마커로, 화살표 바로 옆(회전과 무관하게 항상 같은 상대 위치)에
+      // 작게 둔다. 클릭하면 이 화살표만 →/↔를 전환한다.
+      const toggleDomId = `toggle_${course._uid}_${thisArrowIdx}`;
+      const togglePos = offsetLatLon(arrowPos, bearing + 90, 0.008); // 약 8m, 화살표 머리 옆
+      const toggleMarker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(togglePos.lat, togglePos.lon),
+        map,
+        icon: {
+          content: `<div id="${toggleDomId}" style="width:16px; height:16px; border-radius:50%; background:#ffffff; border:1.5px solid ${color}; display:flex; align-items:center; justify-content:center; font-size:10px; color:${color}; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">⇄</div>`,
+          anchor: new naver.maps.Point(8, 8)
+        },
+        zIndex: 61,
+        title: '클릭하면 이 화살표를 편도(→)/왕복(↔)으로 전환합니다'
+      });
+      markers.push(toggleMarker);
+      setTimeout(() => {
+        const toggleEl = document.getElementById(toggleDomId);
+        if (toggleEl) {
+          toggleEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pushHistory();
+            course.arrowTypeOverrides[thisArrowIdx] = !isThisArrowRoundTrip;
+            renderAllCourses(true);
+          });
+        }
+      }, 0);
 
       // 글자는 진행방향 기준 좌/우(side) 중 이 코스에 고정된 쪽으로,
       // offsetKm만큼 띄운 위치에 배치 — 경로선/화살표와 겹치지 않으면서도
@@ -569,6 +635,33 @@ function renderAllCourses(preserveView) {
   const firstLL = new naver.maps.LatLng(firstPt.lat, firstPt.lon);
   const bounds = new naver.maps.LatLngBounds(firstLL, firstLL);
 
+  // 🐛 2026-10-23 수정(사용자 신고: "A,B,C,코스를 불러오니 지명이
+  // 겹쳐져서.. 지울려면 3번을 지워야해") — A/B/C 코스가 같은 지점(구룡봉
+  // 등)을 지나면 각 코스의 wpt가 독립적으로 찍혀 같은 이름이 코스 수만큼
+  // 중복 표시됐다. 모든 코스의 wpt를 미리 한데 모아, "같은 이름 + 30m
+  // 이내"인 것들을 그룹으로 묶고 그룹당 1개(처음 등장한 코스/인덱스)만
+  // 표시 대상으로 남긴다 — allowedWptKeys에 들어있는 (course._uid, wIdx)
+  // 조합만 아래 코스별 루프에서 실제로 그린다.
+  const allWptEntries = [];
+  courses.forEach(c => {
+    (c.waypoints || []).forEach((w, wIdx) => {
+      if (!w.name) return;
+      allWptEntries.push({ course: c, wIdx, w });
+    });
+  });
+  const allowedWptKeys = new Set();
+  const consumed = new Array(allWptEntries.length).fill(false);
+  for (let a = 0; a < allWptEntries.length; a++) {
+    if (consumed[a]) continue;
+    consumed[a] = true;
+    allowedWptKeys.add(`${allWptEntries[a].course._uid}_${allWptEntries[a].wIdx}`);
+    for (let b = a + 1; b < allWptEntries.length; b++) {
+      if (consumed[b]) continue;
+      if (allWptEntries[b].w.name !== allWptEntries[a].w.name) continue;
+      if (haversineKm(allWptEntries[a].w, allWptEntries[b].w) <= 0.03) consumed[b] = true;
+    }
+  }
+
   courses.forEach((course, idx) => {
     const path = course.points.map(p => new naver.maps.LatLng(p.lat, p.lon));
     path.forEach(ll => bounds.extend(ll));
@@ -610,6 +703,60 @@ function renderAllCourses(preserveView) {
       mapMarkers.push(marker);
     });
 
+    // 🔁 유턴(U자) 표시 — 진행방향 화살표(→/↔)와는 별개의 두 번째 마커
+    // 유형. course.uturnMarks에 저장된 좌표마다 U자 아이콘을 찍는다.
+    // 클릭하면 선택→✕ 삭제(지명과 동일한 "선택 후 삭제" 패턴)로 지운다.
+    (course.uturnMarks || []).forEach((u, uIdx) => {
+      const uKey = `uturn_${course._uid}_${uIdx}`;
+      const isSelected = selectedWptKey === uKey;
+      const uDomId = `uturnmark_${uKey}`;
+      const uXDomId = `uturnx_${uKey}`;
+      const marker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(u.lat, u.lon),
+        map,
+        icon: {
+          content: `<div id="${uDomId}" style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+            <div style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:#ffffff; border:2px solid ${course.color}; font-size:13px; font-weight:900; color:${course.color}; box-shadow:0 1px 3px rgba(0,0,0,0.4);">↩</div>
+            ${isSelected ? `<span id="${uXDomId}" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
+          </div>`,
+          anchor: new naver.maps.Point(11, 11)
+        },
+        zIndex: 62,
+        title: isSelected ? '✕를 클릭하면 이 유턴 표시를 삭제합니다' : '클릭하면 이 유턴 표시를 선택합니다'
+      });
+      mapMarkers.push(marker);
+      setTimeout(() => {
+        if (isSelected) {
+          const xEl = document.getElementById(uXDomId);
+          if (xEl) {
+            xEl.addEventListener('click', (e) => {
+              e.stopPropagation();
+              pushHistory();
+              course.uturnMarks.splice(uIdx, 1);
+              selectedWptKey = null;
+              renderAllCourses(true);
+            });
+          }
+          const bodyEl = document.getElementById(uDomId);
+          if (bodyEl) {
+            bodyEl.addEventListener('click', (e) => {
+              if (e.target.id === uXDomId) return;
+              selectedWptKey = null;
+              renderAllCourses(true);
+            });
+          }
+        } else {
+          const el = document.getElementById(uDomId);
+          if (el) {
+            el.addEventListener('click', () => {
+              selectedWptKey = uKey;
+              renderAllCourses(true);
+            });
+          }
+        }
+      }, 0);
+    });
+
     // 2026-10-23 수정(사용자 신고: "지명이 맵이 있는데 그 지명이 안
     // 나오네") — 들머리/날머리만 찍고 중간 wpt(억새능선, 헬리포트 등
     // gpx-map.html에서 편집해둔 지명)는 생략해왔는데, 실제로 그 지명
@@ -627,6 +774,7 @@ function renderAllCourses(preserveView) {
     (course.waypoints || []).forEach((w, wIdx) => {
       const isTerminal = haversineKm(w, start) <= 0.03 || haversineKm(w, end) <= 0.03;
       if (isTerminal) return;
+      if (!allowedWptKeys.has(`${course._uid}_${wIdx}`)) return; // 다른 코스의 같은 지명으로 이미 표시됨
       const wptKey = `${course._uid}_${wIdx}`;
       const isSelected = selectedWptKey === wptKey;
       const wptDomId = `wpt_${wptKey}`;
@@ -802,6 +950,9 @@ function renderCourseList() {
         <span class="course-rotate-label">화살표 표시: ${course.isRoundTripManual ? '↔ 왕복' : '→ 편도'}</span>
         <button class="course-roundtrip-btn" type="button" title="이 코스를 왕복(↔)/편도(→)로 전환합니다">${course.isRoundTripManual ? '→ 편도로' : '↔ 왕복으로'}</button>
       </div>
+      <div class="course-item-row2">
+        <button class="course-uturn-btn" type="button" title="이 모드를 켠 뒤 지도를 클릭하면 그 위치에 유턴(U자) 표시가 찍힙니다">↩️ 유턴 표시 추가</button>
+      </div>
     `;
     // 🧭 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 수정하게 해 줘
     // 화살표 돌릴수 있도록") — 자동 계산된 진행방향 화살표가 지형상
@@ -839,6 +990,19 @@ function renderCourseList() {
       renderCourseList();
       renderAllCourses(true);
     });
+    // 2026-10-23 추가(사용자 요청: "봉 끝단에 유턴 화살표를 추가 할 수
+    // 있게 해 줘. 수동으로") — 이 버튼을 누르면 "유턴 추가 모드"가 켜져
+    // 다음 지도 클릭이 이 코스에 유턴 표시를 추가하는 걸로 처리된다.
+    item.querySelector('.course-uturn-btn').addEventListener('click', (e) => {
+      if (uturnAddModeCourse === course) {
+        setUturnAddMode(null);
+      } else {
+        setUturnAddMode(course);
+      }
+    });
+    if (uturnAddModeCourse === course) {
+      item.querySelector('.course-uturn-btn').classList.add('active');
+    }
     el.appendChild(item);
   });
 }
