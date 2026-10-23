@@ -247,6 +247,9 @@ let courses = [];
 let map = null;
 let mapPolylines = [];
 let mapMarkers = [];
+// 지도 위에서 "선택된" 지명(wpt) 하나만 추적 — 선택된 것만 ✕ 삭제
+// 버튼이 보인다(course._uid + waypoints 배열 인덱스로 식별).
+let selectedWptKey = null;
 
 // ↩️ 실행취소 히스토리(사용자 요청: "복귀 취소 버튼도 있어야 하고") —
 // 화살표 회전/지명 삭제/코스 삭제처럼 편집성 동작 직전에 courses 전체를
@@ -401,6 +404,69 @@ function offsetLatLon(pt, bearingDegVal, distKm) {
 // 계산이 지형 특성상 어색하게 나오는 구간을 코스 단위로 통째로 보정.
 const LABEL_OFFSET_BASE_KM = 0.045; // 약 45m
 
+// 화살표 div를 손으로 잡고 자유각으로 돌릴 수 있게 한다(2026-10-23 요청:
+// "화살표만 내가 잡고 돌리수 있게 해"). 화면 픽셀 좌표 기준으로 "화살표
+// 중심→마우스 포인터" 각도를 구해 그대로 회전에 반영한다(지도 자체를
+// 패닝/줌하는 동안은 막아 실수로 지도가 끌리지 않게 한다). 저장값은
+// "자동 계산 각도(autoBearingWithCourseAdjust) 대비 상대 보정각"으로
+// 환산해 course.arrowOverrides에 넣는다 — 코스를 다시 그리거나 코스
+// 전체 각도를 조절해도 이 화살표만의 "추가 회전"이라는 의미가 유지된다.
+function setupArrowDrag(domId, course, arrowIdx, autoBearingWithCourseAdjust) {
+  const el = document.getElementById(domId);
+  if (!el) return;
+
+  el.addEventListener('mousedown', startDrag, { passive: false });
+  el.addEventListener('touchstart', startDrag, { passive: false });
+
+  function startDrag(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (map) map.setOptions({ draggable: false });
+
+    const rect = el.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    function pointerXY(ev) {
+      if (ev.touches && ev.touches[0]) return [ev.touches[0].clientX, ev.touches[0].clientY];
+      return [ev.clientX, ev.clientY];
+    }
+
+    function angleFromCenter(ev) {
+      const [px, py] = pointerXY(ev);
+      // 화면 좌표계는 y가 아래로 증가하므로, "북쪽(화면 위)=0도, 시계
+      // 방향으로 증가"하는 bearing 정의에 맞추려면 atan2(dx, -dy)를 쓴다.
+      const dx = px - centerX;
+      const dy = py - centerY;
+      return (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    }
+
+    function handleMove(moveEvent) {
+      const ang = angleFromCenter(moveEvent);
+      el.style.transform = `rotate(${ang}deg)`;
+    }
+
+    function handleEnd(endEvent) {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      if (map) map.setOptions({ draggable: true });
+
+      const finalAngle = angleFromCenter(endEvent.changedTouches ? endEvent.changedTouches[0] : endEvent);
+      pushHistory();
+      const relativeAdjust = (finalAngle - autoBearingWithCourseAdjust + 360) % 360;
+      course.arrowOverrides[arrowIdx] = relativeAdjust;
+      renderAllCourses(true);
+    }
+
+    window.addEventListener('mousemove', handleMove, { passive: false });
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('touchend', handleEnd);
+  }
+}
+
 // 2026-10-23 추가(사용자 요청: "화살표 방향을 내가 개별도 조절할 수
 // 있게 해 줘. 전체를 한꺼번에 하는게 아니고") — 코스 전체 angleOffsetDeg
 // 하나로는 특정 구간 화살표만 따로 못 돌렸다. 화살표마다 코스 안에서의
@@ -424,26 +490,30 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
     if (distSinceLast >= intervalKm) {
       const thisArrowIdx = arrowIdx++;
       const individualAdjust = course.arrowOverrides[thisArrowIdx] || 0;
-      const bearing = (bearingDeg(points[i - 1], points[i]) + angleAdjust + individualAdjust + 360) % 360;
+      const autoBearing = bearingDeg(points[i - 1], points[i]);
+      const bearing = (autoBearing + angleAdjust + individualAdjust + 360) % 360;
       const here = points[i];
+      // 2026-10-23 수정(사용자 요청: "화살표만 내가 잡고 돌리수 있게 해")
+      // — 클릭 15도 단위 대신, div를 직접 드래그해 자유각으로 회전시킨다.
+      // DOM id로 화살표를 식별해 드래그 핸들러(아래 setupArrowDrag)가
+      // 찾을 수 있게 한다.
+      const arrowDomId = `arrow_${course._uid}_${thisArrowIdx}`;
 
       const arrowMarker = new naver.maps.Marker({
         position: new naver.maps.LatLng(here.lat, here.lon),
         map,
         icon: {
-          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:pointer;">${arrowChar}</div>`,
+          content: `<div id="${arrowDomId}" style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1; cursor:grab;">${arrowChar}</div>`,
           anchor: new naver.maps.Point(14, 14)
         },
         zIndex: 60,
-        title: '클릭하면 이 화살표만 15도 회전합니다'
-      });
-      naver.maps.Event.addListener(arrowMarker, 'click', () => {
-        const prev = course.arrowOverrides[thisArrowIdx] || 0;
-        pushHistory();
-        course.arrowOverrides[thisArrowIdx] = (prev + 15) % 360;
-        renderAllCourses(true);
+        title: '드래그해서 이 화살표만 원하는 방향으로 돌릴 수 있습니다'
       });
       markers.push(arrowMarker);
+      // DOM이 실제로 지도에 붙은 뒤에야 이벤트를 걸 수 있다 — 마커 생성
+      // 직후에는 아직 content가 렌더링되지 않았을 수 있으므로 다음
+      // 프레임으로 미룬다.
+      setTimeout(() => setupArrowDrag(arrowDomId, course, thisArrowIdx, autoBearing + angleAdjust), 0);
 
       // 글자는 진행방향 기준 좌/우(side) 중 이 코스에 고정된 쪽으로,
       // offsetKm만큼 띄운 위치에 배치 — 경로선/화살표와 겹치지 않으면서도
@@ -525,34 +595,70 @@ function renderAllCourses(preserveView) {
     // 보이면 사용자가 직접 조정하겠다는 전제). 들머리/날머리 자체는
     // 위에서 이미 표시했으니 중복 방지로 제외하고 나머지만 작은 점
     // +라벨로 표시한다.
-    // 2026-10-23 추가(사용자 요청: "지명도 삭제 할 수 있게 해 줘") — 점을
-    // 클릭하면 확인 후 course.waypoints에서 바로 제거한다. wpt 자체에
-    // 고유 id가 없는 GPX 원본이 많아, 같은 좌표/이름 조합(wRef)으로
-    // 배열에서 정확히 이 항목만 찾아 지운다(splice는 인덱스가 재렌더링
-    // 때마다 바뀔 수 있어 쓰지 않는다).
-    (course.waypoints || []).forEach(w => {
+    // 2026-10-23 수정(사용자 요청: "지명은 선택하면 x 표시 나오게 해서
+    // 그것 클릭하면 지워지게 해 줘") — 클릭 즉시 confirm 삭제 대신,
+    // 클릭하면 "선택" 상태가 되어 옆에 ✕가 나타나고 그 ✕를 눌러야
+    // 삭제된다(gpx-map.html의 지명 편집 UX와 동일 원칙 — 실수로 바로
+    // 지워지지 않게). selectedWpt(전역, course._uid+wpt 식별)로 선택
+    // 상태를 추적하고, 다른 곳을 클릭하면 선택이 풀린다.
+    (course.waypoints || []).forEach((w, wIdx) => {
       const isTerminal = haversineKm(w, start) <= 0.03 || haversineKm(w, end) <= 0.03;
       if (isTerminal) return;
+      const wptKey = `${course._uid}_${wIdx}`;
+      const isSelected = selectedWptKey === wptKey;
+      const wptDomId = `wpt_${wptKey}`;
+      const xDomId = `wptx_${wptKey}`;
       const marker = new naver.maps.Marker({
         position: new naver.maps.LatLng(w.lat, w.lon),
         map,
         icon: {
-          content: `<div style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+          content: `<div id="${wptDomId}" style="display:flex; align-items:center; gap:3px; cursor:pointer;">
             <div style="width:8px;height:8px;border-radius:50%;background:${course.color};border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.4); flex-shrink:0;"></div>
             <span style="font-size:11px; font-weight:700; color:${course.color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${w.name || ''}</span>
+            ${isSelected ? `<span id="${xDomId}" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
           </div>`,
           anchor: new naver.maps.Point(4, 4)
         },
-        title: `클릭하면 "${w.name || '이 지명'}"을 삭제합니다`
-      });
-      naver.maps.Event.addListener(marker, 'click', () => {
-        if (!confirm(`"${w.name || '이 지명'}"을 삭제할까요?`)) return;
-        pushHistory();
-        const i = course.waypoints.indexOf(w);
-        if (i !== -1) course.waypoints.splice(i, 1);
-        renderAllCourses(true);
+        title: isSelected ? `✕를 클릭하면 "${w.name || '이 지명'}"을 삭제합니다` : `클릭하면 "${w.name || '이 지명'}"을 선택합니다`
       });
       mapMarkers.push(marker);
+
+      // DOM이 실제로 지도에 붙은 뒤 직접 리스너를 건다(마커 생성 직후
+      // content가 아직 안 붙어있을 수 있어 다음 프레임으로 미룸) —
+      // naver.maps.Event의 클릭 콜백 인자에서 원본 DOM 이벤트/target을
+      // 안정적으로 얻기 어려워, div에 직접 addEventListener하는 쪽이
+      // 화살표 드래그(setupArrowDrag)와도 일관된다.
+      setTimeout(() => {
+        if (isSelected) {
+          const xEl = document.getElementById(xDomId);
+          if (xEl) {
+            xEl.addEventListener('click', (e) => {
+              e.stopPropagation();
+              pushHistory();
+              const i = course.waypoints.indexOf(w);
+              if (i !== -1) course.waypoints.splice(i, 1);
+              selectedWptKey = null;
+              renderAllCourses(true);
+            });
+          }
+          const bodyEl = document.getElementById(wptDomId);
+          if (bodyEl) {
+            bodyEl.addEventListener('click', (e) => {
+              if (e.target.id === xDomId) return; // ✕는 위에서 이미 처리
+              selectedWptKey = null;
+              renderAllCourses(true);
+            });
+          }
+        } else {
+          const el = document.getElementById(wptDomId);
+          if (el) {
+            el.addEventListener('click', () => {
+              selectedWptKey = wptKey;
+              renderAllCourses(true);
+            });
+          }
+        }
+      }, 0);
     });
   });
 
@@ -765,6 +871,7 @@ document.getElementById('btn-add-course').addEventListener('click', () => {
 
   const stats = computeStats(pendingGpxData.points);
   courses.push({
+    _uid: 'c' + Date.now() + Math.floor(Math.random() * 1000), // 화살표 드래그 DOM id 충돌 방지용
     name,
     color: selectedColor,
     points: pendingGpxData.points,
