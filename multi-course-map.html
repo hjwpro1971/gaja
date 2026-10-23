@@ -350,13 +350,25 @@ function offsetLatLon(pt, bearingDegVal, distKm) {
 // 약간 옆으로 떨어진 "A" 코스 라벨을 각각 배치한다(2026-10-23 요청 —
 // "활사표가 경로 따라서 가는 경로로 방향이 되게... A,B 글짜가 경로에서
 // 약간 떨어진 상태로... 왕복구간은 양쪽머리 화살표로"). 화살표는 경로
-// 위에서 회전만 시키고, 글자는 수직 방향으로 LABEL_OFFSET_KM만큼 띄워
-// 화살표/경로선과 겹치지 않게 한다. isRoundTrip이면 "→"가 아니라
-// 양쪽 머리 "↔"를 써서 왕복(같은 길을 되짚어 감)임을 표시한다.
-const LABEL_OFFSET_KM = 0.025; // 약 25m
-function placeCourseLabels(points, label, color, intervalKm, isRoundTrip) {
+// 위에서 진행방향 그대로 회전시키고(경로가 꺾이는 구간마다 다시 계산),
+// 글자는 수직 방향으로 띄워 화살표/경로선과 겹치지 않게 한다.
+// isRoundTrip이면 "→"가 아니라 양쪽 머리 "↔"를 써서 왕복(같은 길을
+// 되짚어 감)임을 표시한다.
+//
+// 코스가 여러 개 겹쳐 지날 때 "A는 위, B는 아래"처럼 지도 절대방향으로
+// 고정하는 건 불가능하다 — 경로가 북→동→남으로 꺾이면 "위"가 가리키는
+// 실제 방향도 함께 바뀌기 때문이다(2026-10-23 사용자 피드백: "a,b,c
+// 글씨가 안 겹치게... A는 일관성 있게 경로 위쪽에"). 대신 "진행방향
+// 기준 좌/우"로 코스마다 하나씩 고정하고(짝수 인덱스=왼쪽, 홀수=오른쪽),
+// 코스가 3개 이상이면 같은 쪽끼리 띄우는 거리를 점점 늘려(25m, 50m,
+// 75m...) 여러 코스가 같은 길을 몰려 지나가도 글자가 겹치지 않게 한다.
+const LABEL_OFFSET_BASE_KM = 0.025; // 약 25m
+function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, courseIdx) {
   const markers = [];
   const arrowChar = isRoundTrip ? '↔' : '→';
+  const side = courseIdx % 2 === 0 ? 1 : -1; // +1=진행방향 왼쪽(+90도), -1=오른쪽(-90도)
+  const rank = Math.floor(courseIdx / 2); // 같은 쪽에서 몇 번째인지(0,1,2,...)
+  const offsetKm = LABEL_OFFSET_BASE_KM * (rank + 1);
   let distSinceLast = intervalKm; // 시작점 바로 다음부터도 하나 찍히도록
   for (let i = 1; i < points.length; i++) {
     distSinceLast += haversineKm(points[i - 1], points[i]);
@@ -368,22 +380,22 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip) {
         position: new naver.maps.LatLng(here.lat, here.lon),
         map,
         icon: {
-          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:15px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1;">${arrowChar}</div>`,
-          anchor: new naver.maps.Point(7, 7)
+          content: `<div style="display:inline-block; transform:rotate(${bearing}deg); transform-origin:center; font-size:30px; font-weight:900; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; line-height:1;">${arrowChar}</div>`,
+          anchor: new naver.maps.Point(14, 14)
         },
         zIndex: 60
       }));
 
-      // 글자는 진행방향에 수직(+90도)으로 띄운 위치에 배치 — 경로선/
-      // 화살표와 겹치지 않으면서도 바로 옆에 붙어 어느 선 라벨인지
-      // 헷갈리지 않는다.
-      const labelPos = offsetLatLon(here, bearing + 90, LABEL_OFFSET_KM);
+      // 글자는 진행방향 기준 좌/우(side) 중 이 코스에 고정된 쪽으로,
+      // offsetKm만큼 띄운 위치에 배치 — 경로선/화살표와 겹치지 않으면서도
+      // 같은 코스 안에서는 항상 같은 쪽에 붙어 일관되게 보인다.
+      const labelPos = offsetLatLon(here, bearing + side * 90, offsetKm);
       markers.push(new naver.maps.Marker({
         position: new naver.maps.LatLng(labelPos.lat, labelPos.lon),
         map,
         icon: {
-          content: `<div style="display:inline-block; font-size:13px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${label}</div>`,
-          anchor: new naver.maps.Point(7, 7)
+          content: `<div style="display:inline-block; font-size:26px; font-weight:800; color:${color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap; line-height:1;">${label}</div>`,
+          anchor: new naver.maps.Point(14, 14)
         },
         zIndex: 60
       }));
@@ -424,7 +436,7 @@ function renderAllCourses() {
     const courseStart = course.points[0];
     const courseEnd = course.points[course.points.length - 1];
     const courseIsRoundTrip = haversineKm(courseStart, courseEnd) <= 0.28;
-    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip));
+    mapMarkers.push(...placeCourseLabels(course.points, label, course.color, intervalKm, courseIsRoundTrip, idx));
 
     // 들머리/날머리 마커만 표시(코스가 많으면 중간 wpt까지 다 찍으면 지도가 너무 복잡해짐)
     const start = course.points[0];
