@@ -572,7 +572,7 @@ function placeCourseLabels(points, label, color, intervalKm, isRoundTrip, course
         position: new naver.maps.LatLng(togglePos.lat, togglePos.lon),
         map,
         icon: {
-          content: `<div id="${toggleDomId}" style="width:16px; height:16px; border-radius:50%; background:#ffffff; border:1.5px solid ${color}; display:flex; align-items:center; justify-content:center; font-size:10px; color:${color}; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">⇄</div>`,
+          content: `<div id="${toggleDomId}" class="capture-hide" style="width:16px; height:16px; border-radius:50%; background:#ffffff; border:1.5px solid ${color}; display:flex; align-items:center; justify-content:center; font-size:10px; color:${color}; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.3);">⇄</div>`,
           anchor: new naver.maps.Point(8, 8)
         },
         zIndex: 61,
@@ -690,14 +690,19 @@ function renderAllCourses(preserveView) {
     // 들머리/날머리 마커
     const start = course.points[0];
     const end = course.points[course.points.length - 1];
+    // 🐛 2026-10-23 수정(사용자 신고: "들머리, 날머리가 빠졌고") —
+    // zIndex를 지정하지 않아 화살표(60~62)보다 낮은 기본값으로 깔려,
+    // 코스가 겹치는 구간에서 다른 마커에 가려 안 보였다. 지명보다도
+    // 위(65)로 올려 항상 보이게 한다.
     [{ pt: start, label: course.name + ' 시작' }, { pt: end, label: course.name + ' 끝' }].forEach(({ pt, label }) => {
       const marker = new naver.maps.Marker({
         position: new naver.maps.LatLng(pt.lat, pt.lon),
         map,
         icon: {
-          content: `<div style="width:12px;height:12px;border-radius:50%;background:${course.color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>`,
-          anchor: new naver.maps.Point(6, 6)
+          content: `<div style="width:14px;height:14px;border-radius:50%;background:${course.color};border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5);"></div>`,
+          anchor: new naver.maps.Point(7, 7)
         },
+        zIndex: 65,
         title: label
       });
       mapMarkers.push(marker);
@@ -717,7 +722,7 @@ function renderAllCourses(preserveView) {
         icon: {
           content: `<div id="${uDomId}" style="display:flex; align-items:center; gap:3px; cursor:pointer;">
             <div style="display:flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:#ffffff; border:2px solid ${course.color}; font-size:13px; font-weight:900; color:${course.color}; box-shadow:0 1px 3px rgba(0,0,0,0.4);">↩</div>
-            ${isSelected ? `<span id="${uXDomId}" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
+            ${isSelected ? `<span id="${uXDomId}" class="capture-hide" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
           </div>`,
           anchor: new naver.maps.Point(11, 11)
         },
@@ -786,7 +791,7 @@ function renderAllCourses(preserveView) {
           content: `<div id="${wptDomId}" style="display:flex; align-items:center; gap:3px; cursor:pointer;">
             <div style="width:8px;height:8px;border-radius:50%;background:${course.color};border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.4); flex-shrink:0;"></div>
             <span style="font-size:11px; font-weight:700; color:${course.color}; text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff; white-space:nowrap;">${w.name || ''}</span>
-            ${isSelected ? `<span id="${xDomId}" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
+            ${isSelected ? `<span id="${xDomId}" class="capture-hide" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:#ef4444; color:#ffffff; border:1.5px solid #ffffff; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.4);">✕</span>` : ''}
           </div>`,
           anchor: new naver.maps.Point(4, 4)
         },
@@ -850,7 +855,16 @@ function fitAllCourses() {
 // 프롬프트만으로 좌표를 추측해 그리는 것보다 실제 지형과 더 비슷하게 나올
 // 수 있다(gpx-map.html의 전체캡쳐와 동일한 html-to-image 방식 재사용,
 // 2026-10-14 요청).
-const captureFilter = (node) => { if (node.tagName === 'IMG' && node.src && node.src.includes('ssl.pstatic.net')) return false; return true; };
+// 2026-10-23 수정(사용자 신고: "화살펴선택 아이콘 없어야 하고") — 지도
+// 로고 이미지뿐 아니라, 편집 전용 UI(화살표 →/↔ 타입 토글 ⇄, 지명/유턴
+// 삭제 ✕ 버튼)도 캡처 이미지에는 나오면 안 된다. 이런 요소들에 공통
+// class="capture-hide"를 부여해두고, htmlToImage가 각 노드를 순회할 때
+// (자손 포함) 그 클래스가 있으면 통째로 건너뛴다.
+const captureFilter = (node) => {
+  if (node.tagName === 'IMG' && node.src && node.src.includes('ssl.pstatic.net')) return false;
+  if (node.classList && node.classList.contains('capture-hide')) return false;
+  return true;
+};
 
 async function captureMapImage() {
   const warnBox = document.getElementById('capture-warn-box');
