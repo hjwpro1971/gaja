@@ -328,6 +328,12 @@
     .validation-item:last-child { border-bottom: none; }
     .validation-item.ok { color: #2e7d32; }
     .validation-item.warn { color: #e65100; font-weight: 700; }
+    .step-guide {
+      font-size: 11.5px; color: #455a64; background: #eceff1; border-radius: 8px;
+      padding: 6px 10px; margin-bottom: 6px; line-height: 1.5;
+    }
+    .validation-item.info { color: #546e7a; }
+    .validation-item.muted { color: #78909c; font-size: 11.5px; }
     .validation-item .v-link {
       text-decoration: underline; cursor: pointer; color: #1976d2; font-weight: 700;
     }
@@ -404,7 +410,7 @@
     📂
     <input type="file" id="importGpxInput" accept=".gpx" style="display: none;" onchange="importGPX(event)">
   </label>
-  <button class="fab-btn" id="btnRunValidation" onclick="runValidation()" title="산길샘 반영 전 안전 검증 (Fallback/고도/이상치)">🛡️</button>
+  <button class="fab-btn" id="btnRunValidation" onclick="runValidation()" title="④ 대조·검증 — 직선 대체/도약 검사 + 기록된 GPX와 일치 여부 대조(벗어난 구간은 보라색 선)">🛡️</button>
 </div>
 
 <!-- 검증 결과 패널 -->
@@ -461,6 +467,32 @@
   <div class="layer-item" id="lyrTopo" onclick="switchLayer('opentopo')">🌲 오픈토포맵 (전세계)</div>
 </div>
 
+<!-- 📎 기존 경로(불러온 GPX 등)에 새 경유지를 붙이는 모드 — 켜지 않으면 기존 방식 그대로 동작.
+     하단 바(가로 한 줄 flex)에 넣으면 폭이 눌려 깨지므로 독립된 카드로 지도 왼쪽 아래에 띄운다. -->
+<style>
+  .attach-card { position:absolute; left:12px; bottom:84px; z-index:1000; width:262px; padding:8px 10px;
+    background:rgba(255,248,225,0.97); border:1px solid #ffcc80; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.15);
+    pointer-events:auto; font-size:12px; }
+  .attach-card .attach-title { font-weight:800; color:#e65100; margin-bottom:6px; }
+  .attach-card .attach-title span { font-weight:400; color:#718096; }
+  .attach-row { display:flex; gap:5px; flex-wrap:wrap; }
+  .attach-btn { padding:5px 9px; font-size:12px; font-weight:700; color:#334155; background:#ffffff; border:1px solid #cbd5e1;
+    border-radius:8px; cursor:pointer; white-space:nowrap; }
+  .attach-btn:hover { background:#f8fafc; }
+  .attach-btn.attach-active { background:#f57c00; color:#ffffff; border-color:#e65100; }
+  .attach-status { font-size:11.5px; color:#4a5568; margin-top:6px; line-height:1.4; }
+</style>
+<div class="attach-card" id="attachPanel">
+  <div class="attach-title">📎 기존 경로에 붙이기 <span>(불러온 GPX에 경유지 추가)</span></div>
+  <div class="attach-row">
+    <button class="attach-btn" id="btnAttachStart" type="button" onclick="attachSelect('start')" title="기존 경로의 시작점 앞에 새 경유지를 붙입니다">⏮ 시작에</button>
+    <button class="attach-btn" id="btnAttachEnd" type="button" onclick="attachSelect('end')" title="기존 경로의 끝점 뒤에 새 경유지를 붙입니다">⏭ 끝에</button>
+    <button class="attach-btn" id="btnAttachMiddle" type="button" onclick="attachSelect('middle')" title="경로 위 한 점을 기준점으로 골라, 거기서 갈라져 나갔다 같은 점으로 돌아오는 곁가지를 끼웁니다">↳ 중간에 끼우기</button>
+    <button class="attach-btn" id="btnAttachOff" type="button" onclick="attachSelect('off')" style="display:none;" title="붙이기 모드를 끄고 기존 방식으로 돌아갑니다">✖ 끄기</button>
+  </div>
+  <div class="attach-status" id="attachStatus">꺼짐 — 경유지를 찍으면 기존 방식(처음부터 새로 만들기)으로 동작합니다.</div>
+</div>
+
 <!-- 하단 통계 및 조작 패널 -->
 <div class="bottom-panel">
   <!-- 🌟 편집 모드 툴바 (아이콘 중심 + 툴팁) -->
@@ -489,6 +521,10 @@
     </div>
   </div>
 
+  <!-- 작업 순서 안내 (2026-10-24): 재매칭/대조가 따로 있어 순서를 헷갈린다는 지적 -->
+  <div class="step-guide">
+    <b>작업 순서</b> ① 경유지 찍고 등산로 만들기 → ② 편집(✏️ 🔁 🧭) → ③ 🔄 재매칭 → ④ 🛡️ 대조 → ⑤ 💾 저장
+  </div>
   <!-- 🌟 핵심 액션: 등산로 만들기 버튼 -->
   <button class="btn-create-trail" id="btnCreateTrail" onclick="onClickCreateTrailButton()" title="산길 자동 연결">
     🥾 등산로 만들기
@@ -502,7 +538,7 @@
        훑어 매칭(초록)/미매칭(빨강)을 한눈에 보여주는 이 버튼이 다시
        필요해졌다. -->
   <button class="btn-sub-tool" id="btnSnapToPublicData" onclick="snapTrailToPublicData()" title="지금 편집된 경로 모양은 그대로 두고, 각 점을 근처 공공데이터 실측 좌표로 정밀 보정합니다" style="width:100%; margin-top:6px;">
-    🔄 편집한 경로를 공공데이터로 재매칭
+    ③ 🔄 편집한 경로를 공공데이터로 재매칭
   </button>
 
   <div class="status-card">
@@ -745,6 +781,13 @@
   let anomalyMarkers = [];      // 이상치(급격한 도약) 경고 마커들
   const ANOMALY_JUMP_METERS = 150;   // 인접 점 사이 이 거리(m) 이상 벌어지면 이상치로 간주
   let lingeringLines = [];      // "⚠️ 헤맴 구간 찾기"로 표시된 노란색 하이라이트 폴리라인들
+
+  // 🧭 기록된 GPX와의 일치 검증(POST /trail/verify) 상태. hash는 검증을 요청한
+  // 시점의 경로(위경도 전체 순서) 해시로, 현재 경로 해시와 같을 때만 결과가 유효하다.
+  let verifyState = { hash: null, status: 'idle', result: null, error: null };
+  let verifyLines = [];         // 이탈 구간 표시 전용 레이어(경로 데이터·스냅 결과와 분리)
+  let verifyInflight = null;    // 진행 중인 요청(같은 경로 중복 요청 방지)
+  let verifyReqSeq = 0;         // 오래된 응답을 버리기 위한 요청 번호
 
   // 최신 네이버 타일 버전 조회.
   // initMap()의 최초 switchLayer('terrain') 호출은 이 fetch 완료를 기다리지
@@ -1626,6 +1669,8 @@
 
   // 1단계: 마우스로 경유지 찍기
   function addWaypoint(lat, lon) {
+    // 📎 붙이기 모드에서는 불러온 경로를 지우지 않고 '추가 경유지'로만 쌓는다.
+    if (attachMode) { addExtraWaypoint(lat, lon); return; }
     saveHistory();
     waypoints.push({ lat, lon });
 
@@ -1902,10 +1947,253 @@
     return points;
   }
 
+  // ----------------------------------------------------------------------
+  // 📎 기존 경로에 붙이기 (2026-10-24 요청: "GPX_EDITOR에서 기존 GPX를 가져와서 거기에 경로를
+  // 추가하고 싶어. 기존 GPX에 경유지를 추가하고 다시 등산로 만들기를 클릭하면 경로가 생성이 되게",
+  // "시작, 끝점, 중간점 다 붙일 수 있어야" → 중간은 "곁가지 끼우기"로 확정)
+  //
+  // 원래 흐름은 경유지를 하나 찍을 때마다 완성된 경로(allTrailPoints)를 지우고, [등산로 만들기]가 경유지
+  // 전체로 처음부터 다시 계산한다. GPX를 불러오면 경유지가 처음/끝 2개만 남아서, 경유지를 더하면 불러온
+  // 경로가 사라지고 처음-끝 두 점이 새로 라우팅됐다. 그래서 [시작/끝/중간에 붙이기]로 이 모드를 "직접
+  // 켠 때만" 다음과 같이 동작한다(끄면 기존 방식 그대로):
+  //   · 경유지는 extraWaypoints(추가 경유지)에 쌓일 뿐 기존 경로는 건드리지 않는다.
+  //   · [등산로 만들기]는 추가 구간만 계산해 정해진 위치에 끼운다 — 기존 경로의 점은 하나도 바뀌지 않는다.
+  //     끝: 기존 끝점 → 경유지들 / 시작: 경유지들 → 기존 시작점 /
+  //     중간: 기준점 → 경유지들 → 같은 기준점으로 복귀(곁가지). 기준점은 번호가 아니라 좌표로 기억한다
+  //     (그 사이 점을 편집해 번호가 밀려도 안전).
+  // ----------------------------------------------------------------------
+  let attachMode = null;      // null(끔) | 'start' | 'end' | 'middle'
+  let attachAnchor = null;    // 'middle'의 기준점 {lat, lon}
+  let extraWaypoints = [];    // 붙일 새 경유지들(찍은 순서) [{lat, lon}]
+  let extraMarkerLayers = [];
+  let extraGuideLine = null;
+  const ATTACH_PICK_RADIUS_PX = 30;
+
+  function attachChain() {
+    if (!allTrailPoints.length) return [];
+    const first = allTrailPoints[0];
+    const last = allTrailPoints[allTrailPoints.length - 1];
+    if (attachMode === 'end') return [{ lat: last.lat, lon: last.lon }].concat(extraWaypoints);
+    if (attachMode === 'start') return extraWaypoints.concat([{ lat: first.lat, lon: first.lon }]);
+    if (attachMode === 'middle' && attachAnchor) return [attachAnchor].concat(extraWaypoints, [attachAnchor]);
+    return [];
+  }
+
+  function clearExtraLayers() {
+    extraMarkerLayers.forEach(m => { try { map.removeLayer(m); } catch (e) {} });
+    extraMarkerLayers = [];
+    if (extraGuideLine) { try { map.removeLayer(extraGuideLine); } catch (e) {} extraGuideLine = null; }
+  }
+
+  function renderExtraWaypoints() {
+    clearExtraLayers();
+    if (!attachMode || !map) return;
+    if (attachMode === 'middle' && attachAnchor) {
+      const am = L.circleMarker([attachAnchor.lat, attachAnchor.lon], {
+        radius: 9, color: '#e65100', weight: 3, fillColor: '#ffffff', fillOpacity: 1, interactive: false
+      }).addTo(map);
+      extraMarkerLayers.push(am);
+    }
+    const chain = attachChain();
+    if (chain.length >= 2) {
+      extraGuideLine = L.polyline(chain.map(p => [p.lat, p.lon]), {
+        color: '#f57c00', weight: 3, dashArray: '6, 6', opacity: 0.85, interactive: false
+      }).addTo(map);
+    }
+    extraWaypoints.forEach((wp, idx) => {
+      const icon = L.divIcon({
+        className: 'custom-badge-icon',
+        html: `<div class="route-badge" style="background:#f57c00;">➕ ${idx + 1}</div>`,
+        iconAnchor: [20, 12]
+      });
+      const m = L.marker([wp.lat, wp.lon], { icon, draggable: true }).addTo(map);
+      m.on('dragend', (e) => {
+        const pos = e.target.getLatLng();
+        extraWaypoints[idx] = { lat: pos.lat, lon: pos.lng };
+        renderExtraWaypoints();
+      });
+      m.on('contextmenu', (e) => {
+        L.DomEvent.stopPropagation(e);
+        extraWaypoints.splice(idx, 1);
+        renderExtraWaypoints();
+        updateAttachPanel();
+      });
+      extraMarkerLayers.push(m);
+    });
+  }
+
+  function updateAttachPanel() {
+    ['start', 'end', 'middle'].forEach(m => {
+      const b = document.getElementById('btnAttach' + m.charAt(0).toUpperCase() + m.slice(1));
+      if (b) b.classList.toggle('attach-active', attachMode === m);
+    });
+    const off = document.getElementById('btnAttachOff');
+    if (off) off.style.display = attachMode ? '' : 'none';
+    const st = document.getElementById('attachStatus');
+    if (!st) return;
+    if (!attachMode) { st.textContent = '꺼짐 — 경유지를 찍으면 기존 방식(처음부터 새로 만들기)으로 동작합니다.'; return; }
+    const n = extraWaypoints.length;
+    if (attachMode === 'middle' && !attachAnchor) { st.textContent = '① 지도의 빨간 경로 위에서 곁가지를 낼 기준점을 클릭하세요.'; return; }
+    const where = { start: '시작점 앞에', end: '끝점 뒤에', middle: '기준점에서 갈라지는 곁가지로' }[attachMode];
+    st.textContent = n === 0
+      ? `${where} 붙일 경유지를 지도에서 순서대로 클릭하세요.`
+      : `추가 경유지 ${n}개 — [🥾 등산로 만들기]를 누르면 ${where} 연결됩니다. (우클릭=삭제, 드래그=이동)`;
+  }
+
+  function resetAttachState(silent) {
+    attachMode = null;
+    attachAnchor = null;
+    extraWaypoints = [];
+    clearExtraLayers();
+    updateAttachPanel();
+  }
+
+  function attachSelect(mode) {
+    if (mode === 'off') {
+      resetAttachState();
+      showToast('📎 붙이기를 껐습니다. 경유지를 찍으면 기존 방식(처음부터 새로 만들기)으로 동작합니다.');
+      return;
+    }
+    if (allTrailPoints.length < 2) {
+      showToast('📎 먼저 [📂 GPX 불러오기]로 경로를 불러오거나 등산로를 만든 뒤 사용하세요.');
+      return;
+    }
+    resetAttachState(true);
+    attachMode = mode;
+    setEditMode('waypoint');
+    updateAttachPanel();
+    showToast({
+      start: '📎 시작점에 붙이기: 지도에서 경유지를 걷는 순서대로 클릭하세요. 마지막 경유지가 기존 시작점과 이어집니다.',
+      end: '📎 끝점에 붙이기: 지도에서 경유지를 걷는 순서대로 클릭하세요. 기존 끝점에서 이어집니다.',
+      middle: '📎 중간에 끼우기: 먼저 빨간 경로 위에서 곁가지를 낼 기준점을 클릭하세요.'
+    }[mode]);
+  }
+
+  // 클릭 위치에서 화면상 가장 가까운 기존 경로 점의 번호(반경 밖이면 -1)
+  function nearestTrailIdxByPixel(lat, lon) {
+    const cp = map.latLngToContainerPoint([lat, lon]);
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < allTrailPoints.length; i++) {
+      const p = map.latLngToContainerPoint([allTrailPoints[i].lat, allTrailPoints[i].lon]);
+      const d = Math.hypot(p.x - cp.x, p.y - cp.y);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return bd <= ATTACH_PICK_RADIUS_PX ? best : -1;
+  }
+
+  function addExtraWaypoint(lat, lon) {
+    if (attachMode === 'middle' && !attachAnchor) {
+      const idx = nearestTrailIdxByPixel(lat, lon);
+      if (idx < 0) { showToast('📎 기준점은 빨간 경로 위(가까이)를 클릭하세요.'); return; }
+      attachAnchor = { lat: allTrailPoints[idx].lat, lon: allTrailPoints[idx].lon };
+      renderExtraWaypoints();
+      updateAttachPanel();
+      showToast('📌 기준점을 정했습니다. 이제 곁가지로 거쳐 갈 경유지를 순서대로 클릭하세요. 마지막 경유지에서 같은 기준점으로 돌아옵니다.');
+      return;
+    }
+    extraWaypoints.push({ lat, lon });
+    renderExtraWaypoints();
+    updateAttachPanel();
+    showToast(`➕ 추가 경유지 ${extraWaypoints.length}번째 — 다 찍었으면 [🥾 등산로 만들기]를 누르세요.`);
+  }
+
+  async function createExtensionRoute() {
+    if (extraWaypoints.length === 0) { alert('붙일 경유지를 지도에서 먼저 한 개 이상 찍어주세요.'); return; }
+    if (attachMode === 'middle' && !attachAnchor) { alert('기준점을 먼저 정해주세요. 지도의 빨간 경로 위를 클릭하면 됩니다.'); return; }
+
+    const btn = document.getElementById('btnCreateTrail');
+    btn.classList.add('loading');
+    btn.innerText = '⏳ 계산 중...';
+    isCalculating = true;
+    showToast('🥾 추가한 경유지 구간의 실제 등산로 산길을 찾는 중입니다...');
+
+    try {
+      const chain = attachChain();
+      // 'middle' 기준점은 좌표로 기억해 두었으므로 지금 경로에서 가장 가까운 점의 번호를 다시 찾는다.
+      let anchorIdx = -1;
+      if (attachMode === 'middle') {
+        let bd = Infinity;
+        allTrailPoints.forEach((p, i) => {
+          const d = calcDistanceM(attachAnchor.lat, attachAnchor.lon, p.lat, p.lon);
+          if (d < bd) { bd = d; anchorIdx = i; }
+        });
+      }
+
+      // 1) 추가 구간만 계산 — added[0]/마지막은 기존 경로의 이음점과 같은 위치(별칭)다.
+      let added = [];
+      const addedFallback = [];   // added 기준 [시작, 끝]
+      for (let i = 0; i < chain.length - 1; i++) {
+        btn.innerText = `⏳ 계산 중 (${i + 1}/${chain.length - 1})`;
+        const { points: segment, fallback, source } = await fetchTrailSegment(chain[i].lat, chain[i].lon, chain[i + 1].lat, chain[i + 1].lon);
+        segment.forEach(pt => { pt.source = source; });
+        const startIdx = added.length === 0 ? 0 : added.length - 1;
+        (i === 0 ? segment : segment.slice(1)).forEach(pt => added.push(pt));
+        if (fallback) addedFallback.push([startIdx, added.length - 1]);
+      }
+      if (added.length < 2) throw new Error('추가 구간의 경로를 만들지 못했습니다.');
+      added = await fillMissingElevations(added);   // 새 점의 고도만 다듬는다(기존 경로 점은 건드리지 않음)
+      const m = added.length - 1;
+
+      // 2) 기존 경로에 끼운다. 겹침 이음점(별칭)은 기존 점을 그대로 쓰고 새 점에서는 뺀다.
+      saveHistory();   // 되돌리기용 — 변경 직전 상태를 저장(↩️ 한 번으로 원상복구)
+      const base = allTrailPoints.length;
+      let toGlobal;
+      if (attachMode === 'end') {
+        allTrailPoints = allTrailPoints.concat(added.slice(1));
+        toGlobal = k => base - 1 + k;
+      } else if (attachMode === 'start') {
+        allTrailPoints = added.slice(0, m).concat(allTrailPoints);
+        fallbackRanges = fallbackRanges.map(([s, e]) => [s + m, e + m]);
+        toGlobal = k => k;
+      } else {
+        const A = allTrailPoints[anchorIdx];
+        const ins = added.slice(1);
+        ins[ins.length - 1] = { lat: A.lat, lon: A.lon, ele: A.ele, source: ins[ins.length - 1].source };  // 같은 기준점으로 정확히 복귀
+        allTrailPoints.splice(anchorIdx + 1, 0, ...ins);
+        fallbackRanges = fallbackRanges.map(([s, e]) => (s > anchorIdx ? [s + m, e + m] : (e > anchorIdx ? [s, e + m] : [s, e])));
+        toGlobal = k => anchorIdx + k;
+      }
+      addedFallback.forEach(([s, e]) => fallbackRanges.push([toGlobal(s), toGlobal(e)]));
+
+      // 3) 화면/상태 갱신
+      const first = allTrailPoints[0], last = allTrailPoints[allTrailPoints.length - 1];
+      waypoints = [{ lat: first.lat, lon: first.lon }, { lat: last.lat, lon: last.lon }];
+      const addedCount = extraWaypoints.length;
+      extraWaypoints = [];
+      attachAnchor = null;
+      renderExtraWaypoints();
+      updateAttachPanel();
+      if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
+      renderWaypoints();
+      if (!trailPolyline) {
+        trailPolyline = L.polyline([], { color: '#d32f2f', weight: 6, opacity: 0.95, interactive: false }).addTo(map);
+      }
+      trailPolyline.setLatLngs(trailPointsToSegments(allTrailPoints));
+      renderTrailAndHandles();
+      updateTrailStats();
+      renderFallbackHighlights();
+      map.fitBounds(trailPolyline.getBounds(), { padding: [60, 60] });
+      setEditMode('editTrail');
+      const fb = addedFallback.length;
+      showToast(fb > 0
+        ? `⚠️ 추가 경유지 ${addedCount}개를 붙였습니다. 그중 ${fb}개 구간은 산길을 찾지 못해 직선으로 대체됐습니다(노란 점선). ↩️로 되돌릴 수 있습니다.`
+        : `🎉 추가 경유지 ${addedCount}개를 붙였습니다! 기존 경로는 그대로이고 ↩️로 되돌릴 수 있습니다. 더 붙이려면 [시작/끝/중간에 붙이기]를 다시 누르세요.`);
+    } catch (err) {
+      alert('추가 구간 계산 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      btn.classList.remove('loading');
+      btn.innerText = '🥾 등산로 만들기';
+      isCalculating = false;
+    }
+  }
+  window.attachSelect = attachSelect;
+
   // 🥾 버튼 클릭 진입점 — 이미 궤적이 있으면(박스 삭제·직접 수정 등으로 손을 댄 뒤)
   // 재생성 시 그 수정 내용이 전부 사라지고 처음 찍은 경유지 기준으로 새로
   // 라우팅되므로, 사용자가 명시적으로 확인한 경우에만 진행한다.
   function onClickCreateTrailButton() {
+    // 📎 붙이기 모드에서는 지우고 다시 만드는 게 아니라 이어 붙이는 것이므로 "이미 만들어진 등산로" 경고를 건너뛴다.
+    if (attachMode) { createTrailRoute(); return; }
     if (allTrailPoints.length > 0) {
       const confirmed = confirm('⚠️ 이미 만들어진 등산로가 있습니다.\n\n다시 만들면 지금까지 손댄 내용이 모두 사라지고, 처음 찍은 경유지 기준으로 산길 전체가 새로 계산됩니다.\n\n💡 일부 구간만 고치고 싶다면 취소한 뒤 "🔁 박스 구간 재라우팅" 모드를 이용하세요 — 그 구간만 바뀌고 나머지는 그대로 유지됩니다.\n💡 지금까지 편집한 경로 전체 모양은 유지하면서 실측 좌표로만 정밀 보정하고 싶다면 취소한 뒤 "🔄 편집한 경로를 공공데이터로 재매칭" 버튼을 쓰세요.\n\n정말 전체를 다시 만드시겠습니까?');
       if (!confirmed) return;
@@ -1915,6 +2203,7 @@
 
   // 🌟 2단계: [ 🥾 등산로 만들기 ] 버튼 클릭 시 실제 산길 등산로 자동 생성!
   async function createTrailRoute() {
+    if (attachMode) { return createExtensionRoute(); }   // 📎 기존 경로에 붙이기 모드
     if (waypoints.length < 2) {
       alert('지도 위를 마우스로 클릭하여 최소 2개 이상의 경유지(출발점, 도착점)를 먼저 찍어주세요.');
       return;
@@ -2253,7 +2542,7 @@
       alert('재매칭 중 오류가 발생했습니다: ' + err.message);
     } finally {
       btn.disabled = false;
-      btn.innerText = '🔄 편집한 경로를 공공데이터로 재매칭';
+      btn.innerText = '③ 🔄 편집한 경로를 공공데이터로 재매칭';
     }
   }
 
@@ -2274,12 +2563,23 @@
       return;
     }
 
+    // 기록된 GPX와의 일치 검증 — 현재 경로로 검증한 결과가 없으면 지금 실행한다.
+    if (!isVerifyCurrent()) {
+      showToast('🔍 기록된 GPX와 대조하는 중입니다...');
+      await requestVerify();
+    }
+
     // 저장 직전 자동 재검증 — 미확인 위험 구간이 있으면 저장을 막고 확인창을 띄운다
     const summary = collectValidationSummary();
     if (summary.warnCount > 0) {
       pendingExportSummary = summary;
       openConfirmOverlay(summary);
       return;
+    }
+
+    // 대조 불가(후보 트랙 없음/서버 오류)는 저장을 막지 않되, 일치한 것처럼 보이지 않게 알린다.
+    if (summary.verify && (summary.verify.status === 'unverifiable' || summary.verify.status === 'error')) {
+      showToast('ℹ️ 기록된 GPX와 대조하지 못해 일치 여부는 확인되지 않았습니다. 저장은 계속합니다.');
     }
 
     writeGpxFile();
@@ -3206,6 +3506,7 @@ ${trkpts}    </trkseg>
     waypoints = [];
     allTrailPoints = [];
     importedGpxWpts = [];
+    resetAttachState(true);
     if (guideLine) { map.removeLayer(guideLine); guideLine = null; }
     if (trailPolyline) { map.removeLayer(trailPolyline); trailPolyline = null; }
     if (trailPolylineHit) { map.removeLayer(trailPolylineHit); trailPolylineHit = null; }
@@ -3218,6 +3519,7 @@ ${trkpts}    </trkseg>
     fallbackLines = [];
     anomalyMarkers.forEach(m => map.removeLayer(m));
     anomalyMarkers = [];
+    invalidateVerify();
     closeValidationPanel();
 
     // 🐛 2026-10-23 수정(사용자 신고: "전체 초기화 했는데 잔상이 남아") —
@@ -3670,12 +3972,14 @@ ${trkpts}    </trkseg>
           fallbackLines = [];
           anomalyMarkers.forEach(m => map.removeLayer(m));
           anomalyMarkers = [];
+          invalidateVerify();
           closeValidationPanel();
 
           saveHistory();
           showToast(`📂 '${courseName}' GPX를 불러왔습니다!\n점을 드래그하거나 우클릭하여 자유롭게 수정하세요.`);
         }
 
+        resetAttachState(true);   // 새로 불러온 경로 기준으로 붙이기 상태를 비운다
         renderWaypoints();
 
         if (!trailPolyline) {
@@ -3760,6 +4064,7 @@ ${trkpts}    </trkseg>
     const prev = undoStack.pop();
     allTrailPoints = prev.allTrailPoints;
     waypoints = prev.waypoints;
+    resetAttachState(true);   // 되돌리면 경로 점 번호/모양이 달라지므로 붙이기 입력 중이던 상태는 비운다
 
     renderWaypoints();
     renderTrailAndHandles();
@@ -3780,6 +4085,7 @@ ${trkpts}    </trkseg>
     const next = redoStack.pop();
     allTrailPoints = next.allTrailPoints;
     waypoints = next.waypoints;
+    resetAttachState(true);
 
     renderWaypoints();
     renderTrailAndHandles();
@@ -4077,6 +4383,9 @@ ${trkpts}    </trkseg>
       }).addTo(map);
 
       const handleTrailClick = (e) => {
+        // 📎 붙이기 모드(경유지 모드)에서는 경로선 클릭이 "기존 경로에 점 삽입"이 아니라 기준점 선택/추가 경유지
+        // 찍기여야 한다 — 지도 클릭 이벤트가 따로 처리하므로 여기서는 기존 경로를 건드리지 않고 빠진다.
+        if (attachMode && currentEditMode === 'waypoint') return;
         if (currentEditMode === 'editTrail' || currentEditMode === 'waypoint') {
           const clickLat = e.latlng.lat;
           const clickLon = e.latlng.lng;
@@ -4277,6 +4586,11 @@ ${trkpts}    </trkseg>
     // 갱신되고, 그 전까지는 어떤 편집을 해도 그대로 유지된다.
     autosaveEditorState();
 
+    // 경로가 바뀌었으면 이전 일치 검증 결과(빨간 선 포함)는 더 이상 유효하지 않다.
+    if (verifyState.hash !== null && verifyState.hash !== computePathHash()) {
+      invalidateVerify();
+    }
+
     if (!allTrailPoints || allTrailPoints.length < 2) {
       return;
     }
@@ -4355,11 +4669,163 @@ ${trkpts}    </trkseg>
   function collectValidationSummary() {
     const anomalies = detectDistanceAnomalies();
 
+    // 일치 검증 결과는 현재 경로로 검증한 것일 때만 포함한다(편집 후 재사용 금지).
+    const verify = (verifyState.status !== 'idle' && verifyState.status !== 'loading'
+      && verifyState.hash === computePathHash()) ? verifyState : null;
+
     let warnCount = 0;
     if (fallbackRanges.length > 0) warnCount++;
     if (anomalies.length > 0) warnCount++;
+    if (verify && verify.status === 'warning') warnCount++;
 
-    return { fallbackCount: fallbackRanges.length, anomalies, warnCount };
+    return { fallbackCount: fallbackRanges.length, anomalies, verify, warnCount };
+  }
+
+  // ==========================================
+  // 🧭 기록된 GPX와의 일치 검증 (POST /trail/verify)
+  // ==========================================
+  // "그린 경로가 기록된 GPX와 가까운가"만 알려준다. 현재 등산로 상태나 통행
+  // 안전을 보증하지 않는다. 판정 기준(30m 이내 일치 등)은 서버가 정한다.
+
+  const VERIFY_REASON_LABELS = {
+    LOW_COVERAGE: '기록 경로와 겹치는 비율이 낮음',
+    LONG_DEVIATION: '30m 이상 이어서 벗어난 구간 있음',
+    MAX_DEVIATION: '75m 넘게 벗어난 지점 있음',
+    NO_CANDIDATE_TRACKS: '이 경로 근처에 기록된 GPX가 없음',
+    INSUFFICIENT_DATA: '대조에 쓸 수 있는 트랙 데이터가 부족함'
+  };
+
+  function escapeHtmlText(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // 위경도 전체 순서(+끊긴 구간 표시)를 소수점 6자리(약 0.1m)로 고정 직렬화해 해시한다.
+  // 방향이 바뀌면 다른 경로로 취급된다.
+  function computePathHash() {
+    let h = 0x811c9dc5;
+    for (const p of allTrailPoints) {
+      const s = p.lat.toFixed(6) + ',' + p.lon.toFixed(6) + (p.gapAfter ? 'g' : '') + ';';
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+    }
+    return allTrailPoints.length + ':' + h.toString(16);
+  }
+
+  function clearVerifyLayers() {
+    verifyLines.forEach(l => map.removeLayer(l));
+    verifyLines = [];
+  }
+
+  function invalidateVerify() {
+    verifyReqSeq++;   // 진행 중인 요청의 응답은 버린다
+    verifyInflight = null;
+    verifyState = { hash: null, status: 'idle', result: null, error: null };
+    clearVerifyLayers();
+  }
+
+  function isVerifyCurrent() {
+    return verifyState.status !== 'idle' && verifyState.status !== 'loading'
+      && verifyState.hash === computePathHash();
+  }
+
+  // 이탈 구간을 지도에 빨간 선으로 표시한다. 표시 전용 레이어이며 allTrailPoints는 건드리지 않는다.
+  function renderVerifyLines(result) {
+    clearVerifyLayers();
+    (result.deviation_segments || []).forEach(seg => {
+      const latlngs = (seg.points || []).map(p => [p.lat, p.lon]);
+      if (latlngs.length < 2) return;
+      // 경로선(빨강)과 겹쳐도 구분되도록 흰 테두리 + 보라색으로 그린다.
+      verifyLines.push(L.polyline(latlngs, { color: '#ffffff', weight: 12, opacity: 0.95, interactive: false }).addTo(map));
+      verifyLines.push(L.polyline(latlngs, { color: '#aa00ff', weight: 7, opacity: 1, interactive: false }).addTo(map));
+    });
+  }
+
+  async function requestVerify() {
+    if (allTrailPoints.length < 2) return verifyState;
+    const hash = computePathHash();
+    if (verifyState.status === 'loading' && verifyState.hash === hash && verifyInflight) return verifyInflight;
+
+    const reqId = ++verifyReqSeq;
+    verifyState = { hash, status: 'loading', result: null, error: null };
+    clearVerifyLayers();
+
+    const points = allTrailPoints.map(p => ({ lat: p.lat, lon: p.lon }));
+    const breaks = [];
+    allTrailPoints.forEach((p, i) => { if (p.gapAfter && i < allTrailPoints.length - 1) breaks.push(i); });
+
+    let flight = null;
+    flight = (async () => {
+      try {
+        const res = await fetch(`${HIKINGBOT_API_BASE}/trail/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points, breaks })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || ('서버 응답 오류: ' + res.status));
+        }
+        const data = await res.json();
+        if (reqId !== verifyReqSeq) return verifyState;           // 더 새로운 요청/무효화가 있었음
+        if (computePathHash() !== hash) { invalidateVerify(); return verifyState; }   // 검증 중 경로가 바뀜
+        verifyState = { hash, status: data.status, result: data, error: null };
+        if (data.status === 'pass' || data.status === 'warning') renderVerifyLines(data);
+      } catch (err) {
+        if (reqId === verifyReqSeq && computePathHash() === hash) {
+          verifyState = { hash, status: 'error', result: null, error: err.message };
+        }
+      } finally {
+        if (verifyInflight === flight) verifyInflight = null;
+      }
+      return verifyState;
+    })();
+    verifyInflight = flight;
+    return flight;
+  }
+
+  function verifyReasonText(reasons) {
+    return (reasons || []).map(r => VERIFY_REASON_LABELS[r] || r).join(', ');
+  }
+
+  function buildVerifyRows() {
+    const s = verifyState;
+    if (s.status === 'loading') {
+      return ['<div class="validation-item info">⏳ 기록된 GPX와 대조 중...</div>'];
+    }
+    if (s.status === 'idle' || s.hash !== computePathHash()) {
+      return ['<div class="validation-item info">ℹ️ ④ 기록된 GPX와 대조 전입니다. 🛡️를 눌러 대조하세요.</div>'];
+    }
+    if (s.status === 'error') {
+      return [`<div class="validation-item info">ℹ️ 기록된 GPX 대조 실패(${escapeHtmlText(s.error)}) — 일치 여부는 확인되지 않았습니다.</div>`];
+    }
+    const r = s.result;
+    if (s.status === 'unverifiable') {
+      return [`<div class="validation-item info">ℹ️ 기록된 GPX와 대조할 수 없음 — ${escapeHtmlText(verifyReasonText(r.reasons))}. 일치 여부는 확인되지 않았습니다(저장은 가능).</div>`];
+    }
+
+    const rows = [];
+    const lower = r.max_deviation_is_lower_bound ? ' 이상' : '';
+    const segs = r.deviation_segments || [];
+    const longest = segs.reduce((m, x) => Math.max(m, x.length_m), 0);
+    if (s.status === 'pass') {
+      rows.push(`<div class="validation-item ok">✅ 기록된 GPX와 일치 — 겹침 ${r.coverage_percent}% · 평균 이격 ${r.mean_deviation_m}m · 최대 ${r.max_deviation_m}m${lower}</div>`);
+    } else {
+      rows.push(`<div class="validation-item warn">⚠️ 기록된 GPX와 불일치 — 겹침 ${r.coverage_percent}%, 벗어난 구간 ${segs.length}건(최장 ${Math.round(longest)}m), 최대 이격 ${r.max_deviation_m}m${lower}. 지도의 <span style="color:#aa00ff;">보라색 선</span>이 기록과 벗어난 구간입니다.</div>`);
+      rows.push(`<div class="validation-item muted">사유: ${escapeHtmlText(verifyReasonText(r.reasons))}</div>`);
+      rows.push('<div class="validation-item muted">💡 ③ 🔄 재매칭으로 실제 GPX 좌표에 맞추거나 🧭 구간 후보 비교로 고친 뒤, ④ 🛡️로 다시 대조하세요.</div>');
+    }
+    const used = (r.tracks_used || []).slice(0, 3)
+      .map(t => `${escapeHtmlText(t.label)} ${(t.matched_length_m / 1000).toFixed(2)}km`).join(' · ');
+    if (used) {
+      rows.push(`<div class="validation-item muted" title="트랙 전환 ${r.track_switches}회 (참고용 — 평행·교차 구간에서는 많이 늘어날 수 있어 판정에 쓰지 않음)">대조에 쓰인 트랙: ${used}</div>`);
+    }
+    if (r.candidates_truncated) {
+      rows.push(`<div class="validation-item muted">후보 트랙이 많아(${r.candidates_total}개) 경로에 가까운 일부만 대조했습니다.</div>`);
+    }
+    rows.push('<div class="validation-item muted">※ 기록된 GPX와의 일치 여부이며, 현재 등산로 상태나 통행 안전을 보증하지 않습니다.</div>');
+    return rows;
   }
 
   // 🔍 버튼 클릭 시: fallback/고도/이상치 3가지 항목을 재검사해 패널에 표시
@@ -4375,8 +4841,12 @@ ${trkpts}    </trkseg>
     const anomalies = detectDistanceAnomalies();
     renderAnomalyMarkers(anomalies);
 
-    const summary = collectValidationSummary();
-    renderValidationPanel(summary);
+    // 기록된 GPX 대조는 서버 호출이라 시간이 걸린다. 먼저 나머지 항목과 "대조 중"을
+    // 보여주고, 응답이 오면 패널을 다시 그린다.
+    const verifying = requestVerify();
+    renderValidationPanel(collectValidationSummary());
+    await verifying;
+    renderValidationPanel(collectValidationSummary());
     btn.innerText = '🛡️';
   }
 
@@ -4391,6 +4861,8 @@ ${trkpts}    </trkseg>
     rows.push(summary.anomalies.length > 0
       ? `<div class="validation-item warn">⚠️ 급격한 도약 지점 ${summary.anomalies.length}건 (지도의 주황 마커) — 경로가 튄 구간입니다.</div>`
       : `<div class="validation-item ok">✅ 급격한 좌표 도약 없음</div>`);
+
+    buildVerifyRows().forEach(row => rows.push(row));
 
     body.innerHTML = rows.join('');
     document.getElementById('validationPanel').style.display = 'flex';
@@ -4408,6 +4880,14 @@ ${trkpts}    </trkseg>
     const lines = [];
     if (summary.fallbackCount > 0) lines.push(`• 직선 대체 구간 ${summary.fallbackCount}건`);
     if (summary.anomalies.length > 0) lines.push(`• 급격한 도약 지점 ${summary.anomalies.length}건`);
+    const v = summary.verify;
+    if (v && v.status === 'warning') {
+      const segs = v.result.deviation_segments || [];
+      const longest = segs.reduce((m, x) => Math.max(m, x.length_m), 0);
+      lines.push(`• 기록된 GPX와 불일치: 겹침 ${v.result.coverage_percent}%, 벗어난 구간 ${segs.length}건(최장 ${Math.round(longest)}m) — 지도의 보라색 선`);
+    } else if (v && (v.status === 'unverifiable' || v.status === 'error')) {
+      lines.push('• 기록된 GPX와 대조하지 못함 — 일치 여부 미확인');
+    }
     body.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
     document.getElementById('confirmOverlay').style.display = 'flex';
   }
@@ -4436,7 +4916,7 @@ ${trkpts}    </trkseg>
   // Pages 기본 HTTP 캐시에만 의존한다 — 배포해도 핸드폰이 한동안 구버전을
   // 그대로 쓸 수 있다. 매번 배포할 때 이 문자열만 올리면, 화면 좌측 하단
   // 뱃지로 "지금 핸드폰이 최신 코드를 받았는지"를 바로 확인할 수 있다.
-  const GPX_EDITOR_VERSION = 'v4';
+  const GPX_EDITOR_VERSION = 'v6';
 
   window.addEventListener('DOMContentLoaded', () => {
     initMap();
