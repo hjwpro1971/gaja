@@ -143,6 +143,12 @@
   .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
   .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
   .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .scenery-highlights-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
+  .scenery-highlights-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+  .scenery-highlights-list { list-style: none; padding-left: 0; }
+  .scenery-highlights-list li { font-size: 14px; color: #4a5568; margin-bottom: 8px; position: relative; padding-left: 20px; }
+  .scenery-highlights-list li::before { content: '✨'; position: absolute; left: 0; }
+  .scenery-highlights-list li strong { color: #1a202c; font-weight: 700; }
   .extra-info-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
   .extra-info-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
   .extra-info-text { font-size: 14.5px; color: #4a5568; white-space: pre-line; }
@@ -163,7 +169,7 @@
   @media (max-width: 768px) {
     body { padding: 10px 0; }
     .guide-container { padding: 20px 0; border-radius: 12px; }
-    .guide-main-title, .guide-intro, .extra-info-block { margin-left: 16px; margin-right: 16px; }
+    .guide-main-title, .guide-intro, .scenery-highlights-block, .extra-info-block { margin-left: 16px; margin-right: 16px; }
     .section-block { padding-left: 16px; padding-right: 16px; }
     .guide-main-title { font-size: 20px; }
     .guide-intro { font-size: 13.5px; }
@@ -225,187 +231,205 @@
 {
   "mountainName": "장안산",
   "courseRouteFlow": [
-    "의암로시작점",
+    "시작점(의암로)",
     "괴목고개",
-    "장안산",
-    "하봉",
+    "장안산정상",
+    "중봉·하봉",
     "범연동종착점"
   ],
   "startAltitude": 930,
   "endAltitude": 500,
   "totalTime": "3.5h~4.0h",
   "overallDifficulty": "보통",
-  "safetyWarningText": "정상직전데크계단주의·하봉내리막발목꺾임주의·이끼미끄럼주의·능선강풍대비방풍자켓·그늘부족대비모자및충분한식수·등산스틱착용·지정등산로준수",
-  "guideIntro": "장안산은 금남호남정맥의 최고봉이자 전라북도 장수군을 대표하는 호남의 명산입니다. 높은 해발고도의 의암로에서 출발하여 부드럽고 유순한 육산의 주능선을 오르면, 가을철 바람 따라 일렁이는 은빛과 금빛의 억새 평원을 만나게 됩니다. 정상에 서면 백두대간과 지리산, 덕유산의 웅장한 마루금이 360도 파노라마로 시원하게 터지며, 이어지는 호젓한 원시림 숲길과 청량한 범연동 계곡이 산행의 평온한 여운을 완성합니다.",
+  "safetyWarningText": "정상직전데크깔딱고개주의 · 하봉내리막무릎관절보호 · 능선부강풍대비방풍재킷 · 그늘부족구간식수지참 · 원시림수풀등산로이탈주의",
+  "guideIntro": "장안산은 금남호남정맥의 최고봉이자 전라북도 장수군을 대표하는 호남의 명산입니다. 높은 해발고도의 시작점(의암로)에서 출발하여 부드럽고 유순한 육산의 주능선을 오르면, 가을철 바람 따라 일렁이는 억새 평원과 단풍이 이루어내는 은빛과 금빛의 장관을 만나게 됩니다. 정상(1,237m)에 올라서면 백두대간과 지리산, 덕유산의 웅장한 마루금이 360도 파노라마로 시원하게 터지는 압도적인 절경을 감상할 수 있습니다. 정상 이후에는 중봉과 하봉을 거쳐 범연동 계곡의 청정한 숲길을 따라 평온하게 내리막을 걷는 감동적인 산행을 선사합니다.",
+  "keySceneryIntro": [
+    {
+      "name": "은빛 억새밭과 억새능선 (제1조망터 & 제2조망터)",
+      "desc": "해발 1,100m 능선을 따라 끝없이 일렁이는 은빛 억새 물결과 함께 지리산과 덕유산의 웅장한 연봉을 한눈에 담을 수 있는 장안산 최고의 명소입니다."
+    },
+    {
+      "name": "장안산 정상 (해발 1,237m) 및 헬기장",
+      "desc": "금남호남정맥의 최고봉으로 넓은 헬기장 정상부에서 호남과 영남의 거대한 산줄기를 360도 파노라마로 감상하는 핵심 조망 터입니다."
+    },
+    {
+      "name": "조릿대(산죽) 숲길",
+      "desc": "등산로 양옆으로 키 높은 산죽이 빽빽하게 터널을 이루어 바람에 스치는 댓잎 소리와 함께 청량한 숲의 정취를 전하는 고요한 길입니다."
+    },
+    {
+      "name": "중봉 및 하봉 능선길",
+      "desc": "인적이 드물어 원시림의 깊은 정막을 온전히 누릴 수 있으며 계절마다 피어나는 야생화 숲이 호젓한 운치를 더하는 능선입니다."
+    }
+  ],
   "sceneryHighlights": [
-    "가을바람에 은빛으로 물결치는 드넓은 억새 능선",
-    "정상에서 360도로 조망하는 웅장한 지리산과 덕유산",
-    "등산로를 푸르게 채운 싱그러운 키 높은 조릿대 숲",
-    "울창한 원시림 사이로 맑고 차갑게 흐르는 범연동 계곡",
-    "알록달록한 고산 야생화가 곱게 피어난 중봉 능선길"
+    "은빛과 금빛으로 일렁이는 가을 억새 평원",
+    "1,237m 정상에서 본 360도 백두대간 파노라마",
+    "키 높은 산죽이 터널을 이룬 초록빛 조릿대 숲길",
+    "덕유산과 지리산 연봉이 겹쳐진 푸른 마루금",
+    "청량한 물소리가 울려 퍼지는 범연동 원시림 계곡"
   ],
   "extraInfos": [],
   "sections": [
     {
-      "cardTitle": "완만한숲오솔길",
+      "cardTitle": "초입숲길괴목고개",
       "distanceKm": 0.3,
       "difficulty": "easy",
-      "altitude": 970,
+      "altitude": 1000,
       "features": [
-        "푹신한야자매트",
-        "아늑한산죽숲",
-        "괴목고갯길"
+        "야자매트숲길",
+        "완만경사흙길",
+        "조릿대숲길"
       ],
       "detail": {
-        "headerName": "아늑한 숲길 따라 괴목고개로 들어서는 서곡",
+        "headerName": "아늑한 숲길을 따라 괴목고개로 들어서는 서곡",
         "bullets": [
           {
             "strong": "구간",
-            "p": "의암로 시작점 ~ 괴목고개 (무룡고개 시작점 ➔ 야자매트 숲길 경유) [거리: 0.3km | 난이도: 하]"
+            "p": "시작점 (의암로) ~ 괴목고개 (무룡고개 시작점 및 야자매트 숲길 경유) [거리: 0.3km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "야자매트가 깔린 완만한 오르막과 숲길로 시작하여 보행 피로가 적고 안정적으로 체력을 안배하기 좋습니다."
+            "p": "시작점에서 출발하여 야자매트가 잘 깔린 완만한 숲길을 오르는 구간으로, 초반 무리하지 않고 체력을 안배하며 걷기 좋은 길입니다."
           },
           {
-            "strong": "조릿대(산죽) 숲",
-            "p": "등산로 양옆을 채운 짙은 초록빛 조릿대 잎들이 바람에 부딪히며 청량하고 고요한 숲의 정취를 전합니다."
+            "strong": "조릿대(산죽) 숲길",
+            "p": "등산로 초입부터 양옆으로 빽빽하게 들어선 키 높은 산죽이 바람에 부딪히며 내는 바스락거리는 소리가 숲의 청량함을 더해줍니다."
           },
           {
-            "strong": "야자매트 산책길",
-            "p": "등산로 초입부터 단정하게 정비된 푹신한 매트 길로 아늑한 숲의 기운을 느끼며 편안하게 걸을 수 있습니다."
+            "strong": "야자매트 숲길",
+            "p": "아늑한 숲의 정취 속에서 발의 피로를 덜어주도록 단정하고 차분하게 정비된 푹신한 매트 산책로입니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "은빛억새능선길",
+      "cardTitle": "억새능선장안산정상",
       "distanceKm": 2.5,
       "difficulty": "medium",
       "altitude": 1237,
       "features": [
-        "은빛억새물결",
-        "지리덕유조망터",
-        "장안산정상석"
+        "은빛억새능선",
+        "데크계단깔딱고개",
+        "조망터파노라마"
       ],
       "detail": {
-        "headerName": "은빛 억새 물결 타고 장안산 정상 오르는 길",
+        "headerName": "은빛 억새 물결을 타고 장안산 정상으로 오르는 길",
         "bullets": [
           {
             "strong": "구간",
-            "p": "괴목고개 ~ 장안산 (제1조망터 ➔ 억새능선 ➔ 제2조망터 경유) [거리: 2.5km | 난이도: 중]"
+            "p": "괴목고개 ~ 장안산 (제1조망터, 억새능선, 제2조망터 경유) [거리: 2.5km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "확 트인 억새밭 능선을 따라 완만하게 이동하다 정상 직전 가파른 데크 계단이 이어지므로 체온과 호흡을 조절해야 합니다."
+            "p": "확 트인 억새밭 능선을 따라 완만하게 이어지다가 정상 직전에 가파른 데크 계단이 나타나므로 체온 유지와 호흡 관리에 유의해야 합니다."
           },
           {
             "strong": "은빛 억새밭과 억새능선",
-            "p": "해발 1,100m 능선을 따라 햇살을 받아 금빛과 은빛으로 일렁이는 억새 숲이 환상적인 가을 장관을 연출합니다."
+            "p": "해발 1,100m 능선을 따라 드넓게 펼쳐진 억새 숲으로 가을 햇살에 은빛과 금빛으로 일렁이는 장안산 최고의 비경입니다."
           },
           {
-            "strong": "제1조망터와 제2조망터",
-            "p": "백운산과 영취산은 물론 멀리 지리산 천왕봉과 덕유산 서봉까지 한눈에 담을 수 있는 최고의 조망 명소입니다."
+            "strong": "제1조망터 및 제2조망터",
+            "p": "건너편 백운산과 영취산은 물론 아득히 보이는 지리산 천왕봉과 덕유산 서봉까지 파노라마로 관망할 수 있는 조망 터입니다."
           },
           {
-            "strong": "장안산 정상 (해발 1,237m)",
-            "p": "금남호남정맥의 최고봉으로 동서남북 360도로 영호남의 거대한 고봉들이 파노라마처럼 펼쳐지는 웅장한 정점입니다."
+            "strong": "장안산 정상 (해발 1,237m) 및 헬기장",
+            "p": "사방이 활짝 열린 평지 구조의 정상으로 360도로 호남과 영남의 웅장한 연봉들이 마주 선 장엄한 풍경을 자랑합니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "호남정맥주능선",
-      "distanceKm": 0.7,
+      "cardTitle": "호남정맥중봉능선",
+      "distanceKm": 0.3,
       "difficulty": "easy",
-      "altitude": 1170,
+      "altitude": 1231,
       "features": [
-        "정상헬기장",
-        "평이한흙길능선",
-        "중봉원시림"
+        "장안산정상헬기장",
+        "바위흙혼합능선",
+        "원시림주능선"
       ],
       "detail": {
-        "headerName": "정상 장엄함 뒤로하고 능선 따라 중봉 향하는 길",
+        "headerName": "정상의 장엄함을 뒤로하고 능선 따라 중봉으로 향하는 여정",
         "bullets": [
           {
             "strong": "구간",
-            "p": "장안산 ~ 중봉 (장안산 정상 헬기장 ➔ 남쪽 주능선 경유) [거리: 0.7km | 난이도: 하]"
+            "p": "장안산 ~ 중봉 (장안산 정상 헬기장 및 주능선 경유) [거리: 0.3km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "바위와 흙이 섞인 평이한 능선 내리막으로 큰 무리 없이 편안하게 걸을 수 있으며 이정표 확인이 중요합니다."
+            "p": "정상에서 남쪽 주능선을 따라 완만하게 내려서는 구간으로, 바위와 토사가 섞인 평이한 능선길이라 큰 부담 없이 이동할 수 있습니다."
           },
           {
-            "strong": "장안산 정상 헬기장",
-            "p": "사방이 시원하게 트인 넓은 평지 구조로 금강과 섬진강 분수령의 광활한 산세를 여유롭게 감상할 수 있습니다."
+            "strong": "정상 헬기장 및 주능선",
+            "p": "넓은 정상부가 시원하게 눈에 들어오는 헬기장과 주능선 위에서 올려다보는 장안산 정상의 우람한 자태를 감상할 수 있습니다."
           },
           {
-            "strong": "중봉 능선길",
-            "p": "장안산 남쪽으로 길게 뻗은 능선으로 원시림의 깊은 기운과 호젓한 정막을 만끽하며 걷기 좋은 길입니다."
+            "strong": "중봉 및 하봉 능선길",
+            "p": "사람들의 발길이 드물어 고요한 원시림의 깊은 정막을 온전히 만끽할 수 있는 호젓하고 아늑한 능선길입니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "야생화고원길",
-      "distanceKm": 0.8,
+      "cardTitle": "야생화숲하봉능선",
+      "distanceKm": 0.5,
       "difficulty": "easy",
-      "altitude": 1060,
+      "altitude": 1203,
       "features": [
-        "여름철야생화",
-        "고즈넉한숲길",
-        "하봉갈림길"
+        "원시림능선길",
+        "사계절야생화숲",
+        "하봉능선쉼터"
       ],
       "detail": {
         "headerName": "고즈넉한 원시림 속 하봉으로 이어지는 능선길",
         "bullets": [
           {
             "strong": "구간",
-            "p": "중봉 ~ 하봉 (중봉 능선길 ➔ 하봉 갈림길 경유) [거리: 0.8km | 난이도: 하]"
+            "p": "중봉 ~ 하봉 (중봉 능선길 및 하봉 갈림길 경유) [거리: 0.5km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "완만한 오르내림이 이어지는 한적한 트레킹 길로, 수풀이 무성한 곳에서 발밑의 돌과 나무뿌리를 조심해야 합니다."
+            "p": "완만한 오르내림이 이어지는 원시림 숲길로, 가슴 높이까지 자란 수풀 속 돌이나 나무뿌리에 발이 걸리지 않도록 주의해야 합니다."
           },
           {
-            "strong": "야생화 고원길",
-            "p": "계절마다 길섶에 다채로운 야생화가 지천으로 피어나 산객에게 화사하고 평화로운 발걸음을 선물합니다."
+            "strong": "야생화 숲",
+            "p": "계절에 따라 형형색색 다채롭게 피어나는 야생화들이 등산로를 수놓아 싱그러운 생명력을 전합니다."
           },
           {
-            "strong": "하봉",
-            "p": "장안산 남쪽 줄기 끝자락에 자리한 호젓한 봉우리로 울창한 숲에 둘러싸여 고즈넉한 휴식을 줍니다."
+            "strong": "하봉 능선 쉼터",
+            "p": "장안산 남쪽 줄기 끝자락 봉우리에 자리 잡은 쉼터로, 울창한 숲에 둘러싸여 편안한 휴식을 선사합니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "원시림계곡내리막",
-      "distanceKm": 4.2,
+      "cardTitle": "원시림범연동내리막",
+      "distanceKm": 4.9,
       "difficulty": "medium",
       "altitude": 500,
       "features": [
-        "통나무계단길",
-        "울창한원시림",
-        "범연동청정계곡"
+        "통나무계단내리막",
+        "울창원시림숲",
+        "청정범연동계곡"
       ],
       "detail": {
-        "headerName": "청정한 산림과 계곡 정취 품은 내리막길",
+        "headerName": "청정한 산림과 계곡 정취를 품으며 범연동으로 내리는 길",
         "bullets": [
           {
             "strong": "구간",
-            "p": "하봉 ~ 범연동 종착점 (연주마을 갈림길 ➔ 통나무 내리막 ➔ 계곡길 경유) [거리: 4.2km | 난이도: 중]"
+            "p": "하봉 ~ 범연동 (연주마을 갈림길 및 통나무 내리막, 계곡길 경유) [거리: 4.9km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "통나무 계단과 바위가 섞인 긴 내리막으로, 무릎 관절 보호를 위해 등산스틱을 활용하고 미끄러운 흙길에 유의해야 합니다."
+            "p": "종착점인 범연동까지 통나무 계단과 바위 내리막이 길게 이어지므로 무릎 관절 보호를 위해 등산 스틱을 사용하고 미끄러운 바닥을 조심해야 합니다."
           },
           {
             "strong": "울창한 원시림",
-            "p": "짙은 그늘을 드리운 원시림이 빽빽하게 이어져 깊은 산림의 청량함을 온몸으로 느끼며 걸을 수 있습니다."
+            "p": "짙은 나무 그늘이 하늘을 가린 채 태고의 자연을 간직한 울창한 원시림이 하산 내내 펼쳐집니다."
           },
           {
             "strong": "범연동 계곡",
-            "p": "하산 막바지에 맑고 시원한 물소리를 내뿜으며 산행의 땀방울을 상쾌하게 씻어주는 청정 계곡입니다."
+            "p": "내리막길 하단부에서 맑고 시원하게 귓전을 울리는 청량한 계곡 물소리와 맑은 수액이 산행의 피로를 씻어줍니다."
           }
         ]
       }
@@ -569,6 +593,16 @@
   let guideHTML = `
     <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
     <p class="guide-intro keep-all">${indentLines(data.guideIntro || '')}</p>`;
+  const keySceneryIntro = (data.keySceneryIntro || []).filter(item => item && (item.name || item.desc));
+  if (keySceneryIntro.length) {
+    guideHTML += `
+    <div class="scenery-highlights-block keep-all">
+      <div class="scenery-highlights-title">\ud83c\udfde\ufe0f 코스 내 반드시 봐야 할 핵심 비경</div>
+      <ul class="scenery-highlights-list">
+        ${keySceneryIntro.map(item => `<li>${item.name ? `<strong>${item.name}</strong> ` : ''}${item.desc || ''}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
   (data.extraInfos || []).forEach(item => {
     guideHTML += `
     <div class="extra-info-block keep-all">
