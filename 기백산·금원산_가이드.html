@@ -143,6 +143,12 @@
   .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
   .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
   .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .scenery-highlights-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
+  .scenery-highlights-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+  .scenery-highlights-list { list-style: none; padding-left: 0; }
+  .scenery-highlights-list li { font-size: 14px; color: #4a5568; margin-bottom: 8px; position: relative; padding-left: 20px; }
+  .scenery-highlights-list li::before { content: '✨'; position: absolute; left: 0; }
+  .scenery-highlights-list li strong { color: #1a202c; font-weight: 700; }
   .extra-info-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
   .extra-info-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
   .extra-info-text { font-size: 14.5px; color: #4a5568; white-space: pre-line; }
@@ -163,7 +169,7 @@
   @media (max-width: 768px) {
     body { padding: 10px 0; }
     .guide-container { padding: 20px 0; border-radius: 12px; }
-    .guide-main-title, .guide-intro, .extra-info-block { margin-left: 16px; margin-right: 16px; }
+    .guide-main-title, .guide-intro, .scenery-highlights-block, .extra-info-block { margin-left: 16px; margin-right: 16px; }
     .section-block { padding-left: 16px; padding-right: 16px; }
     .guide-main-title { font-size: 20px; }
     .guide-intro { font-size: 13.5px; }
@@ -228,164 +234,182 @@
     "휴양림주차장",
     "기백산",
     "금원산동봉",
-    "금원산서봉",
-    "수망령"
+    "금원산 서봉",
+    "휴양림주차장"
   ],
   "startAltitude": 500,
   "endAltitude": 500,
   "totalTime": "6.0h~7.5h",
   "overallDifficulty": "보통",
-  "safetyWarningText": "책바위슬랩미끄럼주의·우천시계곡범람주의·암반이끼미끄럼주의·겨울철상고대결빙주의·아이젠및방한복준비·충분한식수확보",
-  "guideIntro": "휴양림주차장을 출발하여 기백산과 금원산을 잇는 장쾌한 능선을 따라 걷는 이 코스는 기암괴석이 차곡차곡 쌓인 누룩덤과 책바위의 압도적인 비경을 선사합니다. 정상부 능선에 올라서면 지리산 천왕봉부터 남덕유산까지 이어지는 360도 파노라마 조망이 시원하게 펼쳐집니다. 거친 바위길과 완만한 숲길, 청량한 계곡 물소리가 조화를 이루는 이 연계 코스는 함양과 거창을 대표하는 최고의 명산 산행길입니다.",
+  "safetyWarningText": "책바위 급경사 슬랩 미끄럼 주의 · 강풍 및 우천 시 바위길 보행 위험 · 우천 직후 계곡 범람 및 암반 이끼 실족 주의 · 겨울철 정상부 상고대 결빙 대비 아이젠 필수 · 긴 산행 대비 여유 식수 및 등산스틱 구비",
+  "guideIntro": "휴양림주차장을 출발하여 기백산과 금원산을 잇는 장쾌한 능선 코스로, 누룩덤과 책바위가 빚어내는 독특한 기암괴석의 절경을 만끽할 수 있습니다. 정상부 능선에 오르면 지리산 천왕봉부터 남덕유산까지 이어지는 백두대간의 360도 파노라마 조망이 시원하게 펼쳐집니다. 거친 바위길과 완만한 숲길, 청량한 원시림 계곡이 조화를 이루는 영남의 대표적인 연계 종주 명산길입니다.",
+  "keySceneryIntro": [
+    {
+      "name": "기백산 정상 (1,331m) 및 360도 파노라마 조망",
+      "desc": "함양과 거창의 경계에 솟은 주봉으로, 황석산과 거망산은 물론 덕유산과 지리산 천왕봉까지 시원하게 조망되는 대표적인 조망 명소입니다."
+    },
+    {
+      "name": "누룩덤 (누룩바위)",
+      "desc": "오랜 풍화 작용으로 수평 절리가 발달해 마치 시루나 탑처럼 누룩을 여러 층 쌓아 올린 듯한 독특한 입체미를 뽐내는 기암괴석 군락입니다."
+    },
+    {
+      "name": "책바위",
+      "desc": "수만 권의 책을 차곡차곡 포개어 놓은 듯한 거대한 암벽 슬랩 지대로, 남성적인 백두대간 마루금을 감상할 수 있는 최고의 조망 포인트입니다."
+    },
+    {
+      "name": "금원산 동봉 및 서봉 (정상, 1,353m)",
+      "desc": "정성스레 쌓아 올린 돌탑과 조망 데크가 반기는 동봉과 고산 능선 헬기장을 지나 만나는 최고봉 서봉으로, 덕유산 남릉의 호쾌한 풍광이 펼쳐집니다."
+    },
+    {
+      "name": "용추계곡 및 계곡 암반 지대",
+      "desc": "깊은 골짜기 암반 위로 맑고 찬 계류가 흘러내리는 원시림 계곡으로, 크고 작은 폭포와 울창한 숲이 어우러져 산행의 피로를 풀어줍니다."
+    }
+  ],
   "sceneryHighlights": [
-    "시루처럼 차곡차곡 층을 쌓은 기암괴석 누룩덤",
-    "수많은 책을 포개어 놓은 듯 깎아지른 책바위",
-    "기백산 정상에서 파노라마로 펼쳐진 덕유산 능선",
-    "돌탑 너머 호쾌한 마루금이 펼쳐지는 금원산 정상",
-    "원시림 속 거대한 암반을 타고 흐르는 용추계곡"
+    "시루처럼 차곡차곡 쌓아 올린 웅장한 누룩덤",
+    "수만 권 책을 포개어 놓은 거대한 책바위 슬랩",
+    "정상 능선에서 바라본 지리산과 남덕유산 마루금",
+    "정성스러운 돌탑과 헬기장이 어우러진 고산 능선",
+    "찬 암반수가 쏟아지는 울창한 원시림 용추계곡"
   ],
   "extraInfos": [],
   "sections": [
     {
-      "cardTitle": "청량한숲길능선",
+      "cardTitle": "숲길능선오르막",
       "distanceKm": 4.2,
       "difficulty": "medium",
       "altitude": 1331,
       "features": [
-        "청량한숲길",
-        "가파른깔딱고개",
-        "데크조망터"
+        "청량한계곡숲",
+        "데크계단길",
+        "기백산정상"
       ],
       "detail": {
-        "headerName": "청량한 숲길 지나 능선으로 오르는 서곡",
+        "headerName": "청량한 숲길 지나 능선으로 오르는 오프닝",
         "bullets": [
           {
             "strong": "구간",
-            "p": "휴양림주차장 ~ 기백산 (도숫골 쉼터 ➔ 능선 갈림길 ➔ 데크 조망터 경유) [거리: 4.2km | 난이도: 중]"
+            "p": "휴양림주차장 ~ 기백산 (도숫골 쉼터 · 능선 갈림길 · 데크 조망터 경유) [거리: 4.2km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "초반은 계곡을 따라 울창한 숲길이 완만하게 이어지나 이후 가파른 깔딱고개와 바위 데크 계단이 나타나므로 페이스를 조절해야 합니다."
+            "p": "초반에는 계곡을 끼고 완만한 숲길이 이어지다가 계곡을 건넌 후 점차 깔딱고개가 시작됩니다. 능선부에 진입하면 바위와 데크 계단이 이어지므로 미끄럼에 유의하며 호흡을 가다듬어야 합니다."
           },
           {
-            "strong": "기백산 정상",
-            "p": "해발 1,331m 주봉으로, 정상석에 서면 황석산과 거망산은 물론 멀리 덕유산과 지리산 천왕봉까지 360도 파노라마로 조망할 수 있습니다."
+            "strong": "기백산 정상 (1,331m) 및 360도 파노라마 조망",
+            "p": "정상석 주변으로 황석산, 거망산, 월봉산 및 지리산 천왕봉과 덕유산 산줄기가 파노라마로 펼쳐집니다."
           },
           {
             "strong": "데크 조망터",
-            "p": "능선 진입 직전에 위치하여 거망산과 황석산으로 시원하게 뻗어 나간 남성적인 산줄기를 한눈에 감상할 수 있습니다."
+            "p": "능선 진입 직전에 위치한 쉼터 조망 공간으로, 황석산과 거망산의 남성적인 산세를 탁 트인 시야로 감상할 수 있습니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "기암괴석바위길",
+      "cardTitle": "기암바위능선길",
       "distanceKm": 4,
       "difficulty": "hard",
-      "altitude": 1348,
+      "altitude": 1345,
       "features": [
-        "기암괴석누룩덤",
-        "슬랩바위책바위",
-        "고산주능선길"
+        "누룩덤기암",
+        "슬랩책바위",
+        "주능선바위길"
       ],
       "detail": {
-        "headerName": "기암괴석과 스릴 넘치는 바위길의 절경",
+        "headerName": "웅장한 기암괴석과 바위길의 하이라이트",
         "bullets": [
           {
             "strong": "구간",
-            "p": "기백산 ~ 금원산동봉 (누룩덤 ➔ 책바위 ➔ 사평마을 갈림길 ➔ 최선봉 정자쉼터 경유) [거리: 4.0km | 난이도: 상]"
+            "p": "기백산 ~ 금원산동봉 (누룩덤 · 책바위 · 사평마을 갈림길 · 최선봉 정자쉼터 경유) [거리: 4.0km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "해발 1,200m 이상의 주능선을 타는 바위길 구간으로, 슬랩 바위와 절벽이 인접해 있어 난간을 확인하며 발을 신중히 디뎌야 합니다."
+            "p": "해발 1,200m 이상의 주능선을 따르는 구간으로 바위길과 흙길이 반복됩니다. 누룩덤과 책바위 주변은 아찔한 벼랑과 슬랩 지대가 인접해 발판과 난간을 확인하며 조심스럽게 통과해야 합니다."
           },
           {
-            "strong": "누룩덤",
-            "p": "거대한 화강암 바위들이 시루처럼 층층이 쌓여 독특한 수평 절리를 이룬 기암괴석으로, 바위 위에 서면 아찔한 고도감을 선사합니다."
+            "strong": "누룩덤 (누룩바위)",
+            "p": "마치 누룩을 층층이 쌓아 올린 시루탑 형상의 거대한 화강암 바위군으로, 올라서면 아찔한 고도감과 능선 절경이 펼쳐집니다."
           },
           {
             "strong": "책바위",
-            "p": "수많은 책을 차곡차곡 포개어 놓은 듯한 형상의 바위 슬랩 지대로, 거망산과 황석산으로 이어지는 웅장한 능선이 선명하게 조망됩니다."
+            "p": "수만 권의 책을 차곡차곡 포개어 놓은 듯한 독특한 슬랩 지대로, 백두대간 마루금을 배경으로 사진을 남기기 좋은 핵심 뷰포인트입니다."
           },
           {
-            "strong": "최선봉 정자쉼터",
-            "p": "바위 능선을 걷다 마주하는 쉼터로, 거친 산행 중 숨을 고르며 주변 암봉 군락의 풍광을 감상할 수 있습니다."
+            "strong": "금원산 동봉",
+            "p": "정성스레 쌓은 돌탑과 조망 데크가 마련된 봉우리로, 걸어온 기백산 능선과 덕유산 산군이 파노라마로 조망됩니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "완만한능선산책길",
+      "cardTitle": "고산능선산책길",
       "distanceKm": 0.25,
       "difficulty": "easy",
       "altitude": 1353,
       "features": [
-        "평탄한흙길능선",
-        "동봉돌탑조망터",
-        "금원산최고봉"
+        "완만한흙길",
+        "동봉돌탑조망",
+        "서봉정상도착"
       ],
       "detail": {
         "headerName": "고산 평원을 거니는 평화로운 능선 산책길",
         "bullets": [
           {
             "strong": "구간",
-            "p": "금원산동봉 ~ 금원산 서봉 (헬기장 ➔ 완만한 능선길 경유) [거리: 0.25km | 난이도: 하]"
+            "p": "금원산동봉 ~ 금원산 서봉 (헬기장 · 완만한 능선길 경유) [거리: 0.25km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "금원산동봉에서 최고봉인 서봉으로 이어지는 넓고 정비된 평탄한 흙길 능선으로, 위험 요소 없이 편안하게 호흡을 정돈할 수 있습니다."
+            "p": "금원산동봉에서 최고봉인 서봉까지 약 10분간 이어지는 매우 평탄하고 완만한 흙길 능선입니다. 위험 구간이 없어 편안하게 호흡을 고르며 고산 능선의 여유를 즐길 수 있습니다."
           },
           {
-            "strong": "금원산동봉",
-            "p": "정성스럽게 쌓아 올린 돌탑과 조망 데크가 자리해 있어 지리산과 덕유산의 시원한 마루금을 조망할 수 있습니다."
+            "strong": "금원산 서봉 (정상, 1,353m)",
+            "p": "기백산보다 높은 해발고도를 자랑하는 주봉으로, 옛날 검은산으로 불렸던 웅장하고 깊은 산세의 정점에 서게 됩니다."
           },
           {
-            "strong": "금원산 서봉",
-            "p": "해발 1,353m 금원산의 최고봉으로, 헬기장과 넓은 능선부에서 남덕유산의 호쾌한 마루금과 고산의 평화로운 정취를 누릴 수 있습니다."
+            "strong": "금원산동봉 조망터와 헬기장",
+            "p": "탁 트인 헬기장과 능선길 좌우로 남덕유산의 장쾌한 마루금이 병풍처럼 다가옵니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "수망령내리막길",
+      "cardTitle": "고개내리막길",
       "distanceKm": 1.8,
       "difficulty": "medium",
-      "altitude": 900,
+      "altitude": 930,
       "features": [
-        "급경사자갈내리막",
-        "월봉산남덕유조망",
-        "수망령고갯길"
+        "가파른내리막",
+        "수망령하강길",
+        "덕유산조망터"
       ],
       "detail": {
-        "headerName": "덕유산을 조망하며 수망령으로 내려서는 내리막",
+        "headerName": "덕유산을 조망하며 수망령으로 내려서는 고개 내리막",
         "bullets": [
           {
             "strong": "구간",
-            "p": "금원산 서봉 ~ 수망령 (능선 조망터 ➔ 가파른 내리막 능선 경유) [거리: 1.8km | 난이도: 중]"
+            "p": "금원산 서봉 ~ 수망령 (능선 조망터 · 가파른 내리막 능선 경유) [거리: 1.8km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "금원산 정상에서 수망령 방향으로 빠르게 고도를 낮추는 급경사 내리막으로, 자갈과 나무뿌리에 미끄러지지 않도록 스틱을 적극 활용해야 합니다."
+            "p": "정상에서 수망령 방향으로 고도를 빠르게 낮추는 급경사 내리막입니다. 나무뿌리와 잔돌, 흙이 섞인 좁은 길이 이어지므로 무릎 보호를 위해 등산스틱을 사용하고 실족에 주의해야 합니다."
           },
           {
-            "strong": "능선 조망터",
-            "p": "내리막 능선 도중 정면으로 우뚝 서 있는 월봉산과 남덕유산의 장엄한 전경을 감상할 수 있는 뷰포인트입니다."
-          },
-          {
-            "strong": "수망령",
-            "p": "거창과 함양을 잇는 고갯마루로, 긴 산길을 마치고 정겨운 임도로 연결되는 안부 지점입니다."
+            "strong": "하산길 능선 조망터",
+            "p": "내리막 능선 중간에 열리는 조망터로, 정면에 우뚝 솟은 월봉산과 장엄한 남덕유산의 산세를 감상할 수 있습니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "계곡임도원점회귀",
+      "cardTitle": "계곡임도원점길",
       "distanceKm": 5.9,
       "difficulty": "easy",
       "altitude": 500,
       "features": [
-        "완만한임도길",
-        "원시림용추계곡",
+        "완만한임도",
+        "용추계곡암반",
         "용추사일주문"
       ],
       "detail": {
@@ -393,19 +417,19 @@
         "bullets": [
           {
             "strong": "구간",
-            "p": "수망령 ~ 휴양림주차장 (비포장/포장 임도 ➔ 용추사 입구 경유) [거리: 5.9km | 난이도: 하]"
+            "p": "수망령 ~ 휴양림주차장 (비포장 및 포장 임도 · 용추사 입구 경유) [거리: 5.9km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "수망령에서 휴양림주차장까지 임도를 따라 내려오는 완만한 코스로, 단단한 노면으로 인한 발바닥 피로와 통행 차량에 주의하며 걸어야 합니다."
+            "p": "수망령 고갯마루에서 출발점까지 계곡을 따라 완만하게 이어지는 임도길입니다. 포장과 비포장 노면이 길게 이어지므로 발바닥 피로를 덜어주고 통행 차량에 유의하며 하산합니다."
           },
           {
-            "strong": "용추계곡",
-            "p": "울창한 원시림 사이로 맑고 찬 암반수가 흐르는 깊은 골짜기로, 크고 작은 폭포와 시원한 물소리가 산행의 피로를 씻어줍니다."
+            "strong": "용추계곡 및 계곡 암반 지대",
+            "p": "깊은 골짜기를 따라 맑고 시원한 암반수가 흐르는 원시림 계곡으로, 산행으로 지친 발을 식히며 피로를 풀기에 최적입니다."
           },
           {
             "strong": "용추사 일주문",
-            "p": "산행 막바지에 마주하는 고즈넉한 사찰 관문으로, 울창한 숲과 어우러져 종주 완주의 평온한 여운을 전합니다."
+            "p": "하산 날머리 부근에 위치한 유서 깊은 사찰 일주문으로, 고즈넉한 사찰 풍경과 함께 산행을 차분하게 마무리할 수 있습니다."
           }
         ]
       }
@@ -564,6 +588,16 @@
   let guideHTML = `
     <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
     <p class="guide-intro keep-all">${indentLines(data.guideIntro || '')}</p>`;
+  const keySceneryIntro = (data.keySceneryIntro || []).filter(item => item && (item.name || item.desc));
+  if (keySceneryIntro.length) {
+    guideHTML += `
+    <div class="scenery-highlights-block keep-all">
+      <div class="scenery-highlights-title">\ud83c\udfde\ufe0f 코스 내 반드시 봐야 할 핵심 비경</div>
+      <ul class="scenery-highlights-list">
+        ${keySceneryIntro.map(item => `<li>${item.name ? `<strong>${item.name}</strong> ` : ''}${item.desc || ''}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
   (data.extraInfos || []).forEach(item => {
     guideHTML += `
     <div class="extra-info-block keep-all">
