@@ -469,6 +469,12 @@ function buildOriginalFileName(mountainName) {
   return `${mt} 산행 가이드.txt`;
 }
 
+function buildJsonFileName(mountainName) {
+  const clean = (v) => String(v || '').replace(/[\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const mt = clean(mountainName) || '산행가이드';
+  return `${mt} JSON.json`;
+}
+
 // scripts 폴더 전용 저장 위치 핸들 — "저장 폴더 지정"(가이드 HTML 저장용,
 // savedDirHandle)과는 별개로 관리한다. 둘을 같은 핸들로 공유하면 가이드
 // HTML을 gaja/ 루트에 저장하다가 원문 .txt도 거기 섞여 공개 저장소에
@@ -542,6 +548,41 @@ async function saveOriginalCourseText(courseText) {
       // "scripts 폴더 지정" 과정을 한 번 거쳐야 매번 자동으로 그 폴더가
       // 뜬다. 지금은 매 저장 시 "최근에 쓴 폴더"가 자연히 시작 위치가
       // 되도록 브라우저 기본 동작에 맡긴다).
+      return fileName;
+    } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
+      // 다른 실패는 기본 다운로드로 폴백
+    }
+  }
+
+  downloadGuideFallback(blob, fileName);
+  return fileName;
+}
+
+// [JSON 붙여넣기] 성공 시 검증을 통과한 최종 JSON을 파일로 저장한다.
+// saveOriginalCourseText와 완전히 동일한 로직(scripts 폴더 기억, picker
+// 취소 시 폴백)을 쓰되, UTF-8 BOM은 JSON 파서가 거부할 수 있어 붙이지
+// 않는다. picker id도 원문 저장과 섞이지 않게 별도로 쓴다.
+async function saveJsonToFile(data, mountainName) {
+  const fileName = buildJsonFileName(mountainName);
+  const jsonText = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
+
+  if (window.showSaveFilePicker) {
+    try {
+      if (!savedScriptsDirHandle) savedScriptsDirHandle = await loadSavedScriptsDirHandle();
+      const pickerOpts = {
+        id: 'gajaScriptsJson', // 원문 .txt(gajaScriptsOriginalText)와 마지막 폴더가 섞이지 않게 분리
+        suggestedName: fileName,
+        types: [{ description: 'JSON 파일', accept: { 'application/json': ['.json'] } }]
+      };
+      if (savedScriptsDirHandle && (await ensureDirPermission(savedScriptsDirHandle))) {
+        pickerOpts.startIn = savedScriptsDirHandle;
+      }
+      const handle = await window.showSaveFilePicker(pickerOpts);
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
       return fileName;
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;
@@ -2048,7 +2089,7 @@ function processLoadedHtmlFile(file) {
   reader.readAsText(file);
 }
 
-function fillFormFromJSONPaste() {
+async function fillFormFromJSONPaste() {
   const textarea = document.getElementById('json-paste-area');
   const jsonWarnBox = document.getElementById('json-warn-box');
   document.getElementById('json-copy-info').style.display = 'none';
@@ -2097,6 +2138,13 @@ function fillFormFromJSONPaste() {
     info.textContent = ok
       ? 'ℹ 폼에 반영했습니다. 산행가이드표지 1단계로도 이 JSON을 넘겼습니다.'
       : '⚠ 폼에는 반영했지만 표지로 넘기지 못했습니다(브라우저 저장소 접근 불가).';
+
+    try {
+      const savedName = await saveJsonToFile(data, data.mountainName);
+      info.textContent += ` · "${savedName}" 으로 저장했습니다.`;
+    } catch (e) {
+      info.textContent += (e && e.name === 'AbortError') ? ' · JSON 저장을 취소했습니다.' : (' · JSON 저장 실패: ' + e.message);
+    }
   } catch (e) {}
   fillFormFromData(data);
 }
