@@ -87,9 +87,10 @@
       <div class="info-box" id="master-prompt-copy-info" style="margin:0 0 8px; display:none;"></div>
       <textarea id="json-paste-area" style="min-height:140px; font-family: 'Consolas', monospace; font-size:11.5px;" placeholder="여기에 산행 코스 상세 정보(원문 텍스트) 또는 AI가 만든 MOUNTAIN_DATA JSON을 입력하세요"></textarea>
       <div class="action-bar" style="margin:8px 0 0;">
-        <button class="btn" id="btn-copy-prompt" type="button">JSON 프롬프트 복사 (최신)</button>
+        <button class="btn" id="btn-copy-prompt" type="button">Json 생성</button>
         <button class="btn" id="btn-fill-json" type="button">JSON 붙여넣기</button>
       </div>
+      <div class="charcount" style="margin:6px 0 0;">저장 위치: <code id="scripts-save-path" style="user-select:all;">D:\Documents\GitHub\hiking\gaja\scripts</code> <button class="btn" type="button" style="padding:2px 8px; font-size:11px;" onclick="copyTextToClipboard(document.getElementById('scripts-save-path').textContent).then(()=>{this.textContent='복사됨'; setTimeout(()=>{this.textContent='복사'},1500);})">복사</button></div>
       <div class="warn-box" id="json-warn-box" style="margin-top:8px;"></div>
       <div class="info-box" id="json-copy-info" style="margin-top:8px;"></div>
     </fieldset>
@@ -519,7 +520,12 @@ async function saveOriginalCourseText(courseText) {
   if (window.showSaveFilePicker) {
     try {
       if (!savedScriptsDirHandle) savedScriptsDirHandle = await loadSavedScriptsDirHandle();
+      // id: Chrome/Edge는 picker마다 id별로 "마지막 사용 폴더"를 따로 기억한다.
+      // id가 없으면 가이드 HTML 저장(downloadGuide)·표지 저장 등 다른 picker와
+      // 마지막 폴더를 공유해, 다른 곳에서 저장하고 나면 이 저장 위치가
+      // 다운로드 폴더로 바뀌었다. 전용 id로 scripts 폴더를 따로 기억시킨다.
       const pickerOpts = {
+        id: 'gajaScriptsOriginalText',
         suggestedName: fileName,
         types: [{ description: '텍스트 파일', accept: { 'text/plain': ['.txt'] } }]
       };
@@ -1624,6 +1630,7 @@ async function downloadGuide() {
   if (window.showSaveFilePicker) {
     try {
       const pickerOpts = {
+        id: 'gajaGuideHtml', // 원문 .txt 저장 위치와 마지막 폴더가 섞이지 않게 분리
         suggestedName: fileName,
         types: [{ description: 'HTML 파일', accept: { 'text/html': ['.html'] } }]
       };
