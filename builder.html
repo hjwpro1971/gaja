@@ -90,7 +90,7 @@
         <button class="btn" id="btn-copy-prompt" type="button">Json 생성</button>
         <button class="btn" id="btn-fill-json" type="button">JSON 붙여넣기</button>
       </div>
-      <div class="charcount" style="margin:6px 0 0;">저장 위치: <code id="scripts-save-path" style="user-select:all;">D:\Documents\GitHub\hiking\gaja\scripts</code> <button class="btn" type="button" style="padding:2px 8px; font-size:11px;" onclick="copyTextToClipboard(document.getElementById('scripts-save-path').textContent).then(()=>{this.textContent='복사됨'; setTimeout(()=>{this.textContent='복사'},1500);})">복사</button></div>
+      <div class="charcount" style="margin:6px 0 0;">저장 위치: <code id="scripts-save-path" style="user-select:all;">D:\Documents\GitHub\hiking\gaja\scripts</code> <button class="btn" type="button" style="padding:2px 8px; font-size:11px;" onclick="copyTextToClipboard(document.getElementById('scripts-save-path').textContent).then(()=>{this.textContent='복사됨'; setTimeout(()=>{this.textContent='복사'},1500);})">복사</button> <button class="btn" id="btn-choose-scripts-dir" type="button" style="padding:2px 8px; font-size:11px;">scripts 폴더 지정</button> <span class="charcount" id="scripts-dir-status" style="margin:0;"></span></div>
       <div class="warn-box" id="json-warn-box" style="margin-top:8px;"></div>
       <div class="info-box" id="json-copy-info" style="margin-top:8px;"></div>
     </fieldset>
@@ -1569,6 +1569,32 @@ async function chooseSaveDirectory() {
   }
 }
 
+// chooseSaveDirectory(가이드 HTML용 savedDirHandle)와 완전히 같은 패턴을
+// scripts 폴더(savedScriptsDirHandle, JSON/원문 .txt 저장용)에 적용한다.
+// 최초 한 번 사용자가 D:\...\gaja\scripts를 직접 선택하면 핸들이 IndexedDB에
+// 저장되고, 이후 [Json 생성]/[JSON 붙여넣기] 저장 시 showSaveFilePicker가
+// 그 폴더에서 바로 시작한다.
+async function chooseScriptsDirectory() {
+  const statusEl = document.getElementById('scripts-dir-status');
+  if (!window.showDirectoryPicker) {
+    statusEl.textContent = '⚠ 이 브라우저는 폴더 지정 기능을 지원하지 않습니다.';
+    return;
+  }
+  try {
+    const pickerOpts = {};
+    if (savedScriptsDirHandle && (await ensureDirPermission(savedScriptsDirHandle))) {
+      pickerOpts.startIn = savedScriptsDirHandle;
+    }
+    const handle = await window.showDirectoryPicker(pickerOpts);
+    savedScriptsDirHandle = handle;
+    await storeScriptsDirHandle(handle);
+    statusEl.textContent = `지정된 폴더: ${handle.name}`;
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    statusEl.textContent = '⚠ 폴더 지정 실패: ' + err.message;
+  }
+}
+
 async function ensureDirPermission(handle) {
   const opts = { mode: 'readwrite' };
   if ((await handle.queryPermission(opts)) === 'granted') return true;
@@ -2352,6 +2378,7 @@ document.getElementById('btn-cover-zoom-reset').addEventListener('click', resetC
   }, { passive: false });
 })();
 document.getElementById('btn-choose-save-dir').addEventListener('click', chooseSaveDirectory);
+document.getElementById('btn-choose-scripts-dir').addEventListener('click', chooseScriptsDirectory);
 
 const GH_TOKEN_KEY = 'gh_gaja_upload_token';
 const GH_REPO_OWNER = 'hjwpro1971';
@@ -2494,6 +2521,21 @@ window.addEventListener('beforeunload', saveDraftNow);
   const handle = await loadSavedDirHandle();
   if (handle) {
     savedDirHandle = handle;
+    statusEl.textContent = `지정된 폴더: ${handle.name}`;
+  } else {
+    statusEl.textContent = '(지정된 폴더 없음 — 기본 위치에서 시작)';
+  }
+})();
+
+(async function restoreScriptsSaveDir() {
+  const statusEl = document.getElementById('scripts-dir-status');
+  if (!window.showDirectoryPicker) {
+    statusEl.textContent = '(폴더 지정 미지원)';
+    return;
+  }
+  const handle = await loadSavedScriptsDirHandle();
+  if (handle) {
+    savedScriptsDirHandle = handle;
     statusEl.textContent = `지정된 폴더: ${handle.name}`;
   } else {
     statusEl.textContent = '(지정된 폴더 없음 — 기본 위치에서 시작)';
