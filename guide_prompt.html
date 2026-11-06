@@ -244,6 +244,35 @@
             <button class="copy-btn btn-secondary" onclick="copyPrompt(event)">복사</button>
             <span id="finalPromptResult"></span>
         </div>
+        <!-- 2026-11-06 추가 — 다른 AI가 곰돌이/곰순이를 텍스트 설명만으로 잘못
+             그리는 경우가 많아, 레퍼런스 이미지를 프롬프트와 함께 제공한다.
+             이 페이지는 이미지를 직접 생성/전송하지 않는 순수 프롬프트
+             빌더라, 이미지를 "프롬프트 텍스트 안"에 넣을 수는 없다(Gemini 등은
+             URL을 텍스트로 줘도 실제로 열어보지 않음) — 대신 화면에 이미지를
+             보여주고, 사용자가 다운로드하거나 드래그해서 Gemini에 프롬프트와
+             함께 "첨부 파일"로 같이 넣도록 안내한다. 이미지는 GitHub Pages로
+             공개 배포돼 있어(hjwpro1971/gaja) 다른 PC/모바일에서도 접근 가능.
+        -->
+        <div class="bear-ref-box" style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed #fff59d;">
+            <p style="font-size: 13px; color: #f57f17; font-weight: 700; margin-bottom: 8px;">
+                📎 아래 레퍼런스 이미지를 위 프롬프트와 함께 Gemini에 첨부하세요 (곰돌이/곰순이를 다른 모습으로 잘못 그리는 것을 방지합니다)
+            </p>
+            <a href="https://hjwpro1971.github.io/gaja/bear-reference.png" target="_blank" rel="noopener" title="클릭하면 원본 크기로 열립니다 (우클릭 또는 길게 눌러 저장하세요)">
+                <img id="bearRefImg" src="https://hjwpro1971.github.io/gaja/bear-reference.png" alt="곰돌이(검정)와 곰순이(분홍) 레퍼런스" style="max-width: 220px; width: 100%; border-radius: 8px; border: 1px solid #fff59d; display: block;">
+            </a>
+            <!-- 2026-11-06 추가 — "텍스트 복사 버튼을 누르면 이미지도 같이 복사되게
+                 해달라"는 요청. 클립보드 API(ClipboardItem)는 텍스트+이미지를 한
+                 항목에 같이 넣을 수는 있지만, 실제로 Gemini 등 대부분의 붙여넣기
+                 대상은 한 번의 Ctrl+V에 그중 하나만 받아들인다(앱마다 동작이
+                 다름) — 그래서 "복사" 버튼(텍스트 전용)과 별개로 "이미지 복사"
+                 버튼을 따로 둔다. 텍스트는 Ctrl+V로, 이미지는 그다음 Ctrl+V로
+                 두 번 붙여넣으면 Gemini 입력창에 텍스트와 이미지가 모두 들어간다.
+            -->
+            <button type="button" class="btn-secondary" id="btnCopyBearImage" style="width: auto; padding: 6px 14px; font-size: 12.5px; margin-top: 8px;" onclick="copyBearImage(event)">🖼️ 이미지 클립보드 복사</button>
+            <p style="font-size: 11.5px; color: #9e7b1a; margin-top: 6px;">
+                위 "복사"로 텍스트를 붙여넣은 뒤, "이미지 클립보드 복사"를 누르고 한 번 더 Ctrl+V 하면 Gemini 입력창에 텍스트와 이미지가 모두 들어갑니다. (이미지를 직접 클릭해 저장해도 됩니다.)
+            </p>
+        </div>
     </fieldset>
 
 </div>
@@ -403,10 +432,11 @@
         }
 
         return `
+[REFERENCE IMAGE - STRICT, FOLLOW EXACTLY]: An attached reference image shows the two mascot characters (the black bear and the pink bear). Match their exact character design, proportions, fur color, facial features, outfit colors, and overall art style from the attached reference image as closely as possible — do not reinterpret, simplify, or redesign them into a different art style (e.g. do not flatten into a 2D vector/sticker look). The text descriptions below are a supplementary guide only for details not clearly visible in the reference image (such as pose, action, or items being held); the reference image's visual style always takes priority over the text description if they conflict.
 [BLACK MOON BEAR]: Premium cinematic 3D animated mascot, ultra-cute, lovable collectible plush-toy proportions, soft fluffy black fur, clear natural white crescent marking on chest, round baby-face proportions, oversized sparkling eyes, round chubby cheeks, warm friendly smile, small black nose. Wearing beige wide-brim hiking hat, olive green functional layering hiking outfit, olive green large hiking backpack with small water bottle, brown sturdy hiking boots. ${blackBearPole}
 [PINK MOON BEAR]: Extremely adorable 3D animated mascot, lovable plush-toy proportions, soft cotton-candy pink fluffy fur, clear white crescent marking on chest, round baby-face proportions, oversized sparkling eyes with soft eyelashes, round chubby cheeks, bright lovable smile, tiny nose. Wearing light pink wide-brim hiking hat, light pink and beige functional layering hiking outfit, light pink hiking backpack with small water bottle, brown sturdy hiking boots. ${pinkBearPole}
 The couple is depicted sharing a warm, joyful bond. They are naturally integrated into the scenic environment based on the specified position.
-[CHARACTER SCALE & PERSPECTIVE - STRICT, HIGHEST PRIORITY]: This is a grand wide-angle landscape photograph, shot like a professional nature photographer standing far back with a wide-angle lens to capture the full scale of the mountain scenery — NOT a close-up portrait or mascot shot. The two bears are small, distant figures deep within the scene, exactly like tiny hikers you'd spot as a small human-interest detail in an epic National Geographic-style landscape photo — easy to miss at first glance, dwarfed by the mountains around them. Each bear's full-body height must occupy NO MORE than 2-4% of the total frame height — small enough that the viewer's eye reads the mountains first and only then notices the two tiny hikers. The composition must have clear atmospheric depth with three distinct layers: (1) a large, detailed FOREGROUND of trail, rocks, trees, or grass occupying the lower portion of the frame, (2) the bears placed in the MIDGROUND or further back along the trail, small and partially surrounded by environment (bushes, rocks, mist), never standing isolated in open empty space, (3) a vast layered BACKGROUND of mountain ridges fading into atmospheric haze toward the horizon. Leave well over 90% of the frame as open landscape: sky, mountains, forest, trail. Critically, the scene must stay readable and well-composed even when only a small portion of it is cropped out and enlarged — every region of the frame should hold genuine scenic detail (rock texture, individual trees, ridgelines, mist) rather than empty flat washes, because this wallpaper will be cropped and zoomed into when used. If in doubt, render the bears smaller and farther away, never larger or closer. Do not crop, zoom into, center-frame, or fill the composition with the characters.`;
+[CHARACTER SCALE & PERSPECTIVE - STRICT, HIGHEST PRIORITY]: This is a grand wide-angle landscape photograph, shot like a professional nature photographer standing far back with a wide-angle lens to capture the full scale of the mountain scenery — NOT a close-up portrait or mascot shot. The two bears are small, distant figures deep within the scene, exactly like tiny hikers you'd spot as a small human-interest detail in an epic National Geographic-style landscape photo — easy to miss at first glance, dwarfed by the mountains around them. Each bear's full-body height must occupy approximately 3% of the total frame height (acceptable range 2.5-3.5%) — small enough that the viewer's eye reads the mountains first and only then notices the two tiny hikers. The composition must have clear atmospheric depth with three distinct layers: (1) a large, detailed FOREGROUND of trail, rocks, trees, or grass occupying the lower portion of the frame, (2) the bears placed in the MIDGROUND or further back along the trail, small and partially surrounded by environment (bushes, rocks, mist), never standing isolated in open empty space, (3) a vast layered BACKGROUND of mountain ridges fading into atmospheric haze toward the horizon. Leave well over 90% of the frame as open landscape: sky, mountains, forest, trail. Critically, the scene must stay readable and well-composed even when only a small portion of it is cropped out and enlarged — every region of the frame should hold genuine scenic detail (rock texture, individual trees, ridgelines, mist) rather than empty flat washes, because this wallpaper will be cropped and zoomed into when used. If in doubt, render the bears smaller and farther away, never larger or closer. Do not crop, zoom into, center-frame, or fill the composition with the characters.`;
     }
 
     const STYLE_DEFINITIONS_EN = `
@@ -416,7 +446,7 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
 
     // --- 동적 네거티브 프롬프트 (스틱 규칙 유연화) ---
     function getNegativePrompt(actionText) {
-        let baseNeg = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No low resolution, no blurry or soft-focus background, no mushy undetailed textures, no empty flat color areas, no upscaling artifacts. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters. No empty space, no black borders. No oversized characters, no close-up character shot, no character portrait, no mascot close-up, no eye-level close shot, no telephoto compression, no shallow depth of field, no characters filling or dominating the frame, no large characters, no characters larger than 4% of frame height, no characters standing isolated in flat empty ground, no characters as the main visual focus.`;
+        let baseNeg = `No text, no readable letters, no labels, no captions, no numbers, no infographic, no artificial section dividers, no split-screen, no collage, no separate framed scenes, no map layout, no disconnected trail sections. No flat illustration. No low resolution, no blurry or soft-focus background, no mushy undetailed textures, no empty flat color areas, no upscaling artifacts. No scary bear, no realistic wildlife bear, no sharp teeth, no visible claws. No extra arms, no extra legs, no floating characters. No empty space, no black borders. No oversized characters, no close-up character shot, no character portrait, no mascot close-up, no eye-level close shot, no telephoto compression, no shallow depth of field, no characters filling or dominating the frame, no large characters, no characters larger than 3.5% of frame height, no characters standing isolated in flat empty ground, no characters as the main visual focus.`;
         
         // 카메라를 안 들고 있으면 스틱 필수 규칙 추가
         if (!(actionText.includes("사진기") || actionText.includes("카메라"))) {
@@ -798,6 +828,30 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
         }).catch(() => {
             flashCopyButton(btn, '복사 실패', true);
         });
+    }
+
+    // 레퍼런스 이미지를 클립보드에 이미지로 복사한다(텍스트 복사와 별개 버튼).
+    // navigator.clipboard.write + ClipboardItem은 HTTPS(또는 localhost)에서만
+    // 동작하고, 이미지를 Blob으로 가져오려면 same-origin이거나 CORS가 열려
+    // 있어야 한다 — bear-reference.png는 이 페이지와 같은 GitHub Pages
+    // 오리진(hjwpro1971.github.io)에서 서빙되므로 별도 프록시 없이 가능.
+    async function copyBearImage(evt) {
+        const btn = (evt && evt.currentTarget) || document.getElementById('btnCopyBearImage');
+        if (!navigator.clipboard || !window.ClipboardItem) {
+            flashCopyButton(btn, '이 브라우저는 미지원', true);
+            return;
+        }
+        try {
+            const img = document.getElementById('bearRefImg');
+            const res = await fetch(img.src);
+            const blob = await res.blob();
+            await navigator.clipboard.write([
+                new ClipboardItem({ [blob.type || 'image/png']: blob })
+            ]);
+            flashCopyButton(btn, '✓ 이미지 복사됨', false);
+        } catch (e) {
+            flashCopyButton(btn, '복사 실패', true);
+        }
     }
 </script>
 
