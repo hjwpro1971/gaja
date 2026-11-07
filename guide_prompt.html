@@ -197,6 +197,7 @@
         <p>자연스럽게 이어지는 하나의 긴 파노라마 뷰를 생성합니다</p>
         <button type="button" id="resetFormBtn" class="btn-secondary" style="margin-top: 10px; width: auto; padding: 8px 18px;">폼 초기화</button>
         <button type="button" id="copyImageFixPromptBtn" class="btn-secondary" style="margin-top: 10px; margin-left: 8px; width: auto; padding: 8px 18px;">이미지수정 프롬프트 복사</button>
+        <button type="button" id="copyWatermarkBtn" class="btn-secondary" style="margin-top: 10px; margin-left: 8px; width: auto; padding: 8px 12px; font-size: 12.5px;" title="재렌더링 시 함께 첨부할 gajaGO 직인 이미지를 클립보드에 복사합니다">🔖 직인 이미지 복사</button>
     </header>
 
     <fieldset>
@@ -380,6 +381,7 @@
 
     document.getElementById('resetFormBtn').addEventListener('click', resetForm);
     document.getElementById('copyImageFixPromptBtn').addEventListener('click', copyImageFixPrompt);
+    document.getElementById('copyWatermarkBtn').addEventListener('click', copyWatermarkImage);
     [nodes.jsonInput, nodes.bgLocation, nodes.bgSeason, nodes.charPosition, nodes.actionEntry].forEach(el => {
         el.addEventListener('input', scheduleDraftSave);
     });
@@ -860,19 +862,31 @@ Only after this text list is finalized, regenerate the image: keep all backgroun
     // 있어야 한다 — bear-reference.png는 이 페이지와 같은 GitHub Pages
     // 오리진(hjwpro1971.github.io)에서 서빙되므로 별도 프록시 없이 가능.
     async function copyBearImage(evt) {
-        const btn = (evt && evt.currentTarget) || document.getElementById('btnCopyBearImage');
+        const img = document.getElementById('bearRefImg');
+        await copyImageToClipboard(evt, img.src, '✓ 이미지 복사됨');
+    }
+
+    // 2026-11-08 추가 — 생성된 이미지에 넣을 "gajaGO" 직인(워터마크)을
+    // 텍스트 프롬프트와 별개로 클립보드에 복사하는 버튼. copyBearImage와
+    // 동일한 제약(HTTPS/same-origin 필요)을 공유하므로 로직은
+    // copyImageToClipboard로 공통화했다.
+    async function copyWatermarkImage(evt) {
+        await copyImageToClipboard(evt, 'https://hjwpro1971.github.io/gaja/gajaGO.jpg', '✓ 직인 복사됨');
+    }
+
+    async function copyImageToClipboard(evt, src, successLabel) {
+        const btn = evt && evt.currentTarget;
         if (!navigator.clipboard || !window.ClipboardItem) {
             flashCopyButton(btn, '이 브라우저는 미지원', true);
             return;
         }
         try {
-            const img = document.getElementById('bearRefImg');
-            const res = await fetch(img.src);
+            const res = await fetch(src);
             const blob = await res.blob();
             await navigator.clipboard.write([
                 new ClipboardItem({ [blob.type || 'image/png']: blob })
             ]);
-            flashCopyButton(btn, '✓ 이미지 복사됨', false);
+            flashCopyButton(btn, successLabel, false);
         } catch (e) {
             flashCopyButton(btn, '복사 실패', true);
         }
