@@ -196,6 +196,7 @@
         <h1>AI 산행 파노라마 프롬프트 디자이너</h1>
         <p>자연스럽게 이어지는 하나의 긴 파노라마 뷰를 생성합니다</p>
         <button type="button" id="resetFormBtn" class="btn-secondary" style="margin-top: 10px; width: auto; padding: 8px 18px;">폼 초기화</button>
+        <button type="button" id="copyImageFixPromptBtn" class="btn-secondary" style="margin-top: 10px; margin-left: 8px; width: auto; padding: 8px 18px;">이미지수정 프롬프트 복사</button>
     </header>
 
     <fieldset>
@@ -378,6 +379,7 @@
     }
 
     document.getElementById('resetFormBtn').addEventListener('click', resetForm);
+    document.getElementById('copyImageFixPromptBtn').addEventListener('click', copyImageFixPrompt);
     [nodes.jsonInput, nodes.bgLocation, nodes.bgSeason, nodes.charPosition, nodes.actionEntry].forEach(el => {
         el.addEventListener('input', scheduleDraftSave);
     });
@@ -818,6 +820,28 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
             btn.style.color = '';
             copyBtnResetTimer = null;
         }, 1500);
+    }
+
+    // 생성된 인포그래픽/이미지에서 한글 텍스트 오타를 고칠 때 쓰는 별도
+    // 프롬프트. Gemini에 바로 붙여넣을 수 있도록 영문으로 압축한 요약본
+    // (2026-11-07, 사용자가 붙여넣은 장문의 한글 가이드를 요약 요청).
+    const IMAGE_FIX_PROMPT = `[PRIORITY INSTRUCTION — Korean Text Audit Before Redraw]
+
+Before regenerating or editing this image, first perform a character-by-character audit of ALL Korean text visible in the original image (titles, subtitles, body text, labels inside tables/charts, captions, footnotes, tiny corner text — not just large headings). Do NOT redraw anything yet.
+
+For each text element, check specifically for: wrong jamo (consonant/vowel) combinations, missing or incorrect batchim (받침), confusable look-alike Hangul characters, dropped or merged characters, swapped character order, and Korean/English mixed-script errors. Cross-check each word against its surrounding sentence context to confirm it makes semantic sense — but do not invent or guess words that aren't actually legible in the source.
+
+Produce a corrected-text list (original reading → corrected text) before touching the image. Leave correct text unchanged — do not "improve" or rephrase anything that isn't actually wrong.
+
+Only after this text list is finalized, regenerate the image: keep all background art, illustrations, icons, and layout exactly as-is, and re-render ONLY the text regions using the finalized corrected text — verbatim, not paraphrased. Then do one final pass comparing the finished image's text against the corrected list to catch any new typos introduced during rendering.`;
+
+    function copyImageFixPrompt(evt) {
+        const btn = (evt && evt.currentTarget) || document.getElementById('copyImageFixPromptBtn');
+        navigator.clipboard.writeText(IMAGE_FIX_PROMPT).then(() => {
+            flashCopyButton(btn, '✓ 복사됨', false);
+        }).catch(() => {
+            flashCopyButton(btn, '복사 실패', true);
+        });
     }
 
     function copyPrompt(evt) {
