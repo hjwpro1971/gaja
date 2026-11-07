@@ -143,6 +143,12 @@
   .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
   .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
   .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .scenery-highlights-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
+  .scenery-highlights-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+  .scenery-highlights-list { list-style: none; padding-left: 0; }
+  .scenery-highlights-list li { font-size: 14px; color: #4a5568; margin-bottom: 8px; position: relative; padding-left: 20px; }
+  .scenery-highlights-list li::before { content: '✨'; position: absolute; left: 0; }
+  .scenery-highlights-list li strong { color: #1a202c; font-weight: 700; }
   .extra-info-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
   .extra-info-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
   .extra-info-text { font-size: 14.5px; color: #4a5568; white-space: pre-line; }
@@ -163,7 +169,7 @@
   @media (max-width: 768px) {
     body { padding: 10px 0; }
     .guide-container { padding: 20px 0; border-radius: 12px; }
-    .guide-main-title, .guide-intro, .extra-info-block { margin-left: 16px; margin-right: 16px; }
+    .guide-main-title, .guide-intro, .scenery-highlights-block, .extra-info-block { margin-left: 16px; margin-right: 16px; }
     .section-block { padding-left: 16px; padding-right: 16px; }
     .guide-main-title { font-size: 20px; }
     .guide-intro { font-size: 13.5px; }
@@ -229,164 +235,185 @@
     "만남재",
     "투구봉",
     "병풍산",
-    "만남재",
     "주차장"
   ],
-  "startAltitude": 150,
-  "endAltitude": 150,
-  "totalTime": "3.5h~4.5h",
+  "startAltitude": 329,
+  "endAltitude": 329,
+  "totalTime": "2.5h~3.1h",
   "overallDifficulty": "보통",
-  "safetyWarningText": "급경사 바위길 미끄럼 · 밧줄 구간 손다침 주의 · 등산장갑 및 등산스틱 필수 · 식수 보급 불가 미리 준비 · 능선 체온 조절 여벌 옷 지참",
-  "guideIntro": "병풍산은 전남 담양과 장성의 경계에 병풍을 둘러놓은 듯한 웅장한 바위 능선이 돋보이는 호남의 대표 명산입니다. 숲길을 지나 장군 투구 형상의 투구봉과 해발 822m 정상에 서면 무등산, 추월산, 내장산, 지리산 반야봉까지 이어지는 360도 파노라마 절경이 펼쳐집니다. 신록과 억새 능선, 바위 동굴 속 용구샘까지 다채로운 비경을 품고 있어 산객들에게 깊은 감동을 선사합니다.",
+  "safetyWarningText": "급경사 바위길 주의 · 암릉 접지력 유지 · 장갑 및 스틱 필수 · 식수 사전 준비 · 하산길 낙엽 미끄럼 주의",
+  "guideIntro": "전남 담양과 장성의 경계를 이루는 병풍산은 웅장한 회색 암릉이 마치 거대한 병풍을 쫙 펼쳐놓은 듯한 독보적인 산세를 자랑하는 호남의 명산입니다. 사계절 울창한 편백나무 숲이 산행 초입을 포근하게 감싸고, 고갯목에 다다르면 시원한 산바람과 함께 장엄한 암봉의 비경이 등산객을 맞이합니다. 정상에 올라서면 무등산부터 지리산 반야봉까지 시원하게 터지는 360도 파노라마 조망을 만끽할 수 있습니다.",
+  "keySceneryIntro": [
+    {
+      "name": "편백나무 숲",
+      "desc": "사계절 내내 푸른 빛과 울창함을 뽐내며 시원한 계곡 물소리와 피톤치드로 산행의 상쾌한 출발을 알립니다."
+    },
+    {
+      "name": "만남재 쉼터",
+      "desc": "삼인산과 이어지는 아늑한 고갯목으로 벤치와 휴게 시설이 갖춰져 본격적인 바위길에 앞서 숨을 고르기 좋습니다."
+    },
+    {
+      "name": "투구봉 (신선대)",
+      "desc": "장군이 쓴 투구 형상의 웅장한 바위 조망터로 발아래 광활한 담양 들판의 절경을 감상할 수 있습니다."
+    },
+    {
+      "name": "병풍산 정상 (깃대봉)",
+      "desc": "해발 822m에 위치한 주봉으로 무등산부터 지리산 반야봉까지 막힘없이 펼쳐지는 360도 초파노라마 장관을 자랑합니다."
+    },
+    {
+      "name": "용구샘",
+      "desc": "바위 동굴 속에 맑고 차가운 물이 사계절 고여 있어 등산객에게 시원한 청량감을 선사하는 신비로운 자연 샘터입니다."
+    }
+  ],
   "sceneryHighlights": [
-    "병풍처럼 쫙 펼쳐진 웅장한 회색 암릉 능선",
-    "투구 형상의 장엄한 투구봉 암반 전망대",
-    "해발 822m 정상에서 바라본 360도 파노라마 뷰",
-    "바위 동굴 속에 맑게 고여 있는 신비로운 용구샘",
-    "사계절 울창한 편백나무 숲과 아늑한 만남재 쉼터"
+    "병풍처럼 펼쳐진 웅장한 회색 바위 능선",
+    "360도 파노라마로 터지는 지리산 능선 조망",
+    "푸른빛과 피톤치드 가득한 울창한 편백나무 숲",
+    "담양 들판을 내려다보는 투구 형상 암반 조망터",
+    "바위 동굴 속 맑게 고인 신비로운 자연 샘터"
   ],
   "extraInfos": [],
   "sections": [
     {
-      "cardTitle": "편백숲안부길",
-      "distanceKm": 2,
+      "cardTitle": "편백나무숲쉼터길",
+      "distanceKm": 0.6,
       "difficulty": "easy",
-      "altitude": 380,
+      "altitude": 490,
       "features": [
         "편백나무숲",
-        "부드러운흙길",
-        "만남재쉼터"
+        "계곡물소리",
+        "완만한오르막"
       ],
       "detail": {
-        "headerName": "울창한 편백 숲길과 아늑한 안부로 향하는 서곡",
+        "headerName": "편백나무 숲길과 아늑한 쉼터의 서곡",
         "bullets": [
           {
             "strong": "구간",
-            "p": "주차장 ~ 만남재 (편백나무 숲 경유) [거리: 2.0km | 난이도: 하]"
+            "p": "주차장 ~ 만남재 (편백나무 숲길 경유) [거리: 0.6km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "경사가 완만하고 편백나무와 소나무가 우거진 정비된 흙길로 차분하게 워밍업을 하기 좋은 구간입니다."
+            "p": "울창한 편백나무 숲과 시원한 계곡 물소리를 따라 완만하게 경사를 높여가며 깊은 숲 그늘에서 가볍게 몸을 풀고 체력을 안배하는 시작점입니다."
           },
           {
             "strong": "편백나무 숲",
-            "p": "산행 초입을 감싸고 있는 울창한 편백나무 림과 시원하게 울려 퍼지는 계곡 물소리가 반겨줍니다."
+            "p": "산행 초입을 감싸는 푸른 침엽수림 사이로 맑은 피톤치드 공기와 청량한 계곡 물소리가 시원하게 울려 퍼집니다."
           },
           {
-            "strong": "만남재",
-            "p": "삼인산과 연결되는 아늑한 고갯목 쉼터로 벤치와 운동기구가 있어 휴식을 취하기 좋습니다."
+            "strong": "만남재 쉼터",
+            "p": "삼인산과 연결되는 아늑한 고갯목으로 벤치와 휴식 공간이 잘 정비되어 있어 오르막을 앞두고 정비하기 좋습니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "가파른투구봉",
-      "distanceKm": 0.8,
+      "cardTitle": "가파른바위능선길",
+      "distanceKm": 0.9,
       "difficulty": "hard",
       "altitude": 778,
       "features": [
-        "급경사돌길",
-        "밧줄바위길",
-        "투구봉암반"
+        "최대경사오십도",
+        "투구형상바위",
+        "담양들판조망터"
       ],
       "detail": {
-        "headerName": "당당한 바위 봉우리로 치솟는 가파른 바위길",
+        "headerName": "솟아오르는 암반과 투구 형상 조망터",
         "bullets": [
           {
             "strong": "구간",
-            "p": "만남재 ~ 투구봉 [거리: 0.8km | 난이도: 상]"
+            "p": "만남재 ~ 투구봉 (능선 깔딱고개 경유) [거리: 0.9km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "경사가 매우 가파른 돌계단과 바위 오르막 구간으로, 밧줄 지대에서는 장갑을 끼고 발밑을 확실히 지지하며 올라야 합니다."
+            "p": "만남재를 지나 능선으로 향하는 최대 50도에 달하는 가파른 흙길과 바위 경사면이 이어지므로 서서히 페이스를 조절하며 발밑을 주의해야 합니다."
           },
           {
             "strong": "투구봉 (신선대)",
-            "p": "장군이 투구를 쓴 듯한 당당한 바위 봉우리로 널찍한 암반에서 담양 들판과 무등산을 한눈에 조망할 수 있습니다."
+            "p": "장군이 쓴 투구 모양의 거대한 기암절벽 위에 서면 발아래로 황금빛 담양 들판이 시원하게 내려다보입니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "병풍산주능선",
-      "distanceKm": 0.9,
+      "cardTitle": "병풍바위길정상",
+      "distanceKm": 1,
       "difficulty": "medium",
       "altitude": 822,
       "features": [
-        "호쾌한마로금",
-        "억새구절초",
-        "360도조망터"
+        "회색바위능선",
+        "해발팔백이십이m",
+        "초파노라마조망"
       ],
       "detail": {
-        "headerName": "병풍을 둘러놓은 듯한 주능선과 최고봉의 비경",
+        "headerName": "웅장한 회색 바위길과 360도 파노라마 절경",
         "bullets": [
           {
             "strong": "구간",
-            "p": "투구봉 ~ 병풍산 [거리: 0.9km | 난이도: 중]"
+            "p": "투구봉 ~ 병풍산 (주능선 바위길 경유) [거리: 1.0km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "시야가 탁 트인 바위 능선길로 바람이 강할 수 있으므로 절벽 가장자리를 피하고 안정된 등산로를 따라 신중히 걸어야 합니다."
+            "p": "병풍처럼 펼쳐진 회색 바위 능선을 오르내리는 구간으로 시야가 탁 트여 있으나 일부 밧줄 구간과 돌길 경사면에서 미끄러짐에 유의해야 합니다."
           },
           {
-            "strong": "병풍산 정상 (기대봉)",
-            "p": "해발 822m 최고봉으로 무등산, 추월산, 내장산, 지리산 반야봉까지 시원하게 터지는 360도 파노라마 절경이 장관을 이룹니다."
+            "strong": "병풍산 정상 (깃대봉)",
+            "p": "해발 822m 주봉 정상석에 서면 무등산, 추월산, 내장산, 지리산 반야봉까지 아우르는 360도 조망이 파노라마처럼 펼쳐집니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "암굴샘터하산",
-      "distanceKm": 1.8,
+      "cardTitle": "용구샘신비내리막",
+      "distanceKm": 1,
       "difficulty": "medium",
-      "altitude": 380,
+      "altitude": 490,
       "features": [
-        "용구샘갈림길",
-        "바위동굴샘터",
-        "무릎보호내리막"
+        "동굴속자연샘터",
+        "순환루프갈림길",
+        "낙엽돌길내리막"
       ],
       "detail": {
-        "headerName": "전설의 자연 샘터와 차분한 암굴 내리막",
+        "headerName": "용구샘의 신비와 고즈넉한 루프 내리막",
         "bullets": [
           {
             "strong": "구간",
-            "p": "병풍산 ~ 만남재 (용구샘 경유) [거리: 1.8km | 난이도: 중]"
+            "p": "병풍산 ~ 만남재 (갈림길 및 순환 루프 경유) [거리: 1.0km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "계단과 등산로가 잘 갖추어져 있으나 가파른 내리막으로 잔돌에 미끄러질 수 있으니 등산스틱을 활용해 하중을 분산시켜야 합니다."
+            "p": "정상에서 갈림길을 거쳐 만남재로 돌아오는 내리막으로 낙엽과 돌멩이가 섞여 있으므로 등산스틱을 활용해 무릎 부담을 줄이며 걸어야 합니다."
           },
           {
             "strong": "용구샘",
-            "p": "상봉 아래 바위 동굴 속에 사시사철 차가운 물이 고여 내려오는 신비로운 자연 샘터입니다."
+            "p": "바위 동굴 안쪽에 천년의 숨결이 스며든 맑고 차가운 자연 샘물이 사계절 마르지 않고 고여 있어 청량감을 줍니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "계곡임도종착점",
-      "distanceKm": 2,
+      "cardTitle": "피톤치드임도복귀",
+      "distanceKm": 0.6,
       "difficulty": "easy",
-      "altitude": 150,
+      "altitude": 329,
       "features": [
-        "평탄한임도",
-        "계곡물소리",
-        "단풍나무터널"
+        "완만한숲속임도",
+        "원점회귀마무리",
+        "편백나무숲길"
       ],
       "detail": {
-        "headerName": "계곡 물소리와 임도를 따라 돌아오는 호젓한 마무릿길",
+        "headerName": "원점회귀 피톤치드 숲길과 여운의 마무리",
         "bullets": [
           {
             "strong": "구간",
-            "p": "만남재 ~ 주차장 (계곡 임도 경유) [거리: 2.0km | 난이도: 하]"
+            "p": "만남재 ~ 주차장 (원점회귀 임도 경유) [거리: 0.6km | 난이도: 하]"
           },
           {
             "strong": "특징",
-            "p": "길 폭이 넓고 평탄한 임도와 계곡길로 피로를 풀며 편안하게 하산하여 여정을 마무리하는 코스입니다."
+            "p": "만남재에서 출발점인 주차장으로 복귀하는 안정적인 완만한 내리막길로 가빠진 호흡을 가다듬고 근육을 이완하며 산행을 매듭짓습니다."
           },
           {
-            "strong": "계곡과 단풍나무 임도",
-            "p": "도로 옆으로 흐르는 시원한 계곡 물소리와 계절에 따른 울창한 단풍나무 터널의 고즈넉한 경관을 즐길 수 있습니다."
+            "strong": "편백나무 숲",
+            "p": "하산길 양옆으로 솟은 편백나무 숲이 뿜어내는 맑은 피톤치드와 숲바람을 맞으며 산행의 여운을 정리할 수 있습니다."
           }
         ]
       }
@@ -547,6 +574,16 @@
   let guideHTML = `
     <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
     <p class="guide-intro keep-all">${indentLines(data.guideIntro || '')}</p>`;
+  const keySceneryIntro = (data.keySceneryIntro || []).filter(item => item && (item.name || item.desc));
+  if (keySceneryIntro.length) {
+    guideHTML += `
+    <div class="scenery-highlights-block keep-all">
+      <div class="scenery-highlights-title">\ud83c\udfde\ufe0f 코스 내 반드시 봐야 할 핵심 비경</div>
+      <ul class="scenery-highlights-list">
+        ${keySceneryIntro.map(item => `<li>${item.name ? `<strong>${item.name}</strong> ` : ''}${item.desc || ''}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
   (data.extraInfos || []).forEach(item => {
     guideHTML += `
     <div class="extra-info-block keep-all">
