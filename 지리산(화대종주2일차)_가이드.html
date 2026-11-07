@@ -143,6 +143,12 @@
   .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
   .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
   .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .scenery-highlights-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
+  .scenery-highlights-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+  .scenery-highlights-list { list-style: none; padding-left: 0; }
+  .scenery-highlights-list li { font-size: 14px; color: #4a5568; margin-bottom: 8px; position: relative; padding-left: 20px; }
+  .scenery-highlights-list li::before { content: '✨'; position: absolute; left: 0; }
+  .scenery-highlights-list li strong { color: #1a202c; font-weight: 700; }
   .extra-info-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
   .extra-info-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
   .extra-info-text { font-size: 14.5px; color: #4a5568; white-space: pre-line; }
@@ -163,7 +169,7 @@
   @media (max-width: 768px) {
     body { padding: 10px 0; }
     .guide-container { padding: 20px 0; border-radius: 12px; }
-    .guide-main-title, .guide-intro, .extra-info-block { margin-left: 16px; margin-right: 16px; }
+    .guide-main-title, .guide-intro, .scenery-highlights-block, .extra-info-block { margin-left: 16px; margin-right: 16px; }
     .section-block { padding-left: 16px; padding-right: 16px; }
     .guide-main-title { font-size: 20px; }
     .guide-intro { font-size: 13.5px; }
@@ -226,174 +232,200 @@
   "mountainName": "지리산(화대종주2일차)",
   "courseRouteFlow": [
     "촛대봉",
-    "장터목쉼터",
+    "장터목",
     "천왕봉",
-    "치밭목쉼터",
+    "치밭목",
     "유평마을"
   ],
   "startAltitude": 1703,
   "endAltitude": 200,
   "totalTime": "6.5h~9.0h",
   "overallDifficulty": "힘듦",
-  "safetyWarningText": "가파른바위길낙상주의·불규칙한돌길발목접지름주의·무릎보호대및스틱필수·방풍자켓체온유지·식수보급처사전확인·쉼터통과시간엄수",
+  "safetyWarningText": "천왕봉깔딱고개주의 · 돌길및철계단낙상주의 · 무릎보호대및스틱필수 · 방풍자켓및방한의류구비 · 주요쉼터충분한수분보충 · 입산및쉼터통과시간엄수",
   "guideIntro": "대한민국 제1호 국립공원인 지리산은 해발 1,915m의 내륙 최고봉 천왕봉을 중심축으로 장대한 산줄기와 깊은 골짜기를 품어낸 어머니의 산입니다. 고산 평원인 촛대봉을 출발하여 연하선경의 신비로운 운무와 제석봉의 고사목 지대를 거쳐 천왕봉 정상에 오르면, 3대 덕을 쌓아야 마주할 수 있다는 장엄한 일출과 웅장한 산그리메가 가슴 벅찬 감동을 선사합니다. 중봉과 써리봉의 거친 암릉을 지나 무재치기폭포의 시원한 수류와 유평마을 계곡으로 내려서는 이 길은, 지리산 동부능선 특유의 거친 원시림과 고산 조망을 만끽할 수 있는 최고의 탐방로입니다.",
+  "keySceneryIntro": [
+    {
+      "name": "연하봉과 연하선경",
+      "desc": "해발 1,721m 봉우리 주변으로 신선이 노닐 법한 기암괴석과 은빛 억새, 신비로운 운무가 어우러지는 지리산 10경의 대표 절경입니다."
+    },
+    {
+      "name": "제석봉 고사목 지대",
+      "desc": "해발 1,808m 평전 일대에 하얗게 마른 고사목들이 자태를 뽐내며 안개와 운무가 감돌 때 몽환적이고 고요한 정취를 자아냅니다."
+    },
+    {
+      "name": "통천문",
+      "desc": "하늘로 통하는 문이라는 유래를 지닌 천왕봉 직전의 거대한 암석 관문으로 바위 틈새의 찬 바람과 함께 탁 트인 정상 조망을 선사합니다."
+    },
+    {
+      "name": "천왕봉 (해발 1,915m)",
+      "desc": "대한민국 내륙 최고봉으로 360도로 펼쳐지는 웅장한 주능선 파노라마와 구름 바다를 뚫고 솟아오르는 장엄한 일출을 품고 있습니다."
+    },
+    {
+      "name": "중봉과 써리봉",
+      "desc": "천왕봉 동쪽 하산 능선에 솟은 험준한 암봉들로 정상 조망터에 서면 천왕봉의 거대한 동쪽 암벽과 산세를 한눈에 감상할 수 있습니다."
+    },
+    {
+      "name": "무재치기폭포",
+      "desc": "원시림 깊은 골짜기 속에 자리하여 가뭄에도 거센 수량과 우렁찬 소리를 뿜어내며 하산길의 피로를 씻어주는 숨은 명소입니다."
+    }
+  ],
   "sceneryHighlights": [
-    "구름 바다 위로 붉게 솟는 천왕봉의 장엄한 일출",
-    "신비로운 운무와 기암괴석이 어우러진 연하선경",
-    "하얀 고사목 사이로 안개가 감도는 몽환적인 평전",
-    "중봉 조망터에서 올려다본 천왕봉의 거대한 암벽",
-    "울창한 원시림 속 우렁차게 쏟아지는 무재치기폭포"
+    "구름바다 위로 붉게 솟아오르는 천왕봉 일출",
+    "운무가 휘감고 도는 제석봉의 하얀 고사목 평전",
+    "기암괴석과 은빛 억새가 물든 신비로운 연하선경",
+    "거대한 천왕봉 암벽을 마주한 중봉의 거친 바위능선",
+    "울창한 원시림 깊은 골짜기의 웅장한 무재치기폭포"
   ],
   "extraInfos": [],
   "sections": [
     {
-      "cardTitle": "연하선경길",
+      "cardTitle": "연하선경능선길",
       "distanceKm": 2.7,
       "difficulty": "medium",
       "altitude": 1653,
       "features": [
-        "완만한흙길",
-        "연하선경운무",
-        "고산능선바람"
+        "완만한흙돌길",
+        "고산능선칼바람",
+        "연하선경운무"
       ],
       "detail": {
-        "headerName": "구름 위를 거니는 신선의 길과 연하선경의 서곡",
+        "headerName": "구름 위 신선의 길과 연하선경의 서곡",
         "bullets": [
           {
             "strong": "구간",
-            "p": "촛대봉 ~ 장터목쉼터 (연하봉 경유) [거리: 2.7km | 난이도: 중]"
+            "p": "촛대봉 ~ 장터목대피소 (연하봉 경유) [거리: 2.7km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "완만한 흙길과 정돈된 돌길이 이어져 조망을 즐기기 좋으나, 해발 1,600m가 넘는 고산 능선 특유의 칼바람과 잔돌 미끄러짐에 주의하며 체력을 안배해야 합니다."
+            "p": "완만한 흙길과 정돈된 돌길이 이어져 경치를 감상하며 걷기 쾌적하지만, 해발 1,600m가 넘는 고산 능선 지대 특유의 칼바람과 잔돌 미끄러짐에 유의해야 합니다."
           },
           {
             "strong": "촛대봉",
-            "p": "지리산 주능선의 광활하고 장엄한 산줄기 라인을 한눈에 조망할 수 있는 시작점 포인트입니다."
+            "p": "촛대봉 정상에 서면 굽이치며 웅장하게 뻗어 나가는 지리산 주능선의 광활한 능선 라인을 한눈에 조망할 수 있습니다."
           },
           {
             "strong": "연하봉과 연하선경",
-            "p": "기암괴석과 구름 바다가 어우러지는 지리산 10경 중 하나로, 유유히 흐르는 운무와 산철쭉, 은빛 억새가 동양화 같은 절경을 연출합니다."
+            "p": "기암괴석 사이로 은은한 운무가 유유히 흘러가고 가을철 산철쭉과 은빛 억새가 어우러져 한 편의 동양화 같은 신비로운 절경을 연출합니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "최고봉바위길",
+      "cardTitle": "천왕봉바위길",
       "distanceKm": 1.7,
       "difficulty": "hard",
       "altitude": 1915,
       "features": [
-        "급경사돌계단",
-        "제석봉고사목",
-        "천왕봉일출"
+        "가파른돌계단",
+        "제석봉고사목숲",
+        "통천문바위문"
       ],
       "detail": {
-        "headerName": "하늘을 향해 치솟는 바위길과 최고봉의 장엄한 일출",
+        "headerName": "하늘을 향한 바위길과 최고봉의 일출",
         "bullets": [
           {
             "strong": "구간",
-            "p": "장터목쉼터 ~ 천왕봉 (제석봉 ➔ 통천문 경유) [거리: 1.7km | 난이도: 상]"
+            "p": "장터목대피소 ~ 천왕봉 (제석봉 ➔ 통천문 경유) [거리: 1.7km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "단차가 큰 돌계단과 가파른 데크 계단이 연속되는 급경사 바위 구간으로, 새벽이나 아침 산행 시 미끄러운 바위에서 스틱을 단단히 짚고 천천히 고도를 높여야 합니다."
+            "p": "높낮이가 큰 돌계단과 가파른 데크 계단이 연속되는 급경사 바위 구간으로, 새벽이나 아침 산행 시 미끄러운 바위 노면에 주의하며 스틱을 단단히 짚고 올라야 합니다."
           },
           {
-            "strong": "제석봉 고사목 숲",
-            "p": "안개와 운무가 제석평전을 휘감아 돌 때 하얀 자태를 드러내는 고사목들이 어우러져 고요하고 몽환적인 비경을 선사합니다."
+            "strong": "제석봉 고사목 지대",
+            "p": "안개와 운무가 제석평전을 휘감아 돌 때 하얗게 바랜 고사목들이 자아내는 고요하고 몽환적인 풍경이 압도적입니다."
           },
           {
             "strong": "통천문",
-            "p": "하늘로 통하는 문이라는 유래를 지닌 거대한 바위 문으로, 좁은 바위 관문을 통과하며 정상 등정의 설렘을 더합니다."
+            "p": "하늘로 통하는 거대한 바위 관문으로, 암석 사이 좁은 틈새로 불어오는 시원한 바람과 탁 트인 조망이 정상 등정의 기대감을 고조시킵니다."
           },
           {
-            "strong": "천왕봉",
-            "p": "해발 1,915m 대한민국 내륙 최고봉으로, 사방 360도로 펼쳐지는 주능선 파노라마와 구름 바다 위로 솟아오르는 장엄한 일출을 만날 수 있습니다."
+            "strong": "천왕봉 (해발 1,915m)",
+            "p": "대한민국 내륙 최고봉 정점에 서서 360도로 펼쳐지는 주능선 파노라마와 사방으로 뻗어 나간 산그리메, 구름 바다 위로 솟아오르는 장엄한 일출을 만끽할 수 있습니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "거친바위돌길",
+      "cardTitle": "중봉써리봉돌길",
       "distanceKm": 4.1,
       "difficulty": "hard",
-      "altitude": 1425,
+      "altitude": 1025,
       "features": [
-        "가파른내리막",
-        "천왕봉바위조망",
-        "중봉써리봉"
+        "거친바위돌길",
+        "급경사철계단",
+        "천왕봉동벽조망"
       ],
       "detail": {
-        "headerName": "험준한 바위길과 거친 돌길이 만드는 웅장한 서사",
+        "headerName": "험준한 바위길과 돌길의 웅장한 서사",
         "bullets": [
           {
             "strong": "구간",
-            "p": "천왕봉 ~ 치밭목쉼터 (중봉 ➔ 써리봉 경유) [거리: 4.1km | 난이도: 상]"
+            "p": "천왕봉 ~ 치밭목대피소 (중봉 ➔ 써리봉 경유) [거리: 4.1km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "가파른 내리막과 치고 오르는 오르막이 반복되는 거친 바위돌길로, 불규칙한 바위 단차로 인한 무릎과 발목 부담을 줄이기 위해 스틱과 무릎보호대를 적극 활용해야 합니다."
+            "p": "가파른 내리막과 치고 올라가는 오르막이 반복되는 거친 바위와 돌길 구간으로, 불규칙한 돌 단차에 무릎과 발목 부상을 막기 위해 보폭을 좁히고 스틱을 적극 활용해야 합니다."
           },
           {
             "strong": "중봉과 써리봉",
-            "p": "거친 바위길과 돌길로 이루어진 암봉 조망터로, 천왕봉의 거대한 동쪽 암벽과 웅장한 산세를 압도적인 시야에서 올려다볼 수 있습니다."
+            "p": "요철이 심한 암봉 정상 조망터에 서면 천왕봉의 거대한 동쪽 암벽과 웅장한 산세가 압도적인 파노라마로 펼쳐집니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "원시림폭포길",
+      "cardTitle": "원시림골짜기길",
       "distanceKm": 3.6,
       "difficulty": "medium",
-      "altitude": 1020,
+      "altitude": 830,
       "features": [
-        "울창한원시림",
-        "무재치기폭포",
-        "골짜기오르내림"
+        "울창한원시림숲",
+        "오르내림흙돌길",
+        "무재치기폭포"
       ],
       "detail": {
-        "headerName": "깊은 골짜기와 청량한 폭포가 숨 쉬는 원시림",
+        "headerName": "깊은 골짜기와 청량한 폭포의 원시림",
         "bullets": [
           {
             "strong": "구간",
-            "p": "치밭목쉼터 ~ 장당봉 (무재치기폭포 경유) [거리: 3.6km | 난이도: 중]"
+            "p": "치밭목대피소 ~ 장당봉 (무재치기폭포 경유) [거리: 3.6km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "울창한 숲길과 돌길이 이어지며 완만한 내리막처럼 보이지만 오르내림이 지속되므로, 돌과 나무뿌리에 발이 걸리지 않도록 안정적인 발걸음을 유지해야 합니다."
+            "p": "울창한 숲길과 돌길이 번갈아 우회하며 이어지는 길로, 급격히 고도를 낮추지 않고 오르내림이 지속되어 누적 피로가 가중될 수 있으니 발걸음을 안정적으로 유지해야 합니다."
           },
           {
             "strong": "무재치기폭포",
-            "p": "골짜기 깊은 원시림 속에 자리 잡은 폭포로, 가뭄에도 풍부한 수량과 우렁찬 물소리를 내뿜으며 산행에 지친 등산객에게 시원한 청량감을 줍니다."
+            "p": "탐방로 옆 깊은 골짜기에서 가뭄에도 마르지 않는 거친 수량과 청량한 음향을 뿜어내며 하산길의 피로를 상쾌하게 씻어줍니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "계곡내리막길",
+      "cardTitle": "유평마을내리막",
       "distanceKm": 2.6,
       "difficulty": "medium",
       "altitude": 200,
       "features": [
-        "자갈돌내리막",
-        "청량한계곡물",
-        "유평마을종착점"
+        "급경사자갈돌길",
+        "하산부상주의",
+        "청량한계곡수류"
       ],
       "detail": {
-        "headerName": "맑은 계곡 수류를 따라 마침내 다다르는 완주의 피날레",
+        "headerName": "맑은 수류를 따라 다다르는 완주의 피날레",
         "bullets": [
           {
             "strong": "구간",
-            "p": "장당봉 ~ 유평마을 (용수동갈림길 경유) [거리: 2.6km | 난이도: 중]"
+            "p": "장당봉 ~ 유평마을 (용수동삼거리 경유) [거리: 2.6km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "종착점으로 고도를 급격히 낮추는 마지막 내리막 구간으로, 정돈되지 않은 자갈과 거친 돌길에서 발목이 접질리지 않도록 스틱에 체중을 분산해야 합니다."
+            "p": "유평마을 종착점으로 가파르게 고도를 낮추는 하산길로, 정돈되지 않은 자갈돌과 험한 돌길에서 발목이 접질리지 않도록 스틱에 체중을 분산하며 신중히 내려서야 합니다."
           },
           {
             "strong": "유평마을 계곡",
-            "p": "산행 종착지에 다다라 펼쳐지는 맑고 깨끗한 계곡 수류로, 대장정의 피로를 식히며 가슴 벅찬 완주의 감동을 선사합니다."
+            "p": "종착점에 다다르면 청량하게 흐르는 깨끗한 계곡 수류를 마주하며 지리산 대장정을 성공적으로 완주한 깊은 감동을 느낄 수 있습니다."
           }
         ]
       }
@@ -557,6 +589,16 @@
   let guideHTML = `
     <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
     <p class="guide-intro keep-all">${indentLines(data.guideIntro || '')}</p>`;
+  const keySceneryIntro = (data.keySceneryIntro || []).filter(item => item && (item.name || item.desc));
+  if (keySceneryIntro.length) {
+    guideHTML += `
+    <div class="scenery-highlights-block keep-all">
+      <div class="scenery-highlights-title">\ud83c\udfde\ufe0f 코스 내 반드시 봐야 할 핵심 비경</div>
+      <ul class="scenery-highlights-list">
+        ${keySceneryIntro.map(item => `<li>${item.name ? `<strong>${item.name}</strong> ` : ''}${item.desc || ''}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
   (data.extraInfos || []).forEach(item => {
     guideHTML += `
     <div class="extra-info-block keep-all">
