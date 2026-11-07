@@ -143,6 +143,12 @@
   .guide-container { width: 100%; background: #ffffff; border-radius: 20px; padding: 40px 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); border: 1px solid #e2e8f0; box-sizing: border-box; }
   .guide-main-title { font-size: 24px; font-weight: 700; color: #1a202c; border-left: 5px solid #2b6cb0; padding-left: 15px; margin: 0 24px 15px; letter-spacing: -1px; }
   .guide-intro { font-size: 14.5px; color: #4a5568; margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; white-space: pre-line; }
+  .scenery-highlights-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
+  .scenery-highlights-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 10px; }
+  .scenery-highlights-list { list-style: none; padding-left: 0; }
+  .scenery-highlights-list li { font-size: 14px; color: #4a5568; margin-bottom: 8px; position: relative; padding-left: 20px; }
+  .scenery-highlights-list li::before { content: '✨'; position: absolute; left: 0; }
+  .scenery-highlights-list li strong { color: #1a202c; font-weight: 700; }
   .extra-info-block { margin: 0 24px 35px; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; }
   .extra-info-title { font-size: 15.5px; font-weight: 700; color: #1a202c; margin-bottom: 8px; }
   .extra-info-text { font-size: 14.5px; color: #4a5568; white-space: pre-line; }
@@ -163,7 +169,7 @@
   @media (max-width: 768px) {
     body { padding: 10px 0; }
     .guide-container { padding: 20px 0; border-radius: 12px; }
-    .guide-main-title, .guide-intro, .extra-info-block { margin-left: 16px; margin-right: 16px; }
+    .guide-main-title, .guide-intro, .scenery-highlights-block, .extra-info-block { margin-left: 16px; margin-right: 16px; }
     .section-block { padding-left: 16px; padding-right: 16px; }
     .guide-main-title { font-size: 20px; }
     .guide-intro { font-size: 13.5px; }
@@ -227,37 +233,59 @@
   "courseRouteFlow": [
     "화엄사",
     "노고단",
-    "연하천대피소",
-    "벽소령대피소",
+    "삼도봉",
+    "벽소령",
     "세석평전"
   ],
   "startAltitude": 240,
   "endAltitude": 1600,
   "totalTime": "12.0h~16.0h",
   "overallDifficulty": "힘듦",
-  "safetyWarningText": "초반오버페이스주의·가파른계단발목접지름주의·돌길미끄럼주의·체온유지방풍자켓준비·식수보급처사전확인·대피소통과시간엄수",
+  "safetyWarningText": "초반급경사오버페이스주의 · 데크계단발목부상주의 · 무릎보호대및스틱착용 · 방풍자켓구비 · 주요샘터수분보충 · 대피소통과시간엄수",
   "guideIntro": "지리산은 어머니의 품처럼 넓고 장엄한 산세를 자랑하며, 계절마다 펼쳐지는 일출과 드넓은 운해, 화려한 산철쭉과 가을 단풍으로 전국 등산객들의 마음을 사로잡는 대한민국 제1호 국립공원입니다. 구례의 천년 고찰 화엄사를 들머리로 시작하여 코재의 가파른 오르막을 지나 노고단에 서면 구름 바다가 이루는 환상적인 수묵화 같은 비경이 눈앞에 펼쳐집니다. 삼도봉과 토끼봉을 거쳐 연하천과 벽소령 주능선을 따라 걷는 길은 겹겹이 이어진 산그리메와 영신봉 아래 드넓게 펼쳐진 세석평전의 신비로운 자태를 감상할 수 있는 최고의 탐방로입니다.",
+  "keySceneryIntro": [
+    {
+      "name": "코재와 무넹기",
+      "desc": "코가 땅에 닿을 듯 가파른 악명 높은 오르막을 넘어 구례 농용수를 확보하려 물줄기를 돌렸던 역사와 시원한 능선 바람을 맞이하는 관문입니다."
+    },
+    {
+      "name": "노고단 고개와 운해",
+      "desc": "해발 1,430m에 위치하여 수많은 산봉우리가 구름 바다 위로 섬처럼 떠오르는 지리산 8경 노고운해의 장관을 관망할 수 있는 최고 명소입니다."
+    },
+    {
+      "name": "삼도봉",
+      "desc": "전남·전북·경남 3개 도가 만나는 지리산 주능선의 상징 봉우리로, 굽이치는 주능선과 웅장한 반야봉 산세를 한눈에 조망할 수 있습니다."
+    },
+    {
+      "name": "형제바위(형제봉)",
+      "desc": "두 개의 거대한 암봉이 나란히 솟은 절경으로 바위 틈새로 불어오는 시원한 바람골과 깊은 골짜기의 빼어난 바위길 미학을 보여줍니다."
+    },
+    {
+      "name": "영신봉과 세석평전",
+      "desc": "영신봉을 넘어 눈앞에 아득히 펼쳐지는 드넓은 고산 평원으로 계절마다 철쭉과 억새, 야생화가 장관을 이루는 신비로운 명소입니다."
+    }
+  ],
   "sceneryHighlights": [
-    "구름 바다 위로 섬처럼 솟은 노고단 운해",
-    "철쭉과 억새가 일렁이는 드넓은 세석평전",
-    "겹겹이 물결치는 지리산 주능선 산그리메",
-    "푸른 하늘 아래 우뚝 솟은 거대한 형제바위",
-    "삼도봉 정점에서 내려다본 반야봉 암봉"
+    "수많은 봉우리가 떠오른 노고단의 웅장한 구름바다",
+    "영신봉 아래 분홍빛 철쭉으로 물든 드넓은 세석평전",
+    "거대한 두 암봉 사이로 안개가 피어오르는 형제바위",
+    "삼도봉 정점에서 내려다본 첩첩산중 푸른 산그리메",
+    "울창한 원시림을 뚫고 솟구친 가파른 바위 능선길"
   ],
   "extraInfos": [],
   "sections": [
     {
-      "cardTitle": "가파른계곡길",
+      "cardTitle": "화엄사코재돌길",
       "distanceKm": 5.7,
       "difficulty": "hard",
       "altitude": 1300,
       "features": [
-        "급경사돌계단",
-        "수직상승고도",
-        "울창한숲길"
+        "수직고도상승",
+        "가파른돌계단",
+        "코재깔딱고개"
       ],
       "detail": {
-        "headerName": "칠흑 같은 어둠을 뚫고 오르는 가파른 계곡의 서곡",
+        "headerName": "가파른 계곡의 서곡",
         "bullets": [
           {
             "strong": "구간",
@@ -265,147 +293,147 @@
           },
           {
             "strong": "특징",
-            "p": "화엄사에서 출발하여 해발 1,000m 이상 수직 상승하는 극심한 오르막으로, 중제 이후 50~60도 경사의 거친 돌계단이 이어지므로 철저한 페이스 조절이 필요합니다."
+            "p": "해발 240m에서 1,300m까지 고도를 수직 상승시키는 극심한 오르막으로, 국수등과 중제를 지나며 경사도 50~60도의 거친 돌계단이 이어지므로 페이스 조절이 필수적입니다."
           },
           {
             "strong": "코재와 무넹기",
-            "p": "코가 땅에 닿을 듯 가파른 코재 오르막을 지나면 농용수를 위해 물줄기를 돌렸던 유래를 지닌 시원한 능선 관문 무넹기가 나타납니다."
+            "p": "코가 땅에 닿을 만큼 가파른 코재 깔딱고개를 극복하고 나면 과거 구례 농용수를 확보하려 물줄기를 돌렸던 무넹기에서 시원한 능선 바람을 맞이합니다."
           },
           {
-            "strong": "국수등",
-            "p": "서나무 쉼터를 지나 울창한 숲의 깊은 기운을 온몸으로 맞이할 수 있는 숲길 포인트입니다."
+            "strong": "서나무 쉼터와 국수등",
+            "p": "서나무 쉼터를 지나 국수등에 들어서며 하늘을 가릴 듯 울창하게 우거진 숲의 청량하고 깊은 기운을 온몸으로 느낄 수 있습니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "완만한능선길",
+      "cardTitle": "노고단능선숲길",
       "distanceKm": 3.7,
       "difficulty": "medium",
       "altitude": 1320,
       "features": [
         "편안한임도길",
-        "장엄한운해",
-        "쾌적한흙길"
+        "완만한흙길숲",
+        "주능선조망터"
       ],
       "detail": {
-        "headerName": "탁 트인 하늘과 구름 바다가 펼쳐지는 능선의 서막",
+        "headerName": "구름 바다가 펼쳐지는 능선의 서막",
         "bullets": [
           {
             "strong": "구간",
-            "p": "무넹기 ~ 임걸령 (노고단쉼터 ➔ 노고단고개 ➔ 돼지령 ➔ 피아골갈림길 경유) [거리: 3.7km | 난이도: 중]"
+            "p": "무넹기 ~ 임걸령 (노고단대피소 ➔ 노고단고개 ➔ 돼지령 ➔ 피아골삼거리 경유) [거리: 3.7km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "노고단쉼터까지 편안한 임도와 데크길로 체력을 회복한 뒤, 노고단고개부터 돼지령까지 완만한 흙길과 숲길이 이어져 쾌적하게 걷기 좋습니다."
+            "p": "노고단대피소까지는 편안한 임도와 데크길로 체력을 회복할 수 있으며, 노고단고개를 통과해 주능선에 진입하면 돼지령까지 완만한 흙길과 숲길이 이어져 쾌적하게 걷기 좋습니다."
           },
           {
             "strong": "노고단 고개와 운해",
-            "p": "해발 1,430m 고개에서 내려다보는 풍경으로, 첩첩산중 봉우리들이 구름 바다 위로 섬처럼 떠오르는 장엄한 동양화 같은 절경을 자랑합니다."
+            "p": "해발 1,430m 노고단 고개에서 수많은 산봉우리가 구름 바다 위로 섬처럼 솟아오르는 지리산 8경 노고운해의 장엄한 한 편의 수묵화를 만날 수 있습니다."
           },
           {
             "strong": "돼지령 조망터",
-            "p": "멀리 반야봉을 배경으로 겹겹이 펼쳐지는 푸른 산그리메의 비경을 시원하게 감상할 수 있습니다."
+            "p": "돼지령 조망터에 서면 웅장한 반야봉을 배경으로 겹겹이 굽이쳐 흐르는 푸른 산그리메의 비경이 시원하게 펼쳐집니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "봉우리연계길",
+      "cardTitle": "삼도봉주능선길",
       "distanceKm": 7.2,
       "difficulty": "hard",
       "altitude": 1440,
       "features": [
-        "끝없는계단길",
-        "바위돌길",
-        "삼도경계조망"
+        "가파른데크계단",
+        "바위돌길오르막",
+        "삼도봉조망터"
       ],
       "detail": {
-        "headerName": "겹겹이 이어진 봉우리와 데크 계단의 장쾌한 파도",
+        "headerName": "봉우리와 데크 계단의 장쾌한 파도",
         "bullets": [
           {
             "strong": "구간",
-            "p": "임걸령 ~ 연하천쉼터 (노루목 ➔ 삼도봉 ➔ 화개재 ➔ 토끼봉 ➔ 명선봉 경유) [거리: 7.2km | 난이도: 상]"
+            "p": "임걸령 ~ 연하천대피소 (노루목 ➔ 삼도봉 ➔ 화개재 ➔ 토끼봉 ➔ 명선봉 경유) [거리: 7.2km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "삼도봉에서 화개재로 내려서는 550여 개의 가파른 계단과 토끼봉·명선봉의 거친 오르막 및 돌길이 반복되어 발목 부상 방지와 스틱 활용이 필수적입니다."
+            "p": "주능선의 오르내림이 극심해지는 구간으로, 삼도봉에서 화개재로 내려가는 550여 개 계단과 토끼봉·명선봉의 거친 돌길 오르막이 반복되므로 스틱을 활용해 무릎과 체력을 안배해야 합니다."
           },
           {
             "strong": "삼도봉",
-            "p": "전남, 전북, 경남의 3도가 만나는 지리산 주능선의 상징적 봉우리로, 굽이치는 주능선과 반야봉의 웅장한 기세를 한눈에 품을 수 있습니다."
+            "p": "전남, 전북, 경남 3개 도의 경계를 이루는 상징적인 봉우리로 정점에 서면 굽이쳐 흐르는 주능선과 반야봉의 장쾌한 산세를 파노라마로 조망할 수 있습니다."
           },
           {
             "strong": "화개재",
-            "p": "과거 남도 해안과 내륙의 물자가 오가며 장터의 역사가 깃든 유서 깊은 고개 안부입니다."
+            "p": "옛날 영남과 호남 상인들이 산나물과 해산물을 활발히 교환하던 유서 깊은 옛 장터의 숨결이 깃든 고갯마루입니다."
           },
           {
-            "strong": "토끼봉",
-            "p": "헬리포트 주변으로 사방이 시원하게 트여 백두대간 마루금의 장쾌한 풍광을 누릴 수 있습니다."
+            "strong": "토끼봉 헬리포트",
+            "p": "토끼봉 헬리포트 주변에 서면 사방으로 막힘없이 트인 지리산 주능선의 장대한 풍광이 한눈에 들어옵니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "바위능선길",
+      "cardTitle": "형제바위길",
       "distanceKm": 3.6,
       "difficulty": "medium",
-      "altitude": 1280,
+      "altitude": 1340,
       "features": [
-        "거친바위길",
-        "쌍둥이암봉",
+        "평탄한데크길",
+        "거친바위길능선",
         "시원한바람골"
       ],
       "detail": {
-        "headerName": "울퉁불퉁한 바위길과 형제바위가 어우러진 시원한 능선길",
+        "headerName": "바위길과 형제바위 능선",
         "bullets": [
           {
             "strong": "구간",
-            "p": "연하천쉼터 ~ 벽소령쉼터 (삼각고지 ➔ 형제봉 ➔ 형제바위 경유) [거리: 3.6km | 난이도: 중]"
+            "p": "연하천대피소 ~ 벽소령대피소 (삼각고지 ➔ 형제봉 ➔ 형제바위 경유) [거리: 3.6km | 난이도: 중]"
           },
           {
             "strong": "특징",
-            "p": "삼각고지까지는 평탄한 데크길이나 이후 형제봉 구간은 불규칙한 돌과 바위가 깔린 오르내림이 지속되어 누적 피로에 유의해야 합니다."
+            "p": "삼각고지까지는 완만한 데크길이나 형제봉 구간부터 거친 바위길과 오르내림이 지속되며, 흩어진 돌과 바위로 인해 누적된 피로 속 발목 부상에 각별히 유의해야 합니다."
           },
           {
             "strong": "형제바위(형제봉)",
-            "p": "두 개의 거대한 암봉이 사이좋게 나란히 솟은 명소로, 암봉 틈새의 깊은 골짜기 조망과 함께 지리산 바위의 정수를 보여줍니다."
+            "p": "우뚝 솟은 두 개의 거대한 암봉이 나란히 자리하여 발아래 깊은 골짜기와 함께 지리산 바위길 미학의 절정을 선사합니다."
           },
           {
             "strong": "형제봉 바람골",
-            "p": "거대한 바위 틈새에서 한여름에도 차가운 자연 에어컨 바람이 뿜어져 나와 등산객의 땀방울을 시원하게 식혀줍니다."
+            "p": "거대한 암봉 틈새 사이로 한여름에도 에어컨처럼 서늘하고 상쾌한 냉풍이 쉼 없이 불어와 산행의 땀을 식혀줍니다."
           }
         ]
       }
     },
     {
-      "cardTitle": "고산평원길",
+      "cardTitle": "영신봉철계단길",
       "distanceKm": 6.3,
       "difficulty": "hard",
       "altitude": 1600,
       "features": [
-        "급경사철계단",
-        "천상화원평전",
-        "고산조망터"
+        "선비샘약수터",
+        "가파른철계단",
+        "세석평전고산평원"
       ],
       "detail": {
-        "headerName": "영신봉의 높은 계단을 넘어 맞이하는 고산 평원의 평화",
+        "headerName": "영신봉 높은 계단과 고산 평원의 평화",
         "bullets": [
           {
             "strong": "구간",
-            "p": "벽소령쉼터 ~ 세석대피소 (덕평봉 ➔ 선비샘 ➔ 칠선봉 ➔ 영신봉 경유) [거리: 6.3km | 난이도: 상]"
+            "p": "벽소령대피소 ~ 세석대피소 (덕평봉 ➔ 선비샘 ➔ 칠선봉 ➔ 영신봉 경유) [거리: 6.3km | 난이도: 상]"
           },
           {
             "strong": "특징",
-            "p": "칠선봉과 영신봉으로 치닫는 구간에 최대 70도 경사의 아찔한 철계단과 바위길이 연속되어 무릎 보호대를 착용하고 신중히 보폭을 좁혀야 합니다."
+            "p": "덕평봉과 선비샘을 거쳐 칠선봉과 영신봉으로 올라서는 긴 능선으로, 경사도 70도에 달하는 가파른 철계단과 암릉이 연달아 나타나 체력적 한계에 부딪히므로 무릎보호대를 착용하고 신중히 올라야 합니다."
           },
           {
             "strong": "영신봉과 세석평전",
-            "p": "영신봉을 넘어 펼쳐지는 광활한 고산 평원으로, 봄철 진홍빛 철쭉과 가을 억새 및 야생화가 평화롭고 신비로운 절경을 빚어냅니다."
+            "p": "가파른 영신봉 계단을 극복하고 넘어서면 눈앞에 아득히 펼쳐지는 드넓은 고산 평원인 세석평전이 평화롭고 신비로운 감동과 시각적 해방감을 선사합니다."
           },
           {
             "strong": "선비샘 조망터",
-            "p": "시원한 샘터 위 전망 바위에서 웅장하게 뻗은 지리산 고봉들과 첩첩이 이어진 연봉의 파도를 감상할 수 있습니다."
+            "p": "시원한 생명수가 샘솟는 선비샘 조망터에서 장엄하게 굽이치는 지리산 주능선 고봉들의 웅장한 파노라마를 감상할 수 있습니다."
           }
         ]
       }
@@ -569,6 +597,16 @@
   let guideHTML = `
     <h2 class="guide-main-title">⛰️ ${data.mountainName} 코스 상세 가이드</h2>
     <p class="guide-intro keep-all">${indentLines(data.guideIntro || '')}</p>`;
+  const keySceneryIntro = (data.keySceneryIntro || []).filter(item => item && (item.name || item.desc));
+  if (keySceneryIntro.length) {
+    guideHTML += `
+    <div class="scenery-highlights-block keep-all">
+      <div class="scenery-highlights-title">\ud83c\udfde\ufe0f 코스 내 반드시 봐야 할 핵심 비경</div>
+      <ul class="scenery-highlights-list">
+        ${keySceneryIntro.map(item => `<li>${item.name ? `<strong>${item.name}</strong> ` : ''}${item.desc || ''}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
   (data.extraInfos || []).forEach(item => {
     guideHTML += `
     <div class="extra-info-block keep-all">
