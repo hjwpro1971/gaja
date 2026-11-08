@@ -51,8 +51,9 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div class="step">③ 바탕 지도</div>
   <label class="field">스타일
     <select id="optStyle" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
+      <option value="real" selected>실제 지도 (실제 지형·지명, 신문형)</option>
+      <option value="news">등산지도 (신문형, 가상 지형)</option>
       <option value="water">수채화 바탕 → Gemini로 꾸미기</option>
-      <option value="news">등산지도 (신문형, 글자까지 완성)</option>
     </select></label>
   <div class="row" id="waterOpts">
     <label class="chk"><input type="checkbox" id="optNum" checked>번호 마커</label>
@@ -68,6 +69,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 
 <section class="view">
   <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
+  <div id="status" class="hint"></div>
   <canvas id="cv" width="1920" height="1080" hidden></canvas>
   <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
   <div class="step">④ Gemini 프롬프트</div>
@@ -337,12 +339,201 @@ function renderNews(){
    ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
 }
 
+/* ---------- 실제 지도 (DEM 등고선 + OSM 지명) ---------- */
+function makeProj(g,fx,fy){
+  const lat0=g.pts.reduce((s,p)=>s+p.lat,0)/g.pts.length,k=Math.cos(lat0*Math.PI/180);
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;g.pts.forEach(p=>{const x=p.lon*k,y=-p.lat;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);});
+  const s=Math.min(W*fx/(x1-x0||1e-9),H*fy/(y1-y0||1e-9)),ox=W/2-(x0+x1)/2*s,oy=H/2-(y0+y1)/2*s;
+  return{fwd:(lat,lon)=>[lon*k*s+ox,-lat*s+oy],inv:(x,y)=>[-(y-oy)/s,(x-ox)/(s*k)]};
+}
+const demCache=new Map(),osmCache=new Map();
+function loadImg(url){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res(im);im.onerror=()=>rej(new Error(url));im.src=url;});}
+async function loadDEM(n,w,s,e){
+  const lx=(lon,z)=>(lon+180)/360*2**z,ly=(lat,z)=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**z;};
+  let z=14;while(z>9&&(Math.floor(lx(e,z))-Math.floor(lx(w,z))+1)*(Math.floor(ly(s,z))-Math.floor(ly(n,z))+1)>42)z--;
+  const tx0=Math.floor(lx(w,z)),tx1=Math.floor(lx(e,z)),ty0=Math.floor(ly(n,z)),ty1=Math.floor(ly(s,z));
+  const key=[z,tx0,tx1,ty0,ty1].join(',');
+  if(!demCache.has(key)){
+    const nx=tx1-tx0+1,ny=ty1-ty0+1,c=document.createElement('canvas');c.width=nx*256;c.height=ny*256;const c2=c.getContext('2d');
+    const jobs=[];for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++)jobs.push(loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${tx}/${ty}.png`).then(im=>c2.drawImage(im,(tx-tx0)*256,(ty-ty0)*256)));
+    await Promise.all(jobs);
+    const d=c2.getImageData(0,0,c.width,c.height).data,el=new Float32Array(c.width*c.height);
+    for(let i=0;i<el.length;i++)el[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;
+    // 원본 데이터의 불량 줄(수천 m 튀는 값) 제거: 좌우·상하 이웃과 150m 넘게 차이 나면 이웃 평균으로 교체
+    const cw=c.width,ch=c.height;
+    for(let pass=0;pass<2;pass++)for(let y=1;y<ch-1;y++)for(let x=1;x<cw-1;x++){const o=y*cw+x,v=el[o];
+      const h=(el[o-1]+el[o+1])/2,vv=(el[o-cw]+el[o+cw])/2;
+      if(Math.abs(v-h)>150&&Math.abs(el[o-1]-el[o+1])<150)el[o]=h;else if(Math.abs(v-vv)>150&&Math.abs(el[o-cw]-el[o+cw])<150)el[o]=vv;}
+    demCache.set(key,{el,cw:c.width,ch:c.height});
+  }
+  const D=demCache.get(key);
+  return(lat,lon)=>{const px=(lx(lon,z)-tx0)*256-.5,py=(ly(lat,z)-ty0)*256-.5;const ix=Math.max(0,Math.min(D.cw-2,Math.floor(px))),iy=Math.max(0,Math.min(D.ch-2,Math.floor(py))),fx=px-ix,fy=py-iy,o=iy*D.cw+ix;
+    return D.el[o]*(1-fx)*(1-fy)+D.el[o+1]*fx*(1-fy)+D.el[o+D.cw]*(1-fx)*fy+D.el[o+D.cw+1]*fx*fy;};
+}
+async function loadOSM(n,w,s,e){
+  const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
+  if(osmCache.has(key))return osmCache.get(key);
+  try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
+  const b=`${s},${w},${n},${e}`;
+  const q=`[out:json][timeout:90];(
+node["natural"~"^(peak|saddle)$"]["name"](${b});
+node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|borough|county)$"]["name"](${b});
+node["railway"="station"]["name"](${b});
+nwr["amenity"~"^(school|place_of_worship)$"]["name"](${b});
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|track|path|footway)$"](${b});
+way["waterway"~"^(river|stream)$"](${b});
+way["natural"="water"](${b});
+way["railway"="rail"](${b});
+);out geom tags;`;
+  const hosts=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  let lastErr;
+  for(const h of hosts){try{const r=await fetch(h,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+      if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();osmCache.set(key,j);try{localStorage.setItem('illust_osm_'+key,JSON.stringify(j));}catch(e){}return j;}catch(e){lastErr=e;}}
+  throw lastErr;
+}
+let renderToken=0;
+async function renderReal(){
+  const my=++renderToken;
+  const lat0=G.pts[0].lat,k=Math.cos(lat0*Math.PI/180);
+  const xs=G.pts.map(p=>p.lon*k),ys=G.pts.map(p=>p.lat);
+  const asp=(Math.max(...xs)-Math.min(...xs))/(Math.max(...ys)-Math.min(...ys)||1e-9);
+  if(asp<0.8){W=1200;H=1700;}else if(asp>1.3){W=1920;H=1280;}else{W=1500;H=1500;}
+  const P=makeProj(G,.74,.74);
+  const [n,w]=P.inv(0,0),[s,e]=P.inv(W,H);
+  $('status').textContent='⏳ 실제 지형(등고선) 불러오는 중…';
+  let elev;try{elev=await loadDEM(n,w,s,e);}catch(err){$('status').textContent='⚠️ 지형 데이터를 받지 못했습니다. 네트워크를 확인하세요.';return;}
+  if(my!==renderToken)return;
+  $('status').textContent='⏳ 지명·도로·하천 불러오는 중… (처음엔 30초 이상 걸릴 수 있어요)';
+  let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
+  if(my!==renderToken)return;
+  $('status').textContent=osm?'':'⚠️ 지명 데이터를 받지 못해 등고선만 그렸습니다. 잠시 후 스타일을 다시 선택하면 재시도합니다.';
+  cv.width=W;cv.height=H;
+  const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+  // 높이장
+  const step=4,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1,f0=new Float32Array(gw*gh);
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const [la,lo]=P.inv(i*step,j*step);f0[j*gw+i]=elev(la,lo);}
+  const f=new Float32Array(gw*gh);
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){let sum=0,c=0;for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=gw||jj>=gh)continue;sum+=f0[jj*gw+ii];c++;}f[j*gw+i]=sum/c;}
+  // 결측값(-32768 등) 제거 후 범위 산정
+  const sorted=Array.from(f).filter(v=>v>-100&&v<9000).sort((a,b)=>a-b);
+  const emin=sorted[Math.floor(sorted.length*.002)]||0,emax=sorted[Math.floor(sorted.length*.998)]||1000;
+  for(let i=0;i<f.length;i++)if(!(f[i]>-100&&f[i]<9000))f[i]=emin;
+  const F={f,gw,gh,step,emin,emax};
+  const iv=[10,20,25,50,100].find(v=>(emax-emin)/v<=60)||100;
+
+  ctx.fillStyle='#fdfcf7';ctx.fillRect(0,0,W,H);
+  // 고도 엷은 채색
+  {const oc=document.createElement('canvas');oc.width=gw;oc.height=gh;const o2=oc.getContext('2d'),img=o2.createImageData(gw,gh);
+   for(let i=0;i<gw*gh;i++){const t=(f[i]-emin)/(emax-emin||1);img.data[i*4]=236-t*28;img.data[i*4+1]=243-t*14;img.data[i*4+2]=228-t*36;img.data[i*4+3]=Math.round(40+t*110);}
+   o2.putImageData(img,0,0);ctx.save();ctx.filter='blur(2px)';ctx.drawImage(oc,0,0,W,H);ctx.restore();}
+  const geo=g=>g.map(p=>P.fwd(p.lat,p.lon));
+  const line=(pts,color,width,dash)=>{if(pts.length<2)return;ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);};
+  const els=osm?osm.elements:[];
+  const ways=els.filter(x=>x.type==='way'&&x.geometry);
+  ctx.lineCap='round';ctx.lineJoin='round';
+  // 호수·저수지
+  ways.filter(x=>x.tags.natural==='water').forEach(x=>{const p=geo(x.geometry);ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fillStyle='#cfe6f5';ctx.fill();ctx.strokeStyle='#7fb6dd';ctx.lineWidth=1.2;ctx.stroke();});
+  // 등고선
+  const lv0=Math.ceil(emin/iv)*iv;
+  for(let lv=lv0;lv<emax;lv+=iv){const ix=Math.round(lv/iv)%5===0;ctx.strokeStyle=ix?'rgba(105,135,100,.8)':'rgba(140,165,135,.6)';ctx.lineWidth=ix?1.5:.85;ctx.beginPath();contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);});ctx.stroke();}
+  // 하천
+  ways.filter(x=>x.tags.waterway).forEach(x=>line(geo(x.geometry),'#4ea3e0',x.tags.waterway==='river'?4:1.8));
+  // 도로
+  const hw=x=>x.tags.highway;
+  ways.filter(x=>/^(tertiary|unclassified|residential)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),'#b4b4b4',2));
+  ways.filter(x=>hw(x)==='track').forEach(x=>line(geo(x.geometry),'#c9a27a',1.6,[6,4]));
+  ways.filter(x=>/^(path|footway)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),'#f0a033',2.4));
+  const tun=x=>x.tags.tunnel&&x.tags.tunnel!=='no';
+  ways.filter(x=>/^(primary|secondary|motorway|trunk)$/.test(hw(x))&&tun(x)).forEach(x=>line(geo(x.geometry),'rgba(120,120,120,.55)',2.5,[8,6]));
+  ways.filter(x=>/^(primary|secondary)$/.test(hw(x))&&!tun(x)).forEach(x=>{const p=geo(x.geometry);line(p,'#8d8d8d',6.5);line(p,'#fbfbf6',3.5);});
+  ways.filter(x=>/^(motorway|trunk)$/.test(hw(x))&&!tun(x)).forEach(x=>{const p=geo(x.geometry);line(p,'#7d7d7d',9);line(p,'#f3f1ea',5);});
+  ways.filter(x=>x.tags.railway==='rail').forEach(x=>{const p=geo(x.geometry);line(p,'#555',4.5);line(p,'#fff',2.2,[10,10]);});
+
+  // ---- 라벨 충돌 관리 ----
+  const xy=G.pts.map(p=>P.fwd(p.lat,p.lon)),sm=resample(xy,4),samples=resample(xy,10);
+  const boxes=[{x:16,y:16,w:520,h:110},{x:W-100,y:20,w:90,h:100},{x:16,y:H-200,w:200,h:190},{x:W-560,y:H-32,w:550,h:28}]; // 제목·방위·범례·출처 자리 예약
+  const hit=b=>{let sc=0;if(b.x<8||b.y<8||b.x+b.w>W-8||b.y+b.h>H-8)sc+=5000;for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)sc+=1000;
+    for(const p of samples)if(p[0]>b.x-3&&p[0]<b.x+b.w+3&&p[1]>b.y-3&&p[1]<b.y+b.h+3)sc+=60;return sc;};
+  function label(x,y,lines,opt={}){
+    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width+(l.sp||0)*(l.t.length-1);});const wd=Math.max(...ws),lh=lines.map(l=>parseInt(l.font.match(/(\d+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
+    const g=opt.gap||12;const cands=opt.center?[[-wd/2,-h/2]]:[[g,-h/2],[-g-wd,-h/2],[-wd/2,-h-g-(opt.up||0)],[-wd/2,g],[g,-h-4],[-g-wd,-h-4],[g,4],[-g-wd,4]];
+    let best=null;for(const [dx,dy] of cands){const b={x:x+dx,y:y+dy,w:wd,h};const sc=hit(b);if(!best||sc<best.sc)best={...b,sc};}
+    if(opt.optional&&best.sc>=1000){ctx.restore();return false;}
+    boxes.push(best);let yy=best.y;
+    lines.forEach((l,i)=>{ctx.font=l.font;yy+=lh[i];let tx=best.x+(wd-ws[i])/2;ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='rgba(255,255,255,.95)';
+      if(l.sp){for(const ch of l.t){ctx.strokeText(ch,tx,yy-4);ctx.fillStyle=l.color||'#222';ctx.fillText(ch,tx,yy-4);tx+=ctx.measureText(ch).width+l.sp;}}
+      else{ctx.strokeText(l.t,tx,yy-4);ctx.fillStyle=l.color||'#222';ctx.fillText(l.t,tx,yy-4);}});
+    ctx.restore();return true;}
+  const tri=(x,y,sc=1)=>{ctx.save();ctx.fillStyle='#4f8f3f';ctx.beginPath();ctx.moveTo(x-13*sc,y);ctx.lineTo(x,y-17*sc);ctx.lineTo(x+13*sc,y);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#93c56f';ctx.beginPath();ctx.moveTo(x-13*sc,y);ctx.lineTo(x,y-17*sc);ctx.lineTo(x-2*sc,y);ctx.closePath();ctx.fill();ctx.restore();};
+
+  // 산행로 (빨강) + 화살표
+  ctx.save();smoothPath(ctx,sm);ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=9;ctx.stroke();smoothPath(ctx,sm);ctx.strokeStyle='#d7262e';ctx.lineWidth=4.5;ctx.stroke();ctx.restore();
+  const distToRoute=(x,y)=>{let m=Infinity;for(const p of samples){const d=Math.hypot(p[0]-x,p[1]-y);if(d<m)m=d;}return m;};
+  const na=Math.max(6,Math.round(sm.length/70));
+  for(let a=1;a<na;a++){const i=Math.floor(sm.length*a/na);const p=sm[Math.max(0,i-4)],q=sm[Math.min(sm.length-1,i+4)];const ang=Math.atan2(q[1]-p[1],q[0]-p[0]);
+    const ox=Math.cos(ang+Math.PI/2)*20,oy=Math.sin(ang+Math.PI/2)*20;const sd=distToRoute(sm[i][0]+ox,sm[i][1]+oy)>distToRoute(sm[i][0]-ox,sm[i][1]-oy)?1:-1;
+    const x=sm[i][0]+ox*sd,y=sm[i][1]+oy*sd;ctx.save();ctx.translate(x,y);ctx.rotate(ang);ctx.fillStyle='#d7262e';ctx.beginPath();ctx.moveTo(11,0);ctx.lineTo(-5,-7);ctx.lineTo(-1,0);ctx.lineTo(-5,7);ctx.closePath();ctx.fill();ctx.fillRect(-12,-2,9,4);ctx.restore();boxes.push({x:x-12,y:y-8,w:24,h:16});}
+
+  // GPX 지점 (최우선)
+  const shown=G.list.filter(w=>w.show);const top=Math.max(...shown.map(w=>w.ele));
+  const wpXY=shown.map(w=>xy[w.idx]);
+  wpXY.forEach(([x,y])=>boxes.push({x:x-8,y:y-8,w:16,h:16}));
+  shown.forEach((w,i)=>{const [x,y]=wpXY[i];
+    if(w.role){ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.stroke();ctx.restore();
+      const tag=w.role==='들머리'?'(출발)':w.role==='날머리'?'(도착)':'(출발·도착)';label(x,y,[{t:(w.name||'')+tag,font:`bold 26px ${F1}`,color:'#d7262e'}],{gap:18});return;}
+    const pk=!isPass(w.name);if(pk)tri(x,y-10,w.ele===top?1.4:1.1);
+    ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
+    label(x,y,pk?[{t:w.name,font:`bold ${w.ele===top?25:22}px ${F1}`},{t:w.ele.toLocaleString('ko-KR')+'m',font:`bold 19px ${F1}`,color:'#333'}]:[{t:w.name,font:`600 20px ${F1}`,color:'#333'}],{up:pk?18:0});});
+  const wpNames=new Set(shown.map(w=>w.name).filter(Boolean));
+  const nearWp=(x,y,r,name)=>(name&&wpNames.has(name))||wpXY.some(([a,b])=>Math.hypot(a-x,b-y)<r);
+  const junk=/삼각점|헬기장|^봉우리$|^무명봉$/;
+  const nodes=els.filter(x=>x.type==='node'&&x.tags&&x.tags.name);
+  const center=x=>x.type==='node'?[x.lat,x.lon]:x.geometry?[x.geometry.reduce((s,p)=>s+p.lat,0)/x.geometry.length,x.geometry.reduce((s,p)=>s+p.lon,0)/x.geometry.length]:x.bounds?[(x.bounds.minlat+x.bounds.maxlat)/2,(x.bounds.minlon+x.bounds.maxlon)/2]:null;
+  const nm=x=>x.tags['name:ko']||x.tags.name;
+  // 큰 지역명 (면·동·읍 등)
+  nodes.filter(x=>/^(county|city|town|suburb|borough|quarter)$/.test(x.tags.place)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);label(px,py,[{t:nm(x),font:`bold 34px ${F1}`,color:'#b9473f',sp:18}],{center:true,optional:true});});
+  // 주변 봉우리 (OSM)
+  nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;
+    tri(px,py,1);const el=parseFloat(x.tags.ele);boxes.push({x:px-14,y:py-18,w:28,h:18});
+    label(px,py-8,isFinite(el)?[{t:nm(x),font:`bold 19px ${F1}`,color:'#2d4d22'},{t:Math.round(el)+'m',font:`17px ${F1}`,color:'#333'}]:[{t:nm(x),font:`bold 19px ${F1}`,color:'#2d4d22'}],{optional:true,gap:10});});
+  // 고개
+  nodes.filter(x=>x.tags.natural==='saddle').forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
+  // 마을
+  nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true});});
+  // 역·학교·절
+  els.filter(x=>x.tags&&x.tags.name&&(x.tags.railway==='station'||x.tags.amenity==='school'||x.tags.amenity==='place_of_worship')).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(px<0||py<0||px>W||py>H)return;
+    const ok=label(px,py,[{t:nm(x),font:`16px ${F1}`,color:'#444'}],{optional:true,gap:9});
+    if(ok){ctx.save();ctx.fillStyle=x.tags.railway?'#fff':'#e8a33a';ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.beginPath();ctx.arc(px,py,x.tags.railway?7:5,0,7);ctx.fill();ctx.stroke();ctx.restore();}});
+  // 고속도로·국도 이름 (가장 긴 구간 가운데에 회전 표기)
+  const named={};ways.filter(x=>/^(motorway|trunk|primary)$/.test(hw(x))&&(x.tags.name||x.tags.ref)).forEach(x=>{const key=x.tags.name||x.tags.ref;(named[key]=named[key]||[]).push(x);});
+  Object.entries(named).forEach(([key,arr])=>{const x=arr.sort((a,b)=>b.geometry.length-a.geometry.length)[0];const p=geo(x.geometry);if(p.length<4)return;const m=Math.floor(p.length/2),a=p[Math.max(0,m-2)],b=p[Math.min(p.length-1,m+2)];
+    let ang=Math.atan2(b[1]-a[1],b[0]-a[0]);if(ang>Math.PI/2)ang-=Math.PI;if(ang<-Math.PI/2)ang+=Math.PI;const [cx,cy]=p[m];if(cx<0||cy<0||cx>W||cy>H)return;
+    ctx.save();ctx.font=`600 17px ${F1}`;const tw=ctx.measureText(key).width;const bb={x:cx-tw/2,y:cy-10,w:tw,h:20};if(hit(bb)>=1000){ctx.restore();return;}boxes.push(bb);
+    ctx.translate(cx,cy);ctx.rotate(ang);ctx.lineWidth=4;ctx.strokeStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';ctx.strokeText(key,0,-12);ctx.fillStyle='#555';ctx.fillText(key,0,-12);ctx.restore();});
+
+  // 제목·범례·방위·출처
+  const title=$('title').value.trim();
+  if(title){ctx.save();ctx.font=`bold 34px ${F1}`;const sub=[$('dist').value.trim(),$('time').value.trim()].filter(Boolean).join(' · ');
+    const tw=Math.max(ctx.measureText(title).width,(ctx.font=`20px ${F1}`,ctx.measureText(sub).width))+40;
+    ctx.fillStyle='rgba(255,255,255,.94)';ctx.strokeStyle='#d7262e';ctx.lineWidth=3;ctx.fillRect(24,24,tw,sub?92:62);ctx.strokeRect(24,24,tw,sub?92:62);
+    ctx.fillStyle='#222';ctx.font=`bold 34px ${F1}`;ctx.fillText(title,44,70);if(sub){ctx.fillStyle='#555';ctx.font=`20px ${F1}`;ctx.fillText(sub,44,102);}ctx.restore();}
+  {ctx.save();const items=[['산행로',c=>{c.strokeStyle='#d7262e';c.lineWidth=5;}],['등산로',c=>{c.strokeStyle='#f0a033';c.lineWidth=3;}],['등고선',c=>{c.strokeStyle='rgba(105,135,100,.9)';c.lineWidth=1.5;}],['물길',c=>{c.strokeStyle='#4ea3e0';c.lineWidth=2.5;}],['도로',c=>{c.strokeStyle='#8d8d8d';c.lineWidth=6;}]];
+   const x=24,h=24+items.length*30,y=H-h-24,w=180;ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);
+   items.forEach(([t,st],i)=>{const yy=y+26+i*30;st(ctx);ctx.beginPath();ctx.moveTo(x+14,yy);ctx.lineTo(x+60,yy);ctx.stroke();ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,x+72,yy+6);});ctx.restore();}
+  {ctx.save();const x=W-60,y=70;ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
+  ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-14,H-12);ctx.restore();
+}
+
 /* ---------- 렌더 ---------- */
 function render(){
   if(!G)return;
-  const news=$('optStyle').value==='news';
-  $('waterOpts').style.display=news?'none':'';
-  $('promptBox').style.display=news?'none':'';
+  const st=$('optStyle').value,news=st==='news',real=st==='real';
+  $('waterOpts').style.display=(news||real)?'none':'';
+  $('promptBox').style.display=(news||real)?'none':'';
+  $('btnSeed').style.display=real?'none':'';
+  if(!real){renderToken++;$('status').textContent='';}
+  if(real){renderReal();return;}
   if(news){renderNews();return;}
   W=1920;H=1080;if(cv.width!==W){cv.width=W;cv.height=H;}
   const r=rng(seed*7919+13);
@@ -486,8 +677,8 @@ drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
 drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
 ['optNum','optContour','optMtn','optTree','optStyle'].forEach(id=>$(id).onchange=render);
-['title','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;if($('optStyle').value==='news')render();else makePrompt();});
-if(new URLSearchParams(location.search).get('style')==='news')$('optStyle').value='news';
+['title','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;if($('optStyle').value!=='water')render();else makePrompt();});
+{const st=new URLSearchParams(location.search).get('style');if(st)$('optStyle').value=st;}
 $('btnSeed').onclick=()=>{seed++;render();};
 $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
 $('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
