@@ -843,7 +843,7 @@ Only after this text list is finalized, regenerate the image: keep all backgroun
 The output image MUST have the exact same canvas dimensions and aspect ratio as the original input image (same width:height ratio, same crop/framing). Do not pad, crop, resize, letterbox, or change the aspect ratio in any way.
 
 [Watermark — mandatory, do not skip]
-A second reference image is attached: the "gajaGO" bear logo. You MUST actually draw this logo into the output image, small, in the top-right or bottom-right corner (whichever overlaps less with existing art), at low opacity, without resizing/distorting it or covering any text. This is a required part of the output, not optional — the regenerated image is incomplete without it.`;
+A second reference image is attached: the "gajaGO" bear logo. You MUST actually draw this logo into the output image, small, at low opacity, without resizing/distorting it. Placement rule: scan all four corners of the image and place the logo in whichever corner has the most empty/plain background space with no existing art, text, icons, or decorations — NOT simply "top-right or bottom-right" by default. The logo must never overlap, cover, or sit on top of any text, title, or illustrated element. This is a required part of the output, not optional — the regenerated image is incomplete without it.`;
 
     function copyImageFixPrompt(evt) {
         const btn = (evt && evt.currentTarget) || document.getElementById('copyImageFixPromptBtn');
