@@ -38,7 +38,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 </style></head><body>
 <header><h1>🗺️ 산행 일러스트 지도</h1><div id="zoomBar" class="row" style="display:none;align-items:center;gap:6px;margin-left:auto">
     <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
-    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button>
+    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button><button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button>
     <span class="hint" id="zoomHint">휠: 확대·축소 · 끌기: 이동</span>
   </div></header>
 <main>
@@ -85,7 +85,6 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   </div>
   <div class="row">
     <button id="btnSeed" disabled>🎲 다른 모양으로</button>
-    <button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button>
     <button id="btnRetryOsm" style="display:none">🔄 지명 다시 받기</button>
   </div>
 </section>
@@ -755,7 +754,7 @@ function render(){
   $('waterOpts').style.display=(news||real)?'none':'';
   $('btnSeed').style.display=real?'none':'';
   if(!real)$('btnRetryOsm').style.display='none';
-  $('zoomBar').style.display=real?'flex':'none';if(!real)resetPreview();
+  $('zoomBar').style.display='flex';['btnZoomIn','btnZoomOut','btnZoomReset','btnEdit','btnEdReset','zoomHint'].forEach(id=>$(id).style.display=real?'':'none');if(!real)resetPreview(); // PNG 저장 버튼은 모든 스타일에서 보임
   $('realOpts').style.display=real?'flex':'none';if(!real)ctx.setTransform(1,0,0,1,0,0);
   if(!real){renderToken++;$('status').textContent='';}
   if(real){renderReal();return;}
