@@ -566,10 +566,10 @@ async function renderReal(){
   const wpXY=shown.map(w=>xy[w.idx]);
   wpXY.forEach(([x,y])=>boxes.push({x:x-8,y:y-8,w:16,h:16}));
   shown.forEach((w,i)=>{const [x,y]=wpXY[i];
-    if(w.role){{const rk=poiKind(w.name);if(ICON[rk]&&drawIcon(rk,x,y-6,46))boxes.push({x:x-28,y:y-58,w:56,h:52});} // 출발·도착이 절·암자 등이면 그 아이콘도
+    if(w.role){{const rk=poiKind(w.name);if(ICON[rk]&&drawIcon(rk,x,y-6,30))boxes.push({x:x-19,y:y-42,w:38,h:36});} // 출발·도착이 절·암자 등이면 그 아이콘도
       ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.stroke();ctx.restore();
       const tag=w.role==='들머리'?'(출발)':w.role==='날머리'?'(도착)':'(출발·도착)';label(x,y,[{t:(w.name||'')+tag,font:`bold 26px ${F1}`,color:'#d7262e'}],{gap:18});return;}
-    const kd=poiKind(w.name),pk=kd==='peak',ic=ICON[kd]?48:0;
+    const kd=poiKind(w.name),pk=kd==='peak',ic=ICON[kd]?30:0;
     if(pk)tri(x,y-10,w.ele===top?1.4:1.1);else if(ic){drawIcon(kd,x,y,ic);boxes.push({x:x-ic*.6,y:y-ic-6,w:ic*1.2,h:ic+4});}
     ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
     label(x,y,pk?[{t:w.name,font:`bold ${w.ele===top?25:22}px ${F1}`},{t:w.ele.toLocaleString('ko-KR')+'m',font:`bold 19px ${F1}`,color:'#333'}]:[{t:w.name,font:`${ic?'bold 21':'600 20'}px ${F1}`,color:'#333'}],{up:pk?18:0,gap:ic?16:12});});
@@ -631,7 +631,7 @@ async function renderReal(){
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
     if(nearWp(px,py,30,nm(x)))return; // GPX 지점과 같은(비슷한) 이름이면 생략 — GPX 지명이 우선
     if(temple&&tmN>=Math.round(6*A))return;if(t.amenity==='school'&&scN>=Math.round(5*A))return;
-    const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=34;
+    const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=22;
     if(t.amenity==='school')boxes.push({x:px-12,y:py-22,w:24,h:28});
     if(tk)boxes.push({x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+6});
     const ok=label(px,py,[{t:nm(x),font:`${temple?'600 17':'16'}px ${F1}`,color:'#444'}],{optional:true,gap:t.amenity==='school'?14:tk?12:9});
@@ -651,10 +651,25 @@ async function renderReal(){
    let k=0;const cap=Math.round(4*A),seen=new Set();
    byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||/^(정자|쉼터|약수터|샘터|샘|약수|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
      if(distToRoute(px,py)>Math.max(W,H)*.15)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
-     const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?32:0;
+     const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?22:0;
      boxes.push(img?{x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+8}:{x:px-8,y:py-10,w:16,h:16});
      if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10})){boxes.pop();return;}
      if(!(img&&drawIcon(img,px,py,isz))){ctx.save();sym[kk](px,py);ctx.restore();}seen.add(n);k++;});
+   // 주차장(P)·탐방지원센터(i) — 대표적인 것만
+   {const sE=[xy[0],xy[xy.length-1]],nearEnd=(x,y)=>Math.min(...sE.map(([a,b])=>Math.hypot(a-x,b-y)));
+    const badge=(x,y,ch,col)=>{ctx.save();ctx.fillStyle=col;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-9,y-9,18,18,4);ctx.fill();ctx.stroke();
+      ctx.fillStyle='#fff';ctx.font=`bold 13px ${F1}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(ch,x,y+1);ctx.restore();};
+    const isInfo=x=>x.tags.tourism==='information'&&/탐방|지원센터|안내소|분소|매표소/.test(nm(x));
+    const isPark=x=>x.tags.amenity==='parking';
+    const short=n=>n.replace(/^.*국립공원\s*/,'').replace(/^계룡산\s+/,'');
+    const put=(arr,ch,col,cap,ok)=>{let k=0;const used=[];byNear(arr).forEach(x=>{if(k>=cap)return;const n=nm(x);const [px,py]=P.fwd(x.lat,x.lon);
+      if(px<0||py<0||px>W||py>H||!ok(x,px,py))return;if(used.some(([a,b])=>Math.hypot(a-px,b-py)<60))return;
+      boxes.push({x:px-11,y:py-11,w:22,h:22});
+      const wpSame=nearWp(px,py,25,n); // GPX 지점과 같은 곳이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
+      if(!wpSame&&!label(px,py,[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}],{optional:true,gap:13})){boxes.pop();return;}
+      badge(px,py,ch,col);used.push([px,py]);k++;});};
+    put(nodes.filter(isInfo),'i','#2e8b57',3,(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12);
+    put(nodes.filter(isPark),'P','#2f6fc8',3,(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
    let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A))return;const n=nm(x);if(seen.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
      if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}

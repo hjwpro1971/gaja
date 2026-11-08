@@ -18,7 +18,7 @@ CELL = 0.05
 MAX_CELLS = 80  # 한 번 요청에 새로 받을 칸 상한(가운데부터). 나머지는 다음 요청 때
 
 # 카카오 키워드 검색어 — 산행 지도에 쓸 만한 것만. 결과는 아래 분류·잡음 필터를 통과해야 저장된다
-KEYWORDS = ['약수터', '샘터', '쉼터', '정자', '암자', '사찰', '폭포', '전망대', '대피소', '산장', '계곡', '바위', '등산로입구']
+KEYWORDS = ['주차장', '탐방지원센터', '약수터', '샘터', '쉼터', '정자', '암자', '사찰', '폭포', '전망대', '대피소', '산장', '계곡', '바위', '등산로입구']
 NOISE_NAME = re.compile(r'식당|가든|모텔|호텔|리조트|펜션|민박|주유소|편의점|약국|병원|은행|파출소|아파트|빌라|카페|치킨|마트|슈퍼|정육|교회|성당|성결|원룸|부동산|노래|휴게소$')
 NOISE_CAT = re.compile(r'음식점|숙박|부동산|의료|금융|교육|가정,생활|자동차|교통,수송|서비스,산업|사무,기업|쇼핑|테마파크|도예|농원|드라이브|체험|캠핑|골프|레저|카페|공방|미술관|박물관|전시')
 # 분류 안 되는 일반 관광지는 산행 지도에 어울리는 것만 남긴다
@@ -69,6 +69,10 @@ def import_custom_once(path):
 
 
 def classify(cat, name):
+    if re.search(r'탐방지원센터|탐방안내소|분소|매표소', name):
+        return 'info'
+    if '주차장' in name or '주차장' in cat:
+        return 'parking'
     if re.search(r'산$|봉$|정상', name):
         return 'peak'
     if '폭포' in name or '폭포' in cat:
@@ -174,9 +178,18 @@ def _fetch_cells(c, need):
     for cell, docs in bycell.items():
         for d in docs.values():
             name, cat = (d.get('place_name') or '').strip(), d.get('category_name') or ''
-            if len(name) < 2 or name in GENERIC or NOISE_NAME.search(name) or NOISE_CAT.search(cat) or ENG.match(name):
-                continue
             t = classify(cat, name)
+            # 주차장은 산행 관련(탐방·국립공원·등산로·공영·입구)만, 탐방지원센터는 그대로 — 둘 다 '교통,수송' 분류라 잡음 필터보다 먼저 판단
+            if t == 'parking' and not re.search(r'탐방|국립공원|도립공원|군립공원|등산|공영|입구|매표소|휴양림', name):
+                continue
+            if t in ('parking', 'info') and re.search(r'충전소|투루카|쏘카|그린카|분기점|정류장|민원|출장소|주차타워|기계식', name):
+                continue
+            if re.fullmatch(r'(제\d+)?(공영|노상|무료)?\s*주차장', name):
+                continue  # 이름이 '공영주차장'뿐이면 어디인지 알 수 없음
+            base = name.split(' ')[-1]
+            if t not in ('parking', 'info') and (len(name) < 2 or name in GENERIC or base in GENERIC or NOISE_NAME.search(name)
+                                                 or NOISE_CAT.search(cat) or ENG.match(name)):
+                continue  # '계룡산 샘터'처럼 산 이름+일반명사뿐인 것도 버림
             if t == 'poi' and not KEEP_POI_CAT.search(cat + ' ' + name):
                 continue  # 분류가 안 되는 일반 장소는 산행 지도에 어울리는 것(공원·유적·휴양림 등)만
             rows.append((d['id'], cell, name, float(d['y']), float(d['x']), cat, t, now))
@@ -218,7 +231,7 @@ def stats():
 TYPE_TAGS = {'peak': {'natural': 'peak'}, 'spring': {'natural': 'spring'}, 'shelter': {'tourism': 'alpine_hut'},
              'rest': {'amenity': 'shelter'}, 'temple': {'amenity': 'place_of_worship', 'religion': 'buddhist'},
              'waterfall': {'waterway': 'waterfall'}, 'viewpoint': {'tourism': 'viewpoint'}, 'valley': {'natural': 'valley'},
-             'rock': {'natural': 'rock'}, 'pass': {'natural': 'saddle'}, 'poi': {'tourism': 'attraction'}}
+             'rock': {'natural': 'rock'}, 'parking': {'amenity': 'parking'}, 'info': {'tourism': 'information'}, 'pass': {'natural': 'saddle'}, 'poi': {'tourism': 'attraction'}}
 
 
 def kakao_ok(p, osm_names):
