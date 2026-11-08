@@ -45,16 +45,16 @@ const KIND={'natural=peak':'봉우리','natural=saddle':'고개','natural=spring
  'railway=station':'역','amenity=school':'학교','amenity=place_of_worship':'사찰·교회','amenity=parking':'주차장','amenity=shelter':'쉼터',
  'tourism=viewpoint':'전망대','tourism=information':'안내소','tourism=alpine_hut':'대피소','tourism=camp_site':'야영장',
  'highway=motorway':'고속도로','highway=trunk':'간선도로','highway=primary':'국도','highway=secondary':'지방도','highway=tertiary':'군도','highway=unclassified':'소로','highway=residential':'마을길',
- 'highway=track':'임도','highway=path':'등산로','highway=footway':'보행로','highway=steps':'계단','waterway=river':'강','waterway=stream':'계곡·하천','natural=water':'호수·저수지','railway=rail':'철도'};
+ 'highway=track':'임도','highway=path':'등산로','highway=footway':'보행로','highway=steps':'계단','admin=4':'시·도','admin=6':'시·군·구','admin=7':'일반구','admin=8':'읍·면·동','waterway=river':'강','waterway=stream':'계곡·하천','natural=water':'호수·저수지','railway=rail':'철도'};
 const kname=k=>KIND[k]||k;
 const fmt=n=>Number(n).toLocaleString('ko-KR');
 async function loadStats(){
   let s;try{s=await (await fetch('api/stats')).json();}catch(e){$('stat').textContent='서버에 연결하지 못했습니다.';return;}
   if(!s.ready){$('stat').innerHTML='<span>아직 DB가 없습니다. 「데이터 갱신」을 눌러 처음 만들어 주세요.</span>';return;}
   const m=s.meta;$('stat').innerHTML=`<b>DB 생성</b><span>${m.built_at}</span><b>OSM 원본</b><span>${m.source_date?new Date(m.source_date).toLocaleString('ko-KR'):'—'}</span>
-   <b>점</b><span>${fmt(m.poi_count)}개</span><b>선</b><span>${fmt(m.line_count)}개</span><b>갈림길</b><span>${fmt(s.junctions)}개</span><b>크기</b><span>${fmt(s.size_mb)}MB</span>`;
+   <b>점</b><span>${fmt(m.poi_count)}개</span><b>선</b><span>${fmt(m.line_count)}개</span><b>면</b><span>${m.area_count?fmt(m.area_count)+'개':'— (갱신 필요)'}</span><b>갈림길</b><span>${fmt(s.junctions)}개</span><b>크기</b><span>${fmt(s.size_mb)}MB</span>`;
   const rows=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${kname(k)}</td><td style="color:#aaa">${k}</td><td class="n">${fmt(v)}</td></tr>`).join('');
-  $('kinds').innerHTML=`<table><tr><td colspan=3><b>점</b></td></tr>${rows(s.kinds.poi)}<tr><td colspan=3 style="padding-top:8px"><b>선</b></td></tr>${rows(s.kinds.line)}</table>`;
+  $('kinds').innerHTML=`<table><tr><td colspan=3><b>점</b></td></tr>${rows(s.kinds.poi)}<tr><td colspan=3 style="padding-top:8px"><b>선</b></td></tr>${rows(s.kinds.line)}<tr><td colspan=3 style="padding-top:8px"><b>면</b></td></tr>${rows(s.kinds.area||{})}</table>`;
   $('kind').innerHTML='<option value="">전체</option>'+Object.keys(s.kinds.poi).map(k=>`<option value="${k}">${kname(k)}</option>`).join('');
 }
 // 갱신
@@ -82,6 +82,8 @@ async function view(){
   let j;try{const r=await fetch(`api/bbox?s=${s}&w=${w}&n=${n}&e=${e}`);j=await r.json();if(!r.ok)throw new Error(j.error);}catch(err){info.getContainer().textContent='⚠️ '+err.message;return;}
   let np=0,nl=0;
   for(const x of j.elements){
+    if(x.type==='area'){const ad=x.tags.boundary==='administrative';
+      x.rings.forEach(r=>L.polygon(r,{color:ad?'#b4473a':'#3d8fd6',weight:ad?1.5:1,dashArray:ad?'6 4':null,fill:!ad,fillOpacity:.35}).bindTooltip(`${x.tags.name||'(이름 없음)'} · ${ad?'행정구역 '+x.tags.admin_level:'호수·저수지'}`).addTo(layer));nl++;continue;}
     if(x.type==='way'){const k=x.tags.highway?'highway='+x.tags.highway:x.tags.waterway?'waterway='+x.tags.waterway:x.tags.natural==='water'?'natural=water':'railway=rail';
       L.polyline(x.geometry.map(p=>[p.lat,p.lon]),{color:COLOR(k),weight:k==='highway=path'?3:2,opacity:.85}).bindTooltip(`${x.tags.name||'(이름 없음)'} · ${kname(k)}`).addTo(layer);nl++;}
     else{const t=x.tags,k=Object.keys(KIND).find(kk=>{const[a,v]=kk.split('=');return t[a]===v;})||'';

@@ -454,6 +454,13 @@ async function renderReal(){
   const els=osm?osm.elements:[];
   const ways=els.filter(x=>x.type==='way'&&x.geometry);
   ctx.lineCap='round';ctx.lineJoin='round';
+  // 면(지도 DB): 관계로 그려진 큰 호수, 행정구역. rings는 [[lat,lon],...] 바깥 테두리들
+  const areas=els.filter(x=>x.type==='area'&&x.rings).map(x=>({...x,px:x.rings.map(r=>r.map(([la,lo])=>P.fwd(la,lo)))}));
+  const inPoly=(x,y,rs)=>{let c=false;for(const r of rs)for(let i=0,j=r.length-1;i<r.length;j=i++){const[a,b]=r[i],[p,q]=r[j];if((b>y)!==(q>y)&&x<(p-a)*(y-b)/(q-b)+a)c=!c;}return c;};
+  // 화면 안에서 그 면에 속하는 자리들 (가운데에 가까운 순)
+  const spotsIn=rs=>{const pts=[];for(let j=0;j<12;j++)for(let i=0;i<16;i++){const x=60+(W-120)*(i+.5)/16,y=60+(H-120)*(j+.5)/12;if(inPoly(x,y,rs))pts.push([x,y]);}
+    if(!pts.length)return pts;const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length,cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;return pts.sort((a,b)=>Math.hypot(a[0]-cx,a[1]-cy)-Math.hypot(b[0]-cx,b[1]-cy));};
+  areas.filter(x=>x.tags.boundary!=='administrative').forEach(x=>{ctx.beginPath();x.px.forEach(r=>r.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1])));ctx.closePath();ctx.fillStyle='#cfe6f5';ctx.fill('evenodd');ctx.strokeStyle='#7fb6dd';ctx.lineWidth=1.2;ctx.stroke();});
   // 호수·저수지
   ways.filter(x=>x.tags.natural==='water').forEach(x=>{const p=geo(x.geometry);ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fillStyle='#cfe6f5';ctx.fill();ctx.strokeStyle='#7fb6dd';ctx.lineWidth=1.2;ctx.stroke();});
   // 등고선
@@ -525,13 +532,24 @@ async function renderReal(){
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
   const tileName=(px,py,t)=>{const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
     // 가로로 놓을 자리가 없으면 세로로 시도
-    for(const vert of [false,true]){const b=vert?{x:px-s/2,y:py-tw/2,w:s,h:tw}:{x:px-tw/2,y:py-s/2,w:tw,h:s};if(hit(b)>=1000)continue;boxes.push(b);
+    for(const vert of [false,true]){const b=vert?{x:px-s/2,y:py-tw/2,w:s,h:tw}:{x:px-tw/2,y:py-s/2,w:tw,h:s};if(hit(b)>=60)continue;boxes.push(b); // 산행로 위에는 놓지 않음
       ctx.save();ctx.font=`bold 28px ${F1}`;ctx.textAlign='center';ctx.textBaseline='middle';
       cs.forEach((ch,i)=>{const x=vert?b.x:b.x+i*(s+g),y=vert?b.y+i*(s+g):b.y;ctx.fillStyle='rgba(253,236,229,.93)';ctx.strokeStyle='#cf8f80';ctx.lineWidth=1.6;
         ctx.beginPath();ctx.roundRect(x,y,s,s,6);ctx.fill();ctx.stroke();ctx.fillStyle='#b4473a';ctx.fillText(ch,x+s/2,y+s/2+1);});
       ctx.restore();return true;}
     return false;};
-  nodes.filter(x=>x.tags.place).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+  // 저수지·호수 이름 (파란 글씨)
+  ways.filter(x=>x.tags.natural==='water'&&x.tags.name).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);
+    if(px>0&&py>0&&px<W&&py<H&&label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))return;
+    // 큰 호수는 가운데가 화면 밖이거나 막혀 있을 수 있음 → 보이는 물 위 빈자리를 찾아서
+    for(const [sx,sy] of spotsIn([geo(x.geometry)]).slice(0,6))if(label(sx,sy,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))break;});
+  areas.filter(x=>x.tags.boundary!=='administrative'&&x.tags.name).forEach(x=>{for(const [px,py] of spotsIn(x.px).slice(0,6))if(label(px,py,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))break;});
+  // 행정구역 면: 화면에 보이는 그 구역 안쪽 빈자리에 이름 (시·군·구 → 시·도 → 읍·면 순, 동은 점 지명이 대신함)
+  const adminDone=new Set();
+  [['6','7'],['4'],['8']].forEach(lv=>areas.filter(x=>x.tags.boundary==='administrative'&&lv.includes(x.tags.admin_level)).forEach(x=>{const n=nm(x);if(!n||adminDone.has(n))return;
+    const lvl=x.tags.admin_level;if(lvl==='8'&&!/[읍면]$/.test(n))return;
+    for(const [px,py] of spotsIn(x.px).slice(0,10)){const ok=lvl==='8'?label(px,py,[{t:n,font:`bold 30px ${F1}`,color:'#4f6f8f',sp:14}],{center:true,optional:true}):tileName(px,py,n);if(ok){adminDone.add(n);break;}}}));
+  nodes.filter(x=>x.tags.place&&!adminDone.has(nm(x))).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
     if(/^(county|city|borough)$/.test(pl)||(/^(town|suburb)$/.test(pl)&&/[시군구]$/.test(n)))tileName(px,py,n);
     else if(/[읍면]$/.test(n)&&/^(town|suburb|village|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 30px ${F1}`,color:'#4f6f8f',sp:14}],{center:true,optional:true});
     else if(/^(town|suburb|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 21px ${F1}`,color:'#333'}],{center:true,optional:true});});
@@ -543,9 +561,6 @@ async function renderReal(){
     boxes.push({x:px-17,y:py-21,w:34,h:23});}); // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
   // 고개
   nodes.filter(x=>x.tags.natural==='saddle').forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
-  // 저수지·호수 이름 (파란 글씨)
-  ways.filter(x=>x.tags.natural==='water'&&x.tags.name).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(px<0||py<0||px>W||py>H)return;
-    label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true});});
   // 마을
   nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x))).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true});});
   // 역·학교·절 — 절은 "이름 卍", 학교는 주황 지붕 건물 그림, 역은 흰 동그라미

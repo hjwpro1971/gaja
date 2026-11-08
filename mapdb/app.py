@@ -46,6 +46,14 @@ def bbox_query(s, w, n, e, only=None):
                 'SELECT p.osm,p.tags,p.lat,p.lon FROM poi_idx i JOIN poi p ON p.id=i.id '
                 'WHERE i.minlat<=? AND i.maxlat>=? AND i.minlon<=? AND i.maxlon>=?', (n, s, e, w)):
             els.append({'type': 'node', 'id': int(osm[1:]), 'lat': lat, 'lon': lon, 'tags': json.loads(tags)})
+        # 면(행정구역·관계로 그려진 큰 호수): rings = [[[lat,lon],...], ...] 바깥 테두리들. 예전 DB엔 표가 없을 수 있음
+        try:
+            for osm, tags, geom in c.execute(
+                    'SELECT a.osm,a.tags,a.geom FROM area_idx i JOIN area a ON a.id=i.id '
+                    'WHERE i.minlat<=? AND i.maxlat>=? AND i.minlon<=? AND i.maxlon>=?', (n, s, e, w)):
+                els.append({'type': 'area', 'id': int(osm[1:]), 'tags': json.loads(tags), 'rings': json.loads(geom)})
+        except sqlite3.OperationalError:
+            pass
     sql = ('SELECT l.osm,l.tags,l.geom FROM line_idx i JOIN line l ON l.id=i.id '
            'WHERE i.minlat<=? AND i.maxlat>=? AND i.minlon<=? AND i.maxlon>=?')
     args = [n, s, e, w]
@@ -63,8 +71,11 @@ def stats():
         return {'ready': False}
     meta = dict(c.execute('SELECT k,v FROM meta'))
     kinds = {}
-    for t, q in (('poi', 'SELECT kind,count(*) FROM poi GROUP BY kind'), ('line', 'SELECT kind,count(*) FROM line GROUP BY kind')):
-        kinds[t] = dict(c.execute(q))
+    for t in ('poi', 'line', 'area'):
+        try:
+            kinds[t] = dict(c.execute(f'SELECT kind,count(*) FROM {t} GROUP BY kind'))
+        except sqlite3.OperationalError:
+            kinds[t] = {}
     return {'ready': True, 'meta': meta, 'kinds': kinds, 'junctions': c.execute('SELECT count(*) FROM junction').fetchone()[0],
             'size_mb': round(os.path.getsize(DB) / 1048576, 1)}
 

@@ -27,7 +27,11 @@ POI_RULES = [  # (태그, 값 집합) → kind
 HIGHWAYS = {'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential',
             'track', 'path', 'footway', 'steps'}
 KEEP_TAGS = {'name', 'name:ko', 'ele', 'natural', 'place', 'railway', 'amenity', 'tourism', 'highway',
-             'waterway', 'tunnel', 'bridge', 'ref', 'religion', 'information', 'sac_scale', 'surface'}
+             'waterway', 'tunnel', 'bridge', 'ref', 'religion', 'information', 'sac_scale', 'surface',
+             'admin_level', 'boundary', 'water', 'landuse'}
+# 관계(relation)로 그려진 면: 행정구역(4=시·도, 6=시·군·구, 7=일반구, 8=읍·면·동)과 큰 호수·저수지
+ADMIN_LEVELS = {'4', '6', '7', '8'}
+EPS = {'admin=4': .002, 'admin=6': .001, 'admin=7': .0007, 'admin=8': .0005, 'natural=water': .0002}  # 단순화 허용오차(도)
 
 
 def log(msg):
@@ -56,6 +60,82 @@ def line_kind(tags):
     return None
 
 
+def area_kind(tags):
+    if tags.get('boundary') == 'administrative' and tags.get('admin_level') in ADMIN_LEVELS and 'name' in tags:
+        return 'admin=' + tags.get('admin_level')
+    if tags.get('type') == 'multipolygon' and (tags.get('natural') == 'water' or tags.get('landuse') == 'reservoir'):
+        return 'natural=water'
+    return None
+
+
+def rdp(pts, eps):
+    """Douglas-Peucker 단순화(반복형). 양 끝점은 항상 남는다 — 선을 이어 붙일 때 끝점이 맞아야 하므로."""
+    if len(pts) < 3:
+        return list(pts)
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (y1, x1), (y2, x2) = pts[a], pts[b]
+        dx, dy = x2 - x1, y2 - y1
+        L = (dx * dx + dy * dy) ** .5
+        best, bi = -1, -1
+        for i in range(a + 1, b):
+            y, x = pts[i]
+            d = abs(dy * (x - x1) - dx * (y - y1)) / L if L else ((x - x1) ** 2 + (y - y1) ** 2) ** .5
+            if d > best:
+                best, bi = d, i
+        if best > eps:
+            keep[bi] = True
+            stack += [(a, bi), (bi, b)]
+    return [p for p, k in zip(pts, keep) if k]
+
+
+def stitch(segs):
+    """관계의 바깥 테두리 선들을 끝점끼리 이어 닫힌 고리(ring)들로 만든다."""
+    segs = [list(x) for x in segs if len(x) >= 2]
+    rings = []
+    while segs:
+        cur = segs.pop()
+        grown = True
+        while grown and cur[0] != cur[-1]:
+            grown = False
+            for i, x in enumerate(segs):
+                if x[0] == cur[-1]:
+                    cur += x[1:]
+                elif x[-1] == cur[-1]:
+                    cur += x[::-1][1:]
+                elif x[-1] == cur[0]:
+                    cur = x + cur[1:]
+                elif x[0] == cur[0]:
+                    cur = x[::-1] + cur[1:]
+                else:
+                    continue
+                segs.pop(i)
+                grown = True
+                break
+        if len(cur) >= 4:
+            rings.append(cur)
+    return rings
+
+
+class RelCollector(osmium.SimpleHandler):
+    """1차: 관계만 훑어 필요한 행정구역·호수와 그 테두리 선(way) 번호를 모은다."""
+    def __init__(self):
+        super().__init__()
+        self.rels, self.need = [], set()
+
+    def relation(self, r):
+        k = area_kind(r.tags)
+        if not k:
+            return
+        outer = [m.ref for m in r.members if m.type == 'w' and m.role in ('outer', '')]
+        if outer:
+            self.rels.append((r.id, k, slim(r.tags), outer))
+            self.need.update(outer)
+
+
 def slim(tags):
     return {t.k: t.v for t in tags if t.k in KEEP_TAGS}
 
@@ -65,15 +145,18 @@ CREATE TABLE poi(id INTEGER PRIMARY KEY, osm TEXT, kind TEXT, name TEXT, ele REA
 CREATE TABLE line(id INTEGER PRIMARY KEY, osm TEXT, kind TEXT, name TEXT, tags TEXT, geom TEXT);
 CREATE VIRTUAL TABLE poi_idx USING rtree(id, minlat, maxlat, minlon, maxlon);
 CREATE VIRTUAL TABLE line_idx USING rtree(id, minlat, maxlat, minlon, maxlon);
+CREATE TABLE area(id INTEGER PRIMARY KEY, osm TEXT, kind TEXT, name TEXT, tags TEXT, geom TEXT);
+CREATE VIRTUAL TABLE area_idx USING rtree(id, minlat, maxlat, minlon, maxlon);
 CREATE TABLE junction(id INTEGER PRIMARY KEY, mountain TEXT, lat REAL, lon REAL);
 CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT);
 """
 
 
 class Handler(osmium.SimpleHandler):
-    def __init__(self, db):
+    def __init__(self, db, need=()):
         super().__init__()
         self.db = db
+        self.need, self.wgeom = need, {}  # 관계 테두리로 쓰일 선 → 단순화한 좌표
         self.np = self.nl = 0
         self.pois, self.lines = [], []
 
@@ -108,6 +191,13 @@ class Handler(osmium.SimpleHandler):
             self.add_poi(f'n{n.id}', n.tags, k, n.location.lat, n.location.lon)
 
     def way(self, w):
+        if w.id in self.need:
+            try:
+                g = [(round(nd.lat, 6), round(nd.lon, 6)) for nd in w.nodes if nd.location.valid()]
+                if len(g) >= 2:
+                    self.wgeom[w.id] = rdp(g, .0002)
+            except osmium.InvalidLocationError:
+                pass
         tags = w.tags
         lk = line_kind(tags)
         pk = poi_kind(tags) if 'name' in tags else None
@@ -172,7 +262,11 @@ def main():
             os.remove(p)
     db = sqlite3.connect(out)
     db.executescript('PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;' + SCHEMA)
-    h = Handler(db)
+    log('행정구역·큰 호수(관계) 목록 읽는 중…')
+    rc = RelCollector()
+    rc.apply_file(pbf)
+    log(f'  관계 {len(rc.rels):,}개, 테두리 선 {len(rc.need):,}개')
+    h = Handler(db, rc.need)
     idx = os.path.join(DATA, 'nodes.idx')
     log('OSM 데이터 읽는 중 (NAS 기준 10분 안팎)…')
     t0 = time.time()
@@ -183,11 +277,26 @@ def main():
     except OSError:
         pass
     log(f'읽기 완료: 점 {h.np:,}개, 선 {h.nl:,}개 ({time.time() - t0:.0f}초)')
+    na, rows, idxs = 0, [], []
+    for rid, k, t, outer in rc.rels:
+        rings = [rdp(r, EPS[k]) for r in stitch([h.wgeom[i] for i in outer if i in h.wgeom])]
+        rings = [r for r in rings if len(r) >= 4]
+        if not rings:
+            continue
+        lats = [p[0] for r in rings for p in r]
+        lons = [p[1] for r in rings for p in r]
+        na += 1
+        rows.append((na, f'r{rid}', k, t.get('name:ko') or t.get('name'), json.dumps(t, ensure_ascii=False), json.dumps(rings, separators=(',', ':'))))
+        idxs.append((na, min(lats), max(lats), min(lons), max(lons)))
+    db.executemany('INSERT INTO area VALUES(?,?,?,?,?,?)', rows)
+    db.executemany('INSERT INTO area_idx VALUES(?,?,?,?,?)', idxs)
+    h.wgeom = None
+    log(f'면 {na:,}개 (행정구역·호수) 조립 완료')
     nj = import_junctions(db, os.environ.get('JUNCTIONS_JS', '/srv/mountain_junctions.js'))
     log(f'갈림길 {nj:,}개 추가')
-    db.executescript('CREATE INDEX poi_name ON poi(name); CREATE INDEX poi_kind ON poi(kind); CREATE INDEX line_kind ON line(kind);')
+    db.executescript('CREATE INDEX poi_name ON poi(name); CREATE INDEX poi_kind ON poi(kind); CREATE INDEX line_kind ON line(kind); CREATE INDEX area_kind ON area(kind);')
     meta = {'built_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'source_url': PBF_URL, 'source_date': src_date,
-            'poi_count': str(h.np), 'line_count': str(h.nl), 'junction_count': str(nj)}
+            'poi_count': str(h.np), 'line_count': str(h.nl), 'area_count': str(na), 'junction_count': str(nj)}
     db.executemany('INSERT INTO meta VALUES(?,?)', meta.items())
     db.commit()
     db.close()
