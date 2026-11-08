@@ -88,10 +88,13 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="status" class="hint"></div>
   <div id="zoomBar" class="row" style="display:none;align-items:center;gap:8px">
     <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
-    <span class="hint">마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장</span>
+    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button>
+    <span class="hint" id="zoomHint">마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장</span>
   </div>
   <div id="cvBox" style="height:calc(100vh - 150px);min-height:420px;display:flex;align-items:center;justify-content:center">
-  <div id="cvWrap" style="overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%"><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
+  <div id="cvWrap" style="position:relative;overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%">
+  <div id="edBox" style="position:absolute;display:none;border:2px dashed #d7262e;background:rgba(215,38,46,.08);pointer-events:none;z-index:2"></div>
+  <div id="edMenu" style="position:absolute;display:none;z-index:3;gap:4px"><button id="edDel" style="padding:4px 8px;font-size:13px;background:#d7262e;color:#fff;border-color:#d7262e">🗑 지우기</button></div><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
   <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
   <div class="step">④ Gemini 프롬프트</div>
   <div class="hint" id="promptHint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
@@ -116,6 +119,11 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 'use strict';
 let W=1920,H=1080;
 const SC=2;
+// 지명 편집: 코스마다 지운 지명(hid)과 옮긴 거리(off, 지도 논리 px)를 브라우저에 저장
+let ED={hid:new Set(),off:{}},EDIT=false;
+const edKey=()=>'illust_ed_'+(G&&G.name||'');
+function edLoad(){ED={hid:new Set(),off:{}};try{const j=JSON.parse(localStorage.getItem(edKey())||'null');if(j){ED.hid=new Set(j.hid||[]);ED.off=j.off||{};}}catch(e){}}
+function edSave(){try{localStorage.setItem(edKey(),JSON.stringify({hid:[...ED.hid],off:ED.off}));}catch(e){}}
 // 지점 아이콘(그림 파일: illust_icons/) — 샘터·절·암자·쉼터·폭포. 다 읽히면 다시 그림
 const ICON={};['spring','temple','hermitage','rest','waterfall'].forEach(k=>{const im=new Image();im.onload=()=>{let g=null;try{g=G;}catch(e){}if(g&&typeof render==='function'){clearTimeout(window._ir);window._ir=setTimeout(render,200);}};im.src='illust_icons/'+k+'.png';ICON[k]=im;});
 // 이름으로 지점 종류: peak(산) / spring / hermitage / temple / rest / waterfall / pass(고개) / dot(그 밖)
@@ -534,11 +542,18 @@ async function renderReal(){
   const LAY=boardLayout(PH);const boxes=LAY.reserve.slice();const RES=boxes.length; // 명판·통계·방위·범례·단면도·출처 자리 예약 // 제목·방위·범례·출처 자리 예약
   const hit=b=>{let sc=0;if(b.x<18||b.y<18||b.x+b.w>W-18||b.y+b.h>H-18)sc+=5000;for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)sc+=1000;
     for(const p of samples)if(p[0]>b.x-3&&p[0]<b.x+b.w+3&&p[1]>b.y-3&&p[1]<b.y+b.h+3)sc+=60;return sc;};
+  const LBL=G._lbl=[],kseen={};
+  const lkey=t=>t+'#'+(kseen[t]=(kseen[t]||0)+1);
   function label(x,y,lines,opt={}){
+    const key=lkey(lines[0].t);if(ED.hid.has(key))return false; // 편집에서 지운 지명
     ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width+(l.sp||0)*(l.t.length-1);});const wd=Math.max(...ws),lh=lines.map(l=>parseInt(l.font.match(/(\d+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
     const g=opt.gap||12;const cands=opt.center?[[-wd/2,-h/2]]:[[g,-h/2],[-g-wd,-h/2],[-wd/2,-h-g-(opt.up||0)],[-wd/2,g],[g,-h-4],[-g-wd,-h-4],[g,4],[-g-wd,4]];
     let best=null;for(const [dx,dy] of cands){const b={x:x+dx,y:y+dy,w:wd,h};const sc=hit(b);if(!best||sc<best.sc)best={...b,sc};}
     if(opt.optional&&best.sc>=1000){ctx.restore();return false;}
+    {const o=ED.off[key];if(o){best={...best,x:best.x+o[0],y:best.y+o[1]};
+      // 멀리 옮겼으면 원래 지점과 가는 선으로 이어 줌
+      const cx=Math.max(best.x,Math.min(x,best.x+wd)),cy=Math.max(best.y,Math.min(y,best.y+h));if(Math.hypot(cx-x,cy-y)>14){ctx.save();ctx.strokeStyle='rgba(60,60,60,.55)';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(cx,cy);ctx.stroke();ctx.restore();}}} // 편집에서 옮긴 거리
+    LBL.push({key,x:best.x,y:best.y,w:wd,h});
     boxes.push(best);let yy=best.y;
     lines.forEach((l,i)=>{ctx.font=l.font;yy+=lh[i];let tx=best.x+(wd-ws[i])/2;ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='rgba(255,255,255,.95)';
       if(l.sp){for(const ch of l.t){ctx.strokeText(ch,tx,yy-4);ctx.fillStyle=l.color||'#222';ctx.fillText(ch,tx,yy-4);tx+=ctx.measureText(ch).width+l.sp;}}
@@ -566,10 +581,10 @@ async function renderReal(){
   const wpXY=shown.map(w=>xy[w.idx]);
   wpXY.forEach(([x,y])=>boxes.push({x:x-8,y:y-8,w:16,h:16}));
   shown.forEach((w,i)=>{const [x,y]=wpXY[i];
-    if(w.role){{const rk=poiKind(w.name);if(ICON[rk]&&drawIcon(rk,x,y-6,30))boxes.push({x:x-19,y:y-42,w:38,h:36});} // 출발·도착이 절·암자 등이면 그 아이콘도
+    if(w.role){{const rk=poiKind(w.name);if(ICON[rk]&&drawIcon(rk,x,y-6,16))boxes.push({x:x-11,y:y-28,w:22,h:22});} // 출발·도착이 절·암자 등이면 그 아이콘도
       ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.stroke();ctx.restore();
       const tag=w.role==='들머리'?'(출발)':w.role==='날머리'?'(도착)':'(출발·도착)';label(x,y,[{t:(w.name||'')+tag,font:`bold 26px ${F1}`,color:'#d7262e'}],{gap:18});return;}
-    const kd=poiKind(w.name),pk=kd==='peak',ic=ICON[kd]?30:0;
+    const kd=poiKind(w.name),pk=kd==='peak',ic=ICON[kd]?16:0;
     if(pk)tri(x,y-10,w.ele===top?1.4:1.1);else if(ic){drawIcon(kd,x,y,ic);boxes.push({x:x-ic*.6,y:y-ic-6,w:ic*1.2,h:ic+4});}
     ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
     label(x,y,pk?[{t:w.name,font:`bold ${w.ele===top?25:22}px ${F1}`},{t:w.ele.toLocaleString('ko-KR')+'m',font:`bold 19px ${F1}`,color:'#333'}]:[{t:w.name,font:`${ic?'bold 21':'600 20'}px ${F1}`,color:'#333'}],{up:pk?18:0,gap:ic?16:12});});
@@ -580,9 +595,10 @@ async function renderReal(){
   const center=x=>x.type==='node'?[x.lat,x.lon]:x.geometry?[x.geometry.reduce((s,p)=>s+p.lat,0)/x.geometry.length,x.geometry.reduce((s,p)=>s+p.lon,0)/x.geometry.length]:x.bounds?[(x.bounds.minlat+x.bounds.maxlat)/2,(x.bounds.minlon+x.bounds.maxlon)/2]:null;
   const nm=x=>x.tags['name:ko']||x.tags.name;
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
-  const tileName=(px,py,t)=>{const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
+  const tileName=(px,py,t)=>{const key=lkey(t);if(ED.hid.has(key))return true;const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
     // 가로로 놓을 자리가 없으면 세로로 시도
-    for(const vert of [false,true]){const b=vert?{x:px-s/2,y:py-tw/2,w:s,h:tw}:{x:px-tw/2,y:py-s/2,w:tw,h:s};if(hit(b)>=60)continue;boxes.push(b); // 산행로 위에는 놓지 않음
+    for(const vert of [false,true]){let b=vert?{x:px-s/2,y:py-tw/2,w:s,h:tw}:{x:px-tw/2,y:py-s/2,w:tw,h:s};if(hit(b)>=60)continue;
+      {const o=ED.off[key];if(o)b={...b,x:b.x+o[0],y:b.y+o[1]};}LBL.push({key,x:b.x,y:b.y,w:b.w,h:b.h});boxes.push(b); // 산행로 위에는 놓지 않음
       ctx.save();ctx.font=`bold 28px ${F1}`;ctx.textAlign='center';ctx.textBaseline='middle';
       cs.forEach((ch,i)=>{const x=vert?b.x:b.x+i*(s+g),y=vert?b.y+i*(s+g):b.y;ctx.fillStyle='rgba(253,236,229,.93)';ctx.strokeStyle='#cf8f80';ctx.lineWidth=1.6;
         ctx.beginPath();ctx.roundRect(x,y,s,s,6);ctx.fill();ctx.stroke();ctx.fillStyle='#b4473a';ctx.fillText(ch,x+s/2,y+s/2+1);});
@@ -631,7 +647,7 @@ async function renderReal(){
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
     if(nearWp(px,py,30,nm(x)))return; // GPX 지점과 같은(비슷한) 이름이면 생략 — GPX 지명이 우선
     if(temple&&tmN>=Math.round(6*A))return;if(t.amenity==='school'&&scN>=Math.round(5*A))return;
-    const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=22;
+    const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=12;
     if(t.amenity==='school')boxes.push({x:px-12,y:py-22,w:24,h:28});
     if(tk)boxes.push({x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+6});
     const ok=label(px,py,[{t:nm(x),font:`${temple?'600 17':'16'}px ${F1}`,color:'#444'}],{optional:true,gap:t.amenity==='school'?14:tk?12:9});
@@ -651,7 +667,7 @@ async function renderReal(){
    let k=0;const cap=Math.round(4*A),seen=new Set();
    byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||/^(정자|쉼터|약수터|샘터|샘|약수|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
      if(distToRoute(px,py)>Math.max(W,H)*.15)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
-     const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?22:0;
+     const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?12:0;
      boxes.push(img?{x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+8}:{x:px-8,y:py-10,w:16,h:16});
      if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10})){boxes.pop();return;}
      if(!(img&&drawIcon(img,px,py,isz))){ctx.save();sym[kk](px,py);ctx.restore();}seen.add(n);k++;});
@@ -1020,7 +1036,7 @@ function renderList(){
 async function load(file){
   try{
     const g=parseGPX(decode(await file.arrayBuffer()),file.name);
-    g.list=buildWaypoints(g);G=g;zoomF=1;panX=0;panY=0;
+    g.list=buildWaypoints(g);G=g;zoomF=1;panX=0;panY=0;edLoad();edHide();
     let d=0;for(let i=1;i<g.pts.length;i++)d+=hav(g.pts[i-1],g.pts[i]);
     $('dist').value=`약 ${(d/1000).toFixed(1)}km`;
     const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
@@ -1066,7 +1082,7 @@ function zoomAt(f,mx,my){ // mx,my: 캔버스 표시 영역 기준 CSS 좌표
 const isReal=()=>G&&$('optStyle').value==='real';
 $('cvWrap').addEventListener('wheel',e=>{if(!isReal())return;e.preventDefault();const r=$('cvWrap').getBoundingClientRect();zoomAt(e.deltaY<0?1.25:0.8,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 {let drag=null;
- $('cvWrap').addEventListener('pointerdown',e=>{if(!isReal())return;drag={x:e.clientX,y:e.clientY,tx:pv.tx,ty:pv.ty};$('cvWrap').setPointerCapture(e.pointerId);$('cvWrap').style.cursor='grabbing';clearTimeout(zTimer);});
+ $('cvWrap').addEventListener('pointerdown',e=>{if(!isReal()||EDIT)return;drag={x:e.clientX,y:e.clientY,tx:pv.tx,ty:pv.ty};$('cvWrap').setPointerCapture(e.pointerId);$('cvWrap').style.cursor='grabbing';clearTimeout(zTimer);});
  $('cvWrap').addEventListener('pointermove',e=>{if(!drag)return;pv.tx=drag.tx+e.clientX-drag.x;pv.ty=drag.ty+e.clientY-drag.y;applyPreview();});
  const end=e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag=null;$('cvWrap').style.cursor='';
    if(Math.abs(dx)+Math.abs(dy)<3){if(pv.sc!==1||pv.tx||pv.ty)scheduleRender(0);return;}
@@ -1075,6 +1091,26 @@ $('cvWrap').addEventListener('wheel',e=>{if(!isReal())return;e.preventDefault();
 $('btnZoomIn').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1.5,r.width/2,r.height/2);};
 $('btnZoomOut').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1/1.5,r.width/2,r.height/2);};
 $('btnZoomReset').onclick=()=>{zoomF=1;panX=0;panY=0;resetPreview();render();};
+// ── 지명 편집 ──
+function edHide(){$('edBox').style.display='none';$('edMenu').style.display='none';}
+function edPx(){const r=cv.getBoundingClientRect();return r.width/W;} // 논리 px → 화면 px
+function edShow(L,dx=0,dy=0){const k=edPx(),b=$('edBox');b.style.display='block';b.style.left=((L.x+dx)*k-3)+'px';b.style.top=((L.y+dy)*k-3)+'px';b.style.width=(L.w*k+6)+'px';b.style.height=(L.h*k+6)+'px';}
+let edSel=null,edDrag=null;
+$('btnEdit').onclick=()=>{EDIT=!EDIT;edSel=null;edHide();$('btnEdit').classList.toggle('main',EDIT);$('btnEdit').textContent=EDIT?'✅ 편집 끝내기':'✏️ 지명 편집';
+  $('cvWrap').style.cursor=EDIT?'pointer':'';
+  $('zoomHint').textContent=EDIT?'지명을 누르면 🗑 지우기 · 끌면 옮기기 · Delete 키로도 지움 (코스마다 자동 저장)':'마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장';};
+$('btnEdReset').onclick=()=>{if(!G)return;if(!confirm('이 코스에서 지우거나 옮긴 지명을 모두 원래대로 되돌릴까요?'))return;ED={hid:new Set(),off:{}};edSave();edHide();render();};
+const edFind=e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H;
+  const L=(G&&G._lbl)||[];for(let i=L.length-1;i>=0;i--){const b=L[i];if(x>=b.x-4&&x<=b.x+b.w+4&&y>=b.y-4&&y<=b.y+b.h+4)return b;}return null;};
+$('cvWrap').addEventListener('pointerdown',e=>{if(!EDIT||!isReal()||e.target.closest('#edMenu'))return;const L=edFind(e);edHide();edSel=null;if(!L)return;
+  edDrag={L,x:e.clientX,y:e.clientY};$('cvWrap').setPointerCapture(e.pointerId);edShow(L);});
+$('cvWrap').addEventListener('pointermove',e=>{if(!edDrag)return;const k=edPx();edShow(edDrag.L,(e.clientX-edDrag.x)/k,(e.clientY-edDrag.y)/k);});
+$('cvWrap').addEventListener('pointerup',e=>{if(!edDrag)return;const {L,x,y}=edDrag;edDrag=null;const k=edPx(),dx=(e.clientX-x)/k,dy=(e.clientY-y)/k;
+  if(Math.abs(dx)+Math.abs(dy)<3){edSel=L;edShow(L);const m=$('edMenu');m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
+  const o=ED.off[L.key]||[0,0];ED.off[L.key]=[o[0]+dx,o[1]+dy];edSave();edHide();render();});
+const edDelete=()=>{if(!edSel)return;ED.hid.add(edSel.key);edSave();edSel=null;edHide();render();};
+$('edDel').onclick=e=>{e.stopPropagation();edDelete();};
+document.addEventListener('keydown',e=>{if(EDIT&&edSel&&(e.key==='Delete'||e.key==='Backspace')&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();edDelete();}});
 // 테스트용: ?gpx=경로 로 바로 불러오기
 const q=new URLSearchParams(location.search).get('gpx');
 if(q)fetch(q).then(r=>r.blob()).then(b=>load(new File([b],decodeURIComponent(q.split('/').pop())))).catch(()=>{});
