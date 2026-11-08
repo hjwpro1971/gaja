@@ -597,6 +597,9 @@ async function renderReal(){
     ctx.save();ctx.fillStyle='#d32f2f';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,4.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
     label(x,y,pk?[{t:w.name,font:`${isTop?'800 24.7':'bold 19.7'}px ${F1}`,color:'#212121'},{t:w.ele.toLocaleString('ko-KR')+'m',font:`${isTop?'bold 17.7':'600 15.7'}px ${F1}`,color:'#333'}]:[{t:w.name,font:`600 17.7px ${F1}`,color:'#333'}],{up:pk?10:0,gap:ic?14:10,lead:true});});
   const wpNames=new Set(shown.map(w=>w.name).filter(Boolean));
+  // 이름이 한 글자만 다른 가까운 GPX 지점(오타: 수령동대피소↔수렴동대피소)이면 같은 곳으로 봄 — 거리만으로 판단하면 소청봉 옆 소청대피소까지 빠짐
+  const oneOff=(a,b)=>{a=a.replace(/\s/g,'');b=b.replace(/\s/g,'');if(a===b)return true;if(a.length!==b.length||a.length<3)return false;let d=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i]&&++d>1)return false;return true;};
+  const typoWp=(x,y,r,name)=>shown.some((w,i)=>w.name&&oneOff(w.name,name)&&Math.hypot(wpXY[i][0]-x,wpXY[i][1]-y)<r);
   const nearWp=(x,y,r,name)=>(name&&wpNames.has(name))||wpXY.some(([a,b],i)=>{const d=Math.hypot(a-x,b-y),wn=shown[i].name||'';return d<r||(name&&wn.length>=2&&d<120&&(name.includes(wn)||wn.includes(name)));});
   const junk=/삼각점|헬기장|^봉우리$|^무명봉$/;
   const nodes=els.filter(x=>x.type==='node'&&x.tags&&x.tags.name);
@@ -606,7 +609,7 @@ async function renderReal(){
   // 대피소·산장 (산행로 근처) — 밀집 구간에서 다른 지명에 밀려 빠지지 않게 먼저 그림(소청대피소 누락 사례)
   const hutDone=new Set();
   byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
-    const [px,py]=P.fwd(x.lat,x.lon);if(nearWp(px,py,50,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
+    const [px,py]=P.fwd(x.lat,x.lon);if(typoWp(px,py,80,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
     boxes.push({x:px-8,y:py-20,w:16,h:16});
     if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
     if(!drawIcon('rest',px,py,12)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
