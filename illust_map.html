@@ -6,13 +6,13 @@
 <style>
 :root{--bg:#f6f1e6;--panel:#fffdf8;--ink:#3d2b1f;--sub:#7a6450;--line:#e2d6c2;--accent:#a4522a}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif}
-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-header h1{font-size:19px;margin:0}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+header{padding:8px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:none}
+header h1{font-size:17px;margin:0}
 header span{color:var(--sub);font-size:13px}
-main{display:grid;grid-template-columns:330px 1fr;gap:12px;padding:12px;align-items:start}
-@media(max-width:900px){main{grid-template-columns:1fr}}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
+main{display:grid;grid-template-columns:330px 1fr;flex:1;min-height:0}
+@media(max-width:900px){body{height:auto;overflow:auto}main{grid-template-columns:1fr}.panel,.view{height:auto!important}#cvBox{height:70vh!important}}
+.panel{background:var(--panel);border-right:1px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:12px;height:100%;overflow-y:auto}
 .step{font-weight:700;font-size:14px;color:var(--accent)}
 label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--sub)}
 input[type=text]{border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff;color:var(--ink);width:100%}
@@ -27,11 +27,13 @@ button:disabled{opacity:.45;cursor:default}
 .wp{display:grid;grid-template-columns:22px 26px 1fr 64px;gap:5px;align-items:center;font-size:13px}
 .wp .no{font-weight:700;text-align:center;color:var(--accent)}
 .wp input[type=text]{padding:4px 6px;font-size:13px}
-.view{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.view{background:#e9e4d8;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0;height:100%;min-height:0}
 canvas{width:100%;height:auto;border-radius:6px;background:#efe6cf;display:block}
 textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:13px;line-height:1.55;font-family:inherit;color:var(--ink);background:#fff;resize:vertical}
 .hint{font-size:12px;color:var(--sub);line-height:1.5}
 .empty{padding:60px 20px;text-align:center;color:var(--sub)}
+#status:empty{display:none}
+.panel>*{flex-shrink:0} /* 메뉴 칸이 눌려 사라지지 않게 — 넘치면 메뉴 전체가 스크롤 */
 </style></head><body>
 <header><h1>🗺️ 산행 일러스트 지도</h1><span>GPX → 실제 지형·지명으로 산행 안내도</span></header>
 <main>
@@ -89,9 +91,9 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="zoomBar" class="row" style="display:none;align-items:center;gap:8px">
     <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
     <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button>
-    <span class="hint" id="zoomHint">마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장</span>
+    <span class="hint" id="zoomHint">휠: 확대·축소 · 지도 끌기: 이동 · 제목·통계·범례·방위 끌기: 위치 옮기기 · PNG는 보이는 그대로 저장</span>
   </div>
-  <div id="cvBox" style="height:calc(100vh - 150px);min-height:420px;display:flex;align-items:center;justify-content:center">
+  <div id="cvBox" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center">
   <div id="cvWrap" style="position:relative;overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%">
   <div id="edBox" style="position:absolute;display:none;border:2px dashed #d7262e;background:rgba(215,38,46,.08);pointer-events:none;z-index:2"></div>
   <div id="edMenu" style="position:absolute;display:none;z-index:3;gap:4px"><button id="edDel" style="padding:4px 8px;font-size:13px;background:#d7262e;color:#fff;border-color:#d7262e">🗑 지우기</button></div><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
@@ -476,7 +478,7 @@ async function renderReal(){
    if(ar>=1){W=1920;H=Math.round(1920/ar);}else{H=1920;W=Math.round(1920*ar);}}
   const PH=$('optProfile').checked?Math.round(Math.min(W,H)*.22):0; // 하단 고도 단면도 높이 — 경로는 그 위 영역에 맞춤
   // 짧은 코스는 지도가 최소 7km를 덮도록 넓힌다 — 산속 4km 범위엔 지명이 거의 없어 지도가 텅 비어 보였음
-  let fit=.74;{const B=makeProj(G,.74,.74),[a0,b0]=B.inv(0,0),[a1,b1]=B.inv(W,H);const km=Math.max(Math.abs(a0-a1)*111,Math.abs(b1-b0)*111*Math.cos(a0*Math.PI/180));if(km<7)fit=.74*km/7;}
+  let fit=.9;{const B=makeProj(G,.9,.9),[a0,b0]=B.inv(0,0),[a1,b1]=B.inv(W,H);const km=Math.max(Math.abs(a0-a1)*111,Math.abs(b1-b0)*111*Math.cos(a0*Math.PI/180));if(km<5)fit=.9*km/5;}
   const TOPM=($('optBoard').checked||$('optStats').checked)?150:0; // 명판·통계 카드 높이만큼 위를 비움
   const P=makeProj(G,fit*zoomF,fit*zoomF*(H-PH-TOPM)/H,panX,panY-PH/2+TOPM/2);
   const [n,w]=P.inv(0,0),[s,e]=P.inv(W,H);
@@ -828,14 +830,26 @@ function boardLayout(PH){
   if($('optStats').checked){L.stats={w:150*4+24,h:86};L.stats.x=W-28-L.stats.w;L.stats.y=28;
     if(L.board&&L.stats.x<L.board.x+L.board.w+20)L.stats.y=L.board.y+L.board.h+16; // 좁으면 명판 아래로
     L.reserve.push({x:L.stats.x-12,y:L.stats.y-12,w:L.stats.w+24,h:L.stats.h+24});ny=L.stats.y+L.stats.h+56;}
-  L.north={x:W-60,y:ny};L.reserve.push({x:W-100,y:ny-50,w:90,h:100});
-  if($('optLegend').checked){const h=24+5*30;L.legend={x:28,y:H-PH-h-28,w:200,h};L.reserve.push({x:16,y:L.legend.y-12,w:L.legend.w+24,h:h+24});}
+  L.north={x:W-60,y:ny};
+  if($('optLegend').checked){const h=24+5*30;L.legend={x:28,y:H-PH-h-28,w:200,h};}
+  // 옮긴 위치 적용 후 자리 예약 (명판·통계·범례·방위)
+  for(const [k,o] of [['__board',L.board],['__stats',L.stats],['__legend',L.legend],['__north',L.north]]){if(!o)continue;
+    if(ED.hid.has(k)){if(k==='__board')delete L.board;else if(k==='__stats')delete L.stats;else if(k==='__legend')delete L.legend;continue;}
+    const d=ED.off[k];if(d){o.x+=d[0];o.y+=d[1];}
+    const ow=o.w||40,oh=o.h||80;o.x=Math.max(k==='__north'?20:8,Math.min(W-ow-8+(k==='__north'?ow/2:0),o.x));o.y=Math.max(k==='__north'?44:8,Math.min(H-oh-8+(k==='__north'?40:0),o.y));} // 지도 밖으로 못 나가게
+  L.reserve=L.reserve.slice(0,0);
+  if(L.board)L.reserve.push({x:L.board.x-12,y:L.board.y-12,w:L.board.w+24,h:L.board.h+24});
+  if(L.stats)L.reserve.push({x:L.stats.x-12,y:L.stats.y-12,w:L.stats.w+24,h:L.stats.h+24});
+  L.reserve.push({x:L.north.x-40,y:L.north.y-50,w:80,h:100});
+  if(L.legend)L.reserve.push({x:L.legend.x-12,y:L.legend.y-12,w:L.legend.w+24,h:L.legend.h+24});
   if(PH)L.reserve.push({x:0,y:H-PH-6,w:W,h:PH+6});
   L.reserve.push({x:W-600,y:H-PH-34,w:590,h:28});
   return L;}
 function card(x,y,w,h){ctx.save();ctx.shadowColor='rgba(0,0,0,.18)';ctx.shadowBlur=14;ctx.shadowOffsetY=3;ctx.fillStyle='rgba(255,255,255,.96)';ctx.beginPath();ctx.roundRect(x,y,w,h,10);ctx.fill();ctx.restore();}
 function drawBoard(L,F1,iv,PH,shown){
   const st=trackStats();
+  // 끌어서 옮길 수 있게 위치 등록 (지명보다 위에 있으므로 나중에 등록 → 먼저 잡힘)
+  if(G._lbl){if(L.board)G._lbl.push({key:'__board',...L.board});if(L.stats)G._lbl.push({key:'__stats',x:L.stats.x,y:L.stats.y,w:L.stats.w,h:L.stats.h});if(L.legend)G._lbl.push({key:'__legend',x:L.legend.x,y:L.legend.y,w:L.legend.w,h:L.legend.h});G._lbl.push({key:'__north',x:L.north.x-20,y:L.north.y-40,w:40,h:80});}
   if(L.board){const b=L.board;card(b.x,b.y,b.w,b.h);
     ctx.save();ctx.fillStyle='#d7262e';ctx.beginPath();ctx.roundRect(b.x,b.y,8,b.h,[10,0,0,10]);ctx.fill();
     ctx.fillStyle='#1f2a1f';ctx.font=`bold 40px ${F1}`;ctx.fillText(b.title,b.x+28,b.y+52,b.w-40);
@@ -995,7 +1009,9 @@ function zoomAt(f,mx,my){ // mx,my: 캔버스 표시 영역 기준 CSS 좌표
 const isReal=()=>G&&$('optStyle').value==='real';
 $('cvWrap').addEventListener('wheel',e=>{if(!isReal())return;e.preventDefault();const r=$('cvWrap').getBoundingClientRect();zoomAt(e.deltaY<0?1.25:0.8,e.clientX-r.left,e.clientY-r.top);},{passive:false});
 {let drag=null;
- $('cvWrap').addEventListener('pointerdown',e=>{if(!isReal()||EDIT)return;drag={x:e.clientX,y:e.clientY,tx:pv.tx,ty:pv.ty};$('cvWrap').setPointerCapture(e.pointerId);$('cvWrap').style.cursor='grabbing';clearTimeout(zTimer);});
+ $('cvWrap').addEventListener('pointerdown',e=>{if(!isReal()||EDIT)return;
+   {const L=edFind(e);if(L&&L.key.startsWith('__')){edDrag={L,x:e.clientX,y:e.clientY};$('cvWrap').setPointerCapture(e.pointerId);edShow(L);return;}}
+   drag={x:e.clientX,y:e.clientY,tx:pv.tx,ty:pv.ty};$('cvWrap').setPointerCapture(e.pointerId);$('cvWrap').style.cursor='grabbing';clearTimeout(zTimer);});
  $('cvWrap').addEventListener('pointermove',e=>{if(!drag)return;pv.tx=drag.tx+e.clientX-drag.x;pv.ty=drag.ty+e.clientY-drag.y;applyPreview();});
  const end=e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag=null;$('cvWrap').style.cursor='';
    if(Math.abs(dx)+Math.abs(dy)<3){if(pv.sc!==1||pv.tx||pv.ty)scheduleRender(0);return;}
@@ -1005,13 +1021,15 @@ $('btnZoomIn').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1
 $('btnZoomOut').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1/1.5,r.width/2,r.height/2);};
 $('btnZoomReset').onclick=()=>{zoomF=1;panX=0;panY=0;resetPreview();render();};
 // ── 지명 편집 ──
+document.getElementById('cvWrap').addEventListener('pointermove',e=>{if(EDIT||!G||$('optStyle').value!=='real'||e.buttons)return;let h=null;try{h=edFind(e);}catch(_){}
+  $('cvWrap').style.cursor=h&&h.key.startsWith('__')?'move':'grab';});
 function edHide(){$('edBox').style.display='none';$('edMenu').style.display='none';}
 function edPx(){const r=cv.getBoundingClientRect();return r.width/W;} // 논리 px → 화면 px
 function edShow(L,dx=0,dy=0){const k=edPx(),b=$('edBox');b.style.display='block';b.style.left=((L.x+dx)*k-3)+'px';b.style.top=((L.y+dy)*k-3)+'px';b.style.width=(L.w*k+6)+'px';b.style.height=(L.h*k+6)+'px';}
 let edSel=null,edDrag=null;
 $('btnEdit').onclick=()=>{EDIT=!EDIT;edSel=null;edHide();$('btnEdit').classList.toggle('main',EDIT);$('btnEdit').textContent=EDIT?'✅ 편집 끝내기':'✏️ 지명 편집';
   $('cvWrap').style.cursor=EDIT?'pointer':'';
-  $('zoomHint').textContent=EDIT?'지명을 누르면 🗑 지우기 · 끌면 옮기기 · Delete 키로도 지움 (코스마다 자동 저장)':'마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장';};
+  $('zoomHint').textContent=EDIT?'지명을 누르면 🗑 지우기 · 끌면 옮기기 · Delete 키로도 지움 (코스마다 자동 저장)':'휠: 확대·축소 · 지도 끌기: 이동 · 제목·통계·범례·방위 끌기: 위치 옮기기 · PNG는 보이는 그대로 저장';};
 $('btnEdReset').onclick=()=>{if(!G)return;if(!confirm('이 코스에서 지우거나 옮긴 지명을 모두 원래대로 되돌릴까요?'))return;ED={hid:new Set(),off:{}};edSave();edHide();render();};
 const edFind=e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H;
   const L=(G&&G._lbl)||[];for(let i=L.length-1;i>=0;i--){const b=L[i];if(x>=b.x-4&&x<=b.x+b.w+4&&y>=b.y-4&&y<=b.y+b.h+4)return b;}return null;};
@@ -1019,7 +1037,7 @@ $('cvWrap').addEventListener('pointerdown',e=>{if(!EDIT||!isReal()||e.target.clo
   edDrag={L,x:e.clientX,y:e.clientY};$('cvWrap').setPointerCapture(e.pointerId);edShow(L);});
 $('cvWrap').addEventListener('pointermove',e=>{if(!edDrag)return;const k=edPx();edShow(edDrag.L,(e.clientX-edDrag.x)/k,(e.clientY-edDrag.y)/k);});
 $('cvWrap').addEventListener('pointerup',e=>{if(!edDrag)return;const {L,x,y}=edDrag;edDrag=null;const k=edPx(),dx=(e.clientX-x)/k,dy=(e.clientY-y)/k;
-  if(Math.abs(dx)+Math.abs(dy)<3){edSel=L;edShow(L);const m=$('edMenu');m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
+  if(Math.abs(dx)+Math.abs(dy)<3){if(!EDIT){edHide();return;}edSel=L;edShow(L);const m=$('edMenu');m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
   const o=ED.off[L.key]||[0,0];ED.off[L.key]=[o[0]+dx,o[1]+dy];edSave();edHide();render();});
 const edDelete=()=>{if(!edSel)return;ED.hid.add(edSel.key);edSave();edSel=null;edHide();render();};
 $('edDel').onclick=e=>{e.stopPropagation();edDelete();};
