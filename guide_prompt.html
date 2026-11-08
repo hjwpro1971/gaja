@@ -445,7 +445,7 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
 
     const STYLE_DEFINITIONS_EN = `
 [BACKGROUND STYLE]: Photorealistic mountain landscape at maximum available resolution, professional outdoor travel photography quality, authentic national park scenery, cinematic natural lighting, realistic atmospheric perspective with layered ridges fading into the distance, extremely fine and crisp textures for rocks, trees, foliage, and ground — sharp enough to hold up when the image is cropped and enlarged.
-[OUTPUT SIZE]: Generate at the largest resolution the model supports (4K/8K class, e.g. 5760×2160 or higher for a 21:9 frame). Maximize pixel dimensions — this image is intended to be cropped into and zoomed, so extra resolution is more valuable than a faster render.
+[OUTPUT SIZE]: Generate at the largest resolution the model supports (4K/8K class, e.g. 3840×2160 or higher), strictly keeping the mandatory 16:9 aspect ratio. Maximize pixel dimensions — this image is intended to be cropped into and zoomed, so extra resolution is more valuable than a faster render.
 [MASCOT RENDER]: Polished feature-animation quality rendering, soft global illumination, detailed but gentle fur texture, naturally integrated with proper contact shadows and lighting matching the environment.`;
 
     // --- 동적 네거티브 프롬프트 (스틱 규칙 유연화) ---
@@ -787,7 +787,9 @@ The couple is depicted sharing a warm, joyful bond. They are naturally integrate
             return;
         }
 
-        let finalPrompt = `[COMPOSITION RULE - STRICT]: A premium ultrawide 21:9 panoramic desktop wallpaper showing ONE seamless, continuous hiking trail, captured as a wide-angle landscape photograph from a distant vantage point (as if shot from an opposite ridge or a drone far away) — never a close, eye-level shot near the characters. The entire route is connected as one coherent, photorealistic mountain landscape with strong atmospheric perspective (foreground detail, midground trail, distant hazy ridgelines). The scenery must flow naturally from foreground to background without any artificial section dividers, collage, or split-screen.\n\n`;
+        let finalPrompt = `[CANVAS SIZE - MANDATORY, DO NOT SKIP]: The output image MUST be exactly 16:9 widescreen aspect ratio (e.g. 1920x1080), matching a standard PowerPoint slide. Do not use 21:9, square, portrait, or any other ratio.\n\n`;
+
+        finalPrompt += `[COMPOSITION RULE - STRICT]: A premium widescreen 16:9 panoramic desktop wallpaper showing ONE seamless, continuous hiking trail, captured as a wide-angle landscape photograph from a distant vantage point (as if shot from an opposite ridge or a drone far away) — never a close, eye-level shot near the characters. The entire route is connected as one coherent, photorealistic mountain landscape with strong atmospheric perspective (foreground detail, midground trail, distant hazy ridgelines). The scenery must flow naturally from foreground to background without any artificial section dividers, collage, or split-screen.\n\n`;
 
         finalPrompt += `[SCENE & ENVIRONMENT]: The background landscape features ${translateKeyword(locationText)} at ${hikingData.mountainName}. Lighting and atmosphere: ${translateKeyword(seasonWeather)}. A long, single hiking trail winds naturally through this magnificent scenery.\n\n`;
 
