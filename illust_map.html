@@ -394,27 +394,34 @@ function makeProj(g,fx,fy,px=0,py=0){
 }
 const demCache=new Map(),osmCache=new Map();
 function loadImg(url){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res(im);im.onerror=()=>rej(new Error(url));im.src=url;});}
+let demZ=0;const demTiles=new Map(); // 'z/x/y' → Float32Array(256*256) 고도(m)
+async function demTile(z,x,y){const k=z+'/'+x+'/'+y;if(demTiles.has(k))return demTiles.get(k);
+  const pr=(async()=>{const im=await loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`);
+    const c=document.createElement('canvas');c.width=c.height=256;const c2=c.getContext('2d',{willReadFrequently:true});c2.drawImage(im,0,0);
+    const d=c2.getImageData(0,0,256,256).data,el=new Float32Array(65536);for(let i=0;i<65536;i++)el[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;
+    // 원본 데이터의 불량 줄(수천 m 튀는 값) 제거: 좌우·상하 이웃과 150m 넘게 차이 나면 이웃 평균으로 교체
+    for(let pass=0;pass<2;pass++)for(let yy=1;yy<255;yy++)for(let xx=1;xx<255;xx++){const o=yy*256+xx,v=el[o],h=(el[o-1]+el[o+1])/2,vv=(el[o-256]+el[o+256])/2;
+      if(Math.abs(v-h)>150&&Math.abs(el[o-1]-el[o+1])<150)el[o]=h;else if(Math.abs(v-vv)>150&&Math.abs(el[o-256]-el[o+256])<150)el[o]=vv;}
+    return el;})();
+  demTiles.set(k,pr);try{return await pr;}catch(e){demTiles.delete(k);throw e;}}
+// 다 그린 뒤 쉬는 동안 주변(각 방향 60%) 타일을 미리 받아 둠 → 축소·이동이 바로 그려짐
+function prefetchDEM(n,w,s,e){if(!demZ)return;const z=demZ,lx=lon=>(lon+180)/360*2**z,ly=lat=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**z;};
+  const dy=(n-s)*.6,dx=(e-w)*.6,x0=Math.floor(lx(w-dx)),x1=Math.floor(lx(e+dx)),y0=Math.floor(ly(n+dy)),y1=Math.floor(ly(s-dy));
+  if((x1-x0+1)*(y1-y0+1)>140)return;const q=[];for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)if(!demTiles.has(z+'/'+x+'/'+y))q.push([x,y]);
+  const next=()=>{const t=q.shift();if(!t)return;demTile(z,t[0],t[1]).catch(()=>{}).finally(()=>(window.requestIdleCallback||setTimeout)(next));};for(let i=0;i<4;i++)next();}
 async function loadDEM(n,w,s,e){
   const lx=(lon,z)=>(lon+180)/360*2**z,ly=(lat,z)=>{const r=lat*Math.PI/180;return(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**z;};
-  let z=14;while(z>9&&(Math.floor(lx(e,z))-Math.floor(lx(w,z))+1)*(Math.floor(ly(s,z))-Math.floor(ly(n,z))+1)>42)z--;
-  const tx0=Math.floor(lx(w,z)),tx1=Math.floor(lx(e,z)),ty0=Math.floor(ly(n,z)),ty1=Math.floor(ly(s,z));
-  const key=[z,tx0,tx1,ty0,ty1].join(',');
-  if(!demCache.has(key)){
-    const nx=tx1-tx0+1,ny=ty1-ty0+1,c=document.createElement('canvas');c.width=nx*256;c.height=ny*256;const c2=c.getContext('2d');
-    const jobs=[];for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++)jobs.push(loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${tx}/${ty}.png`).then(im=>c2.drawImage(im,(tx-tx0)*256,(ty-ty0)*256)));
-    await Promise.all(jobs);
-    const d=c2.getImageData(0,0,c.width,c.height).data,el=new Float32Array(c.width*c.height);
-    for(let i=0;i<el.length;i++)el[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;
-    // 원본 데이터의 불량 줄(수천 m 튀는 값) 제거: 좌우·상하 이웃과 150m 넘게 차이 나면 이웃 평균으로 교체
-    const cw=c.width,ch=c.height;
-    for(let pass=0;pass<2;pass++)for(let y=1;y<ch-1;y++)for(let x=1;x<cw-1;x++){const o=y*cw+x,v=el[o];
-      const h=(el[o-1]+el[o+1])/2,vv=(el[o-cw]+el[o+cw])/2;
-      if(Math.abs(v-h)>150&&Math.abs(el[o-1]-el[o+1])<150)el[o]=h;else if(Math.abs(v-vv)>150&&Math.abs(el[o-cw]-el[o+cw])<150)el[o]=vv;}
-    demCache.set(key,{el,cw:c.width,ch:c.height});
-  }
-  const D=demCache.get(key);
-  return(lat,lon)=>{const px=(lx(lon,z)-tx0)*256-.5,py=(ly(lat,z)-ty0)*256-.5;const ix=Math.max(0,Math.min(D.cw-2,Math.floor(px))),iy=Math.max(0,Math.min(D.ch-2,Math.floor(py))),fx=px-ix,fy=py-iy,o=iy*D.cw+ix;
-    return D.el[o]*(1-fx)*(1-fy)+D.el[o+1]*fx*(1-fy)+D.el[o+D.cw]*(1-fx)*fy+D.el[o+D.cw+1]*fx*fy;};
+  // 타일 단계: 이미 받아 둔 단계가 있으면(90장 이하로 덮이면) 그대로 써서 축소할 때 새로 받지 않음
+  const cnt=z=>(Math.floor(lx(e,z))-Math.floor(lx(w,z))+1)*(Math.floor(ly(s,z))-Math.floor(ly(n,z))+1);
+  let z=14;while(z>9&&cnt(z)>42)z--;
+  if(demZ&&demZ<=14&&demZ>z&&cnt(demZ)<=90)z=demZ;demZ=z;
+  const tx0=Math.floor(lx(w,z)),tx1=Math.floor(lx(e,z)),ty0=Math.floor(ly(n,z)),ty1=Math.floor(ly(s,z)),nx=tx1-tx0+1;
+  const T=[];for(let ty=ty0;ty<=ty1;ty++)for(let tx=tx0;tx<=tx1;tx++)T.push(demTile(z,tx,ty));
+  const tiles=await Promise.all(T);
+  const cw=nx*256,ch=(ty1-ty0+1)*256;
+  const at=(gx,gy)=>{gx=gx<0?0:gx>=cw?cw-1:gx;gy=gy<0?0:gy>=ch?ch-1:gy;return tiles[(gy>>8)*nx+(gx>>8)][(gy&255)*256+(gx&255)];};
+  return(lat,lon)=>{const px=(lx(lon,z)-tx0)*256-.5,py=(ly(lat,z)-ty0)*256-.5,ix=Math.floor(px),iy=Math.floor(py),fx=px-ix,fy=py-iy;
+    return at(ix,iy)*(1-fx)*(1-fy)+at(ix+1,iy)*fx*(1-fy)+at(ix,iy+1)*(1-fx)*fy+at(ix+1,iy+1)*fx*fy;};
 }
 const MAPDB_URL=new URLSearchParams(location.search).get('mapdb')||'/mapdb/api/bbox';
 async function loadOSM(n,w,s,e){
@@ -721,10 +728,13 @@ async function renderReal(){
   ctx.save();ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=1;ctx.strokeRect(13,13,W-26,H-26);ctx.restore();
   };
   // 등고선 지도를 먼저 그려두고, 지명은 받는 대로 덧그림
-  if(!findOSM(n,w,s,e)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
-  let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
+  let osm=findOSM(n,w,s,e);
+  if(!osm){const dy=(n-s)*.4,dx=(e-w)*.4,big=(n-s+2*dy)*(e-w+2*dx)<=0.55; // 지도 DB 한도(0.6㎡°) 안에서만 넓힘
+    const job=(big?loadOSM(n+dy,w-dx,s-dy,e+dx):loadOSM(n,w,s,e)).catch(()=>null);
+    osm=await Promise.race([job,new Promise(r=>setTimeout(()=>r(undefined),1500))]);
+    if(osm===undefined){if(my!==renderToken)return;paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';osm=await job;}}
   if(my!==renderToken)return;
-  paint(osm);
+  paint(osm);prefetchDEM(n,w,s,e);
   $('status').textContent=osm?'':'⚠️ 지명 서버가 응답하지 않아 등고선만 그렸습니다. 「지명 다시 받기」를 눌러 재시도하세요.';
   $('btnRetryOsm').style.display=osm?'none':'';
 }
@@ -974,7 +984,7 @@ $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href
 let zoomF=1,panX=0,panY=0,pv={tx:0,ty:0,sc:1},zTimer=0;
 function resetPreview(){pv={tx:0,ty:0,sc:1};cv.style.transform='';}
 function applyPreview(){cv.style.transform=`translate(${pv.tx}px,${pv.ty}px) scale(${pv.sc})`;}
-function scheduleRender(ms=350){clearTimeout(zTimer);zTimer=setTimeout(render,ms);}
+function scheduleRender(ms=600){clearTimeout(zTimer);zTimer=setTimeout(render,ms);}
 function zoomAt(f,mx,my){ // mx,my: 캔버스 표시 영역 기준 CSS 좌표
   const nz=Math.max(.35,Math.min(4,zoomF*f));f=nz/zoomF;if(f===1)return;zoomF=nz;
   const k=W/$('cvWrap').clientWidth; // 화면 px → 캔버스 px
