@@ -49,7 +49,12 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="wpList"><div class="hint">GPX를 불러오면 지점 목록이 나타납니다.</div></div>
 
   <div class="step">③ 바탕 지도</div>
-  <div class="row">
+  <label class="field">스타일
+    <select id="optStyle" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
+      <option value="water">수채화 바탕 → Gemini로 꾸미기</option>
+      <option value="news">등산지도 (신문형, 글자까지 완성)</option>
+    </select></label>
+  <div class="row" id="waterOpts">
     <label class="chk"><input type="checkbox" id="optNum" checked>번호 마커</label>
     <label class="chk"><input type="checkbox" id="optContour" checked>등고선</label>
     <label class="chk"><input type="checkbox" id="optMtn" checked>산 그림</label>
@@ -64,6 +69,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 <section class="view">
   <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
   <canvas id="cv" width="1920" height="1080" hidden></canvas>
+  <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
   <div class="step">④ Gemini 프롬프트</div>
   <div class="hint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
   <textarea id="prompt" readonly placeholder="GPX를 불러오면 자동으로 만들어집니다."></textarea>
@@ -71,12 +77,13 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <button id="btnCopy" class="main" disabled>📋 프롬프트 복사</button>
     <button onclick="window.open('https://gemini.google.com/app','_blank')">Gemini 열기 ↗</button>
   </div>
+  </div>
 </section>
 </main>
 
 <script>
 'use strict';
-const W=1920,H=1080;
+let W=1920,H=1080;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 const $=id=>document.getElementById(id);
 let G=null;          // {pts:[{lat,lon,ele,t}], wps:[...], name}
@@ -160,7 +167,7 @@ function smoothPath(c,p){c.beginPath();c.moveTo(p[0][0],p[0][1]);for(let i=1;i<p
 function buildField(samples,eles,R,bumps){
   const step=6,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1;
   const emin=Math.min(...eles),emax=Math.max(...eles),range=Math.max(emax-emin,150);
-  const fall=range/(W*0.16);           // px당 하강량
+  const fall=range/(Math.min(W,H)*0.28); // px당 하강량
   const f=new Float32Array(gw*gh);
   for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){
     const x=i*step,y=j*step;let h=emin-range*0.45;
@@ -240,9 +247,104 @@ function marker(x,y,label,kind){
   ctx.restore();
 }
 
+/* ---------- 신문형 등산지도 ---------- */
+const isPass=n=>/재|치|령|고개|평전|갈림|삼거리|사거리|쉼터|대피소|안부|폭포|계곡|입구|주차장|마을|교$|역$/.test(n)&&!/봉$|산$/.test(n);
+function renderNews(){
+  const r=rng(seed*7919+13);
+  // 경로 비율에 맞춰 가로/세로 결정
+  const lat0=G.pts[0].lat,k=Math.cos(lat0*Math.PI/180);
+  const xs=G.pts.map(p=>p.lon*k),ys=G.pts.map(p=>p.lat);
+  const asp=(Math.max(...xs)-Math.min(...xs))/(Math.max(...ys)-Math.min(...ys)||1e-9);
+  if(asp<0.8){W=1200;H=1700;}else if(asp>1.3){W=1920;H=1280;}else{W=1500;H=1500;}
+  cv.width=W;cv.height=H;
+  const xy=project(G),sm=resample(xy,4),samples=resample(xy,14);
+  const eraw=G.pts.map(p=>p.ele);const eles=samples.map((_,i)=>eraw[Math.round(i/(samples.length-1)*(eraw.length-1))]);
+  const emin=Math.min(...eraw),emax=Math.max(...eraw),range=Math.max(emax-emin,150);
+  const bumps=[];const nb=Math.round(W*H/90000);for(let i=0;i<nb;i++)bumps.push({x:r()*W,y:r()*H,r:60+r()*120,base:emin-range*0.4,amp:range*(0.35+r()*0.5)});
+  const F=buildField(samples,eles,null,bumps);
+  const distToRoute=(x,y)=>{let m=Infinity;for(const p of samples){const d=Math.hypot(p[0]-x,p[1]-y);if(d<m)m=d;}return m;};
+
+  // 바탕 + 아주 옅은 고도 색
+  ctx.fillStyle='#fcfbf6';ctx.fillRect(0,0,W,H);
+  {const {f,gw,gh}=F,oc=document.createElement('canvas');oc.width=gw;oc.height=gh;const o2=oc.getContext('2d'),img=o2.createImageData(gw,gh);
+   for(let i=0;i<gw*gh;i++){const t=Math.max(0,Math.min(1,(f[i]-F.emin)/(F.emax-F.emin)));img.data[i*4]=235-t*30;img.data[i*4+1]=242-t*18;img.data[i*4+2]=226-t*34;img.data[i*4+3]=Math.round(t*120);}
+   o2.putImageData(img,0,0);ctx.save();ctx.filter='blur(4px)';ctx.drawImage(oc,0,0,W,H);ctx.restore();}
+  // 촘촘한 등고선
+  const n=40;ctx.lineCap='round';
+  for(let i=1;i<n;i++){const lv=F.emin+(F.emax-F.emin)*i/n,ix=i%5===0;
+    ctx.strokeStyle=ix?'rgba(110,140,105,.75)':'rgba(140,165,135,.55)';ctx.lineWidth=ix?1.5:.9;ctx.beginPath();
+    contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);});ctx.stroke();}
+
+  // 봉우리 아이콘
+  const tri=(x,y,s=1)=>{ctx.save();ctx.fillStyle='#4f8f3f';ctx.beginPath();ctx.moveTo(x-15*s,y);ctx.lineTo(x,y-19*s);ctx.lineTo(x+15*s,y);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#93c56f';ctx.beginPath();ctx.moveTo(x-15*s,y);ctx.lineTo(x,y-19*s);ctx.lineTo(x-2*s,y);ctx.closePath();ctx.fill();ctx.restore();};
+  const boxes=[];   // 라벨 충돌 박스
+  const hitScore=(b)=>{let s=0;if(b.x<10||b.y<10||b.x+b.w>W-10||b.y+b.h>H-10)s+=5000;
+    for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)s+=1000;
+    for(const p of samples)if(p[0]>b.x-4&&p[0]<b.x+b.w+4&&p[1]>b.y-4&&p[1]<b.y+b.h+4)s+=60;return s;};
+  function label(x,y,lines,opt={}){ // lines: [{t,font,color}]
+    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width;});const w=Math.max(...ws),lh=lines.map(l=>parseInt(l.font.match(/(\d+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
+    const g=opt.gap||14;const cands=[[g,-h/2],[-g-w,-h/2],[-w/2,-h-g-(opt.up||0)],[-w/2,g],[g,-h-4],[-g-w,-h-4],[g,4],[-g-w,4],[2*g,-h/2],[-2*g-w,-h/2]];
+    let best=null;for(const [dx,dy] of cands){const b={x:x+dx,y:y+dy,w,h};const s=hitScore(b);if(!best||s<best.s)best={...b,s};}
+    boxes.push(best);let yy=best.y;
+    lines.forEach((l,i)=>{ctx.font=l.font;yy+=lh[i];const tx=best.x+(w-ws[i])/2;ctx.lineJoin='round';ctx.strokeStyle='rgba(255,255,255,.95)';ctx.lineWidth=5;ctx.strokeText(l.t,tx,yy-4);ctx.fillStyle=l.color||'#222';ctx.fillText(l.t,tx,yy-4);});
+    ctx.restore();}
+
+  // 배경 봉우리(이름 없음)
+  const bg=[];bumps.forEach(b=>{if(b.x<40||b.x>W-40||b.y<60||b.y>H-40)return;if(distToRoute(b.x,b.y)<60)return;if(bg.some(p=>Math.hypot(p[0]-b.x,p[1]-b.y)<90))return;bg.push([b.x,b.y]);});
+  bg.forEach(([x,y])=>{tri(x,y,.9);boxes.push({x:x-16,y:y-20,w:32,h:22});});
+
+  // 산행로
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  smoothPath(ctx,sm);ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=9;ctx.stroke();
+  smoothPath(ctx,sm);ctx.strokeStyle='#d7262e';ctx.lineWidth=4.5;ctx.stroke();ctx.restore();
+  // 방향 화살표 (선 옆)
+  const na=Math.max(6,Math.round(sm.length/70));
+  for(let a=1;a<na;a++){const i=Math.floor(sm.length*a/na);const p=sm[Math.max(0,i-4)],q=sm[Math.min(sm.length-1,i+4)];const ang=Math.atan2(q[1]-p[1],q[0]-p[0]);
+    const ox=Math.cos(ang+Math.PI/2)*22,oy=Math.sin(ang+Math.PI/2)*22;const side=distToRoute(sm[i][0]+ox,sm[i][1]+oy)>distToRoute(sm[i][0]-ox,sm[i][1]-oy)?1:-1;
+    const x=sm[i][0]+ox*side,y=sm[i][1]+oy*side;ctx.save();ctx.translate(x,y);ctx.rotate(ang);ctx.fillStyle='#d7262e';
+    ctx.beginPath();ctx.moveTo(11,0);ctx.lineTo(-5,-7);ctx.lineTo(-1,0);ctx.lineTo(-5,7);ctx.closePath();ctx.fill();ctx.fillRect(-12,-2,9,4);ctx.restore();boxes.push({x:x-12,y:y-8,w:24,h:16});}
+
+  // 지점
+  const shown=G.list.filter(w=>w.show);const top=Math.max(...shown.map(w=>w.ele));
+  const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+  // 점 먼저 박스 등록
+  shown.forEach(w=>{const [x,y]=xy[w.idx];boxes.push({x:x-8,y:y-8,w:16,h:16});});
+  shown.forEach(w=>{const [x,y]=xy[w.idx];const fmt=v=>v.toLocaleString('ko-KR')+'m';
+    if(w.role){ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.stroke();ctx.restore();
+      const tag=w.role==='들머리'?'(출발)':w.role==='날머리'?'(도착)':'(출발·도착)';
+      label(x,y,[{t:(w.name||'')+tag,font:`bold 26px ${F1}`,color:'#d7262e'}],{gap:18});return;}
+    if(!isPass(w.name)){tri(x,y-10,w.ele===top?1.4:1.1);}
+    ctx.save();ctx.fillStyle='#d7262e';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,6.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
+    const big=!isPass(w.name);
+    label(x,y,big?[{t:w.name,font:`bold ${w.ele===top?25:22}px ${F1}`},{t:fmt(w.ele),font:`bold 19px ${F1}`,color:'#333'}]:[{t:w.name,font:`600 20px ${F1}`,color:'#333'}],{up:big?20:0});
+  });
+
+  // 제목
+  const title=$('title').value.trim();
+  if(title){ctx.save();ctx.font=`bold 34px ${F1}`;const sub=[$('dist').value.trim(),$('time').value.trim()].filter(Boolean).join(' · ');
+    const tw=Math.max(ctx.measureText(title).width,(ctx.font=`20px ${F1}`,ctx.measureText(sub).width))+40;
+    ctx.fillStyle='rgba(255,255,255,.93)';ctx.strokeStyle='#d7262e';ctx.lineWidth=3;ctx.fillRect(24,24,tw,sub?92:62);ctx.strokeRect(24,24,tw,sub?92:62);
+    ctx.fillStyle='#222';ctx.font=`bold 34px ${F1}`;ctx.fillText(title,44,70);if(sub){ctx.fillStyle='#555';ctx.font=`20px ${F1}`;ctx.fillText(sub,44,102);}ctx.restore();}
+  // 범례
+  {ctx.save();const x=24,y=H-150,w=210,h=126;ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);
+   ctx.font=`600 18px ${F1}`;ctx.fillStyle='#333';
+   ctx.strokeStyle='#d7262e';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x+16,y+30);ctx.lineTo(x+66,y+30);ctx.stroke();ctx.fillText('산행로',x+80,y+36);
+   ctx.strokeStyle='rgba(110,140,105,.9)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x+16,y+64);ctx.bezierCurveTo(x+30,y+54,x+50,y+74,x+66,y+64);ctx.stroke();ctx.fillText('등고선',x+80,y+70);
+   tri(x+41,y+108,1);ctx.fillText('봉우리',x+80,y+104);ctx.restore();}
+  // 방위
+  {ctx.save();const x=W-60,y=70;ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();
+   ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
+}
+
 /* ---------- 렌더 ---------- */
 function render(){
   if(!G)return;
+  const news=$('optStyle').value==='news';
+  $('waterOpts').style.display=news?'none':'';
+  $('promptBox').style.display=news?'none':'';
+  if(news){renderNews();return;}
+  W=1920;H=1080;if(cv.width!==W){cv.width=W;cv.height=H;}
   const r=rng(seed*7919+13);
   const xy=project(G);
   const sm=resample(xy,4);                                   // 경로 그리기용
@@ -383,8 +485,9 @@ $('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
 drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
-['optNum','optContour','optMtn','optTree'].forEach(id=>$(id).onchange=render);
-['title','dist','time'].forEach(id=>$(id).oninput=()=>G&&makePrompt());
+['optNum','optContour','optMtn','optTree','optStyle'].forEach(id=>$(id).onchange=render);
+['title','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;if($('optStyle').value==='news')render();else makePrompt();});
+if(new URLSearchParams(location.search).get('style')==='news')$('optStyle').value='news';
 $('btnSeed').onclick=()=>{seed++;render();};
 $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
 $('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
