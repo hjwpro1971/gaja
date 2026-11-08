@@ -64,6 +64,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div class="row">
     <button id="btnSeed" disabled>🎲 다른 모양으로</button>
     <button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button>
+    <button id="btnRetryOsm" style="display:none">🔄 지명 다시 받기</button>
   </div>
 </section>
 
@@ -375,7 +376,7 @@ async function loadOSM(n,w,s,e){
   if(osmCache.has(key))return osmCache.get(key);
   try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
   const b=`${s},${w},${n},${e}`;
-  const q=`[out:json][timeout:90];(
+  const q=`[out:json][timeout:110];(
 node["natural"~"^(peak|saddle)$"]["name"](${b});
 node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|borough|county)$"]["name"](${b});
 node["railway"="station"]["name"](${b});
@@ -385,12 +386,20 @@ way["waterway"~"^(river|stream)$"](${b});
 way["natural"="water"](${b});
 way["railway"="rail"](${b});
 );out geom tags;`;
-  const hosts=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-  let lastErr;
-  for(const h of hosts){try{const r=await fetch(h,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'}});
-      if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();osmCache.set(key,j);try{localStorage.setItem('illust_osm_'+key,JSON.stringify(j));}catch(e){}return j;}catch(e){lastErr=e;}}
-  throw lastErr;
+  const hosts=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://overpass.private.coffee/api/interpreter'];
+  // 여러 서버에 동시에 요청 → 가장 먼저 온 응답 사용, 120초 넘으면 포기
+  const ctrls=hosts.map(()=>new AbortController());
+  const timer=setTimeout(()=>ctrls.forEach(c=>c.abort()),120000);
+  try{
+    const j=await Promise.any(hosts.map(async(h,i)=>{
+      const r=await fetch(h,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctrls[i].signal});
+      if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();if(!j||!Array.isArray(j.elements))throw new Error('bad');return j;}));
+    ctrls.forEach(c=>c.abort());
+    osmCache.set(key,j);try{localStorage.setItem('illust_osm_'+key,JSON.stringify(j));}catch(e){}
+    return j;
+  }finally{clearTimeout(timer);}
 }
+function osmHas(key){if(osmCache.has(key))return true;try{return !!localStorage.getItem('illust_osm_'+key);}catch(e){return false;}}
 let renderToken=0;
 async function renderReal(){
   const my=++renderToken;
@@ -403,10 +412,7 @@ async function renderReal(){
   $('status').textContent='⏳ 실제 지형(등고선) 불러오는 중…';
   let elev;try{elev=await loadDEM(n,w,s,e);}catch(err){$('status').textContent='⚠️ 지형 데이터를 받지 못했습니다. 네트워크를 확인하세요.';return;}
   if(my!==renderToken)return;
-  $('status').textContent='⏳ 지명·도로·하천 불러오는 중… (처음엔 30초 이상 걸릴 수 있어요)';
-  let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
-  if(my!==renderToken)return;
-  $('status').textContent=osm?'':'⚠️ 지명 데이터를 받지 못해 등고선만 그렸습니다. 잠시 후 스타일을 다시 선택하면 재시도합니다.';
+  const paint=(osm)=>{
   cv.width=W;cv.height=H;
   const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
   // 높이장
@@ -523,6 +529,15 @@ async function renderReal(){
    items.forEach(([t,st],i)=>{const yy=y+26+i*30;st(ctx);ctx.beginPath();ctx.moveTo(x+14,yy);ctx.lineTo(x+60,yy);ctx.stroke();ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,x+72,yy+6);});ctx.restore();}
   {ctx.save();const x=W-60,y=70;ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
   ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-14,H-12);ctx.restore();
+  };
+  // 등고선 지도를 먼저 그려두고, 지명은 받는 대로 덧그림
+  const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
+  if(!osmHas(key)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
+  let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
+  if(my!==renderToken)return;
+  paint(osm);
+  $('status').textContent=osm?'':'⚠️ 지명 서버가 응답하지 않아 등고선만 그렸습니다. 「지명 다시 받기」를 눌러 재시도하세요.';
+  $('btnRetryOsm').style.display=osm?'none':'';
 }
 
 /* ---------- 렌더 ---------- */
@@ -532,6 +547,7 @@ function render(){
   $('waterOpts').style.display=(news||real)?'none':'';
   $('promptBox').style.display=(news||real)?'none':'';
   $('btnSeed').style.display=real?'none':'';
+  if(!real)$('btnRetryOsm').style.display='none';
   if(!real){renderToken++;$('status').textContent='';}
   if(real){renderReal();return;}
   if(news){renderNews();return;}
@@ -680,6 +696,7 @@ drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.fi
 ['title','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;if($('optStyle').value!=='water')render();else makePrompt();});
 {const st=new URLSearchParams(location.search).get('style');if(st)$('optStyle').value=st;}
 $('btnSeed').onclick=()=>{seed++;render();};
+$('btnRetryOsm').onclick=()=>{$('btnRetryOsm').style.display='none';render();};
 $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
 $('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
 // 테스트용: ?gpx=경로 로 바로 불러오기
