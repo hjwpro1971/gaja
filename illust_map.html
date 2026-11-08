@@ -7,7 +7,7 @@
 :root{--bg:#f6f1e6;--panel:#fffdf8;--ink:#3d2b1f;--sub:#7a6450;--line:#e2d6c2;--accent:#a4522a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
-header{padding:8px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:none}
+header{padding:6px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:none}
 header h1{font-size:17px;margin:0}
 header span{color:var(--sub);font-size:13px}
 main{display:grid;grid-template-columns:330px 1fr;flex:1;min-height:0}
@@ -33,9 +33,14 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 .hint{font-size:12px;color:var(--sub);line-height:1.5}
 .empty{padding:60px 20px;text-align:center;color:var(--sub)}
 #status:empty{display:none}
+#zoomBar button{padding:5px 9px;font-size:13px}
 .panel>*{flex-shrink:0} /* 메뉴 칸이 눌려 사라지지 않게 — 넘치면 메뉴 전체가 스크롤 */
 </style></head><body>
-<header><h1>🗺️ 산행 일러스트 지도</h1><span>GPX → 실제 지형·지명으로 산행 안내도</span></header>
+<header><h1>🗺️ 산행 일러스트 지도</h1><div id="zoomBar" class="row" style="display:none;align-items:center;gap:6px;margin-left:auto">
+    <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
+    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button>
+    <span class="hint" id="zoomHint">휠: 확대·축소 · 끌기: 이동</span>
+  </div></header>
 <main>
 <section class="panel">
   <div class="step">① GPX 불러오기</div>
@@ -88,11 +93,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 <section class="view">
   <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
   <div id="status" class="hint"></div>
-  <div id="zoomBar" class="row" style="display:none;align-items:center;gap:8px">
-    <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
-    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button>
-    <span class="hint" id="zoomHint">휠: 확대·축소 · 지도 끌기: 이동 · 제목·통계·범례·방위 끌기: 위치 옮기기 · PNG는 보이는 그대로 저장</span>
-  </div>
+
   <div id="cvBox" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center">
   <div id="cvWrap" style="position:relative;overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%">
   <div id="edBox" style="position:absolute;display:none;border:2px dashed #d7262e;background:rgba(215,38,46,.08);pointer-events:none;z-index:2"></div>
@@ -333,7 +334,7 @@ function renderNews(){
     for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)s+=1000;
     for(const p of samples)if(p[0]>b.x-4&&p[0]<b.x+b.w+4&&p[1]>b.y-4&&p[1]<b.y+b.h+4)s+=60;return s;};
   function label(x,y,lines,opt={}){ // lines: [{t,font,color}]
-    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width;});const w=Math.max(...ws),lh=lines.map(l=>parseInt(l.font.match(/(\d+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
+    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width;});const w=Math.max(...ws),lh=lines.map(l=>parseFloat(l.font.match(/([\d.]+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
     const g=opt.gap||14;const cands=[[g,-h/2],[-g-w,-h/2],[-w/2,-h-g-(opt.up||0)],[-w/2,g],[g,-h-4],[-g-w,-h-4],[g,4],[-g-w,4],[2*g,-h/2],[-2*g-w,-h/2]];
     let best=null;for(const [dx,dy] of cands){const b={x:x+dx,y:y+dy,w,h};const s=hitScore(b);if(!best||s<best.s)best={...b,s};}
     boxes.push(best);let yy=best.y;
@@ -547,7 +548,7 @@ async function renderReal(){
   const lkey=t=>t+'#'+(kseen[t]=(kseen[t]||0)+1);
   function label(x,y,lines,opt={}){
     const key=lkey(lines[0].t);if(ED.hid.has(key))return false; // 편집에서 지운 지명
-    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width+(l.sp||0)*(l.t.length-1);});const wd=Math.max(...ws),lh=lines.map(l=>parseInt(l.font.match(/(\d+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
+    ctx.save();const ws=lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.t).width+(l.sp||0)*(l.t.length-1);});const wd=Math.max(...ws),lh=lines.map(l=>parseFloat(l.font.match(/([\d.]+)px/)[1])+3),h=lh.reduce((a,b)=>a+b,0);
     const g=opt.gap||12;const cands=opt.center?[[-wd/2,-h/2]]:[[g,-h/2],[-g-wd,-h/2],[-wd/2,-h-g-(opt.up||0)],[-wd/2,g],[g,-h-4],[-g-wd,-h-4],[g,4],[-g-wd,4]];
     const nNear=cands.length;
     // 밀집 구간: 바로 옆이 막히면 좀 떨어진 빈자리에 두고 가는 지시선으로 잇는다(봉정암~쌍용폭포처럼 지점이 몰린 곳)
@@ -725,6 +726,8 @@ async function renderReal(){
      if(peakXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||wpXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||distToRoute(c.x,c.y)<14||distToRoute(c.x,c.y)>dFar)continue;
      if(label(c.x,c.y-8,[{t:Math.round(c.e)+'m',font:`14px ${F1}`,color:'#888',alpha:.8}],{optional:true,gap:8})){tri(c.x,c.y,.4);boxes.push({x:c.x-16,y:c.y-20,w:32,h:22});peakXY.push([c.x,c.y]);n++;}}}
 
+  // 명판 등을 올리기 전의 지도만 따로 보관 → 확대·이동 미리보기 때 지도만 움직임
+  {const b=G._base||(G._base=document.createElement('canvas'));b.width=cv.width;b.height=cv.height;b.getContext('2d').drawImage(cv,0,0);G._boardArgs=[LAY,F1,iv,PH,shown];}
   // 명판·통계 카드·범례·방위·출처·고도 단면도
   drawBoard(LAY,F1,iv,PH,shown);
   // 신문 지도식 이중 테두리
@@ -843,6 +846,7 @@ function boardLayout(PH){
   if(L.stats)L.reserve.push({x:L.stats.x-12,y:L.stats.y-12,w:L.stats.w+24,h:L.stats.h+24});
   L.reserve.push({x:L.north.x-40,y:L.north.y-50,w:80,h:100});
   if(L.legend)L.reserve.push({x:L.legend.x-12,y:L.legend.y-12,w:L.legend.w+24,h:L.legend.h+24});
+  {let x=W-150,y=H-PH-150;const d=ED.off['__stamp'];if(d){x+=d[0];y+=d[1];}x=Math.max(8,Math.min(W-118,x));y=Math.max(8,Math.min(H-118,y));if(!ED.hid.has('__stamp'))L.reserve.push({x:x-6,y:y-6,w:122,h:122});}
   if(PH)L.reserve.push({x:0,y:H-PH-6,w:W,h:PH+6});
   L.reserve.push({x:W-600,y:H-PH-34,w:590,h:28});
   return L;}
@@ -867,6 +871,12 @@ function drawBoard(L,F1,iv,PH,shown){
     items.forEach(([t,f],i)=>{const yy=g.y+26+i*30;f(ctx);ctx.beginPath();ctx.moveTo(g.x+14,yy);ctx.lineTo(g.x+60,yy);ctx.stroke();ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,g.x+72,yy+6);});ctx.restore();}
   {const {x,y}=L.north;ctx.save();ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
   ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자 · 카카오 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-22,H-PH-20);ctx.restore();
+  // 직인: gajaGO / 가자고
+  {let x=W-150,y=H-PH-150;const d=ED.off['__stamp'];if(d){x+=d[0];y+=d[1];}x=Math.max(8,Math.min(W-118,x));y=Math.max(8,Math.min(H-118,y));
+   if(!ED.hid.has('__stamp')){ctx.save();ctx.translate(x+55,y+55);ctx.rotate(-.12);ctx.globalAlpha=.85;ctx.strokeStyle='#c62828';ctx.fillStyle='rgba(255,255,255,.55)';
+     ctx.lineWidth=4;ctx.beginPath();ctx.roundRect(-50,-50,100,100,10);ctx.fill();ctx.stroke();ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(-43,-43,86,86,7);ctx.stroke();
+     ctx.fillStyle='#c62828';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`bold 21px ${F1}`;ctx.fillText('gajaGO',0,-15);ctx.font=`900 27px ${F1}`;ctx.fillText('가자고',0,17);ctx.restore();
+     if(G._lbl)G._lbl.push({key:'__stamp',x,y,w:110,h:110});}}
   if(PH)drawProfile(F1,PH,shown);}
 // 하단 고도 단면도: 거리-고도 그래프 + 지점 표시
 function drawProfile(F1,PH,shown){
@@ -998,7 +1008,13 @@ $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href
 // ── 확대·축소·이동 (실제 지도) : 조작 중엔 CSS로 즉시 미리보기, 손을 떼면 다시 그림
 let zoomF=1,panX=0,panY=0,pv={tx:0,ty:0,sc:1},zTimer=0;
 function resetPreview(){pv={tx:0,ty:0,sc:1};cv.style.transform='';}
-function applyPreview(){cv.style.transform=`translate(${pv.tx}px,${pv.ty}px) scale(${pv.sc})`;}
+function applyPreview(){
+  if(!G||!G._base||$('optStyle').value!=='real'){cv.style.transform=`translate(${pv.tx}px,${pv.ty}px) scale(${pv.sc})`;return;}
+  const k=W/cv.getBoundingClientRect().width; // 화면 px → 지도 논리 px
+  ctx.save();ctx.setTransform(SC,0,0,SC,0,0);ctx.fillStyle='#eef3e8';ctx.fillRect(0,0,W,H);
+  ctx.translate(pv.tx*k,pv.ty*k);ctx.scale(pv.sc,pv.sc);ctx.drawImage(G._base,0,0,W,H);ctx.restore();
+  ctx.save();ctx.setTransform(SC,0,0,SC,0,0);const keep=G._lbl;G._lbl=null;try{drawBoard(...G._boardArgs);}finally{G._lbl=keep;}
+  ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.restore();}
 function scheduleRender(ms=600){clearTimeout(zTimer);zTimer=setTimeout(render,ms);}
 function zoomAt(f,mx,my){ // mx,my: 캔버스 표시 영역 기준 CSS 좌표
   const nz=Math.max(.35,Math.min(4,zoomF*f));f=nz/zoomF;if(f===1)return;zoomF=nz;
@@ -1030,7 +1046,7 @@ function edShow(L,dx=0,dy=0){const k=edPx(),b=$('edBox');b.style.display='block'
 let edSel=null,edDrag=null;
 $('btnEdit').onclick=()=>{EDIT=!EDIT;edSel=null;edHide();$('btnEdit').classList.toggle('main',EDIT);$('btnEdit').textContent=EDIT?'✅ 편집 끝내기':'✏️ 지명 편집';
   $('cvWrap').style.cursor=EDIT?'pointer':'';
-  $('zoomHint').textContent=EDIT?'지명을 누르면 🗑 지우기 · 끌면 옮기기 · Delete 키로도 지움 (코스마다 자동 저장)':'휠: 확대·축소 · 지도 끌기: 이동 · 제목·통계·범례·방위 끌기: 위치 옮기기 · PNG는 보이는 그대로 저장';};
+  $('zoomHint').textContent=EDIT?'누르면 🗑 지우기 · 끌면 옮기기':'휠: 확대·축소 · 끌기: 이동';};
 $('btnEdReset').onclick=()=>{if(!G)return;if(!confirm('이 코스에서 지우거나 옮긴 지명을 모두 원래대로 되돌릴까요?'))return;ED={hid:new Set(),off:{}};edSave();edHide();render();};
 const edFind=e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H;
   const L=(G&&G._lbl)||[];for(let i=L.length-1;i>=0;i--){const b=L[i];if(x>=b.x-4&&x<=b.x+b.w+4&&y>=b.y-4&&y<=b.y+b.h+4)return b;}return null;};
