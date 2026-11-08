@@ -1001,7 +1001,15 @@ drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
 ['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend'].forEach(id=>$(id).onchange=render);
 window.addEventListener('resize',()=>{fitCanvas();if(G&&$('optStyle').value==='real'&&$('optAspect').value==='fill'){clearTimeout(window._rz);window._rz=setTimeout(render,500);}});
-['title','subtitle','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;render();});
+// 제목·부제목·거리·시간 입력: 타이핑 중엔 보관해 둔 지도 위에 명판만 새로 올리고(즉시), 입력이 멈추면 1초 뒤 한 번만 전체 다시 그림
+let txtTimer=0;
+['title','subtitle','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;clearTimeout(txtTimer);
+  if($('optStyle').value==='real'&&G._base&&G._boardArgs){try{const [,F1,iv,PH,shown]=G._boardArgs;
+      ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(G._base,0,0);ctx.restore();
+      ctx.save();ctx.setTransform(SC,0,0,SC,0,0);const keep=G._lbl;G._lbl=null;try{drawBoard(boardLayout(PH),F1,iv,PH,shown);}finally{G._lbl=keep;}
+      ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.restore();}catch(e){}
+    txtTimer=setTimeout(render,1000);}
+  else txtTimer=setTimeout(render,400);});
 {const st=new URLSearchParams(location.search).get('style');if(st)$('optStyle').value=st;}
 $('btnSeed').onclick=()=>{seed++;render();};
 $('btnRetryOsm').onclick=()=>{$('btnRetryOsm').style.display='none';render();};
