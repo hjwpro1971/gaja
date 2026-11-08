@@ -20,6 +20,7 @@ DB = os.path.join(DATA, 'mapdb.sqlite')
 POI_RULES = [  # (태그, 값 집합) → kind
     ('natural', {'peak', 'saddle', 'spring', 'cave_entrance'}),
     ('place', {'city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'quarter', 'borough', 'county'}),
+    ('waterway', {'waterfall'}),
     ('railway', {'station'}),
     ('amenity', {'school', 'place_of_worship', 'parking', 'shelter'}),
     ('tourism', {'viewpoint', 'information', 'alpine_hut', 'camp_site'}),

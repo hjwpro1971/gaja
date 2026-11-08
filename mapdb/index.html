@@ -52,7 +52,7 @@ async function loadStats(){
   let s;try{s=await (await fetch('api/stats')).json();}catch(e){$('stat').textContent='서버에 연결하지 못했습니다.';return;}
   if(!s.ready){$('stat').innerHTML='<span>아직 DB가 없습니다. 「데이터 갱신」을 눌러 처음 만들어 주세요.</span>';return;}
   const m=s.meta;$('stat').innerHTML=`<b>DB 생성</b><span>${m.built_at}</span><b>OSM 원본</b><span>${m.source_date?new Date(m.source_date).toLocaleString('ko-KR'):'—'}</span>
-   <b>점</b><span>${fmt(m.poi_count)}개</span><b>선</b><span>${fmt(m.line_count)}개</span><b>면</b><span>${m.area_count?fmt(m.area_count)+'개':'— (갱신 필요)'}</span><b>갈림길</b><span>${fmt(s.junctions)}개</span><b>크기</b><span>${fmt(s.size_mb)}MB</span>`;
+   <b>점</b><span>${fmt(m.poi_count)}개</span><b>선</b><span>${fmt(m.line_count)}개</span><b>면</b><span>${m.area_count?fmt(m.area_count)+'개':'— (갱신 필요)'}</span><b>갈림길</b><span>${fmt(s.junctions)}개</span>${s.extra?`<b>직접 입력</b><span>${fmt(s.extra.custom)}개 (영구 보관)</span><b>카카오</b><span>${s.extra.kakao_key?`${fmt(s.extra.kakao)}개 · ${fmt(s.extra.kakao_cells)}칸 (${s.extra.keep_days}일 보관 후 자동 재수집${s.extra.kakao_oldest?', 가장 오래된 '+s.extra.kakao_oldest:''})`:'키 없음 — 꺼짐'}</span>`:''}<b>크기</b><span>${fmt(s.size_mb)}MB</span>`;
   const rows=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${kname(k)}</td><td style="color:#aaa">${k}</td><td class="n">${fmt(v)}</td></tr>`).join('');
   $('kinds').innerHTML=`<table><tr><td colspan=3><b>점</b></td></tr>${rows(s.kinds.poi)}<tr><td colspan=3 style="padding-top:8px"><b>선</b></td></tr>${rows(s.kinds.line)}<tr><td colspan=3 style="padding-top:8px"><b>면</b></td></tr>${rows(s.kinds.area||{})}</table>`;
   $('kind').innerHTML='<option value="">전체</option>'+Object.keys(s.kinds.poi).map(k=>`<option value="${k}">${kname(k)}</option>`).join('');

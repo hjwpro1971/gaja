@@ -383,8 +383,8 @@ async function loadOSM(n,w,s,e){
   const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
   try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
   // 1순위: NAS 지도 DB(/mapdb) — 한국 OSM을 미리 담아둬서 수 초 안에 응답. 없거나 실패하면 외부 Overpass로
-  try{const mc=new AbortController(),mt=setTimeout(()=>mc.abort(),20000);
-    const r=await fetch(`${MAPDB_URL}?s=${s}&w=${w}&n=${n}&e=${e}`,{signal:mc.signal});clearTimeout(mt);
+  try{const mc=new AbortController(),mt=setTimeout(()=>mc.abort(),60000);
+    const r=await fetch(`${MAPDB_URL}?s=${s}&w=${w}&n=${n}&e=${e}&kakao=1`,{signal:mc.signal});clearTimeout(mt);
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.elements)){osmCache.set(key,j);return j;}}}catch(err){}
   const b=`${s},${w},${n},${e}`;
   const q=`[out:json][timeout:110];(
@@ -589,6 +589,23 @@ async function renderReal(){
     if(t.amenity==='school')school(px,py);
     else if(t.railway){ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.beginPath();ctx.arc(px,py,7,0,7);ctx.fill();ctx.stroke();ctx.restore();}
     else{ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}});
+  // 약수터·쉼터·폭포·전망대·대피소·바위 (OSM + 카카오 + 직접 입력) — 작은 기호 + 이름, 산행로 가까운 것부터
+  {const sym={spring:(x,y)=>{ctx.fillStyle='#2f7fc8';ctx.beginPath();ctx.arc(x,y,5,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,1.8,0,7);ctx.fill();},
+     rest:(x,y)=>{ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.moveTo(x-7,y-1);ctx.lineTo(x,y-7);ctx.lineTo(x+7,y-1);ctx.closePath();ctx.fill();ctx.fillRect(x-5,y-1,2,6);ctx.fillRect(x+3,y-1,2,6);},
+     hut:(x,y)=>{ctx.fillStyle='#fff';ctx.strokeStyle='#8a5a2b';ctx.lineWidth=1.5;ctx.fillRect(x-6,y-3,12,8);ctx.strokeRect(x-6,y-3,12,8);ctx.fillStyle='#c0392b';ctx.beginPath();ctx.moveTo(x-8,y-3);ctx.lineTo(x,y-10);ctx.lineTo(x+8,y-3);ctx.closePath();ctx.fill();},
+     fall:(x,y)=>{ctx.strokeStyle='#2f7fc8';ctx.lineWidth=1.8;for(const d of [-3,0,3]){ctx.beginPath();ctx.moveTo(x+d,y-6);ctx.quadraticCurveTo(x+d+2,y,x+d,y+6);ctx.stroke();}},
+     view:(x,y)=>{ctx.fillStyle='#d98b1f';ctx.beginPath();for(let i=0;i<10;i++){const r=i%2?2.6:6.5,a=-Math.PI/2+i*Math.PI/5;ctx.lineTo(x+r*Math.cos(a),y+r*Math.sin(a));}ctx.closePath();ctx.fill();},
+     rock:(x,y)=>{ctx.fillStyle='#8c8c8c';ctx.beginPath();ctx.moveTo(x-6,y+4);ctx.lineTo(x-3,y-4);ctx.lineTo(x+4,y-5);ctx.lineTo(x+7,y+4);ctx.closePath();ctx.fill();}};
+   const kind=t=>t.natural==='spring'?'spring':t.amenity==='shelter'?'rest':t.tourism==='alpine_hut'||t.tourism==='wilderness_hut'?'hut':t.waterway==='waterfall'?'fall':t.tourism==='viewpoint'?'view':t.natural==='rock'?'rock':null;
+   let k=0;const cap=Math.round(8*A),seen=new Set();
+   byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||/^(정자|쉼터|약수터|샘터|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
+     if(distToRoute(px,py)>Math.max(W,H)*.35)return; // 산행로에서 너무 먼 작은 시설은 생략
+     boxes.push({x:px-8,y:py-10,w:16,h:16});
+     if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10})){boxes.pop();return;}
+     ctx.save();sym[kind(x.tags)](px,py);ctx.restore();seen.add(n);k++;});
+   // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
+   let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A))return;const n=nm(x);if(seen.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+     if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}
   // 고속도로·국도 이름 (가장 긴 구간 가운데에 회전 표기)
   const named={};ways.filter(x=>/^(motorway|trunk|primary)$/.test(hw(x))&&(x.tags.name||x.tags.ref)).forEach(x=>{const key=x.tags.name||x.tags.ref;(named[key]=named[key]||[]).push(x);});
   Object.entries(named).forEach(([key,arr])=>{const x=arr.sort((a,b)=>b.geometry.length-a.geometry.length)[0];const p=geo(x.geometry);if(p.length<4)return;const m=Math.floor(p.length/2),a=p[Math.max(0,m-2)],b=p[Math.min(p.length-1,m+2)];

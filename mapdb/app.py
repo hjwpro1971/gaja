@@ -7,8 +7,13 @@ GET  /mapdb/api/stats        종류별 개수, 생성 시각, 원본 날짜
 GET  /mapdb/api/search?q=    이름 검색 (kind= 로 종류 제한)
 GET  /mapdb/api/refresh      갱신 진행 상태·로그
 POST /mapdb/api/refresh      OSM 최신 데이터 받아 DB 다시 만들기(백그라운드)
+GET  /mapdb/api/pois         tourist_map용: {osm:[KoreaPOIs 형식], kakao:[...], custom:[...]} (kakao=1이면 카카오 칸 갱신)
+GET  /mapdb/api/custom       직접 입력한 지점 전체 (tourist_map의 MountainPOIs)
+
+bbox·pois 에 kakao=1 을 붙이면 그 범위의 카카오 장소(30일 보관, extra.py)를 함께 준다.
 """
 import json, os, sqlite3, subprocess, sys, threading, time
+import extra
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -65,10 +70,26 @@ def bbox_query(s, w, n, e, only=None):
     return {'version': 0.6, 'generator': 'gaja-mapdb', 'elements': els}
 
 
+def osm_pois(s, w, n, e):
+    """tourist_map의 KoreaPOIs와 같은 모양: {lat,lon,name,natural,amenity,tourism,information,highway,ele}"""
+    c = conn()
+    if c is None:
+        return []
+    out = []
+    for tags, lat, lon, ele in c.execute(
+            'SELECT p.tags,p.lat,p.lon,p.ele FROM poi_idx i JOIN poi p ON p.id=i.id '
+            'WHERE i.minlat<=? AND i.maxlat>=? AND i.minlon<=? AND i.maxlon>=? AND p.kind NOT LIKE ?', (n, s, e, w, 'place=%')):
+        t = json.loads(tags)
+        out.append({'lat': lat, 'lon': lon, 'name': t.get('name:ko') or t.get('name'), 'natural': t.get('natural', ''),
+                    'amenity': t.get('amenity', ''), 'tourism': t.get('tourism', ''), 'information': t.get('information', ''),
+                    'highway': '', 'ele': ele})
+    return out
+
+
 def stats():
     c = conn()
     if c is None:
-        return {'ready': False}
+        return {'ready': False, 'extra': extra.stats()}
     meta = dict(c.execute('SELECT k,v FROM meta'))
     kinds = {}
     for t in ('poi', 'line', 'area'):
@@ -77,7 +98,7 @@ def stats():
         except sqlite3.OperationalError:
             kinds[t] = {}
     return {'ready': True, 'meta': meta, 'kinds': kinds, 'junctions': c.execute('SELECT count(*) FROM junction').fetchone()[0],
-            'size_mb': round(os.path.getsize(DB) / 1048576, 1)}
+            'size_mb': round(os.path.getsize(DB) / 1048576, 1), 'extra': extra.stats()}
 
 
 def search(q, kind=None, limit=100):
@@ -136,7 +157,30 @@ class H(BaseHTTPRequestHandler):
                 s, w, n, e = (float(q[k]) for k in ('s', 'w', 'n', 'e'))
                 if (n - s) * (e - w) > MAX_AREA or n <= s or e <= w:
                     return self.send(400, {'error': '범위가 너무 크거나 잘못됐습니다.'})
-                return self.send(200, bbox_query(s, w, n, e, q.get('only')))
+                kk = q.get('kakao') == '1' and q.get('only') != 'hiking'
+                if kk:
+                    try:
+                        extra.ensure_kakao(s, w, n, e)
+                    except Exception as ex:  # 카카오 실패해도 OSM 결과는 준다
+                        sys.stderr.write(f'kakao 실패: {ex}' + chr(10))
+                r = bbox_query(s, w, n, e, q.get('only'))
+                if q.get('only') != 'hiking':
+                    r['elements'] += extra.as_nodes([x for x in r['elements'] if x['type'] == 'node'], s, w, n, e, kk)
+                return self.send(200, r)
+            if p == '/mapdb/api/pois':
+                s, w, n, e = (float(q[k]) for k in ('s', 'w', 'n', 'e'))
+                if (n - s) * (e - w) > MAX_AREA or n <= s or e <= w:
+                    return self.send(400, {'error': '범위가 너무 크거나 잘못됐습니다.'})
+                kk = q.get('kakao') == '1'
+                if kk:
+                    try:
+                        extra.ensure_kakao(s, w, n, e)
+                    except Exception as ex:
+                        sys.stderr.write(f'kakao 실패: {ex}' + chr(10))
+                return self.send(200, {'osm': osm_pois(s, w, n, e), 'custom': extra.custom_in(s, w, n, e),
+                                       'kakao': extra.kakao_in(s, w, n, e) if kk else []})
+            if p == '/mapdb/api/custom':
+                return self.send(200, {'pois': extra.custom_in()})
             if p == '/mapdb/api/stats':
                 return self.send(200, stats())
             if p == '/mapdb/api/search':
@@ -165,5 +209,8 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8000'))
-    print(f'mapdb listening on {port}, db={DB}', flush=True)
+    n = extra.import_custom_once(os.path.join(DATA, 'mountain_pois.json'))
+    if n:
+        print(f'직접 입력 지점 {n}개 가져옴 (mountain_pois.json)', flush=True)
+    print(f'mapdb listening on {port}, db={DB}, kakao={"on" if extra.KAKAO_KEY else "off"}', flush=True)
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()
