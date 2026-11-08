@@ -33,7 +33,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 .hint{font-size:12px;color:var(--sub);line-height:1.5}
 .empty{padding:60px 20px;text-align:center;color:var(--sub)}
 </style></head><body>
-<header><h1>🗺️ 산행 일러스트 지도</h1><span>GPX → 바탕 지도(경로·등고선·산) → Gemini로 그림·글자 추가</span></header>
+<header><h1>🗺️ 산행 일러스트 지도</h1><span>GPX → 실제 지형·지명으로 산행 안내도</span></header>
 <main>
 <section class="panel">
   <div class="step">① GPX 불러오기</div>
@@ -48,7 +48,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   </div>
 
   <div class="step">② 지점 (번호 = 지도 위 마커)</div>
-  <div class="hint">체크 해제하면 지도와 프롬프트에서 빠집니다. 이름·고도는 직접 고칠 수 있어요.</div>
+  <div class="hint">체크 해제하면 지도에서 빠집니다. 이름·고도는 직접 고칠 수 있어요.</div>
   <div id="wpList"><div class="hint">GPX를 불러오면 지점 목록이 나타납니다.</div></div>
 
   <div class="step">③ 바탕 지도</div>
@@ -56,7 +56,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <select id="optStyle" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
       <option value="real" selected>실제 지도 (실제 지형·지명, 신문형)</option>
       <option value="news">등산지도 (신문형, 가상 지형)</option>
-      <option value="water">수채화 바탕 → Gemini로 꾸미기</option>
+      <option value="water">수채화 바탕</option>
     </select></label>
   <div class="row" id="waterOpts">
     <label class="chk"><input type="checkbox" id="optNum" checked>번호 마커</label>
@@ -95,15 +95,6 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="cvWrap" style="position:relative;overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%">
   <div id="edBox" style="position:absolute;display:none;border:2px dashed #d7262e;background:rgba(215,38,46,.08);pointer-events:none;z-index:2"></div>
   <div id="edMenu" style="position:absolute;display:none;z-index:3;gap:4px"><button id="edDel" style="padding:4px 8px;font-size:13px;background:#d7262e;color:#fff;border-color:#d7262e">🗑 지우기</button></div><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
-  <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
-  <div class="step">④ Gemini 프롬프트</div>
-  <div class="hint" id="promptHint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
-  <textarea id="prompt" readonly placeholder="GPX를 불러오면 자동으로 만들어집니다."></textarea>
-  <div class="row">
-    <button id="btnCopy" class="main" disabled>📋 프롬프트 복사</button>
-    <button onclick="window.open('https://gemini.google.com/app','_blank')">Gemini 열기 ↗</button>
-  </div>
-  </div>
 </section>
 </main>
 
@@ -728,15 +719,6 @@ async function renderReal(){
   drawBoard(LAY,F1,iv,PH,shown);
   // 신문 지도식 이중 테두리
   ctx.save();ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=1;ctx.strokeRect(13,13,W-26,H-26);ctx.restore();
-  // Gemini에 넘길 배치 정보: 지점 화면 위치(%) + 그림 넣을 빈 자리(경로·글자에서 먼 칸)
-  {const nx=6,ny=6,cw=W/nx,ch=H/ny,cells=[];
-   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const c={x:i*cw,y:j*ch,w:cw,h:ch};
-     if(boxes.slice(0,RES).some(o=>c.x<o.x+o.w&&c.x+c.w>o.x&&c.y<o.y+o.h&&c.y+c.h>o.y))continue; // 제목·범례 자리 제외
-     let cover=0;for(const o of boxes){const ix=Math.max(0,Math.min(c.x+c.w,o.x+o.w)-Math.max(c.x,o.x)),iy=Math.max(0,Math.min(c.y+c.h,o.y+o.h)-Math.max(c.y,o.y));cover+=ix*iy;}
-     cells.push({cx:c.x+cw/2,cy:c.y+ch/2,d:distToRoute(c.x+cw/2,c.y+ch/2),cover:cover/(cw*ch)});}
-   cells.sort((a,b)=>(b.d-b.cover*cw)-(a.d-a.cover*cw));const empty=[];
-   for(const c of cells){if(empty.length>=3)break;if(c.d<Math.min(cw,ch)*.6)break;if(empty.some(e=>Math.hypot(e.cx-c.cx,e.cy-c.cy)<Math.min(W,H)*.3))continue;empty.push(c);}
-   G.layout={W,H,wp:shown.map((w,i)=>({w,x:wpXY[i][0]/W,y:wpXY[i][1]/H})),empty:empty.map(c=>({x:c.cx/W,y:c.cy/H}))};}
   };
   // 등고선 지도를 먼저 그려두고, 지명은 받는 대로 덧그림
   if(!findOSM(n,w,s,e)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
@@ -752,9 +734,6 @@ function render(){
   if(!G)return;
   const st=$('optStyle').value,news=st==='news',real=st==='real';
   $('waterOpts').style.display=(news||real)?'none':'';
-  $('promptBox').style.display=(news||real)?'none':''; // 실제 지도에선 Gemini 프롬프트 안 씀(사용자 요청) — 수채화 스타일 전용
-  $('promptHint').textContent=real?'① 위 「바탕 지도 PNG」로 저장 → ② Gemini에 그 PNG를 첨부 → ③ 아래 프롬프트를 붙여 넣기. 지도·글자는 그대로 두고 말풍선(지점 설명)과 그림만 덧붙이도록 작성돼 있어요.':'바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.';
-  if(real)$('prompt').value='지도를 다 그리면(지명까지) 자동으로 만들어집니다.';
   $('btnSeed').style.display=real?'none':'';
   if(!real)$('btnRetryOsm').style.display='none';
   $('zoomBar').style.display=real?'flex':'none';if(!real)resetPreview();
@@ -816,7 +795,7 @@ function render(){
   ctx.restore();
   // 번호 마커
   if($('optNum').checked){shown.forEach((w,i)=>{const [x,y]=xy[w.idx];const kind=w.role==='날머리'?'end':w.role?'start':null;marker(x,y,String(i+1),kind);});}
-  fitCanvas();makePrompt();
+  fitCanvas();
 }
 
 /* ---------- 프롬프트 ---------- */
@@ -892,99 +871,7 @@ function drawProfile(F1,PH,shown){
 // 캔버스를 지도 영역에 꽉 차게(비율 유지) 표시
 function fitCanvas(){const box=$('cvBox');if(!box||cv.hidden)return;const r=box.getBoundingClientRect();const k=Math.min(r.width/W,r.height/H);cv.style.width=Math.floor(W*k)+'px';cv.style.height=Math.floor(H*k)+'px';}
 
-// 실제 지도용 Gemini 프롬프트 — 지도·글자는 그대로, 지점 설명 말풍선과 삽화만 덧붙이게
-function makePromptReal(){
-  const L=G.layout;if(!L||!L.wp.length){$('prompt').value='';return;}
-  const pts=G.pts,fmt=v=>Math.round(v).toLocaleString('ko-KR')+'m';
-  const where=(x,y)=>`${y<.34?'위쪽':y<.67?'가운데':'아래쪽'} ${x<.34?'왼편':x<.67?'가운데':'오른편'}`.replace('가운데 가운데','한가운데');
-  const pos=(x,y)=>`그림의 가로 ${Math.round(x*100)}%, 세로 ${Math.round(y*100)}% (${where(x,y)})`;
-  // 구간 정보: 거리·오르막·내리막(5m 이상 변화만 누적해 GPS 고도 떨림 제거)·실제 걸린 시간
-  const sec=(a,b)=>{let d=0,up=0,dn=0,ref=pts[a].ele;for(let i=a+1;i<=b;i++){d+=hav(pts[i-1],pts[i]);const e=pts[i].ele;if(e!=null&&ref!=null){if(e-ref>=5){up+=e-ref;ref=e;}else if(ref-e>=5){dn+=ref-e;ref=e;}}}
-    const t=pts[a].t&&pts[b].t&&pts[b].t>pts[a].t?Math.round((pts[b].t-pts[a].t)/60000):null;
-    return [`${(d/1000).toFixed(1)}km`,up>=10&&`오르막 ${fmt(up)}`,dn>=10&&`내리막 ${fmt(dn)}`,t&&`약 ${t>=60?Math.floor(t/60)+'시간 ':''}${t%60?t%60+'분':''}`.trim()].filter(Boolean).join(' · ');};
-  const rk=w=>w.role==='날머리'?1:w.role?-1:0; // 출발은 맨 앞, 도착은 맨 끝 (같은 자리에 다른 지점이 있어도)
-  const wps=L.wp.slice().sort((a,b)=>rk(a.w)-rk(b.w)||a.w.idx-b.w.idx);const top=Math.max(...wps.map(p=>p.w.ele));
-  const tag=w=>w.role==='들머리'?' · 출발':w.role==='날머리'?' · 도착':w.role?' · 출발·도착':w.ele===top?' · 코스 최고점':'';
-  const pl=wps.map((p,i)=>{const w=p.w,n=wps[i+1];
-    return `- ${w.name||'(이름 없음)'} (${fmt(w.ele)})${tag(w)} — ${pos(p.x,p.y)}`+(n&&n.w.idx>w.idx&&hav(pts[w.idx],pts[n.w.idx])>50?`\n  다음 구간: ${n.w.name||'다음 지점'}까지 ${sec(w.idx,n.w.idx)}`:'');});
-  const t0=pts[0].t?new Date(pts[0].t):null,mon=t0?t0.getMonth()+1:null;
-  const season=mon?`${[,'겨울','겨울','봄','봄','봄','여름','여름','여름','가을','가을','가을','겨울'][mon]}(${mon}월 산행)`:null;
-  const peak=wps.find(p=>p.w.ele===top),st=wps[0],en=wps[wps.length-1];
-  const subj=[peak&&`정상 ${peak.w.name} 풍경 — 정상 표지석과 내려다보는 능선`,st&&`출발지 ${st.w.name} 풍경 — 산행 들머리 모습`,`코스 분위기 — 능선길 숲${season?', '+season.split('(')[0]+' 느낌':''}`].filter(Boolean);
-  const ill=L.empty.length?L.empty.map((e,i)=>`- ${pos(e.x,e.y)} 부근: ${subj[i]||subj[subj.length-1]}`).join('\n'):'- 산행로와 글자가 없는 가장자리 빈 곳 2~3군데';
-  const title=$('title').value.trim()||'산행 지도';
-  $('prompt').value=
-`첨부한 이미지는 실제 지형으로 그린 「${title}」 바탕 지도야 (가로 ${L.W*SC} × 세로 ${L.H*SC} 픽셀).
-지도 안에 이미 있는 것 — 등고선, 빨간 산행로와 화살표, 지명·고도 글자, 제목 상자, 범례, 방위표, 테두리 — 은
-위치·모양·글자를 그대로 두고 지우거나 다시 그리지 마.
-그 위에 신문 산행 지도처럼 「지점 설명 말풍선」과 「작은 삽화」만 스티커처럼 덧붙여 줘.
-
-[1. 지점 설명 말풍선] 아래 지점마다 하나씩.
-말풍선 꼬리는 그 지점(빨간 점)을 가리키고, 말풍선 몸통은 빨간 산행로와 기존 글자를 가리지 않는 가까운 빈 곳에 둬.
-말풍선 안: 첫 줄 지점 이름(굵게), 둘째 줄 한 줄 설명(15자 안팎), 셋째 줄 작은 글씨로 다음 구간 정보.
-${pl.join('\n')}
-설명은 그 지점에 대해 확실히 아는 사실(예: 백두대간 능선, 정상 표지석, 조망)만 쓰고, 확실하지 않으면 위의 고도·구간 정보로만 써. 지어내지 마.
-
-[2. 작은 삽화 2~3개] 아래 빈 자리에 둥근 액자 모양의 수채화 삽화. 산행로·말풍선·기존 글자를 덮지 않게.
-${ill}
-삽화마다 아래에 작은 캡션 한 줄.${season?`\n계절감: ${season}`:''}
-
-[글자 규칙]
-- 한글 맞춤법을 정확히. 새로 넣는 글자는 위에 적은 내용만.
-- 숫자(고도·거리·시간)는 위 값을 그대로 쓰고 바꾸거나 반올림하지 마.
-- 기존 글자와 겹치지 않게, 말풍선 글씨는 지도 지명보다 작게.
-
-[결과] 원본과 같은 크기·비율의 이미지 한 장.`;
-}
-function makePrompt(){
-  const shown=G.list.filter(w=>w.show);if(!shown.length){$('prompt').value='';return;}
-  const top=Math.max(...shown.map(w=>w.ele));
-  const fmt=v=>v.toLocaleString('ko-KR')+'m';
-  const lines=shown.map((w,i)=>{const no=CIRC[i]||`(${i+1})`;const nm=w.name||'(이름 없음)';
-    let deco;
-    if(w.role==='들머리')deco='초록 원형 배지 + 등산화 아이콘, "들머리" 표기';
-    else if(w.role==='날머리')deco='빨간 원형 배지 + 등산화 아이콘, "날머리" 표기';
-    else if(w.role)deco='초록·빨강 원형 배지, "들머리·날머리" 표기';
-    else if(w.ele===top)deco='코스 최고봉: 주황 깃발 + "코스 최고봉" 강조';
-    else if(/재|치|령|고개|평전|갈림|삼거리|안부/.test(w.name)&&!/봉|산$/.test(w.name))deco='나무 이정표 아이콘';
-    else deco='리본 라벨';
-    return `${no} ${w.role&&w.role!=='들머리·날머리'?w.role+' ':''}${nm} (${fmt(w.ele)}) — ${deco}`;});
-  // 구간 나누기 (최대 4)
-  const segN=Math.min(4,shown.length-1),secs=[];
-  for(let s=0;s<segN;s++){const a=shown[Math.round(s*(shown.length-1)/segN)],b=shown[Math.round((s+1)*(shown.length-1)/segN)];
-    const inSec=shown.slice(shown.indexOf(a),shown.indexOf(b)+1);
-    const kind=s===0?'오름길':s===segN-1?'하산길':inSec.some(w=>w.ele===top)?'정상 능선':'능선길';
-    secs.push(`${s+1}구간 ${kind} (${a.name||'출발'} ~ ${b.name||'도착'})`);}
-  const route=shown.map(w=>w.name).filter(Boolean).join(' → ');
-  const loop=shown[0].role==='들머리·날머리';
-  const title=$('title').value.trim()||'산행 지도';
-  const info=[$('dist').value.trim()&&`총 거리 ${$('dist').value.trim()}`,$('time').value.trim()&&`소요 시간 ${$('time').value.trim()}`,`최고 고도 ${fmt(top)}`,loop?'원점회귀 코스':'편도 종주 코스'].filter(Boolean).join(' / ');
-  $('prompt').value=
-`첨부한 이미지는 산행 지도의 바탕 그림이야.
-이 그림의 등산로 모양·위치, 등고선, 산과 나무 배치는 절대 바꾸지 말고 그대로 둔 채,
-그 위에 스티커를 붙인 것처럼 일러스트와 글자를 추가해서
-16:9 손그림 수채화 스타일의 산행 인포그래픽 지도로 완성해줘.
-
-[제목] 상단 리본 배너: "${title}"
-[부제] ${route}
-
-[지점 라벨] 지도 위 번호 원 자리에 아래 이름표를 붙이고, 번호 원은 지워줘.
-${lines.join('\n')}
-
-[구간 말풍선] 해당 구간 등산로 옆 빈 곳에 손그림 말풍선
-${secs.join('\n')}
-
-[개요 카드] 왼쪽 아래 빈 곳에 종이 메모 모양 카드 "산행 핵심 개요"
-${info}
-
-[장식] 오른쪽 위 나침반(N), 하늘 쪽에 구름 2~3개와 해, 등산로 위 등산객 1~2명,
-가장자리에 이중선 액자 테두리와 솔방울·도토리·낙엽 몇 개.
-
-[주의]
-- 한글 지명과 숫자는 위 목록 그대로 정확히 표기 (오타, 다른 지명 추가 금지)
-- 등산로 선과 경유지 위치를 옮기거나 새 길을 그리지 말 것
-- 라벨끼리 겹치지 않게 배치`;
-}
+// (Gemini 프롬프트 기능은 2026-11-09 사용자 요청으로 제거)
 
 
 // ── 보관된 코스(GitHub hjwpro1971/gaja 저장소 tracks/) — gpx-map에서 지명을 편집해 올린 GPX. 공개 저장소라 토큰 없이 읽음
@@ -1059,7 +946,7 @@ async function load(file){
     const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
     if(t0&&t1&&t1>t0){const m=Math.round((t1-t0)/60000);$('time').value=`약 ${Math.floor(m/60)}시간${m%60?' '+(m%60)+'분':''}`;}else $('time').value='';
     setTitles(g);
-    $('emptyMsg').hidden=true;cv.hidden=false;['btnSeed','btnPng','btnCopy'].forEach(id=>$(id).disabled=false);
+    $('emptyMsg').hidden=true;cv.hidden=false;['btnSeed','btnPng'].forEach(id=>$(id).disabled=false);
     seed=1;renderList();render();
     const hadWpt=g.wps.length>0;
     $('nameSrc').textContent=hadWpt?`✅ GPX에 저장된 지명 ${g.wps.length}개를 그대로 씁니다.`:'⏳ GPX에 지명이 없어 지도 DB에서 경로 근처 지명을 찾는 중…';
@@ -1078,12 +965,11 @@ drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
 ['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend'].forEach(id=>$(id).onchange=render);
 window.addEventListener('resize',()=>{fitCanvas();if(G&&$('optStyle').value==='real'&&$('optAspect').value==='fill'){clearTimeout(window._rz);window._rz=setTimeout(render,500);}});
-['title','subtitle','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;if($('optStyle').value!=='water')render();else makePrompt();});
+['title','subtitle','dist','time'].forEach(id=>$(id).oninput=()=>{if(!G)return;render();});
 {const st=new URLSearchParams(location.search).get('style');if(st)$('optStyle').value=st;}
 $('btnSeed').onclick=()=>{seed++;render();};
 $('btnRetryOsm').onclick=()=>{$('btnRetryOsm').style.display='none';render();};
 $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
-$('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
 // ── 확대·축소·이동 (실제 지도) : 조작 중엔 CSS로 즉시 미리보기, 손을 떼면 다시 그림
 let zoomF=1,panX=0,panY=0,pv={tx:0,ty:0,sc:1},zTimer=0;
 function resetPreview(){pv={tx:0,ty:0,sc:1};cv.style.transform='';}
