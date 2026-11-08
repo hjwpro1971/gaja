@@ -71,7 +71,11 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 <section class="view">
   <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
   <div id="status" class="hint"></div>
-  <canvas id="cv" width="1920" height="1080" hidden></canvas>
+  <div id="zoomBar" class="row" style="display:none;align-items:center;gap:8px">
+    <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⟲ 원래대로</button>
+    <span class="hint">마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장</span>
+  </div>
+  <div id="cvWrap" style="overflow:hidden;border-radius:6px;touch-action:none"><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0"></canvas></div>
   <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
   <div class="step">④ Gemini 프롬프트</div>
   <div class="hint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
@@ -341,10 +345,10 @@ function renderNews(){
 }
 
 /* ---------- 실제 지도 (DEM 등고선 + OSM 지명) ---------- */
-function makeProj(g,fx,fy){
+function makeProj(g,fx,fy,px=0,py=0){
   const lat0=g.pts.reduce((s,p)=>s+p.lat,0)/g.pts.length,k=Math.cos(lat0*Math.PI/180);
   let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;g.pts.forEach(p=>{const x=p.lon*k,y=-p.lat;x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);});
-  const s=Math.min(W*fx/(x1-x0||1e-9),H*fy/(y1-y0||1e-9)),ox=W/2-(x0+x1)/2*s,oy=H/2-(y0+y1)/2*s;
+  const s=Math.min(W*fx/(x1-x0||1e-9),H*fy/(y1-y0||1e-9)),ox=W/2+px-(x0+x1)/2*s,oy=H/2+py-(y0+y1)/2*s;
   return{fwd:(lat,lon)=>[lon*k*s+ox,-lat*s+oy],inv:(x,y)=>[-(y-oy)/s,(x-ox)/(s*k)]};
 }
 const demCache=new Map(),osmCache=new Map();
@@ -372,8 +376,8 @@ async function loadDEM(n,w,s,e){
     return D.el[o]*(1-fx)*(1-fy)+D.el[o+1]*fx*(1-fy)+D.el[o+D.cw]*(1-fx)*fy+D.el[o+D.cw+1]*fx*fy;};
 }
 async function loadOSM(n,w,s,e){
+  const hit=findOSM(n,w,s,e);if(hit)return hit;
   const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
-  if(osmCache.has(key))return osmCache.get(key);
   try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
   const b=`${s},${w},${n},${e}`;
   const q=`[out:json][timeout:110];(
@@ -399,7 +403,13 @@ way["railway"="rail"](${b});
     return j;
   }finally{clearTimeout(timer);}
 }
-function osmHas(key){if(osmCache.has(key))return true;try{return !!localStorage.getItem('illust_osm_'+key);}catch(e){return false;}}
+// 이미 받은 범위가 지금 화면을 덮으면 그대로 재사용 (확대할 때 다시 받지 않음)
+function findOSM(n,w,s,e){
+  const covers=k=>{const[a,b,c,d]=k.split(',').map(Number);return a>=n&&b<=w&&c<=s&&d>=e;};
+  for(const[k,v]of osmCache)if(covers(k))return v;
+  try{for(let i=0;i<localStorage.length;i++){const lk=localStorage.key(i);if(lk&&lk.startsWith('illust_osm_')&&covers(lk.slice(11))){const j=JSON.parse(localStorage.getItem(lk));osmCache.set(lk.slice(11),j);return j;}}}catch(e){}
+  return null;
+}
 let renderToken=0;
 async function renderReal(){
   const my=++renderToken;
@@ -407,13 +417,13 @@ async function renderReal(){
   const xs=G.pts.map(p=>p.lon*k),ys=G.pts.map(p=>p.lat);
   const asp=(Math.max(...xs)-Math.min(...xs))/(Math.max(...ys)-Math.min(...ys)||1e-9);
   if(asp<0.8){W=1200;H=1700;}else if(asp>1.3){W=1920;H=1280;}else{W=1500;H=1500;}
-  const P=makeProj(G,.74,.74);
+  const P=makeProj(G,.74*zoomF,.74*zoomF,panX,panY);
   const [n,w]=P.inv(0,0),[s,e]=P.inv(W,H);
   $('status').textContent='⏳ 실제 지형(등고선) 불러오는 중…';
   let elev;try{elev=await loadDEM(n,w,s,e);}catch(err){$('status').textContent='⚠️ 지형 데이터를 받지 못했습니다. 네트워크를 확인하세요.';return;}
   if(my!==renderToken)return;
   const paint=(osm)=>{
-  cv.width=W;cv.height=H;
+  cv.width=W;cv.height=H;resetPreview();
   const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
   // 높이장
   const step=4,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1,f0=new Float32Array(gw*gh);
@@ -531,8 +541,7 @@ async function renderReal(){
   ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-14,H-12);ctx.restore();
   };
   // 등고선 지도를 먼저 그려두고, 지명은 받는 대로 덧그림
-  const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
-  if(!osmHas(key)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
+  if(!findOSM(n,w,s,e)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
   let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
   if(my!==renderToken)return;
   paint(osm);
@@ -548,6 +557,7 @@ function render(){
   $('promptBox').style.display=(news||real)?'none':'';
   $('btnSeed').style.display=real?'none':'';
   if(!real)$('btnRetryOsm').style.display='none';
+  $('zoomBar').style.display=real?'flex':'none';if(!real)resetPreview();
   if(!real){renderToken++;$('status').textContent='';}
   if(real){renderReal();return;}
   if(news){renderNews();return;}
@@ -675,7 +685,7 @@ function renderList(){
 async function load(file){
   try{
     const g=parseGPX(decode(await file.arrayBuffer()),file.name);
-    g.list=buildWaypoints(g);G=g;
+    g.list=buildWaypoints(g);G=g;zoomF=1;panX=0;panY=0;
     let d=0;for(let i=1;i<g.pts.length;i++)d+=hav(g.pts[i-1],g.pts[i]);
     $('dist').value=`약 ${(d/1000).toFixed(1)}km`;
     const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
@@ -699,6 +709,30 @@ $('btnSeed').onclick=()=>{seed++;render();};
 $('btnRetryOsm').onclick=()=>{$('btnRetryOsm').style.display='none';render();};
 $('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
 $('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
+// ── 확대·축소·이동 (실제 지도) : 조작 중엔 CSS로 즉시 미리보기, 손을 떼면 다시 그림
+let zoomF=1,panX=0,panY=0,pv={tx:0,ty:0,sc:1},zTimer=0;
+function resetPreview(){pv={tx:0,ty:0,sc:1};cv.style.transform='';}
+function applyPreview(){cv.style.transform=`translate(${pv.tx}px,${pv.ty}px) scale(${pv.sc})`;}
+function scheduleRender(ms=350){clearTimeout(zTimer);zTimer=setTimeout(render,ms);}
+function zoomAt(f,mx,my){ // mx,my: 캔버스 표시 영역 기준 CSS 좌표
+  const nz=Math.max(.35,Math.min(4,zoomF*f));f=nz/zoomF;if(f===1)return;zoomF=nz;
+  const k=W/$('cvWrap').clientWidth; // 화면 px → 캔버스 px
+  const cx=mx*k,cy=my*k; // 커서가 가리키는 (새로 그릴) 캔버스 좌표
+  panX=cx+(W/2+panX-cx)*f-W/2;panY=cy+(H/2+panY-cy)*f-H/2;
+  pv.tx=mx-(mx-pv.tx)*f;pv.ty=my-(my-pv.ty)*f;pv.sc*=f;applyPreview();scheduleRender();
+}
+const isReal=()=>G&&$('optStyle').value==='real';
+$('cvWrap').addEventListener('wheel',e=>{if(!isReal())return;e.preventDefault();const r=$('cvWrap').getBoundingClientRect();zoomAt(e.deltaY<0?1.25:0.8,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+{let drag=null;
+ $('cvWrap').addEventListener('pointerdown',e=>{if(!isReal())return;drag={x:e.clientX,y:e.clientY,tx:pv.tx,ty:pv.ty};$('cvWrap').setPointerCapture(e.pointerId);$('cvWrap').style.cursor='grabbing';clearTimeout(zTimer);});
+ $('cvWrap').addEventListener('pointermove',e=>{if(!drag)return;pv.tx=drag.tx+e.clientX-drag.x;pv.ty=drag.ty+e.clientY-drag.y;applyPreview();});
+ const end=e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag=null;$('cvWrap').style.cursor='';
+   if(Math.abs(dx)+Math.abs(dy)<3){if(pv.sc!==1||pv.tx||pv.ty)scheduleRender(0);return;}
+   const k=W/$('cvWrap').clientWidth;panX+=dx*k;panY+=dy*k;scheduleRender(0);};
+ $('cvWrap').addEventListener('pointerup',end);$('cvWrap').addEventListener('pointercancel',end);}
+$('btnZoomIn').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1.5,r.width/2,r.height/2);};
+$('btnZoomOut').onclick=()=>{const r=$('cvWrap').getBoundingClientRect();zoomAt(1/1.5,r.width/2,r.height/2);};
+$('btnZoomReset').onclick=()=>{zoomF=1;panX=0;panY=0;resetPreview();render();};
 // 테스트용: ?gpx=경로 로 바로 불러오기
 const q=new URLSearchParams(location.search).get('gpx');
 if(q)fetch(q).then(r=>r.blob()).then(b=>load(new File([b],decodeURIComponent(q.split('/').pop())))).catch(()=>{});
