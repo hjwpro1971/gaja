@@ -22,7 +22,8 @@ POI_RULES = [  # (태그, 값 집합) → kind
     ('place', {'city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'quarter', 'borough', 'county'}),
     ('waterway', {'waterfall'}),
     ('railway', {'station'}),
-    ('amenity', {'school', 'place_of_worship', 'parking', 'shelter'}),
+    ('amenity', {'school', 'place_of_worship', 'parking', 'shelter', 'toilets', 'bus_station'}),
+    ('highway', {'bus_stop'}),
     ('tourism', {'viewpoint', 'information', 'alpine_hut', 'camp_site'}),
 ]
 HIGHWAYS = {'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential',
@@ -174,6 +175,8 @@ class Handler(osmium.SimpleHandler):
 
     def add_poi(self, osm, tags, kind, lat, lon):
         t = slim(tags)
+        if kind == 'amenity=toilets' and not t.get('name'):
+            t['name'] = '화장실'
         try:
             ele = float(str(t.get('ele', '')).replace('m', '').strip())
         except ValueError:
@@ -185,7 +188,7 @@ class Handler(osmium.SimpleHandler):
             self.flush()
 
     def node(self, n):
-        if 'name' not in n.tags:
+        if 'name' not in n.tags and n.tags.get('amenity') != 'toilets':  # 화장실은 이름 없는 것도 (산행 들머리에 중요)
             return
         k = poi_kind(n.tags)
         if k:
