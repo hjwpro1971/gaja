@@ -542,7 +542,8 @@ async function renderReal(){
   const LAY=boardLayout(PH);const boxes=LAY.reserve.slice();const RES=boxes.length; // 명판·통계·방위·범례·단면도·출처 자리 예약 // 제목·방위·범례·출처 자리 예약
   const hit=b=>{let sc=0;if(b.x<18||b.y<18||b.x+b.w>W-18||b.y+b.h>H-18)sc+=5000;for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)sc+=1000;
     for(const p of samples)if(p[0]>b.x-3&&p[0]<b.x+b.w+3&&p[1]>b.y-3&&p[1]<b.y+b.h+3)sc+=60;return sc;};
-  const LBL=G._lbl=[],kseen={};
+  const LBL=G._lbl=[],kseen={};G._P=P;
+  const ZF=Math.max(1,zoomF),Z2=ZF*ZF; // 확대해도 지명이 빠지지 않게 — 기준을 화면이 아니라 땅 기준으로
   const lkey=t=>t+'#'+(kseen[t]=(kseen[t]||0)+1);
   function label(x,y,lines,opt={}){
     const key=lkey(lines[0].t);if(ED.hid.has(key))return false; // 편집에서 지운 지명
@@ -604,7 +605,7 @@ async function renderReal(){
   // 대피소·산장 (산행로 근처) — 밀집 구간에서 다른 지명에 밀려 빠지지 않게 먼저 그림(소청대피소 누락 사례)
   const hutDone=new Set();
   byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
-    const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06)return;
+    const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
     boxes.push({x:px-8,y:py-20,w:16,h:16});
     if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
     if(!drawIcon('rest',px,py,12)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
@@ -621,7 +622,7 @@ async function renderReal(){
   // 개수 상한(지도 넓이 기준) — 넓은 지도에 절·저수지·마을이 빽빽이 차는 것 방지. 산행로에 가까운 것부터 채움
   const A=W*H/1e6,near=x=>{const c=x.type==='node'?[x.lat,x.lon]:center(x);if(!c)return 1e9;const [px,py]=P.fwd(c[0],c[1]);return distToRoute(px,py);};
   const byNear=arr=>arr.map(x=>[near(x),x]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
-  let waterN=0;const waterCap=Math.round(4*A);
+  let waterN=0;const waterCap=Math.round(4*A*Z2);
   // 저수지·호수 이름 (파란 글씨)
   byNear(ways.filter(x=>x.tags.natural==='water'&&x.tags.name)).forEach(x=>{if(waterN>=waterCap)return;const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);
     if(px>0&&py>0&&px<W&&py<H&&label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true})){waterN++;return;}
@@ -632,7 +633,7 @@ async function renderReal(){
   const adminDone=new Set();
   const adm=areas.filter(x=>x.tags.boundary==='administrative'&&nm(x)).map(x=>({x,n:nm(x),lvl:x.tags.admin_level,sp:spotsIn(x.px)})).filter(a=>a.sp.length&&(a.lvl!=='8'||/[읍면]$/.test(a.n)));
   let n67=0;
-  [['6','7'],['4'],['8']].forEach(lv=>{const cap=lv[0]==='4'?(n67>=2?1:2):lv[0]==='8'?2:3;let k=0;
+  [['6','7'],['4'],['8']].forEach(lv=>{const cap=Math.round((lv[0]==='4'?(n67>=2?1:2):lv[0]==='8'?2:3)*ZF);let k=0;
     adm.filter(a=>lv.includes(a.lvl)).sort((a,b)=>b.sp.length-a.sp.length).forEach(a=>{if(k>=cap||adminDone.has(a.n))return;
       for(const [px,py] of a.sp.slice(0,10)){const ok=a.lvl==='8'?label(px,py,[{t:a.n,font:`600 26px ${F1}`,color:'#8fa3b8',sp:14}],{center:true,optional:true}):tileName(px,py,a.n);if(ok){adminDone.add(a.n);k++;if(lv[0]==='6')n67++;break;}}});});
   nodes.filter(x=>x.tags.place&&!adminDone.has(nm(x))).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
@@ -641,17 +642,17 @@ async function renderReal(){
     else if(/^(town|suburb|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 21px ${F1}`,color:'#333'}],{center:true,optional:true});});
   // 주변 봉우리 (OSM)
   const peakXY=[];
-  let pkN=0;const pkCap=Math.round(9*A),pkFar=Math.max(W,H)*.25; // 봉우리가 너무 많아 복잡하다는 피드백(설악산) — 산행로 가까운 것만
+  let pkN=0;const pkCap=Math.round(9*A*Z2),pkFar=Math.max(W,H)*.25*ZF; // 봉우리가 너무 많아 복잡하다는 피드백(설악산) — 산행로 가까운 것만
   nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);if(junk.test(nm(x))||nearWp(px,py,40,nm(x))||pkN>=pkCap||distToRoute(px,py)>pkFar)return;pkN++;
-    const near=distToRoute(px,py)<Math.max(W,H)*.1; // 코스 인접 봉우리 / 원경 봉우리
+    const near=distToRoute(px,py)<Math.max(W,H)*.1*ZF; // 코스 인접 봉우리 / 원경 봉우리
     tri(px,py,near?.55:.42);const el=parseFloat(x.tags.ele);
     const f1=near?`500 17px ${F1}`:`15px ${F1}`,c1=near?'#555':'#888',a=near?1:.75;
     label(px,py-6,isFinite(el)?[{t:nm(x),font:f1,color:c1,alpha:a},{t:Math.round(el)+'m',font:`${near?15:13}px ${F1}`,color:c1,alpha:a}]:[{t:nm(x),font:f1,color:c1,alpha:a}],{optional:true,gap:9});
     boxes.push({x:px-10,y:py-13,w:20,h:14});}); // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
   // 고개
-  let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A))return;sdN++;const [px,py]=P.fwd(x.lat,x.lon);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
+  let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;sdN++;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
   // 마을
-  let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A))return;const [px,py]=P.fwd(x.lat,x.lon);if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
+  let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
   // 역·학교·절 — 절은 "이름 卍", 학교는 주황 지붕 건물 그림, 역은 흰 동그라미
   const school=(x,y)=>{ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#555';ctx.lineWidth=1.4;ctx.fillRect(x-9,y-6,18,11);ctx.strokeRect(x-9,y-6,18,11);
     ctx.fillStyle='#e8892a';ctx.beginPath();ctx.moveTo(x-11,y-6);ctx.lineTo(x,y-13);ctx.lineTo(x+11,y-6);ctx.closePath();ctx.fill();ctx.stroke();
@@ -662,7 +663,7 @@ async function renderReal(){
     const t=x.tags,temple=t.amenity==='place_of_worship'&&(t.religion==='buddhist'||/[사암]$/.test(nm(x)));
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
     if(nearWp(px,py,30,nm(x)))return; // GPX 지점과 같은(비슷한) 이름이면 생략 — GPX 지명이 우선
-    if(temple&&tmN>=Math.round(6*A))return;if(t.amenity==='school'&&scN>=Math.round(5*A))return;
+    if(temple&&tmN>=Math.round(6*A*Z2))return;if(t.amenity==='school'&&scN>=Math.round(5*A*Z2))return;
     const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=12;
     if(t.amenity==='school')boxes.push({x:px-12,y:py-22,w:24,h:28});
     if(tk)boxes.push({x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+6});
@@ -680,9 +681,9 @@ async function renderReal(){
      view:(x,y)=>{ctx.fillStyle='#d98b1f';ctx.beginPath();for(let i=0;i<10;i++){const r=i%2?2.6:6.5,a=-Math.PI/2+i*Math.PI/5;ctx.lineTo(x+r*Math.cos(a),y+r*Math.sin(a));}ctx.closePath();ctx.fill();},
      rock:(x,y)=>{ctx.fillStyle='#8c8c8c';ctx.beginPath();ctx.moveTo(x-6,y+4);ctx.lineTo(x-3,y-4);ctx.lineTo(x+4,y-5);ctx.lineTo(x+7,y+4);ctx.closePath();ctx.fill();}};
    const kind=t=>t.natural==='spring'?'spring':t.amenity==='shelter'?'rest':t.tourism==='alpine_hut'||t.tourism==='wilderness_hut'?'hut':t.waterway==='waterfall'?'fall':t.tourism==='viewpoint'?'view':t.natural==='rock'?'rock':null;
-   let k=0;const cap=Math.round(4*A),seen=new Set();
+   let k=0;const cap=Math.round(4*A*Z2),seen=new Set();
    byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||hutDone.has(n)||/^(정자|쉼터|약수터|샘터|샘|약수|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
-     if(distToRoute(px,py)>Math.max(W,H)*.15)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
+     if(distToRoute(px,py)>Math.max(W,H)*.15*ZF)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
      const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?12:0;
      boxes.push(img?{x:px-isz*.6,y:py-isz-6,w:isz*1.2,h:isz+8}:{x:px-8,y:py-10,w:16,h:16});
      if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10})){boxes.pop();return;}
@@ -701,10 +702,10 @@ async function renderReal(){
       const wpSame=nearWp(px,py,25,n); // GPX 지점과 같은 곳이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
       if(!wpSame&&!label(px,py,[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}],{optional:true,gap:13})){boxes.pop();return;}
       badge(px,py,ch,col);used.push([px,py]);k++;});};
-    put(nodes.filter(isInfo),'i','#2e8b57',3,(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12);
-    put(nodes.filter(isPark),'P','#2f6fc8',3,(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
+    put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF);
+    put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
-   let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A))return;const n=nm(x);if(seen.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+   let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2))return;const n=nm(x);if(seen.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
      if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}
   // 고속도로·국도 이름 (가장 긴 구간 가운데에 회전 표기)
   const named={};ways.filter(x=>/^(motorway|trunk|primary)$/.test(hw(x))&&(x.tags.name||x.tags.ref)).forEach(x=>{const key=x.tags.name||x.tags.ref;(named[key]=named[key]||[]).push(x);});
@@ -719,7 +720,7 @@ async function renderReal(){
      if(!top)continue;
      for(let dj=-R;dj<=R&&top;dj++)for(let di=-R;di<=R;di++){const u=f[(j+dj)*gw+i+di];if(u>v){top=false;break;}if(u<lo)lo=u;}
      if(top&&v-lo>=minProm){let raw=-1e9;for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++)raw=Math.max(raw,f0[(j+dj)*gw+i+di]);cand.push({x:i*step,y:j*step,e:raw});}}
-   cand.sort((a,b)=>b.e-a.e);let n=0;const maxN=Math.max(0,Math.round(7*A)-pkN),dFar=Math.max(W,H)*.2;
+   cand.sort((a,b)=>b.e-a.e);let n=0;const maxN=Math.max(0,Math.round(7*A*Z2)-pkN),dFar=Math.max(W,H)*.2*ZF;
    for(const c of cand){if(n>=maxN)break;if(c.x<30||c.y<30||c.x>W-30||c.y>H-30)continue;
      if(peakXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||wpXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||distToRoute(c.x,c.y)<14||distToRoute(c.x,c.y)>dFar)continue;
      if(label(c.x,c.y-8,[{t:Math.round(c.e)+'m',font:`14px ${F1}`,color:'#888',alpha:.8}],{optional:true,gap:8})){tri(c.x,c.y,.4);boxes.push({x:c.x-16,y:c.y-20,w:32,h:22});peakXY.push([c.x,c.y]);n++;}}}
