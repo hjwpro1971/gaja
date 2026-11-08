@@ -98,7 +98,7 @@ def stats():
         except sqlite3.OperationalError:
             kinds[t] = {}
     return {'ready': True, 'meta': meta, 'kinds': kinds, 'junctions': c.execute('SELECT count(*) FROM junction').fetchone()[0],
-            'size_mb': round(os.path.getsize(DB) / 1048576, 1), 'extra': extra.stats()}
+            'size_mb': round(os.path.getsize(DB) / 1048576, 1), 'extra': extra.stats(), 'sched': sched}
 
 
 def search(q, kind=None, limit=100):
@@ -207,10 +207,36 @@ class H(BaseHTTPRequestHandler):
             sys.stderr.write('%s %s\n' % (self.log_date_time_string(), fmt % a))
 
 
+def scheduler():
+    """자동 갱신 — 6시간마다 확인. OSM DB가 30일 넘었으면 새로 만들고, 카카오 칸은 30일 되기 전에 미리 다시 받는다.
+    사람이 아무것도 안 해도 항상 최신이 되게 하는 장치(2026-11-08 사용자 요청)."""
+    time.sleep(60)
+    while True:
+        try:
+            c = conn()
+            built = dict(c.execute('SELECT k,v FROM meta')).get('built_at') if c else None
+            age = (time.time() - time.mktime(time.strptime(built, '%Y-%m-%d %H:%M:%S'))) / 86400 if built else 999
+            if age >= OSM_REFRESH_DAYS and not job['running']:
+                print(f'[자동 갱신] OSM DB {age:.0f}일 경과 → 새로 만들기', flush=True)
+                run_refresh()
+            n = extra.refresh_expiring()
+            if n:
+                print(f'[자동 갱신] 카카오 {n}칸 다시 받음', flush=True)
+            sched['last_check'] = time.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception as ex:  # noqa — 스케줄러는 절대 죽지 않게
+            print(f'[자동 갱신] 오류: {ex}', flush=True)
+        time.sleep(6 * 3600)
+
+
+OSM_REFRESH_DAYS = 30
+sched = {'last_check': None, 'every_hours': 6, 'osm_days': OSM_REFRESH_DAYS}
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8000'))
     n = extra.import_custom_once(os.path.join(DATA, 'mountain_pois.json'))
     if n:
         print(f'직접 입력 지점 {n}개 가져옴 (mountain_pois.json)', flush=True)
+    threading.Thread(target=scheduler, daemon=True).start()
     print(f'mapdb listening on {port}, db={DB}, kakao={"on" if extra.KAKAO_KEY else "off"}', flush=True)
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()

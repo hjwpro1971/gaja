@@ -136,30 +136,48 @@ def ensure_kakao(s, w, n, e):
         purge_old(c)
         have = {r[0] for r in c.execute('SELECT cell FROM kakao_cell')}
         need = [k for k in cells_for(s, w, n, e) if k not in have][:MAX_CELLS]
-        if not need:
-            return 0
-        jobs = [(k, q) for k in need for q in ['@AT4'] + KEYWORDS]
-        bycell = {k: {} for k in need}
-        with ThreadPoolExecutor(8) as ex:
-            for cell, docs in ex.map(lambda a: _fetch_one(*a), jobs):
-                for d in docs:
-                    bycell[cell][d['id']] = d
-        now = time.time()
-        rows = []
-        for cell, docs in bycell.items():
-            for d in docs.values():
-                name, cat = (d.get('place_name') or '').strip(), d.get('category_name') or ''
-                if len(name) < 2 or name in GENERIC or NOISE_NAME.search(name) or NOISE_CAT.search(cat) or ENG.match(name):
-                    continue
-                t = classify(cat, name)
-                if t == 'poi' and not KEEP_POI_CAT.search(cat + ' ' + name):
-                    continue  # 분류가 안 되는 일반 장소는 산행 지도에 어울리는 것(공원·유적·휴양림 등)만
-                rows.append((d['id'], cell, name, float(d['y']), float(d['x']), cat, t, now))
-        c.executemany('INSERT OR REPLACE INTO kakao_poi VALUES(?,?,?,?,?,?,?,?)', rows)
-        c.executemany('INSERT OR REPLACE INTO kakao_cell VALUES(?,?,?)',
-                      [(k, now, sum(1 for r in rows if r[1] == k)) for k in need])
-        c.commit()
-        return len(need)
+        return _fetch_cells(c, need)
+
+
+def refresh_expiring(limit=200):
+    """(스케줄러용) 30일이 다 되어 가는 칸(27일 이상)을 미리 다시 받아 바꿔 넣는다 — 지워졌다가 비는 기간이 없게.
+    한 번에 limit칸까지(카카오 일일 호출 한도 보호). 반환: 다시 받은 칸 수."""
+    if not KAKAO_KEY:
+        return 0
+    with _fetch_lock:
+        c = db()
+        old = [r[0] for r in c.execute('SELECT cell FROM kakao_cell WHERE fetched < ? ORDER BY fetched LIMIT ?',
+                                       (time.time() - (KEEP_DAYS - 3) * 86400, limit))]
+        n = _fetch_cells(c, old)
+        purge_old(c)  # 다시 받으면서 사라진 장소(오래된 행)는 정리
+        return n
+
+
+def _fetch_cells(c, need):
+    if not need:
+        return 0
+    jobs = [(k, q) for k in need for q in ['@AT4'] + KEYWORDS]
+    bycell = {k: {} for k in need}
+    with ThreadPoolExecutor(8) as ex:
+        for cell, docs in ex.map(lambda a: _fetch_one(*a), jobs):
+            for d in docs:
+                bycell[cell][d['id']] = d
+    now = time.time()
+    rows = []
+    for cell, docs in bycell.items():
+        for d in docs.values():
+            name, cat = (d.get('place_name') or '').strip(), d.get('category_name') or ''
+            if len(name) < 2 or name in GENERIC or NOISE_NAME.search(name) or NOISE_CAT.search(cat) or ENG.match(name):
+                continue
+            t = classify(cat, name)
+            if t == 'poi' and not KEEP_POI_CAT.search(cat + ' ' + name):
+                continue  # 분류가 안 되는 일반 장소는 산행 지도에 어울리는 것(공원·유적·휴양림 등)만
+            rows.append((d['id'], cell, name, float(d['y']), float(d['x']), cat, t, now))
+    c.executemany('INSERT OR REPLACE INTO kakao_poi VALUES(?,?,?,?,?,?,?,?)', rows)
+    c.executemany('INSERT OR REPLACE INTO kakao_cell VALUES(?,?,?)',
+                  [(k, now, sum(1 for r in rows if r[1] == k)) for k in need])
+    c.commit()
+    return len(need)
 
 
 def kakao_in(s, w, n, e):
