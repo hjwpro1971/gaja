@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>산행 일러스트 지도</title>
+<link rel="icon" href="favicon.png">
+<style>
+:root{--bg:#f6f1e6;--panel:#fffdf8;--ink:#3d2b1f;--sub:#7a6450;--line:#e2d6c2;--accent:#a4522a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+header h1{font-size:19px;margin:0}
+header span{color:var(--sub);font-size:13px}
+main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.step{font-weight:700;font-size:14px;color:var(--accent)}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--sub)}
+input[type=text]{border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff;color:var(--ink);width:100%}
+.drop{border:2px dashed #cdb898;border-radius:10px;padding:18px;text-align:center;cursor:pointer;font-size:14px;color:var(--sub);background:#fffaf0}
+.drop.on{background:#f3e5cc}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{border:1px solid #b9875f;background:#fff;color:var(--ink);border-radius:7px;padding:8px 12px;font-size:14px;cursor:pointer}
+button.main{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+.chk{font-size:13px;display:flex;gap:5px;align-items:center}
+#wpList{display:flex;flex-direction:column;gap:5px;max-height:330px;overflow:auto}
+.wp{display:grid;grid-template-columns:22px 26px 1fr 64px;gap:5px;align-items:center;font-size:13px}
+.wp .no{font-weight:700;text-align:center;color:var(--accent)}
+.wp input[type=text]{padding:4px 6px;font-size:13px}
+.view{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+canvas{width:100%;height:auto;border-radius:6px;background:#efe6cf;display:block}
+textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:13px;line-height:1.55;font-family:inherit;color:var(--ink);background:#fff;resize:vertical}
+.hint{font-size:12px;color:var(--sub);line-height:1.5}
+.empty{padding:60px 20px;text-align:center;color:var(--sub)}
+</style></head><body>
+<header><h1>🗺️ 산행 일러스트 지도</h1><span>GPX → 바탕 지도(경로·등고선·산) → Gemini로 그림·글자 추가</span></header>
+<main>
+<section class="panel">
+  <div class="step">① GPX 불러오기</div>
+  <div class="drop" id="drop">GPX 파일을 끌어다 놓거나 눌러서 선택<input type="file" id="file" accept=".gpx" hidden></div>
+  <label class="field">지도 제목<input type="text" id="title" placeholder="예: 백화산 종주 산행 지도"></label>
+  <div class="row">
+    <label class="field" style="flex:1">총 거리<input type="text" id="dist"></label>
+    <label class="field" style="flex:1">소요 시간<input type="text" id="time" placeholder="예: 약 6시간"></label>
+  </div>
+
+  <div class="step">② 지점 (번호 = 지도 위 마커)</div>
+  <div class="hint">체크 해제하면 지도와 프롬프트에서 빠집니다. 이름·고도는 직접 고칠 수 있어요.</div>
+  <div id="wpList"><div class="hint">GPX를 불러오면 지점 목록이 나타납니다.</div></div>
+
+  <div class="step">③ 바탕 지도</div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="optNum" checked>번호 마커</label>
+    <label class="chk"><input type="checkbox" id="optContour" checked>등고선</label>
+    <label class="chk"><input type="checkbox" id="optMtn" checked>산 그림</label>
+    <label class="chk"><input type="checkbox" id="optTree" checked>나무</label>
+  </div>
+  <div class="row">
+    <button id="btnSeed" disabled>🎲 다른 모양으로</button>
+    <button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button>
+  </div>
+</section>
+
+<section class="view">
+  <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
+  <canvas id="cv" width="1920" height="1080" hidden></canvas>
+  <div class="step">④ Gemini 프롬프트</div>
+  <div class="hint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
+  <textarea id="prompt" readonly placeholder="GPX를 불러오면 자동으로 만들어집니다."></textarea>
+  <div class="row">
+    <button id="btnCopy" class="main" disabled>📋 프롬프트 복사</button>
+    <button onclick="window.open('https://gemini.google.com/app','_blank')">Gemini 열기 ↗</button>
+  </div>
+</section>
+</main>
+
+<script>
+'use strict';
+const W=1920,H=1080;
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+let G=null;          // {pts:[{lat,lon,ele,t}], wps:[...], name}
+let seed=1;
+
+/* ---------- 난수/노이즈 ---------- */
+function rng(s){let a=s>>>0;return()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
+function hash(ix,iy){let h=Math.imul(ix,374761393)+Math.imul(iy,668265263)+Math.imul(seed,1442695041);h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;return(h>>>0)/4294967296;}
+function vnoise(x,y){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+  const a=hash(ix,iy),b=hash(ix+1,iy),c=hash(ix,iy+1),d=hash(ix+1,iy+1);return a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy;}
+function fbm(x,y){let v=0,amp=.5,f=1;for(let i=0;i<4;i++){v+=amp*vnoise(x*f,y*f);f*=2;amp*=.5;}return v/0.9375;}
+
+/* ---------- GPX 읽기 ---------- */
+function decode(buf){try{return new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch(e){return new TextDecoder('euc-kr').decode(buf);}}
+function parseGPX(text,fname){
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  const num=(n,tag)=>{const e=n.getElementsByTagName(tag)[0];return e?parseFloat(e.textContent):null;};
+  let nodes=[...doc.getElementsByTagName('trkpt')];
+  if(!nodes.length)nodes=[...doc.getElementsByTagName('rtept')];
+  const pts=nodes.map(n=>{const te=n.getElementsByTagName('time')[0];return{lat:+n.getAttribute('lat'),lon:+n.getAttribute('lon'),ele:num(n,'ele'),t:te?Date.parse(te.textContent):null};}).filter(p=>isFinite(p.lat)&&isFinite(p.lon));
+  if(pts.length<2)throw new Error('GPX에 트랙 좌표가 없습니다.');
+  const wps=[...doc.getElementsByTagName('wpt')].map(n=>{const ne=n.getElementsByTagName('name')[0];return{lat:+n.getAttribute('lat'),lon:+n.getAttribute('lon'),ele:num(n,'ele'),name:ne?ne.textContent.trim():''};});
+  const nm=doc.querySelector('metadata > name, trk > name');
+  return{pts,wps,name:(nm&&nm.textContent.trim())||fname.replace(/\.gpx$/i,'')};
+}
+function hav(a,b){const R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lon-a.lon)*r;const s=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(s));}
+
+/* 지점 목록 만들기: GPX 웨이포인트 → 트랙 순서로 정렬, 없으면 고도 극대점 자동 추출 */
+function buildWaypoints(g){
+  const {pts}=g;
+  // 고도 결측 보정
+  let last=null;pts.forEach(p=>{if(p.ele==null)p.ele=last;else last=p.ele;});
+  const first=pts.find(p=>p.ele!=null);pts.forEach(p=>{if(p.ele==null)p.ele=first?first.ele:0;});
+  const nearest=w=>{let bi=0,bd=Infinity;for(let i=0;i<pts.length;i++){const d=(pts[i].lat-w.lat)**2+(pts[i].lon-w.lon)**2;if(d<bd){bd=d;bi=i;}}return bi;};
+  let list;
+  if(g.wps.length){
+    list=g.wps.map(w=>{const i=nearest(w);return{idx:i,name:w.name,ele:w.ele!=null?Math.round(w.ele):Math.round(pts[i].ele)};});
+  }else{
+    // 자동: 전후 ~400m 구간 최고점이면서 주변보다 50m 이상 높은 지점
+    const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+hav(pts[i-1],pts[i]));
+    list=[{idx:0,name:'',ele:Math.round(pts[0].ele)}];
+    for(let i=1;i<pts.length-1;i++){let isMax=true,lo=Infinity;
+      for(let j=i;j>=0&&cum[i]-cum[j]<400;j--){if(pts[j].ele>pts[i].ele){isMax=false;break;}lo=Math.min(lo,pts[j].ele);}
+      if(!isMax)continue;let lo2=Infinity;
+      for(let j=i;j<pts.length&&cum[j]-cum[i]<400;j++){if(pts[j].ele>pts[i].ele){isMax=false;break;}lo2=Math.min(lo2,pts[j].ele);}
+      if(isMax&&pts[i].ele-Math.max(lo,lo2)>=50&&list.every(w=>cum[i]-cum[w.idx]>300))list.push({idx:i,name:'봉우리',ele:Math.round(pts[i].ele)});}
+    list.push({idx:pts.length-1,name:'',ele:Math.round(pts[pts.length-1].ele)});
+  }
+  list.sort((a,b)=>a.idx-b.idx);
+  // 들머리/날머리 표기 정리: "들머리 (이화령)" → 이름 "이화령", role 부여
+  const loop=hav(pts[0],pts[pts.length-1])<500;
+  list.forEach((w,i)=>{
+    let n=w.name||'';let role=null;
+    if(/들머리|날머리|출발|도착|시작|종료/.test(n)||i===0||i===list.length-1){
+      if(i===0||/들머리|출발|시작/.test(n))role=loop?'들머리·날머리':'들머리';
+      if(i===list.length-1||/날머리|도착|종료/.test(n))role=role&&i===0?role:'날머리';
+      const m=n.match(/[(（]([^)）]+)[)）]/);n=m?m[1]:n.replace(/들머리|날머리|출발지?|도착지?|시작점?|종료/g,'').trim();
+    }
+    w.name=n;w.role=role;w.show=true;
+  });
+  // 원점회귀면 마지막 날머리 지점이 들머리와 겹치므로 숨김
+  if(loop&&list.length>2&&list[list.length-1].role==='날머리'&&hav(pts[list[0].idx],pts[list[list.length-1].idx])<300)list[list.length-1].show=false;
+  return list;
+}
+
+/* ---------- 투영 ---------- */
+function project(g){
+  const lat0=g.pts.reduce((s,p)=>s+p.lat,0)/g.pts.length,k=Math.cos(lat0*Math.PI/180);
+  const raw=g.pts.map(p=>[p.lon*k,-p.lat]);
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;raw.forEach(([x,y])=>{x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);});
+  const bw=W*0.66,bh=H*0.64,s=Math.min(bw/(x1-x0||1e-9),bh/(y1-y0||1e-9));
+  const ox=W/2-(x0+x1)/2*s,oy=H*0.53-(y0+y1)/2*s;
+  return raw.map(([x,y])=>[x*s+ox,y*s+oy]);
+}
+function resample(xy,step){const out=[xy[0]];let acc=0;for(let i=1;i<xy.length;i++){const [ax,ay]=xy[i-1],[bx,by]=xy[i];let d=Math.hypot(bx-ax,by-ay);
+  let t=0;while(acc+d*(1-t)>=step){const need=step-acc;t+=need/d*(1);if(t>1)break;out.push([ax+(bx-ax)*t,ay+(by-ay)*t]);acc=0;d=Math.hypot(bx-ax,by-ay);}
+  acc+=d*(1-t);}out.push(xy[xy.length-1]);return out;}
+function smoothPath(c,p){c.beginPath();c.moveTo(p[0][0],p[0][1]);for(let i=1;i<p.length-1;i++){const mx=(p[i][0]+p[i+1][0])/2,my=(p[i][1]+p[i+1][1])/2;c.quadraticCurveTo(p[i][0],p[i][1],mx,my);}c.lineTo(p[p.length-1][0],p[p.length-1][1]);}
+
+/* ---------- 지형 높이장 ---------- */
+function buildField(samples,eles,R,bumps){
+  const step=6,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1;
+  const emin=Math.min(...eles),emax=Math.max(...eles),range=Math.max(emax-emin,150);
+  const fall=range/(W*0.16);           // px당 하강량
+  const f=new Float32Array(gw*gh);
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){
+    const x=i*step,y=j*step;let h=emin-range*0.45;
+    for(let k=0;k<samples.length;k++){const d=Math.hypot(samples[k][0]-x,samples[k][1]-y);const v=eles[k]-fall*d;if(v>h)h=v;}
+    for(const b of bumps){const d2=((x-b.x)**2+(y-b.y)**2)/(b.r*b.r);if(d2<9){const v=b.base+b.amp*Math.exp(-d2);if(v>h)h=v;}}
+    h+=(fbm(x/260+3.1,y/260+7.7)-.5)*range*0.38+(fbm(x/70,y/70)-.5)*range*0.06;
+    f[j*gw+i]=h;}
+  return{f,gw,gh,step,emin:emin-range*0.45,emax:emax+range*0.05,range};
+}
+function contours(F,level,cb){
+  const {f,gw,gh,step}=F;
+  for(let j=0;j<gh-1;j++)for(let i=0;i<gw-1;i++){
+    const a=f[j*gw+i],b=f[j*gw+i+1],c=f[(j+1)*gw+i+1],d=f[(j+1)*gw+i];
+    const idx=(a>level?8:0)|(b>level?4:0)|(c>level?2:0)|(d>level?1:0);
+    if(idx===0||idx===15)continue;
+    const x=i*step,y=j*step,L=(p,q)=>(level-p)/(q-p);
+    const T=[x+step*L(a,b),y],Rr=[x+step,y+step*L(b,c)],B=[x+step*L(d,c),y+step],Lf=[x,y+step*L(a,d)];
+    const segs={1:[[Lf,B]],2:[[B,Rr]],3:[[Lf,Rr]],4:[[T,Rr]],5:[[Lf,T],[B,Rr]],6:[[T,B]],7:[[Lf,T]],8:[[Lf,T]],9:[[T,B]],10:[[T,Rr],[Lf,B]],11:[[T,Rr]],12:[[Lf,Rr]],13:[[B,Rr]],14:[[Lf,B]]}[idx];
+    segs.forEach(s=>cb(s[0],s[1]));}
+}
+
+/* ---------- 그림 요소 ---------- */
+function paper(r){
+  ctx.fillStyle='#f3ead4';ctx.fillRect(0,0,W,H);
+  const img=ctx.getImageData(0,0,W,H),d=img.data;
+  for(let i=0;i<d.length;i+=4){const n=(r()-.5)*14;d[i]+=n;d[i+1]+=n;d[i+2]+=n*.8;}
+  ctx.putImageData(img,0,0);
+  // 가장자리 살짝 어둡게
+  const g=ctx.createRadialGradient(W/2,H/2,H*0.35,W/2,H/2,W*0.65);g.addColorStop(0,'rgba(120,90,50,0)');g.addColorStop(1,'rgba(120,90,50,.18)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+const PAL=[[0,[238,231,206]],[.25,[214,224,178]],[.5,[178,203,138]],[.72,[138,176,104]],[.88,[112,152,88]],[1,[176,160,120]]];
+function pal(t){t=Math.max(0,Math.min(1,t));for(let i=1;i<PAL.length;i++)if(t<=PAL[i][0]){const [t0,c0]=PAL[i-1],[t1,c1]=PAL[i],u=(t-t0)/(t1-t0);return c0.map((v,k)=>v+(c1[k]-v)*u);}return PAL[PAL.length-1][1];}
+function wash(F){
+  const {f,gw,gh}=F,oc=document.createElement('canvas');oc.width=gw;oc.height=gh;const oc2=oc.getContext('2d'),img=oc2.createImageData(gw,gh);
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const t=(f[j*gw+i]-F.emin)/(F.emax-F.emin);const c=pal(t);const blot=fbm(i/9+11,j/9+5);
+    const o=(j*gw+i)*4;img.data[o]=c[0]-blot*18;img.data[o+1]=c[1]-blot*12;img.data[o+2]=c[2]-blot*14;img.data[o+3]=Math.round(150+blot*90);}
+  oc2.putImageData(img,0,0);
+  ctx.save();ctx.filter='blur(5px)';ctx.imageSmoothingEnabled=true;ctx.drawImage(oc,-6,-6,W+12,H+12);ctx.restore();
+}
+function drawContours(F){
+  const n=14;ctx.lineCap='round';
+  for(let k=1;k<n;k++){const lv=F.emin+(F.emax-F.emin)*k/n,idx=k%4===0;
+    ctx.strokeStyle=idx?'rgba(92,110,60,.55)':'rgba(100,120,70,.32)';ctx.lineWidth=idx?2:1.2;ctx.beginPath();
+    contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);});ctx.stroke();}
+}
+function mountain(x,y,s,r,main){
+  const w=46*s,h=(52+r()*14)*s,px=x+(r()-.5)*w*.3;
+  ctx.save();ctx.lineJoin='round';
+  // 그림자
+  ctx.fillStyle='rgba(70,60,40,.16)';ctx.beginPath();ctx.ellipse(x+w*.15,y+2*s,w*1.05,7*s,0,0,Math.PI*2);ctx.fill();
+  // 밝은 면
+  const g=ctx.createLinearGradient(x-w,y-h,x+w,y);g.addColorStop(0,main?'#a9c690':'#b9cf9e');g.addColorStop(1,main?'#6f9a5a':'#86a872');
+  ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(x-w,y);ctx.lineTo(px,y-h);ctx.lineTo(px+w*.35,y-h*.72);ctx.lineTo(px+w*.55,y-h*.84);ctx.lineTo(x+w,y);ctx.closePath();ctx.fill();
+  // 어두운 면
+  ctx.fillStyle=main?'rgba(52,84,48,.55)':'rgba(60,90,55,.4)';ctx.beginPath();ctx.moveTo(px,y-h);ctx.lineTo(px+w*.35,y-h*.72);ctx.lineTo(px+w*.55,y-h*.84);ctx.lineTo(x+w,y);ctx.lineTo(px+w*.1,y);ctx.closePath();ctx.fill();
+  // 바위/눈 캡
+  ctx.fillStyle='rgba(250,246,234,.92)';ctx.beginPath();ctx.moveTo(px,y-h);ctx.lineTo(px-w*.22,y-h*.74);ctx.lineTo(px-w*.08,y-h*.78);ctx.lineTo(px+w*.04,y-h*.7);ctx.lineTo(px+w*.16,y-h*.82);ctx.closePath();ctx.fill();
+  // 윤곽
+  ctx.strokeStyle='rgba(70,52,34,.75)';ctx.lineWidth=main?2.4:1.6;ctx.beginPath();ctx.moveTo(x-w,y);ctx.lineTo(px,y-h);ctx.lineTo(px+w*.35,y-h*.72);ctx.lineTo(px+w*.55,y-h*.84);ctx.lineTo(x+w,y);ctx.stroke();
+  // 해칭
+  ctx.lineWidth=1;ctx.strokeStyle='rgba(50,70,40,.35)';for(let i=0;i<4;i++){const t=.3+i*.15;ctx.beginPath();ctx.moveTo(px+w*.1+(x+w-px)*t*.6,y-h*(1-t));ctx.lineTo(px+w*.1+(x+w-px)*t*.6+6*s,y-h*(1-t)+10*s);ctx.stroke();}
+  ctx.restore();
+}
+function pine(x,y,s,r){
+  ctx.save();ctx.fillStyle='rgba(60,50,40,.18)';ctx.beginPath();ctx.ellipse(x+3,y+1,9*s,3*s,0,0,7);ctx.fill();
+  ctx.fillStyle='#6b4a2e';ctx.fillRect(x-1.5*s,y-6*s,3*s,7*s);
+  const c=['#3f7a4a','#4d8752','#356b42'][Math.floor(r()*3)];ctx.fillStyle=c;ctx.strokeStyle='rgba(30,60,35,.6)';ctx.lineWidth=1;
+  [[0,11,6],[-7,9,13],[-13,7,19]].forEach(([dy,hw,hh])=>{ctx.beginPath();ctx.moveTo(x-hw*s,y-6*s+dy*s*.9);ctx.lineTo(x,y-6*s-hh*s-6*s);ctx.lineTo(x+hw*s,y-6*s+dy*s*.9);ctx.closePath();ctx.fill();ctx.stroke();});
+  ctx.restore();
+}
+function marker(x,y,label,kind){
+  ctx.save();const R=kind?20:16;
+  ctx.shadowColor='rgba(60,40,20,.35)';ctx.shadowBlur=5;ctx.shadowOffsetY=2;
+  ctx.fillStyle=kind==='start'?'#5f9e48':kind==='end'?'#d9603f':'#fffaf0';ctx.beginPath();ctx.arc(x,y,R,0,7);ctx.fill();ctx.shadowColor='transparent';
+  ctx.lineWidth=3;ctx.strokeStyle=kind==='start'?'#3c6f2d':kind==='end'?'#9e3b24':'#7a3b16';ctx.stroke();
+  ctx.fillStyle=kind?'#fff':'#5a2c12';ctx.font=`bold ${kind?20:17}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,x,y+1);
+  ctx.restore();
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  if(!G)return;
+  const r=rng(seed*7919+13);
+  const xy=project(G);
+  const sm=resample(xy,4);                                   // 경로 그리기용
+  const samples=resample(xy,14);                             // 높이장용
+  // 샘플별 고도: 원본 점 고도를 길이 비율로 대응
+  const eraw=G.pts.map(p=>p.ele);const eles=samples.map((_,i)=>eraw[Math.round(i/(samples.length-1)*(eraw.length-1))]);
+  const emin=Math.min(...eraw),emax=Math.max(...eraw),range=Math.max(emax-emin,150);
+  // 배경 산덩이
+  const bumps=[];for(let i=0;i<16;i++){bumps.push({x:r()*W,y:r()*H,r:90+r()*170,base:emin-range*0.4,amp:range*(0.5+r()*0.55)});}
+  const F=buildField(samples,eles,null,bumps);
+
+  paper(r);wash(F);
+  if($('optContour').checked)drawContours(F);
+
+  const distToRoute=(x,y)=>{let m=Infinity;for(const p of samples){const d=Math.hypot(p[0]-x,p[1]-y);if(d<m)m=d;}return m;};
+  const shown=G.list.filter(w=>w.show);
+  const occupied=[];
+  const occupiedHit=(x,y)=>occupied.some(([ox,oy,rr])=>Math.hypot(ox-x,oy-y)<rr)?60:0;
+  // 산 그림: 봉우리 성격 지점 + 배경 산
+  if($('optMtn').checked){
+    const items=[];
+    shown.forEach(w=>{if(w.role)return;if(/재|치|령|고개|평전|갈림|삼거리|사거리|쉼터|대피소|안부|폭포|계곡|사$|암$/.test(w.name)&&!/봉|산$/.test(w.name))return;
+      const [x,y]=xy[w.idx];const t=(w.ele-emin)/range,s=1+t*.8;
+      // 등산로를 피해 좌·우·위 중 가장 넓은 쪽에 배치
+      let best=null;[[-62,10],[62,10],[0,-30],[-48,-24],[48,-24]].forEach(([dx,dy])=>{const cx=x+dx*s,cy=y+dy*s;const sc=distToRoute(cx,cy-25*s)-occupiedHit(cx,cy);if(!best||sc>best.sc)best={x:cx,y:cy,sc};});
+      items.push({x:best.x,y:best.y,s,main:true,top:w.ele===Math.max(...shown.map(v=>v.ele))});occupied.push([best.x,best.y-20,50*s]);});
+    bumps.forEach(b=>{if(b.x<60||b.x>W-60||b.y<120||b.y>H-40)return;const d=distToRoute(b.x,b.y);if(d<80)return;items.push({x:b.x,y:b.y,s:.55+r()*.35,main:false});});
+    items.sort((a,b)=>a.y-b.y).forEach(m=>{mountain(m.x,m.y,m.s,r,m.main);if(!m.main)occupied.push([m.x,m.y-20,55*m.s]);
+      if(m.top){ctx.save();ctx.strokeStyle='#5a3d24';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(m.x,m.y-58*m.s);ctx.lineTo(m.x,m.y-58*m.s-34);ctx.stroke();ctx.fillStyle='#e4572e';ctx.beginPath();ctx.moveTo(m.x,m.y-58*m.s-34);ctx.lineTo(m.x+26,m.y-58*m.s-26);ctx.lineTo(m.x,m.y-58*m.s-18);ctx.closePath();ctx.fill();ctx.restore();}});
+  }
+  // 나무
+  if($('optTree').checked){
+    const trees=[];let tries=0;
+    while(trees.length<110&&tries<4000){tries++;const x=40+r()*(W-80),y=60+r()*(H-90);
+      const gi=Math.round(y/F.step)*F.gw+Math.round(x/F.step),t=(F.f[gi]-F.emin)/(F.emax-F.emin);
+      if(t<.22||t>.85)continue;if(distToRoute(x,y)<34)continue;
+      if(occupied.some(([ox,oy,rr])=>Math.hypot(ox-x,oy-y)<rr))continue;
+      if(trees.some(([tx,ty])=>Math.hypot(tx-x,ty-y)<26))continue;
+      trees.push([x,y]);}
+    trees.sort((a,b)=>a[1]-b[1]).forEach(([x,y])=>pine(x,y,.8+r()*.45,r));
+  }
+  // 등산로
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  smoothPath(ctx,sm);ctx.strokeStyle='rgba(255,250,238,.92)';ctx.lineWidth=16;ctx.stroke();
+  smoothPath(ctx,sm);ctx.strokeStyle='#8a3a18';ctx.lineWidth=5;ctx.stroke();
+  smoothPath(ctx,sm);ctx.strokeStyle='#e9a46a';ctx.lineWidth=2.2;ctx.setLineDash([3,10]);ctx.stroke();ctx.setLineDash([]);
+  // 진행 화살표
+  const n=Math.max(6,Math.round(sm.length/90));
+  for(let k=1;k<n;k++){const i=Math.floor(sm.length*k/n);const a=sm[Math.max(0,i-3)],b=sm[Math.min(sm.length-1,i+3)];const ang=Math.atan2(b[1]-a[1],b[0]-a[0]);
+    ctx.save();ctx.translate(sm[i][0],sm[i][1]);ctx.rotate(ang);ctx.fillStyle='#6e2c10';ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-6,-7);ctx.lineTo(-2,0);ctx.lineTo(-6,7);ctx.closePath();ctx.fill();ctx.restore();}
+  ctx.restore();
+  // 번호 마커
+  if($('optNum').checked){shown.forEach((w,i)=>{const [x,y]=xy[w.idx];const kind=w.role==='날머리'?'end':w.role?'start':null;marker(x,y,String(i+1),kind);});}
+  makePrompt();
+}
+
+/* ---------- 프롬프트 ---------- */
+const CIRC='①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+function makePrompt(){
+  const shown=G.list.filter(w=>w.show);if(!shown.length){$('prompt').value='';return;}
+  const top=Math.max(...shown.map(w=>w.ele));
+  const fmt=v=>v.toLocaleString('ko-KR')+'m';
+  const lines=shown.map((w,i)=>{const no=CIRC[i]||`(${i+1})`;const nm=w.name||'(이름 없음)';
+    let deco;
+    if(w.role==='들머리')deco='초록 원형 배지 + 등산화 아이콘, "들머리" 표기';
+    else if(w.role==='날머리')deco='빨간 원형 배지 + 등산화 아이콘, "날머리" 표기';
+    else if(w.role)deco='초록·빨강 원형 배지, "들머리·날머리" 표기';
+    else if(w.ele===top)deco='코스 최고봉: 주황 깃발 + "코스 최고봉" 강조';
+    else if(/재|치|령|고개|평전|갈림|삼거리|안부/.test(w.name)&&!/봉|산$/.test(w.name))deco='나무 이정표 아이콘';
+    else deco='리본 라벨';
+    return `${no} ${w.role&&w.role!=='들머리·날머리'?w.role+' ':''}${nm} (${fmt(w.ele)}) — ${deco}`;});
+  // 구간 나누기 (최대 4)
+  const segN=Math.min(4,shown.length-1),secs=[];
+  for(let s=0;s<segN;s++){const a=shown[Math.round(s*(shown.length-1)/segN)],b=shown[Math.round((s+1)*(shown.length-1)/segN)];
+    const inSec=shown.slice(shown.indexOf(a),shown.indexOf(b)+1);
+    const kind=s===0?'오름길':s===segN-1?'하산길':inSec.some(w=>w.ele===top)?'정상 능선':'능선길';
+    secs.push(`${s+1}구간 ${kind} (${a.name||'출발'} ~ ${b.name||'도착'})`);}
+  const route=shown.map(w=>w.name).filter(Boolean).join(' → ');
+  const loop=shown[0].role==='들머리·날머리';
+  const title=$('title').value.trim()||'산행 지도';
+  const info=[$('dist').value.trim()&&`총 거리 ${$('dist').value.trim()}`,$('time').value.trim()&&`소요 시간 ${$('time').value.trim()}`,`최고 고도 ${fmt(top)}`,loop?'원점회귀 코스':'편도 종주 코스'].filter(Boolean).join(' / ');
+  $('prompt').value=
+`첨부한 이미지는 산행 지도의 바탕 그림이야.
+이 그림의 등산로 모양·위치, 등고선, 산과 나무 배치는 절대 바꾸지 말고 그대로 둔 채,
+그 위에 스티커를 붙인 것처럼 일러스트와 글자를 추가해서
+16:9 손그림 수채화 스타일의 산행 인포그래픽 지도로 완성해줘.
+
+[제목] 상단 리본 배너: "${title}"
+[부제] ${route}
+
+[지점 라벨] 지도 위 번호 원 자리에 아래 이름표를 붙이고, 번호 원은 지워줘.
+${lines.join('\n')}
+
+[구간 말풍선] 해당 구간 등산로 옆 빈 곳에 손그림 말풍선
+${secs.join('\n')}
+
+[개요 카드] 왼쪽 아래 빈 곳에 종이 메모 모양 카드 "산행 핵심 개요"
+${info}
+
+[장식] 오른쪽 위 나침반(N), 하늘 쪽에 구름 2~3개와 해, 등산로 위 등산객 1~2명,
+가장자리에 이중선 액자 테두리와 솔방울·도토리·낙엽 몇 개.
+
+[주의]
+- 한글 지명과 숫자는 위 목록 그대로 정확히 표기 (오타, 다른 지명 추가 금지)
+- 등산로 선과 경유지 위치를 옮기거나 새 길을 그리지 말 것
+- 라벨끼리 겹치지 않게 배치`;
+}
+
+/* ---------- UI ---------- */
+function renderList(){
+  const box=$('wpList');box.innerHTML='';let no=0;
+  G.list.forEach(w=>{const row=document.createElement('div');row.className='wp';
+    const n=w.show?++no:'';
+    row.innerHTML=`<span class="no">${n}</span><input type="checkbox" ${w.show?'checked':''}><input type="text" value="${(w.role?'['+w.role+'] ':'')}${w.name.replace(/"/g,'&quot;')}"><input type="text" value="${w.ele}">`;
+    const [cb,nm,el]=row.querySelectorAll('input');
+    cb.onchange=()=>{w.show=cb.checked;renderList();render();};
+    nm.onchange=()=>{w.name=nm.value.replace(/^\[[^\]]*\]\s*/,'').trim();render();};
+    el.onchange=()=>{const v=parseInt(el.value.replace(/[^\d]/g,''));if(!isNaN(v))w.ele=v;render();};
+    box.appendChild(row);});
+}
+async function load(file){
+  try{
+    const g=parseGPX(decode(await file.arrayBuffer()),file.name);
+    g.list=buildWaypoints(g);G=g;
+    let d=0;for(let i=1;i<g.pts.length;i++)d+=hav(g.pts[i-1],g.pts[i]);
+    $('dist').value=`약 ${(d/1000).toFixed(1)}km`;
+    const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
+    if(t0&&t1&&t1>t0){const m=Math.round((t1-t0)/60000);$('time').value=`약 ${Math.floor(m/60)}시간${m%60?' '+(m%60)+'분':''}`;}else $('time').value='';
+    const top=g.list.reduce((a,b)=>b.ele>a.ele?b:a,g.list[0]);
+    $('title').value=`${top&&top.name?top.name:g.name.replace(/[_\s]?\d{6,8}.*/,'')} 산행 지도`;
+    $('emptyMsg').hidden=true;cv.hidden=false;['btnSeed','btnPng','btnCopy'].forEach(id=>$(id).disabled=false);
+    seed=1;renderList();render();
+  }catch(e){alert('GPX를 읽지 못했습니다: '+e.message);}
+}
+const drop=$('drop');
+drop.onclick=()=>$('file').click();
+$('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
+drop.ondragleave=()=>drop.classList.remove('on');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
+['optNum','optContour','optMtn','optTree'].forEach(id=>$(id).onchange=render);
+['title','dist','time'].forEach(id=>$(id).oninput=()=>G&&makePrompt());
+$('btnSeed').onclick=()=>{seed++;render();};
+$('btnPng').onclick=()=>cv.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('title').value.trim()||'산행지도').replace(/[\\/:*?"<>|]/g,'')+'_바탕.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
+$('btnCopy').onclick=async()=>{const t=$('prompt');try{await navigator.clipboard.writeText(t.value);}catch(e){t.select();document.execCommand('copy');}$('btnCopy').textContent='✅ 복사됨';setTimeout(()=>$('btnCopy').textContent='📋 프롬프트 복사',1500);};
+// 테스트용: ?gpx=경로 로 바로 불러오기
+const q=new URLSearchParams(location.search).get('gpx');
+if(q)fetch(q).then(r=>r.blob()).then(b=>load(new File([b],decodeURIComponent(q.split('/').pop())))).catch(()=>{});
+</script>
+</body></html>
