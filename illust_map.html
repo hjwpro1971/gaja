@@ -424,7 +424,9 @@ async function renderReal(){
   const xs=G.pts.map(p=>p.lon*k),ys=G.pts.map(p=>p.lat);
   const asp=(Math.max(...xs)-Math.min(...xs))/(Math.max(...ys)-Math.min(...ys)||1e-9);
   if(asp<0.8){W=1200;H=1700;}else if(asp>1.3){W=1920;H=1280;}else{W=1500;H=1500;}
-  const P=makeProj(G,.74*zoomF,.74*zoomF,panX,panY);
+  // 짧은 코스는 지도가 최소 7km를 덮도록 넓힌다 — 산속 4km 범위엔 지명이 거의 없어 지도가 텅 비어 보였음
+  let fit=.74;{const B=makeProj(G,.74,.74),[a0,b0]=B.inv(0,0),[a1,b1]=B.inv(W,H);const km=Math.max(Math.abs(a0-a1)*111,Math.abs(b1-b0)*111*Math.cos(a0*Math.PI/180));if(km<7)fit=.74*km/7;}
+  const P=makeProj(G,fit*zoomF,fit*zoomF,panX,panY);
   const [n,w]=P.inv(0,0),[s,e]=P.inv(W,H);
   $('status').textContent='⏳ 실제 지형(등고선) 불러오는 중…';
   let elev;try{elev=await loadDEM(n,w,s,e);}catch(err){$('status').textContent='⚠️ 지형 데이터를 받지 못했습니다. 네트워크를 확인하세요.';return;}
@@ -538,42 +540,52 @@ async function renderReal(){
         ctx.beginPath();ctx.roundRect(x,y,s,s,6);ctx.fill();ctx.stroke();ctx.fillStyle='#b4473a';ctx.fillText(ch,x+s/2,y+s/2+1);});
       ctx.restore();return true;}
     return false;};
+  // 개수 상한(지도 넓이 기준) — 넓은 지도에 절·저수지·마을이 빽빽이 차는 것 방지. 산행로에 가까운 것부터 채움
+  const A=W*H/1e6,near=x=>{const c=x.type==='node'?[x.lat,x.lon]:center(x);if(!c)return 1e9;const [px,py]=P.fwd(c[0],c[1]);return distToRoute(px,py);};
+  const byNear=arr=>arr.map(x=>[near(x),x]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
+  let waterN=0;const waterCap=Math.round(4*A);
   // 저수지·호수 이름 (파란 글씨)
-  ways.filter(x=>x.tags.natural==='water'&&x.tags.name).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);
-    if(px>0&&py>0&&px<W&&py<H&&label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))return;
+  byNear(ways.filter(x=>x.tags.natural==='water'&&x.tags.name)).forEach(x=>{if(waterN>=waterCap)return;const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);
+    if(px>0&&py>0&&px<W&&py<H&&label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true})){waterN++;return;}
     // 큰 호수는 가운데가 화면 밖이거나 막혀 있을 수 있음 → 보이는 물 위 빈자리를 찾아서
-    for(const [sx,sy] of spotsIn([geo(x.geometry)]).slice(0,6))if(label(sx,sy,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))break;});
+    for(const [sx,sy] of spotsIn([geo(x.geometry)]).slice(0,6))if(label(sx,sy,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true})){waterN++;break;}});
   areas.filter(x=>x.tags.boundary!=='administrative'&&x.tags.name).forEach(x=>{for(const [px,py] of spotsIn(x.px).slice(0,6))if(label(px,py,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true}))break;});
   // 행정구역 면: 화면에 보이는 그 구역 안쪽 빈자리에 이름 (시·군·구 → 시·도 → 읍·면 순, 동은 점 지명이 대신함)
   const adminDone=new Set();
-  [['6','7'],['4'],['8']].forEach(lv=>areas.filter(x=>x.tags.boundary==='administrative'&&lv.includes(x.tags.admin_level)).forEach(x=>{const n=nm(x);if(!n||adminDone.has(n))return;
-    const lvl=x.tags.admin_level;if(lvl==='8'&&!/[읍면]$/.test(n))return;
-    for(const [px,py] of spotsIn(x.px).slice(0,10)){const ok=lvl==='8'?label(px,py,[{t:n,font:`bold 30px ${F1}`,color:'#4f6f8f',sp:14}],{center:true,optional:true}):tileName(px,py,n);if(ok){adminDone.add(n);break;}}}));
+  const adm=areas.filter(x=>x.tags.boundary==='administrative'&&nm(x)).map(x=>({x,n:nm(x),lvl:x.tags.admin_level,sp:spotsIn(x.px)})).filter(a=>a.sp.length&&(a.lvl!=='8'||/[읍면]$/.test(a.n)));
+  let n67=0;
+  [['6','7'],['4'],['8']].forEach(lv=>{const cap=lv[0]==='4'?(n67>=2?1:2):lv[0]==='8'?2:3;let k=0;
+    adm.filter(a=>lv.includes(a.lvl)).sort((a,b)=>b.sp.length-a.sp.length).forEach(a=>{if(k>=cap||adminDone.has(a.n))return;
+      for(const [px,py] of a.sp.slice(0,10)){const ok=a.lvl==='8'?label(px,py,[{t:a.n,font:`bold 30px ${F1}`,color:'#4f6f8f',sp:14}],{center:true,optional:true}):tileName(px,py,a.n);if(ok){adminDone.add(a.n);k++;if(lv[0]==='6')n67++;break;}}});});
   nodes.filter(x=>x.tags.place&&!adminDone.has(nm(x))).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
     if(/^(county|city|borough)$/.test(pl)||(/^(town|suburb)$/.test(pl)&&/[시군구]$/.test(n)))tileName(px,py,n);
     else if(/[읍면]$/.test(n)&&/^(town|suburb|village|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 30px ${F1}`,color:'#4f6f8f',sp:14}],{center:true,optional:true});
     else if(/^(town|suburb|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 21px ${F1}`,color:'#333'}],{center:true,optional:true});});
   // 주변 봉우리 (OSM)
   const peakXY=[];
-  nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;
+  let pkN=0;const pkCap=Math.round(20*A);
+  nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);if(junk.test(nm(x))||nearWp(px,py,40,nm(x))||pkN>=pkCap)return;pkN++;
     tri(px,py,1);const el=parseFloat(x.tags.ele);
     label(px,py-8,isFinite(el)?[{t:nm(x),font:`bold 19px ${F1}`,color:'#2d4d22'},{t:Math.round(el)+'m',font:`17px ${F1}`,color:'#333'}]:[{t:nm(x),font:`bold 19px ${F1}`,color:'#2d4d22'}],{optional:true,gap:12});
     boxes.push({x:px-17,y:py-21,w:34,h:23});}); // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
   // 고개
-  nodes.filter(x=>x.tags.natural==='saddle').forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
+  let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle')).forEach(x=>{if(sdN>=Math.round(8*A))return;sdN++;const [px,py]=P.fwd(x.lat,x.lon);if(junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
   // 마을
-  nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x))).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true});});
+  let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A))return;const [px,py]=P.fwd(x.lat,x.lon);if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
   // 역·학교·절 — 절은 "이름 卍", 학교는 주황 지붕 건물 그림, 역은 흰 동그라미
   const school=(x,y)=>{ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#555';ctx.lineWidth=1.4;ctx.fillRect(x-9,y-6,18,11);ctx.strokeRect(x-9,y-6,18,11);
     ctx.fillStyle='#e8892a';ctx.beginPath();ctx.moveTo(x-11,y-6);ctx.lineTo(x,y-13);ctx.lineTo(x+11,y-6);ctx.closePath();ctx.fill();ctx.stroke();
     ctx.strokeStyle='#555';ctx.beginPath();ctx.moveTo(x,y-13);ctx.lineTo(x,y-21);ctx.stroke();ctx.fillStyle='#2f7fc8';ctx.fillRect(x,y-21,7,4);
     ctx.fillStyle='#8fb4d6';ctx.fillRect(x-6,y-3,4,4);ctx.fillRect(x+2,y-3,4,4);ctx.restore();};
-  els.filter(x=>x.tags&&x.tags.name&&(x.tags.railway==='station'||x.tags.amenity==='school'||x.tags.amenity==='place_of_worship')).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(px<0||py<0||px>W||py>H)return;
+  let tmN=0,scN=0;
+  byNear(els.filter(x=>x.tags&&x.tags.name&&(x.tags.railway==='station'||x.tags.amenity==='school'||x.tags.amenity==='place_of_worship'))).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(px<0||py<0||px>W||py>H)return;
     const t=x.tags,temple=t.amenity==='place_of_worship'&&(t.religion==='buddhist'||/[사암]$/.test(nm(x)));
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
+    if(temple&&tmN>=Math.round(6*A))return;if(t.amenity==='school'&&scN>=Math.round(5*A))return;
     if(t.amenity==='school')boxes.push({x:px-12,y:py-22,w:24,h:28});
     const ok=label(px,py,[{t:nm(x)+(temple?' 卍':''),font:`${temple?'600 17':'16'}px ${F1}`,color:'#444'}],{optional:true,gap:t.amenity==='school'?14:9});
     if(!ok){if(t.amenity==='school')boxes.pop();return;}
+    if(temple)tmN++;if(t.amenity==='school')scN++;
     if(t.amenity==='school')school(px,py);
     else if(t.railway){ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.beginPath();ctx.arc(px,py,7,0,7);ctx.fill();ctx.stroke();ctx.restore();}
     else{ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}});
@@ -590,7 +602,7 @@ async function renderReal(){
      if(!top)continue;
      for(let dj=-R;dj<=R&&top;dj++)for(let di=-R;di<=R;di++){const u=f[(j+dj)*gw+i+di];if(u>v){top=false;break;}if(u<lo)lo=u;}
      if(top&&v-lo>=minProm){let raw=-1e9;for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++)raw=Math.max(raw,f0[(j+dj)*gw+i+di]);cand.push({x:i*step,y:j*step,e:raw});}}
-   cand.sort((a,b)=>b.e-a.e);let n=0;const maxN=Math.round(W*H/50000);
+   cand.sort((a,b)=>b.e-a.e);let n=0;const maxN=Math.round(W*H/60000);
    for(const c of cand){if(n>=maxN)break;if(c.x<30||c.y<30||c.x>W-30||c.y>H-30)continue;
      if(peakXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||wpXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||distToRoute(c.x,c.y)<14)continue;
      if(label(c.x,c.y-8,[{t:Math.round(c.e)+'m',font:`600 17px ${F1}`,color:'#333'}],{optional:true,gap:12})){tri(c.x,c.y,.9);boxes.push({x:c.x-16,y:c.y-20,w:32,h:22});peakXY.push([c.x,c.y]);n++;}}}
@@ -814,7 +826,9 @@ async function load(file){
     $('dist').value=`약 ${(d/1000).toFixed(1)}km`;
     const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
     if(t0&&t1&&t1>t0){const m=Math.round((t1-t0)/60000);$('time').value=`약 ${Math.floor(m/60)}시간${m%60?' '+(m%60)+'분':''}`;}else $('time').value='';
-    const top=g.list.reduce((a,b)=>b.ele>a.ele?b:a,g.list[0]);
+    // 제목: 가장 높은 '산 이름' 지점 (갈림길·삼거리·고개 같은 이름은 제외)
+    const peaks=g.list.filter(w=>w.name&&!isPass(w.name)&&!/갈림|삼거리|사거리|이정표|쉼터|헬기장|삼각점|주차장|입구/.test(w.name));
+    const top=(peaks.length?peaks:g.list).reduce((a,b)=>b.ele>a.ele?b:a,(peaks.length?peaks:g.list)[0]);
     $('title').value=`${top&&top.name?top.name:g.name.replace(/[_\s]?\d{6,8}.*/,'')} 산행 지도`;
     $('emptyMsg').hidden=true;cv.hidden=false;['btnSeed','btnPng','btnCopy'].forEach(id=>$(id).disabled=false);
     seed=1;renderList();render();
