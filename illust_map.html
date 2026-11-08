@@ -72,10 +72,10 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="emptyMsg" class="empty">왼쪽에서 GPX 파일을 불러오세요.</div>
   <div id="status" class="hint"></div>
   <div id="zoomBar" class="row" style="display:none;align-items:center;gap:8px">
-    <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⟲ 원래대로</button>
+    <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><button id="btnZoomReset">⤢ 화면에 맞게</button>
     <span class="hint">마우스 휠로 확대·축소, 끌어서 이동 · PNG는 보이는 그대로 저장</span>
   </div>
-  <div id="cvWrap" style="overflow:hidden;border-radius:6px;touch-action:none"><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0"></canvas></div>
+  <div id="cvWrap" style="overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%;margin:0 auto"><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;max-height:calc(100vh - 180px);width:auto;max-width:100%"></canvas></div>
   <div id="promptBox" style="display:flex;flex-direction:column;gap:12px">
   <div class="step">④ Gemini 프롬프트</div>
   <div class="hint">바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.</div>
@@ -142,13 +142,15 @@ function buildWaypoints(g){
   list.sort((a,b)=>a.idx-b.idx);
   // 들머리/날머리 표기 정리: "들머리 (이화령)" → 이름 "이화령", role 부여
   const loop=hav(pts[0],pts[pts.length-1])<500;
+  // 이름에 들머리/날머리가 적힌 지점이 있으면 그게 우선 — 위치(처음/끝)로는 그런 표기가 없을 때만 정함
+  const reS=/들머리|출발|시작/,reE=/날머리|도착|종료/;
+  const hasS=list.some(w=>reS.test(w.name||'')),hasE=list.some(w=>reE.test(w.name||''));
   list.forEach((w,i)=>{
     let n=w.name||'';let role=null;
-    if(/들머리|날머리|출발|도착|시작|종료/.test(n)||i===0||i===list.length-1){
-      if(i===0||/들머리|출발|시작/.test(n))role=loop?'들머리·날머리':'들머리';
-      if(i===list.length-1||/날머리|도착|종료/.test(n))role=role&&i===0?role:'날머리';
-      const m=n.match(/[(（]([^)）]+)[)）]/);n=m?m[1]:n.replace(/들머리|날머리|출발지?|도착지?|시작점?|종료/g,'').trim();
-    }
+    const isS=reS.test(n)||(!hasS&&i===0),isE=reE.test(n)||(!hasE&&i===list.length-1);
+    if(isS)role=loop?'들머리·날머리':'들머리';
+    else if(isE)role='날머리';
+    if(reS.test(n)||reE.test(n)){const m=n.match(/[(（]([^)）]+)[)）]/);n=m?m[1]:n.replace(/들머리|날머리|출발지?|도착지?|시작점?|종료/g,'').trim();}
     w.name=n;w.role=role;w.show=true;
   });
   // 원점회귀면 마지막 날머리 지점이 들머리와 겹치므로 숨김
