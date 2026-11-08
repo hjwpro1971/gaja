@@ -742,7 +742,7 @@ async function renderReal(){
   if(!findOSM(n,w,s,e)){paint(null);$('status').textContent='⏳ 지명·도로·하천 불러오는 중… (등고선은 먼저 그렸어요. 최대 2분)';}
   let osm=null;try{osm=await loadOSM(n,w,s,e);}catch(err){osm=null;}
   if(my!==renderToken)return;
-  paint(osm);makePromptReal();
+  paint(osm);
   $('status').textContent=osm?'':'⚠️ 지명 서버가 응답하지 않아 등고선만 그렸습니다. 「지명 다시 받기」를 눌러 재시도하세요.';
   $('btnRetryOsm').style.display=osm?'none':'';
 }
@@ -752,7 +752,7 @@ function render(){
   if(!G)return;
   const st=$('optStyle').value,news=st==='news',real=st==='real';
   $('waterOpts').style.display=(news||real)?'none':'';
-  $('promptBox').style.display=news?'none':'';
+  $('promptBox').style.display=(news||real)?'none':''; // 실제 지도에선 Gemini 프롬프트 안 씀(사용자 요청) — 수채화 스타일 전용
   $('promptHint').textContent=real?'① 위 「바탕 지도 PNG」로 저장 → ② Gemini에 그 PNG를 첨부 → ③ 아래 프롬프트를 붙여 넣기. 지도·글자는 그대로 두고 말풍선(지점 설명)과 그림만 덧붙이도록 작성돼 있어요.':'바탕 지도 PNG를 Gemini에 첨부하고 아래 프롬프트를 붙여 넣으세요. 번호 마커 자리에 이름표가 붙도록 작성돼 있습니다.';
   if(real)$('prompt').value='지도를 다 그리면(지명까지) 자동으로 만들어집니다.';
   $('btnSeed').style.display=real?'none':'';
