@@ -377,10 +377,15 @@ async function loadDEM(n,w,s,e){
   return(lat,lon)=>{const px=(lx(lon,z)-tx0)*256-.5,py=(ly(lat,z)-ty0)*256-.5;const ix=Math.max(0,Math.min(D.cw-2,Math.floor(px))),iy=Math.max(0,Math.min(D.ch-2,Math.floor(py))),fx=px-ix,fy=py-iy,o=iy*D.cw+ix;
     return D.el[o]*(1-fx)*(1-fy)+D.el[o+1]*fx*(1-fy)+D.el[o+D.cw]*(1-fx)*fy+D.el[o+D.cw+1]*fx*fy;};
 }
+const MAPDB_URL=new URLSearchParams(location.search).get('mapdb')||'/mapdb/api/bbox';
 async function loadOSM(n,w,s,e){
   const hit=findOSM(n,w,s,e);if(hit)return hit;
   const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
   try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
+  // 1순위: NAS 지도 DB(/mapdb) — 한국 OSM을 미리 담아둬서 수 초 안에 응답. 없거나 실패하면 외부 Overpass로
+  try{const mc=new AbortController(),mt=setTimeout(()=>mc.abort(),20000);
+    const r=await fetch(`${MAPDB_URL}?s=${s}&w=${w}&n=${n}&e=${e}`,{signal:mc.signal});clearTimeout(mt);
+    if(r.ok){const j=await r.json();if(j&&Array.isArray(j.elements)){osmCache.set(key,j);return j;}}}catch(err){}
   const b=`${s},${w},${n},${e}`;
   const q=`[out:json][timeout:110];(
 node["natural"~"^(peak|saddle)$"]["name"](${b});
