@@ -38,6 +38,8 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 <section class="panel">
   <div class="step">① GPX 불러오기</div>
   <div class="drop" id="drop">GPX 파일을 끌어다 놓거나 눌러서 선택<input type="file" id="file" accept=".gpx" hidden></div>
+  <button id="btnPicker" type="button">📂 보관된 코스에서 가져오기 (gpx-map에서 편집한 지명 그대로)</button>
+  <div id="nameSrc" class="hint"></div>
   <label class="field">산행지 메인 제목<input type="text" id="title" placeholder="GPX 이름이 자동으로 들어갑니다"></label>
   <label class="field">코스 설명 (부제목)<input type="text" id="subtitle" placeholder="지점 이름으로 자동 작성 — 직접 고칠 수 있어요"></label>
   <div class="row">
@@ -102,6 +104,14 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 </section>
 </main>
 
+<div id="pickerOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center">
+  <div style="background:#fffdf8;border-radius:12px;padding:18px;width:min(460px,92vw);max-height:80vh;display:flex;flex-direction:column;gap:10px">
+    <div class="step">📂 보관된 코스 (GitHub tracks/)</div>
+    <input type="text" id="pickerQ" placeholder="파일명으로 검색 (예: 운장산)">
+    <div id="pickerList" style="overflow:auto;flex:1;display:flex;flex-direction:column;gap:2px;font-size:14px"></div>
+    <button id="pickerClose" type="button">닫기</button>
+  </div>
+</div>
 <script>
 'use strict';
 let W=1920,H=1080;
@@ -272,7 +282,7 @@ function marker(x,y,label,kind){
 }
 
 /* ---------- 신문형 등산지도 ---------- */
-const isPass=n=>/재|치|령|고개|평전|갈림|삼거리|사거리|쉼터|대피소|안부|폭포|계곡|입구|주차장|마을|교$|역$/.test(n)&&!/봉$|산$/.test(n);
+const isPass=n=>/재|치|령|고개|목$|평전|갈림|삼거리|사거리|쉼터|대피소|안부|폭포|계곡|입구|주차장|마을|교$|역$/.test(n)&&!/봉$|산$/.test(n);
 function renderNews(){
   const r=rng(seed*7919+13);
   // 경로 비율에 맞춰 가로/세로 결정
@@ -906,6 +916,58 @@ ${info}
 - 라벨끼리 겹치지 않게 배치`;
 }
 
+
+// ── 보관된 코스(GitHub hjwpro1971/gaja 저장소 tracks/) — gpx-map에서 지명을 편집해 올린 GPX. 공개 저장소라 토큰 없이 읽음
+let pickerFiles=null;
+async function openPicker(){
+  $('pickerOv').style.display='flex';const L=$('pickerList');
+  if(!pickerFiles){L.innerHTML='<div class="hint">불러오는 중…</div>';
+    try{const r=await fetch('https://api.github.com/repos/hjwpro1971/gaja/contents/tracks',{headers:{Accept:'application/vnd.github.v3+json'}});if(!r.ok)throw new Error('HTTP '+r.status);
+      pickerFiles=(await r.json()).filter(f=>f.type==='file'&&/\.gpx$/i.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name,'ko'));}
+    catch(e){L.innerHTML='<div class="hint">⚠️ 목록을 받지 못했습니다: '+e.message+'</div>';return;}}
+  showPicker();$('pickerQ').focus();}
+function showPicker(){const q=$('pickerQ').value.trim().toLowerCase(),L=$('pickerList');L.innerHTML='';
+  const fs=pickerFiles.filter(f=>!q||f.name.toLowerCase().includes(q));
+  if(!fs.length){L.innerHTML='<div class="hint">일치하는 코스가 없습니다.</div>';return;}
+  fs.forEach(f=>{const d=document.createElement('div');d.textContent=f.name.replace(/\.gpx$/i,'');d.style.cssText='padding:7px 8px;border-radius:6px;cursor:pointer';
+    d.onmouseenter=()=>d.style.background='#f3e5cc';d.onmouseleave=()=>d.style.background='';
+    d.onclick=async()=>{d.textContent='⏳ '+d.textContent;try{const r=await fetch(f.download_url);if(!r.ok)throw new Error('HTTP '+r.status);
+      const b=await r.blob();$('pickerOv').style.display='none';load(new File([b],f.name));}catch(e){alert('불러오지 못했습니다: '+e.message);}};
+    L.appendChild(d);});}
+// ── GPX에 지점(<wpt>)이 없을 때: 지도 DB에서 경로 근처 실제 지명을 찾아 지점으로 (gpx-map·tourist_map과 같은 방식)
+//    "봉우리" 같은 자동 이름 대신 운장산 서봉·연석산·늦은목이 처럼 실제 이름이 붙는다
+async function autoNameFromDB(g){
+  const pts=g.pts,lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon),pad=.01;
+  const base=MAPDB_URL.replace(/\/bbox$/,'/pois');
+  const r=await fetch(`${base}?s=${Math.min(...lats)-pad}&w=${Math.min(...lons)-pad}&n=${Math.max(...lats)+pad}&e=${Math.max(...lons)+pad}&kakao=1`,{signal:AbortSignal.timeout(60000)});
+  if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();
+  const ty=p=>p.natural==='peak'?'peak':p.natural==='saddle'?'pass':p.amenity==='place_of_worship'?'temple':p.natural==='spring'?'spring':(p.amenity==='shelter'||p.tourism==='alpine_hut')?'shelter':p.tourism==='viewpoint'?'view':null;
+  const cands=[...(j.custom||[]).map(p=>({...p,pri:5})),...(j.osm||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:p.ele,type:ty(p),pri:3})),
+    ...(j.kakao||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:null,type:p.type==='pass'?'pass':p.type,pri:2}))]
+    .filter(c=>c.name&&/[가-힣]/.test(c.name)&&!/삼각점|헬기장|^봉우리$|주차장|화장실|^정자$|^쉼터$/.test(c.name)&&['peak','pass','temple','spring','shelter','view','rest','waterfall'].includes(c.type));
+  // 각 후보의 경로 위 위치(가까운 트랙점)와 거리
+  const step=Math.max(1,Math.floor(pts.length/1500)),cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+hav(pts[i-1],pts[i]));
+  const lim={peak:150,pass:120,temple:120,spring:100,shelter:150,view:100,rest:80,waterfall:100};
+  const hits=[];for(const c of cands){let bi=0,bd=1e9;for(let i=0;i<pts.length;i+=step){const d=hav(pts[i],c);if(d<bd){bd=d;bi=i;}}
+    if(bd<=(lim[c.type]||100)*(c.pri===5?1.5:1))hits.push({...c,idx:bi,d:bd,at:cum[bi]});}
+  // 경로를 따라 300m 안에 겹치면 하나만 (직접 입력 > OSM > 카카오, 같으면 더 가까운 것)
+  hits.sort((a,b)=>b.pri-a.pri||a.d-b.d);const kept=[];
+  for(const h of hits){if(kept.some(k=>Math.abs(k.at-h.at)<300||k.name===h.name))continue;if(h.at<200||cum[cum.length-1]-h.at<200)continue;kept.push(h);}
+  kept.sort((a,b)=>a.idx-b.idx);
+  // 출발·도착 이름: 근처(800m) 후보 중 가장 가까운 것 — 없으면 이름 없이 (출발)/(도착)
+  const endName=pt=>{let best=null,bd=800;for(const c of cands){const d=hav(pt,c);if(d<bd){bd=d;best=c.name;}}return best||'';};
+  const s0=pts[0],s1=pts[pts.length-1];
+  g.wps=[{lat:s0.lat,lon:s0.lon,ele:s0.ele,name:endName(s0)},...kept.map(k=>({lat:pts[k.idx].lat,lon:pts[k.idx].lon,ele:k.ele!=null?k.ele:pts[k.idx].ele,name:k.name})),
+    {lat:s1.lat,lon:s1.lon,ele:s1.ele,name:endName(s1)}];
+  return kept.length;}
+function setTitles(g){
+  // 제목: GPX 이름(메타데이터/트랙 이름, 없으면 파일명) — 날짜 꼬리(_20191208 등)는 뗀다
+  const gname=g.name.replace(/[_\s-]*\d{6,8}[^가-힣]*$/,'').replace(/_+/g,' ').trim();
+  $('title').value=`${gname||'산행'} 산행 안내도`;
+  // 부제목: 지점 이름을 순서대로 (갈림길·삼거리 같은 일반 이름은 뺌)
+  const nm=g.list.map(w=>w.name).filter(n=>n&&!/^(갈림길|삼거리|사거리|이정표|쉼터|헬기장|삼각점|봉우리|주차장)$/.test(n));const u=[...new Set(nm)];
+  const pick=u.length>6?[0,1,2,3,4,5].map(i=>u[Math.round(i*(u.length-1)/5)]):u;$('subtitle').value=pick.length>1?[...new Set(pick)].join(' - ')+' 코스':'';}
+
 /* ---------- UI ---------- */
 function renderList(){
   const box=$('wpList');box.innerHTML='';let no=0;
@@ -926,16 +988,18 @@ async function load(file){
     $('dist').value=`약 ${(d/1000).toFixed(1)}km`;
     const t0=g.pts[0].t,t1=g.pts[g.pts.length-1].t;
     if(t0&&t1&&t1>t0){const m=Math.round((t1-t0)/60000);$('time').value=`약 ${Math.floor(m/60)}시간${m%60?' '+(m%60)+'분':''}`;}else $('time').value='';
-    // 제목: GPX 이름(메타데이터/트랙 이름, 없으면 파일명) — 날짜 꼬리(_20191208 등)는 뗀다
-    const gname=g.name.replace(/[_\s-]*\d{6,8}[^가-힣]*$/,'').replace(/_+/g,' ').trim();
-    $('title').value=`${gname||'산행'} 산행 안내도`;
-    // 부제목: GPX 지점 이름을 순서대로 (갈림길·삼거리 같은 일반 이름은 뺌)
-    {const nm=g.list.map(w=>w.name).filter(n=>n&&!/^(갈림길|삼거리|사거리|이정표|쉼터|헬기장|삼각점|봉우리|주차장)$/.test(n));const u=[...new Set(nm)];
-     const pick=u.length>6?[0,1,2,3,4,5].map(i=>u[Math.round(i*(u.length-1)/5)]):u;$('subtitle').value=pick.length>1?[...new Set(pick)].join(' - ')+' 코스':'';}
+    setTitles(g);
     $('emptyMsg').hidden=true;cv.hidden=false;['btnSeed','btnPng','btnCopy'].forEach(id=>$(id).disabled=false);
     seed=1;renderList();render();
+    const hadWpt=g.wps.length>0;
+    $('nameSrc').textContent=hadWpt?`✅ GPX에 저장된 지명 ${g.wps.length}개를 그대로 씁니다.`:'⏳ GPX에 지명이 없어 지도 DB에서 경로 근처 지명을 찾는 중…';
+    if(!hadWpt){try{const n=await autoNameFromDB(g);if(G!==g)return;g.list=buildWaypoints(g);setTitles(g);renderList();render();
+        $('nameSrc').textContent=`ℹ️ GPX에 지명이 없어 지도 DB에서 경로 근처 지명 ${n}개를 붙였습니다. 목록에서 고칠 수 있어요 (편집한 코스는 「보관된 코스」로 불러오세요).`;}
+      catch(e){$('nameSrc').textContent='⚠️ GPX에 지명이 없고 지도 DB에도 연결하지 못해 높은 지점을 "봉우리"로 표시했습니다.';}}
   }catch(e){alert('GPX를 읽지 못했습니다: '+e.message);}
 }
+$('btnPicker').onclick=openPicker;$('pickerClose').onclick=()=>$('pickerOv').style.display='none';
+$('pickerQ').oninput=()=>pickerFiles&&showPicker();$('pickerOv').onclick=e=>{if(e.target.id==='pickerOv')$('pickerOv').style.display='none';};
 const drop=$('drop');
 drop.onclick=()=>$('file').click();
 $('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
