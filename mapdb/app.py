@@ -177,8 +177,10 @@ class H(BaseHTTPRequestHandler):
                         extra.ensure_kakao(s, w, n, e)
                     except Exception as ex:
                         sys.stderr.write(f'kakao 실패: {ex}' + chr(10))
-                return self.send(200, {'osm': osm_pois(s, w, n, e), 'custom': extra.custom_in(s, w, n, e),
-                                       'kakao': extra.kakao_in(s, w, n, e) if kk else []})
+                op = osm_pois(s, w, n, e)
+                names = {(x['name'] or '').replace(' ', '') for x in op}
+                return self.send(200, {'osm': op, 'custom': extra.custom_in(s, w, n, e),
+                                       'kakao': [k for k in extra.kakao_in(s, w, n, e) if extra.kakao_ok(k, names)] if kk else []})
             if p == '/mapdb/api/custom':
                 return self.send(200, {'pois': extra.custom_in()})
             if p == '/mapdb/api/stats':

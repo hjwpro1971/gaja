@@ -41,6 +41,13 @@ def db():
     CREATE INDEX IF NOT EXISTS kakao_cellx ON kakao_poi(cell);
     CREATE TABLE IF NOT EXISTS kakao_cell(cell TEXT PRIMARY KEY, fetched REAL, n INTEGER);
     """)
+    # 2026-11-08: tourist_map에서 옮긴 90개는 좌표가 대부분 틀려(OSM 대조 63개가 0.3~8.6km 어긋남, 백담사 7.4km 등)
+    # 사용 중지로 표시. 지우지는 않음 — active=1 인 것(앞으로 사람이 직접 확인해 넣는 것)만 내보낸다.
+    cols = [r[1] for r in c.execute('PRAGMA table_info(custom_poi)')]
+    if 'active' not in cols:
+        c.execute('ALTER TABLE custom_poi ADD COLUMN active INTEGER DEFAULT 1')
+        c.execute("UPDATE custom_poi SET active=0, note='tourist_map 원본 — 좌표 부정확(2026-11-08 OSM 대조: 90개 중 63개 0.3km 이상 어긋남), 사용 중지' WHERE note='tourist_map 원본'")
+        c.commit()
     return c
 
 
@@ -188,9 +195,9 @@ def kakao_in(s, w, n, e):
 
 def custom_in(s=None, w=None, n=None, e=None):
     c = db()
-    sql, args = 'SELECT id,mountain,name,lat,lon,ele,type FROM custom_poi', []
+    sql, args = 'SELECT id,mountain,name,lat,lon,ele,type FROM custom_poi WHERE active=1', []
     if s is not None:
-        sql += ' WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?'
+        sql += ' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?'
         args = [s, n, w, e]
     return [dict(zip(('id', 'mountain', 'name', 'lat', 'lon', 'ele', 'type'), r)) for r in c.execute(sql, args)]
 
@@ -199,7 +206,8 @@ def stats():
     c = db()
     purge_old(c)
     k = c.execute('SELECT count(*), min(fetched) FROM kakao_poi').fetchone()
-    return {'custom': c.execute('SELECT count(*) FROM custom_poi').fetchone()[0], 'kakao': k[0],
+    return {'custom': c.execute('SELECT count(*) FROM custom_poi WHERE active=1').fetchone()[0],
+            'custom_off': c.execute('SELECT count(*) FROM custom_poi WHERE active=0').fetchone()[0], 'kakao': k[0],
             'kakao_cells': c.execute('SELECT count(*) FROM kakao_cell').fetchone()[0],
             'kakao_oldest': time.strftime('%Y-%m-%d', time.localtime(k[1])) if k[1] else None,
             'kakao_types': dict(c.execute('SELECT type,count(*) FROM kakao_poi GROUP BY type')),
@@ -211,6 +219,14 @@ TYPE_TAGS = {'peak': {'natural': 'peak'}, 'spring': {'natural': 'spring'}, 'shel
              'rest': {'amenity': 'shelter'}, 'temple': {'amenity': 'place_of_worship', 'religion': 'buddhist'},
              'waterfall': {'waterway': 'waterfall'}, 'viewpoint': {'tourism': 'viewpoint'}, 'valley': {'natural': 'valley'},
              'rock': {'natural': 'rock'}, 'pass': {'natural': 'saddle'}, 'poi': {'tourism': 'attraction'}}
+
+
+def kakao_ok(p, osm_names):
+    """카카오 장소를 쓸지: 봉우리·능선·바위 등 자연 지형은 카카오 좌표가 주소·입구 기준이라 자주 틀림 → OSM만 믿는다.
+    OSM에 같은 이름이 범위 안에 있으면(거리 무관) 그쪽 위치가 맞으므로 카카오 것은 버린다."""
+    if p['type'] in ('peak', 'rock', 'valley') or re.search(r'능선|봉$|산$|바위', p['name']):
+        return False
+    return p['name'].replace(' ', '') not in osm_names
 
 
 def as_nodes(osm_nodes, s, w, n, e, with_kakao=True):
@@ -233,8 +249,9 @@ def as_nodes(osm_nodes, s, w, n, e, with_kakao=True):
         out.append({'type': 'node', 'id': -1000000 - p['id'], 'lat': p['lat'], 'lon': p['lon'],
                     'tags': {'name': p['name'], 'source': 'manual', **({'ele': str(p['ele'])} if p['ele'] else {}), **TYPE_TAGS.get(p['type'], {})}})
     if with_kakao:
+        osm_names = {(o['tags'].get('name:ko') or o['tags'].get('name') or '').replace(' ', '') for o in osm_nodes}
         for p in kakao_in(s, w, n, e):
-            if dup(p['name'], p['lat'], p['lon']):
+            if not kakao_ok(p, osm_names) or dup(p['name'], p['lat'], p['lon']):
                 continue
             out.append({'type': 'node', 'id': -int(p['kid']), 'lat': p['lat'], 'lon': p['lon'],
                         'tags': {'name': p['name'], 'source': 'kakao', 'kakao_category': p['category'], **TYPE_TAGS.get(p['type'], {})}})
