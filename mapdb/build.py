@@ -305,6 +305,13 @@ def main():
     db.commit()
     db.close()
     os.replace(out, DB)
+    try:  # OSM이 바뀌었으니 대표 능선·계곡 위치도 다시 맞춤
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import extra
+        k, _ = extra.rebuild_lines(DB)
+        log(f'대표 능선·계곡 {k}개 다시 맞춤')
+    except Exception as ex:
+        log(f'능선·계곡 다시 맞춤 실패: {ex}')
     log('DB 교체 완료 ✔')
 
 

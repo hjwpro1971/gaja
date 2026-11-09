@@ -165,6 +165,7 @@ class H(BaseHTTPRequestHandler):
                         sys.stderr.write(f'kakao 실패: {ex}' + chr(10))
                 r = bbox_query(s, w, n, e, q.get('only'))
                 if q.get('only') != 'hiking':
+                    r['elements'] += extra.lines_in(s, w, n, e)
                     r['elements'] += extra.as_nodes([x for x in r['elements'] if x['type'] == 'node'], s, w, n, e, kk)
                 return self.send(200, r)
             if p == '/mapdb/api/pois':
@@ -181,6 +182,8 @@ class H(BaseHTTPRequestHandler):
                 names = {(x['name'] or '').replace(' ', '') for x in op}
                 return self.send(200, {'osm': op, 'custom': extra.custom_in(s, w, n, e),
                                        'kakao': [k for k in extra.kakao_in(s, w, n, e) if extra.kakao_ok(k, names)] if kk else []})
+            if p == '/mapdb/api/lines':
+                return self.send(200, {'report': extra.lines_report()})
             if p == '/mapdb/api/custom':
                 return self.send(200, {'pois': extra.custom_in()})
             if p == '/mapdb/api/stats':
@@ -239,6 +242,11 @@ if __name__ == '__main__':
     n = extra.import_custom_once(os.path.join(DATA, 'mountain_pois.json'))
     if n:
         print(f'직접 입력 지점 {n}개 가져옴 (mountain_pois.json)', flush=True)
+    try:
+        k, _ = extra.rebuild_lines(DB)
+        print(f'대표 능선·계곡 {k}개', flush=True)
+    except Exception as ex:
+        print(f'능선·계곡 실패: {ex}', flush=True)
     threading.Thread(target=scheduler, daemon=True).start()
     print(f'mapdb listening on {port}, db={DB}, kakao={"on" if extra.KAKAO_KEY else "off"}', flush=True)
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()

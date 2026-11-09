@@ -275,3 +275,89 @@ def as_nodes(osm_nodes, s, w, n, e, with_kakao=True):
             out.append({'type': 'node', 'id': -int(p['kid']), 'lat': p['lat'], 'lon': p['lon'],
                         'tags': {'name': p['name'], 'source': 'kakao', 'kakao_category': p['category'], **TYPE_TAGS.get(p['type'], {})}})
     return out
+
+
+# ── 대표 능선·계곡 (famous_lines.json → 지도 DB의 실제 지점 위치로 이어 붙여 저장) ──
+LINES_JSON = os.environ.get('LINES_JSON', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'famous_lines.json'))
+MAX_GAP_KM = 9      # 이어지는 두 지점 간격 상한 — 넘으면 동명 다른 지점을 잡은 것으로 보고 그 지점은 버림
+NEAR_DEG = 0.3      # near 중심에서 이 범위 안의 지점만
+
+
+def _km(a, b):
+    return math.hypot((a[0] - b[0]) * 111, (a[1] - b[1]) * 111 * math.cos(math.radians(a[0])))
+
+
+GOOD_KIND = ('natural=', 'amenity=place_of_worship', 'amenity=shelter', 'tourism=alpine_hut', 'tourism=viewpoint', 'waterway=', 'place=')
+
+
+def _find(m, v, mt, cy, cx):
+    """지점 이름 찾기: 정확히 같은 이름 우선, 없으면 '북한산(백운대)'·'가야산칠불봉'·'상왕봉(우두봉)'·'월악산 영봉' 같은 표기도.
+    안내판·정류장·주차장 등 이름에 지명이 들어간 시설은 제외."""
+    vv = v.replace(' ', '')
+    rows = m.execute('SELECT name,kind,lat,lon FROM poi WHERE replace(name," ","") LIKE ? AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?',
+                     (f'%{vv}%', cy - NEAR_DEG, cy + NEAR_DEG, cx - NEAR_DEG, cx + NEAR_DEG)).fetchall()
+    exact, loose = [], []
+    for name, kind, lat, lon in rows:
+        n = name.replace(' ', '')
+        if not kind.startswith(GOOD_KIND):
+            continue
+        if n == vv:
+            exact.append((lat, lon))
+        elif re.fullmatch(rf'.{{0,6}}\(?{re.escape(vv)}\)?(\(.{{1,8}}\))?', n) and (n.startswith(vv) or n.endswith(vv) or n.endswith(vv + ')') or n.startswith(mt.replace(' ', ''))):
+            loose.append((lat, lon))
+    return exact + loose  # 둘 다 후보 — 위치(앞 지점과의 거리)로 고름 (태백산 '장군봉'이 다른 산 장군봉으로 잡히던 문제)
+
+
+def rebuild_lines(main_db_path):
+    """famous_lines.json을 지도 DB(poi)로 검증해 famous_line 표를 새로 만든다. 반환: (저장 수, 보고 목록)."""
+    if not os.path.exists(LINES_JSON) or not os.path.exists(main_db_path):
+        return 0, []
+    src = json.load(open(LINES_JSON, encoding='utf-8')).get('lines', [])
+    m = sqlite3.connect(f'file:{main_db_path}?mode=ro', uri=True)
+    rows, report = [], []
+    for L in src:
+        cy, cx = L['near']
+        pts, miss = [], []
+        for v in L['via']:
+            cand = _find(m, v, L.get('mt') or '', cy, cx)
+            if not cand:
+                miss.append(v)
+                continue
+            ref = pts[-1] if pts else (cy, cx)
+            best = min(cand, key=lambda p: _km(p, ref))
+            if pts and _km(best, pts[-1]) > MAX_GAP_KM:
+                miss.append(v + '(멀어서 제외)')
+                continue
+            pts.append((round(best[0], 6), round(best[1], 6)))
+        ok = len(pts) >= 2
+        report.append({'n': L['n'], 'mt': L.get('mt'), 'ok': ok, 'found': len(pts), 'total': len(L['via']), 'miss': miss})
+        if ok:
+            lats, lons = [p[0] for p in pts], [p[1] for p in pts]
+            rows.append((L['n'], L['t'], L.get('mt'), json.dumps(pts), min(lats), max(lats), min(lons), max(lons)))
+    m.close()
+    with _lock:
+        c = db()
+        c.executescript('DROP TABLE IF EXISTS famous_line; CREATE TABLE famous_line(name TEXT, type TEXT, mountain TEXT, pts TEXT, s REAL, n REAL, w REAL, e REAL);')
+        c.executemany('INSERT INTO famous_line VALUES(?,?,?,?,?,?,?,?)', rows)
+        c.execute('CREATE TABLE IF NOT EXISTS famous_line_report(k TEXT PRIMARY KEY, v TEXT)')
+        c.execute('INSERT OR REPLACE INTO famous_line_report VALUES(?,?)', ('last', json.dumps(report, ensure_ascii=False)))
+        c.commit()
+    return len(rows), report
+
+
+def lines_in(s, w, n, e):
+    c = db()
+    try:
+        return [{'type': 'fline', 'name': r[0], 't': r[1], 'mountain': r[2], 'pts': json.loads(r[3])} for r in c.execute(
+            'SELECT name,type,mountain,pts FROM famous_line WHERE n>=? AND s<=? AND e>=? AND w<=?', (s, n, w, e))]
+    except sqlite3.OperationalError:
+        return []
+
+
+def lines_report():
+    c = db()
+    try:
+        r = c.execute("SELECT v FROM famous_line_report WHERE k='last'").fetchone()
+        return json.loads(r[0]) if r else []
+    except sqlite3.OperationalError:
+        return []
