@@ -97,8 +97,8 @@ def classify(cat, name):
 
 
 def _get(url):
-    # 이 키는 웹(JavaScript)용 앱 키라 KA 헤더(출처)가 필요하다 — tourist_map이 보내던 값과 같게
-    req = urllib.request.Request(url, headers={'Authorization': f'KakaoAK {KAKAO_KEY}', 'KA': os.environ.get('KAKAO_KA', 'sdk/1.0 os/web origin/http://192.168.219.109')})
+    # 정식 REST API 키(서버용) — Authorization만으로 호출한다. 웹용 JavaScript 키를 쓰던 예전 방식(KA 헤더로 웹 주소를 흉내)은 폐기(2026-11-09).
+    req = urllib.request.Request(url, headers={'Authorization': f'KakaoAK {KAKAO_KEY}'})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
 

@@ -85,14 +85,14 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <label class="chk"><input type="checkbox" id="optProfile">하단 고도 프로필 단면도</label>
     <label class="chk"><input type="checkbox" id="optLegend" checked>관광안내도 범례 (Legend)</label>
     <label class="chk"><input type="checkbox" id="optScale" checked>축척 막대 (0 — 500m)</label>
-    <div class="step" style="font-size:13px">🎨 지도 표현 (국제신문식)</div>
+    <div class="step" style="font-size:13px">🎨 지도 표현</div>
     <label class="field">글꼴
       <select id="optFont" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
         <option value="pretendard" selected>Pretendard (깔끔)</option><option value="noto">Noto Sans KR (본고딕)</option><option value="nanum">나눔고딕</option><option value="malgun">맑은 고딕 (기존)</option>
       </select></label>
     <label class="field">지형 표현
       <select id="optRelief" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
-        <option value="contour" selected>등고선</option><option value="ridge">능선 줄기 (국제신문식)</option><option value="both">능선 줄기 + 옅은 등고선</option>
+        <option value="contour" selected>등고선</option><option value="ridge">능선 줄기</option><option value="both">능선 줄기 + 옅은 등고선</option>
       </select></label>
     <label class="chk"><input type="checkbox" id="optWhite">흰 바탕 (녹색 음영 빼고 등고선 옅게)</label>
     <label class="chk"><input type="checkbox" id="optDash">산행로 점선 (답사산행로 빨간 점선)</label>
@@ -546,7 +546,7 @@ async function renderReal(){
   if(RELIEF!=='ridge')for(let lv=lv0;lv<emax;lv+=iv){const ix=Math.round(lv/iv)%5===0;{const wb=$('optWhite').checked||RELIEF==='both';ctx.strokeStyle=ix?(wb?'rgba(45,145,160,.5)':'rgba(45,145,160,.75)'):(wb?'rgba(70,165,175,.25)':'rgba(70,165,175,.45)');ctx.lineWidth=ix?(wb?1.1:1.45):(wb?.7:.85);}ctx.beginPath();
     contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);if(ix&&++segN%9===0)cLab.push({lv,x:(p[0]+q[0])/2,y:(p[1]+q[1])/2,a:Math.atan2(q[1]-p[1],q[0]-p[0])});});
     if(RELIEF==='both'){ctx.globalAlpha=.55;ctx.stroke();ctx.globalAlpha=1;}else ctx.stroke();}
-  // 능선 줄기 (국제신문식): 고도를 뒤집어 물이 '위로' 흐른다고 보고 모이는 길 = 능선. 많이 모일수록 굵게
+  // 능선 줄기: 고도를 뒤집어 물이 '위로' 흐른다고 보고 모이는 길 = 능선. 많이 모일수록 굵게
   if(RELIEF!=='contour'){const N=gw*gh,rec=new Int32Array(N).fill(-1),acc=new Float32Array(N).fill(1),ord=new Uint32Array(N);
     const nb=[[-1,-1,1.414],[0,-1,1],[1,-1,1.414],[-1,0,1],[1,0,1],[-1,1,1.414],[0,1,1],[1,1,1.414]];
     // 상자 흐림(반경 r)을 가로·세로로
@@ -563,7 +563,7 @@ async function renderReal(){
     const wid=a=>Math.min(7,.9+Math.log2(a/T)*1.05),seen=new Uint8Array(N),strokes=[];
     const heads=[];for(let o=0;o<N;o++)if(acc[o]>=T&&cvx(o))heads.push(o);heads.sort((a,b)=>acc[a]-acc[b]); // 가는 끝부터
     for(const h of heads){if(seen[h])continue;let o=h;const pts=[];while(o>=0&&acc[o]>=T&&cvx(o)){pts.push(o);if(seen[o])break;seen[o]=1;o=rec[o];}if(o>=0&&pts.length&&!seen[o])pts.push(o);if(pts.length>1)strokes.push(pts);}
-    // 계단 모양을 없애려고 좌표를 앞뒤 3칸씩 평균, 굵기도 부드럽게. 국제신문처럼 진한 테두리 + 연한 녹색 띠
+    // 계단 모양을 없애려고 좌표를 앞뒤 3칸씩 평균, 굵기도 부드럽게. 진한 테두리 + 연한 녹색 띠
     const sm2=strokes.map(st=>{const P=st.map(o=>[(o%gw)*step,Math.floor(o/gw)*step,wid(acc[o])]);return P.map((p,k)=>{let x=0,y=0,w=0,c=0;for(let d=-3;d<=3;d++){const q=P[Math.max(0,Math.min(P.length-1,k+d))];x+=q[0];y+=q[1];w+=q[2];c++;}return[x/c,y/c,w/c*1.25];});});
     ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
     for(const [col,add] of [['rgba(255,255,255,.75)',4],['#5f9a57',1.6],['#a9d39b',0]])for(const P of sm2)for(let k=1;k<P.length;k++){ctx.beginPath();ctx.moveTo(P[k-1][0],P[k-1][1]);ctx.lineTo(P[k][0],P[k][1]);ctx.strokeStyle=col;ctx.lineWidth=P[k-1][2]+add;ctx.stroke();}
