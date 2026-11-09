@@ -598,8 +598,8 @@ async function renderReal(){
     const g=opt.gap||12;const cands=opt.center?[[-wd/2,-h/2]]:[[g,-h/2],[-g-wd,-h/2],[-wd/2,-h-g-(opt.up||0)],[-wd/2,g],[g,-h-4],[-g-wd,-h-4],[g,4],[-g-wd,4]];
     const nNear=cands.length;
     // 밀집 구간: 바로 옆이 막히면 좀 떨어진 빈자리에 두고 가는 지시선으로 잇는다(봉정암~쌍용폭포처럼 지점이 몰린 곳)
-    if(opt.lead)for(const r of [45,70,100,140])for(let a=0;a<12;a++){const ang=a*Math.PI/6,cx=x+Math.cos(ang)*r,cy=y+Math.sin(ang)*r;cands.push([cx-x-(Math.cos(ang)<-.3?wd:Math.cos(ang)>.3?0:wd/2),cy-y-(Math.sin(ang)<-.3?h:Math.sin(ang)>.3?0:h/2)]);}
-    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit({x:b.x-2,y:b.y-1,w:b.w+4,h:b.h+2}) /* 글자끼리 최소 간격 */+(i>=nNear?300:0);{const near=(px,py)=>Math.hypot(Math.max(b.x,Math.min(px,b.x+wd))-px,Math.max(b.y,Math.min(py,b.y+h))-py),own=near(x,y);for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&near(ax,ay)+4<own){sc+=2000;break;}} /* 남의 점에 더 가까운 자리는 피함(소청봉/중청봉 이름이 바뀌어 보이던 사례) */if(!best||sc<best.sc){best={...b,sc};bi=i;}});
+    if(opt.lead)for(const r of (opt.leadR||[45,70,100,140]))for(let a=0;a<12;a++){const ang=a*Math.PI/6,cx=x+Math.cos(ang)*r,cy=y+Math.sin(ang)*r;cands.push([cx-x-(Math.cos(ang)<-.3?wd:Math.cos(ang)>.3?0:wd/2),cy-y-(Math.sin(ang)<-.3?h:Math.sin(ang)>.3?0:h/2)]);}
+    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit({x:b.x-2,y:b.y-1,w:b.w+4,h:b.h+2}) /* 글자끼리 최소 간격 */+(i>=nNear?300:0);{const near=(px,py)=>Math.hypot(Math.max(b.x,Math.min(px,b.x+wd))-px,Math.max(b.y,Math.min(py,b.y+h))-py),own=near(x,y);if(!opt.noAnch)for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&near(ax,ay)+4<own){sc+=2000;break;}} /* 남의 점에 더 가까운 자리는 피함(소청봉/중청봉 이름이 바뀌어 보이던 사례) */if(!best||sc<best.sc){best={...b,sc};bi=i;}});
     if(bi>=nNear){const cx=Math.max(best.x,Math.min(x,best.x+wd)),cy=Math.max(best.y,Math.min(y,best.y+h));ctx.save();ctx.strokeStyle='rgba(60,60,60,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(cx,cy);ctx.stroke();ctx.restore();}
     if(opt.optional&&best.sc>=1000){ctx.restore();return false;}
     {const o=edOff(key,x,y);if(o){best={...best,x:best.x+o[0],y:best.y+o[1]};
@@ -640,6 +640,11 @@ async function renderReal(){
   const shown=G.list.filter(w=>w.show);const top=Math.max(...shown.map(w=>w.ele));
   const wpXY=shown.map(w=>xy[w.idx]);
   wpXY.forEach(([x,y])=>{boxes.push({x:x-8,y:y-8,w:16,h:16});ANCH.push([x,y]);});
+  /* 대피소 점을 미리 등록: 나중에 그려도 GPX 지명이 대피소 점에 더 가까운 자리에 놓이지 않게 한다
+     (소청봉 이름이 소청대피소 점 옆에 놓였다는 이유로 소청대피소가 통째로 빠지던 문제) */
+  els.forEach(x=>{if(x.type!=='node'||!x.tags)return;const nn=x.tags['name:ko']||x.tags.name||'';
+    if(!(x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nn)))return;
+    const [hx,hy]=P.fwd(x.lat,x.lon);if(hx<0||hy<0||hx>W||hy>H||distToRoute(hx,hy)>Math.max(W,H)*.06*ZF||shown.some(w=>w.name===nn))return;ANCH.push([hx,hy]);});
   shown.forEach((w,i)=>{const [x,y]=wpXY[i];
     if(w.role){ // 출발·도착이 절·암자 등이면 그 아이콘도
       ctx.save();ctx.fillStyle='#d32f2f';ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,8,0,7);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,3,0,7);ctx.fill();ctx.restore();
@@ -690,8 +695,12 @@ async function renderReal(){
   const hutDone=new Set();
   byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
     const [px,py]=P.fwd(x.lat,x.lon);if(typoWp(px,py,80,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
-    if(!dotOK(px,py))return;boxes.push({x:px-6,y:py-6,w:12,h:12});
-    if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
+    boxes.push({x:px-6,y:py-6,w:12,h:12});
+    const HR=[45,70,100,140,190,250];
+    let okH=label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true,leadR:HR});
+    if(!okH){kseen[n]=Math.max(0,(kseen[n]||1)-1);okH=label(px,py,[{t:n,font:`600 14px ${F1}`,color:'#3b4a55'}],{optional:true,gap:8,lead:true,leadR:HR});}
+    if(!okH){kseen[n]=Math.max(0,(kseen[n]||1)-1);okH=label(px,py,[{t:n,font:`600 14px ${F1}`,color:'#3b4a55'}],{optional:true,gap:8,lead:true,leadR:HR,noAnch:true});} /* 마지막 수단: 가는 선으로 이은 먼 자리 */
+    if(!okH){kseen[n]=Math.max(0,(kseen[n]||1)-1);boxes.pop();return;}
     if(!drawIcon('rest',px,py,0)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
   const tileName=(px,py,t)=>{const key=lkey(t);if(ED.hid.has(key))return true;const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
