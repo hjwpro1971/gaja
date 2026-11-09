@@ -996,13 +996,18 @@ function drawProfile(F1,PH,shown){
   const gr=ctx.createLinearGradient(0,T,0,B);gr.addColorStop(0,'rgba(76,160,90,.55)');gr.addColorStop(1,'rgba(76,160,90,.08)');ctx.fillStyle=gr;ctx.fill();
   ctx.beginPath();for(let j=0;j<n;j++){const x=X(cum[at(j)]),y=Y(es[at(j)]);j?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.strokeStyle='#2e6b34';ctx.lineWidth=2.2;ctx.stroke();
   // 지점: 곡선 위 빨간 점 + 위쪽 이름 (가까우면 두 줄로 번갈아, 그래도 겹치면 이름 생략)
-  ctx.font=`bold 17px ${F1}`;const ttw=ctx.measureText('고도 프로필').width;const used=[{x:x0+18+ttw/2,w:ttw+10,row:0}]; // 제목 자리는 지점 이름이 피함
+  /* 이름 자리 후보: 위 두 줄 × (가운데/오른쪽 끝맞춤/왼쪽 시작맞춤), 그래도 없으면 곡선보다 위쪽 여유가 있을 때 셋째 줄. 모든 지점이 이름을 갖도록 함 */
+  ctx.font=`bold 17px ${F1}`;const ttw=ctx.measureText('고도 프로필').width;const used=[{a:x0+18,b:x0+18+ttw,row:0}]; // 제목 자리는 지점 이름이 피함
   shown.slice().sort((a,b)=>a.idx-b.idx).forEach(wp=>{const x=X(cum[wp.idx]),y=Y(es[wp.idx]),t=wp.name||'';ctx.font=`600 14px ${F1}`;const tw=ctx.measureText(t).width;
-    let row=0;while(row<2&&used.some(u=>u.row===row&&Math.abs(u.x-x)<(u.w+tw)/2+8))row++;if(row<2)used.push({x,w:tw,row});
-    const ly=row===0?T-30:T-12;
+    const free=(row,a,b)=>!used.some(u=>u.row===row&&a<u.b+8&&b>u.a-8);
+    const cands=[];for(const row of [0,1]){cands.push([row,'center',x-tw/2,x+tw/2]);cands.push([row,'right',x+6-tw,x+6]);cands.push([row,'left',x-6,x-6+tw]);}
+    if(y>T+30)cands.push([2,'center',x-tw/2,x+tw/2]);
+    const pick=t?cands.find(c=>c[2]>=x0+4&&c[3]<=x0+w-4&&free(c[0],c[2],c[3])):null;
+    const row=pick?pick[0]:0,ly=row===0?T-30:row===1?T-12:T+6;
+    if(pick)used.push({a:pick[2],b:pick[3],row});
     ctx.setLineDash([3,3]);ctx.strokeStyle='rgba(215,38,46,.5)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,ly+4);ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle='#d7262e';ctx.beginPath();ctx.arc(x,y,4,0,7);ctx.fill();
-    if(row<2&&t){ctx.textAlign='center';ctx.lineWidth=4;ctx.strokeStyle='#fff';ctx.strokeText(t,x,ly);ctx.fillStyle='#333';ctx.fillText(t,x,ly);}});
+    if(pick){ctx.textAlign=pick[1];ctx.lineWidth=4;ctx.strokeStyle='#fff';ctx.strokeText(t,pick[1]==='center'?x:pick[1]==='right'?x+6:x-6,ly);ctx.fillStyle='#333';ctx.fillText(t,pick[1]==='center'?x:pick[1]==='right'?x+6:x-6,ly);}});
   ctx.restore();}
 // 캔버스를 지도 영역에 꽉 차게(비율 유지) 표시
 function fitCanvas(){const box=$('cvBox');if(!box||cv.hidden)return;const r=box.getBoundingClientRect();const k=Math.min(r.width/W,r.height/H);cv.style.width=Math.floor(W*k)+'px';cv.style.height=Math.floor(H*k)+'px';}
