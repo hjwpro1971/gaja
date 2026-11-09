@@ -946,7 +946,6 @@ function boardLayout(PH){
   if(L.stats)L.reserve.push({x:L.stats.x-12,y:L.stats.y-12,w:L.stats.w+24,h:L.stats.h+24});
   L.reserve.push({x:L.north.x-40,y:L.north.y-50,w:80,h:100});
   if(L.legend)L.reserve.push({x:L.legend.x-12,y:L.legend.y-12,w:L.legend.w+24,h:L.legend.h+24});
-  {let x=W-150,y=H-PH-150;const d=ED.off['__stamp'];if(d){x+=d[0];y+=d[1];}x=Math.max(8,Math.min(W-118,x));y=Math.max(8,Math.min(H-118,y));if(!ED.hid.has('__stamp'))L.reserve.push({x:x-6,y:y-6,w:122,h:122});}
   if($('optScale').checked){let x=(L.legend?L.legend.x+L.legend.w+30:40),y=H-PH-34;const d=ED.off['__scale'];if(d){x+=d[0];y+=d[1];}L.reserve.push({x:x-14,y:y-32,w:260,h:48});}
   if(PH)L.reserve.push({x:0,y:H-PH-6,w:W,h:PH+6});
   L.reserve.push({x:W-600,y:H-PH-34,w:590,h:28});
@@ -979,12 +978,6 @@ function drawBoard(L,F1,iv,PH,shown){
     ctx.save();ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillRect(x-10,y-28,len+80,40);ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y-8);ctx.lineTo(x,y);ctx.lineTo(x+len,y);ctx.lineTo(x+len,y-8);ctx.stroke();
     ctx.fillStyle='#333';ctx.fillRect(x,y-4,len/2,4);ctx.font=`600 15px ${F1}`;ctx.textAlign='center';ctx.fillText('0',x,y-12);ctx.fillText(nice>=1000?(nice/1000)+'km':nice+'m',x+len,y-12);ctx.restore();
     if(G._lbl)G._lbl.push({key:'__scale',x:x-10,y:y-28,w:len+80,h:40});}
-  // 직인: gajaGO / 가자고
-  {let x=W-150,y=H-PH-150;const d=ED.off['__stamp'];if(d){x+=d[0];y+=d[1];}x=Math.max(8,Math.min(W-118,x));y=Math.max(8,Math.min(H-118,y));
-   if(!ED.hid.has('__stamp')){ctx.save();ctx.translate(x+55,y+55);ctx.rotate(-.12);ctx.globalAlpha=.85;ctx.strokeStyle='#c62828';ctx.fillStyle='rgba(255,255,255,.55)';
-     ctx.lineWidth=4;ctx.beginPath();ctx.roundRect(-50,-50,100,100,10);ctx.fill();ctx.stroke();ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(-43,-43,86,86,7);ctx.stroke();
-     ctx.fillStyle='#c62828';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`bold 21px ${F1}`;ctx.fillText('gajaGO',0,-15);ctx.font=`900 27px ${F1}`;ctx.fillText('가자고',0,17);ctx.restore();
-     if(G._lbl)G._lbl.push({key:'__stamp',x,y,w:110,h:110});}}
   if(PH)drawProfile(F1,PH,shown);}
 // 하단 고도 단면도: 거리-고도 그래프 + 지점 표시
 function drawProfile(F1,PH,shown){
