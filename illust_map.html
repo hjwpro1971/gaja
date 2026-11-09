@@ -577,6 +577,7 @@ async function renderReal(){
   const hit=b=>{let sc=0;if(b.x<18||b.y<18||b.x+b.w>W-18||b.y+b.h>H-18)sc+=5000;for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)sc+=1000;
     for(const p of samples)if(p[0]>b.x-3&&p[0]<b.x+b.w+3&&p[1]>b.y-3&&p[1]<b.y+b.h+3)sc+=60;return sc;};
   const LBL=G._lbl=[],kseen={};G._P=P;const ANCH=[];
+  const dotOK=(px,py)=>{for(const b of LBL){if(b.ax==null)continue;const d=(x,y)=>Math.hypot(Math.max(b.x,Math.min(x,b.x+b.w))-x,Math.max(b.y,Math.min(y,b.y+b.h))-y);if(d(px,py)+4<d(b.ax,b.ay))return false;}return true;}; // 남의 이름 옆에 새 점이 찍혀 헷갈리지 않게
   const edOff=(key,x,y)=>{const o=ED.off[key];if(!o||o.length<4)return null;const [ax,ay]=P.fwd(o[2],o[3]);return Math.hypot(ax-x,ay-y)<25?o:null;}; // 이미 그린 지점(점) 위치들
   const ZF=Math.max(1,zoomF),Z2=ZF*ZF; // 확대해도 지명이 빠지지 않게 — 기준을 화면이 아니라 땅 기준으로
   const lkey=t=>t+'#'+(kseen[t]=(kseen[t]||0)+1);
@@ -588,13 +589,13 @@ async function renderReal(){
     const nNear=cands.length;
     // 밀집 구간: 바로 옆이 막히면 좀 떨어진 빈자리에 두고 가는 지시선으로 잇는다(봉정암~쌍용폭포처럼 지점이 몰린 곳)
     if(opt.lead)for(const r of [45,70,100,140])for(let a=0;a<12;a++){const ang=a*Math.PI/6,cx=x+Math.cos(ang)*r,cy=y+Math.sin(ang)*r;cands.push([cx-x-(Math.cos(ang)<-.3?wd:Math.cos(ang)>.3?0:wd/2),cy-y-(Math.sin(ang)<-.3?h:Math.sin(ang)>.3?0:h/2)]);}
-    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit(b)+(i>=nNear?300:0);if(i>=nNear){const cx=b.x+wd/2,cy=b.y+h/2,own=Math.hypot(cx-x,cy-y);for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&Math.hypot(cx-ax,cy-ay)<own){sc+=2000;break;}}if(!best||sc<best.sc){best={...b,sc};bi=i;}});
+    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit(b)+(i>=nNear?300:0);{const near=(px,py)=>Math.hypot(Math.max(b.x,Math.min(px,b.x+wd))-px,Math.max(b.y,Math.min(py,b.y+h))-py),own=near(x,y);for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&near(ax,ay)+4<own){sc+=2000;break;}} /* 남의 점에 더 가까운 자리는 피함(소청봉/중청봉 이름이 바뀌어 보이던 사례) */if(!best||sc<best.sc){best={...b,sc};bi=i;}});
     if(bi>=nNear){const cx=Math.max(best.x,Math.min(x,best.x+wd)),cy=Math.max(best.y,Math.min(y,best.y+h));ctx.save();ctx.strokeStyle='rgba(60,60,60,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(cx,cy);ctx.stroke();ctx.restore();}
     if(opt.optional&&best.sc>=1000){ctx.restore();return false;}
     {const o=edOff(key,x,y);if(o){best={...best,x:best.x+o[0],y:best.y+o[1]};
       // 멀리 옮겼으면 원래 지점과 가는 선으로 이어 줌
       const cx=Math.max(best.x,Math.min(x,best.x+wd)),cy=Math.max(best.y,Math.min(y,best.y+h));if(Math.hypot(cx-x,cy-y)>14){ctx.save();ctx.strokeStyle='rgba(60,60,60,.55)';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(cx,cy);ctx.stroke();ctx.restore();}}} // 편집에서 옮긴 거리
-    LBL.push({key,x:best.x,y:best.y,w:wd,h,ax:x,ay:y});ANCH.push([x,y]);
+    if(opt.center)LBL.push({key,x:best.x,y:best.y,w:wd,h});else{LBL.push({key,x:best.x,y:best.y,w:wd,h,ax:x,ay:y});ANCH.push([x,y]);}
     boxes.push(best);let yy=best.y;
     lines.forEach((l,i)=>{ctx.font=l.font;yy+=lh[i];let tx=best.x+(wd-ws[i])/2;ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='rgba(255,255,255,.95)';
       if(l.sp){for(const ch of l.t){ctx.strokeText(ch,tx,yy-4);ctx.fillStyle=l.color||'#222';ctx.fillText(ch,tx,yy-4);tx+=ctx.measureText(ch).width+l.sp;}}
@@ -653,14 +654,14 @@ async function renderReal(){
   const hutDone=new Set();
   byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
     const [px,py]=P.fwd(x.lat,x.lon);if(typoWp(px,py,80,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
-    boxes.push({x:px-6,y:py-6,w:12,h:12});
+    if(!dotOK(px,py))return;boxes.push({x:px-6,y:py-6,w:12,h:12});
     if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
     if(!drawIcon('rest',px,py,0)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
   const tileName=(px,py,t)=>{const key=lkey(t);if(ED.hid.has(key))return true;const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
     // 가로로 놓을 자리가 없으면 세로로 시도
     for(const vert of [false,true]){let b=vert?{x:px-s/2,y:py-tw/2,w:s,h:tw}:{x:px-tw/2,y:py-s/2,w:tw,h:s};if(hit(b)>=60)continue;
-      {const o=edOff(key,px,py);if(o)b={...b,x:b.x+o[0],y:b.y+o[1]};}LBL.push({key,x:b.x,y:b.y,w:b.w,h:b.h,ax:px,ay:py});boxes.push(b); // 산행로 위에는 놓지 않음
+      {const o=edOff(key,px,py);if(o)b={...b,x:b.x+o[0],y:b.y+o[1]};}LBL.push({key,x:b.x,y:b.y,w:b.w,h:b.h});boxes.push(b); // 산행로 위에는 놓지 않음
       ctx.save();ctx.font=`bold 28px ${F1}`;ctx.textAlign='center';ctx.textBaseline='middle';
       cs.forEach((ch,i)=>{const x=vert?b.x:b.x+i*(s+g),y=vert?b.y+i*(s+g):b.y;ctx.fillStyle='rgba(253,240,235,.5)';ctx.strokeStyle='rgba(207,143,128,.45)';ctx.lineWidth=1;
         ctx.beginPath();ctx.roundRect(x,y,s,s,6);ctx.fill();ctx.stroke();ctx.fillStyle='rgba(180,71,58,.55)';ctx.fillText(ch,x+s/2,y+s/2+1);});
@@ -693,12 +694,12 @@ async function renderReal(){
   nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);if(junk.test(nm(x))||nearWp(px,py,40,nm(x))||pkN>=pkCap||distToRoute(px,py)>pkFar)return;pkN++;
     const near=distToRoute(px,py)<Math.max(W,H)*.1*ZF; // 코스 인접 봉우리 / 원경 봉우리
     if(hit({x:px-10,y:py-13,w:20,h:14})>=1000)return; // 산 기호 자리에 이미 글자가 있으면 생략
-    tri(px,py,near?.55:.42);const el=parseFloat(x.tags.ele);
+    if(!dotOK(px,py))return;const ib={x:px-10,y:py-13,w:20,h:14};boxes.push(ib);const el=parseFloat(x.tags.ele);
     const f1=near?`500 17px ${F1}`:`15px ${F1}`,c1=near?'#555':'#888',a=near?1:.75;
-    label(px,py-6,isFinite(el)?[{t:nm(x),font:f1,color:c1,alpha:a},{t:Math.round(el)+'m',font:`${near?15:13}px ${F1}`,color:c1,alpha:a}]:[{t:nm(x),font:f1,color:c1,alpha:a}],{optional:true,gap:9});
-    boxes.push({x:px-10,y:py-13,w:20,h:14});}); // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
+    if(label(px,py-6,isFinite(el)?[{t:nm(x),font:f1,color:c1,alpha:a},{t:Math.round(el)+'m',font:`${near?15:13}px ${F1}`,color:c1,alpha:a}]:[{t:nm(x),font:f1,color:c1,alpha:a}],{optional:true,gap:9}))tri(px,py,near?.55:.42);
+    else boxes.splice(boxes.indexOf(ib),1);}); // 이름 자리가 없으면 아이콘도 그리지 않음 // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
   // 고개
-  let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x)))return;sdN++;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
+  let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x))||!dotOK(px,py))return;sdN++;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
   // 마을
   let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
   // 역·학교·절 — 절은 "이름 卍", 학교는 주황 지붕 건물 그림, 역은 흰 동그라미
@@ -711,10 +712,11 @@ async function renderReal(){
     const t=x.tags,temple=t.amenity==='place_of_worship'&&(t.religion==='buddhist'||/[사암]$/.test(nm(x)));
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
     if(nearWp(px,py,30,nm(x)))return; // GPX 지점과 같은(비슷한) 이름이면 생략 — GPX 지명이 우선
+    if(!dotOK(px,py))return; // 역·학교·절 점이 남의 이름 옆이면 생략
     if(temple&&tmN>=Math.round(6*A*Z2))return;if(t.amenity==='school'&&scN>=Math.round(5*A*Z2))return;
     const tk=temple?(poiKind(nm(x))==='hermitage'?'hermitage':'temple'):null,isz=12;
-    if(t.amenity==='school'){const ib={x:px-12,y:py-22,w:24,h:28};if(hit(ib)>=1000)return;boxes.push(ib);}
-    if(tk){const ib={x:px-6,y:py-6,w:12,h:12};if(hit(ib)>=1000)return;boxes.push(ib);}
+    if(t.amenity==='school'){const ib={x:px-12,y:py-22,w:24,h:28};if(hit(ib)>=1000||!dotOK(px,py))return;boxes.push(ib);}
+    if(tk){const ib={x:px-6,y:py-6,w:12,h:12};if(hit(ib)>=1000||!dotOK(px,py))return;boxes.push(ib);}
     const ok=label(px,py,[{t:nm(x),font:`${temple?'500 16':'15'}px ${F1}`,color:'#666'}],{optional:true,gap:t.amenity==='school'?14:tk?12:9});
     if(!ok){if(t.amenity==='school'||tk)boxes.pop();return;}
     if(temple)tmN++;if(t.amenity==='school')scN++;
@@ -733,7 +735,7 @@ async function renderReal(){
    byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||hutDone.has(n)||/^(정자|쉼터|약수터|샘터|샘|약수|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
      if(distToRoute(px,py)>Math.max(W,H)*.15*ZF)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
      const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?12:0;
-     {const ib={x:px-6,y:py-6,w:12,h:12};if(hit(ib)>=1000)return;boxes.push(ib);}
+     {const ib={x:px-6,y:py-6,w:12,h:12};if(hit(ib)>=1000||!dotOK(px,py))return;boxes.push(ib);}
      if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10})){boxes.pop();return;}
      if(!(img&&drawIcon(img,px,py,isz))){ctx.save();sym[kk](px,py);ctx.restore();}seen.add(n);k++;});
    // 주차장(P)·탐방지원센터(i) — 대표적인 것만
@@ -746,7 +748,7 @@ async function renderReal(){
     const put=(arr,ch,col,cap,ok,minEnd=45)=>{let k=0;const used=[];byNear(arr).forEach(x=>{if(k>=cap)return;const n=nm(x);const [px,py]=P.fwd(x.lat,x.lon);
       if(px<0||py<0||px>W||py>H||!ok(x,px,py))return;if(used.some(([a,b])=>Math.hypot(a-px,b-py)<60))return;
       if(nearEnd(px,py)<minEnd)return; // 출발·도착 표시와 겹치는 P/i는 생략 (출발·도착 마커가 대신함)
-      {const bb={x:px-14,y:py-11,w:28,h:22};if(hit(bb)>=1000)return;boxes.push(bb);} // 기호는 빈자리에만 (글자 위에 찍지 않음)
+      {const bb={x:px-14,y:py-11,w:28,h:22};if(hit(bb)>=1000||!dotOK(px,py))return;boxes.push(bb);} // 기호는 빈자리에만 (글자 위에 찍지 않음)
       const wpSame=wpNames.has(n)||typoWp(px,py,25,n); // GPX 지점과 같은 이름이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
       if(!wpSame&&!label(px,py,[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}],{optional:true,gap:13})){boxes.pop();return;}
       badge(px,py,ch,col);used.push([px,py]);k++;});};
@@ -774,7 +776,7 @@ async function renderReal(){
    cand.sort((a,b)=>b.e-a.e);let n=0;const maxN=Math.max(0,Math.round(7*A*Z2)-pkN),dFar=Math.max(W,H)*.2*ZF;
    for(const c of cand){if(n>=maxN)break;if(c.x<30||c.y<30||c.x>W-30||c.y>H-30)continue;if(hit({x:c.x-12,y:c.y-16,w:24,h:16})>=1000)continue;
      if(peakXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||wpXY.some(([a,b])=>Math.hypot(a-c.x,b-c.y)<70)||distToRoute(c.x,c.y)<14||distToRoute(c.x,c.y)>dFar)continue;
-     {const ib={x:c.x-8,y:c.y-10,w:16,h:11};boxes.push(ib); // 기호 자리 먼저 잡고 글자는 그 옆에
+     if(!dotOK(c.x,c.y))continue;{const ib={x:c.x-8,y:c.y-10,w:16,h:11};boxes.push(ib); // 기호 자리 먼저 잡고 글자는 그 옆에
       if(label(c.x,c.y-8,[{t:Math.round(c.e)+'m',font:`14px ${F1}`,color:'#888',alpha:.8}],{optional:true,gap:8})){tri(c.x,c.y,.4);peakXY.push([c.x,c.y]);n++;}else boxes.splice(boxes.indexOf(ib),1);}}}
 
   // 명판 등을 올리기 전의 지도만 따로 보관 → 확대·이동 미리보기 때 지도만 움직임
