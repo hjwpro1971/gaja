@@ -649,6 +649,7 @@ async function renderReal(){
   const nodes=els.filter(x=>x.type==='node'&&x.tags&&x.tags.name);
   const center=x=>x.type==='node'?[x.lat,x.lon]:x.geometry?[x.geometry.reduce((s,p)=>s+p.lat,0)/x.geometry.length,x.geometry.reduce((s,p)=>s+p.lon,0)/x.geometry.length]:x.bounds?[(x.bounds.minlat+x.bounds.maxlat)/2,(x.bounds.minlon+x.bounds.maxlon)/2]:null;
   const nm=x=>x.tags['name:ko']||x.tags.name;
+  const P0=x=>P.fwd(x.lat,x.lon);
   const byNear0=arr=>arr.map(x=>[(()=>{const [px,py]=P.fwd(x.lat,x.lon);return distToRoute(px,py);})(),x]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
   // 대피소·산장 (산행로 근처) — 밀집 구간에서 다른 지명에 밀려 빠지지 않게 먼저 그림(소청대피소 누락 사례)
   const hutDone=new Set();
@@ -657,6 +658,27 @@ async function renderReal(){
     if(!dotOK(px,py))return;boxes.push({x:px-6,y:py-6,w:12,h:12});
     if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
     if(!drawIcon('rest',px,py,0)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
+  // 대표 능선·계곡 이름: 지점들을 이은 선을 따라 한 글자씩 (능선=녹색, 계곡=파랑, 기울임)
+  const lineDone=new Set();
+  {const byName={};nodes.forEach(x=>{const n=nm(x);(byName[n]=byName[n]||[]).push(x);});
+   const pick=(n,near)=>{const c=byName[n];if(!c)return null;let b=null,bd=1e9;for(const x of c){const d=Math.hypot(x.lat-near[0],(x.lon-near[1])*.8);if(d<bd){bd=d;b=x;}}return bd<.25?b:null;};
+   for(const F of FAMOUS_LINES){const key=lkey(F.n);if(ED.hid.has(key))continue;
+     let P=F.via.map(v=>pick(v,F.near)).filter(Boolean).map(x=>P0(x));if(P.length<2)continue;
+     // 화면 안 부분만, 왼쪽→오른쪽으로 읽히게
+     if(P[0][0]>P[P.length-1][0])P.reverse();
+     const o=ED.off[key];if(o)P=P.map(([x,y])=>[x+o[0],y+o[1]]);
+     const seg=[0];for(let i=1;i<P.length;i++)seg.push(seg[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));const Ltot=seg[seg.length-1];
+     const font=`italic bold 19px ${F1}`;ctx.save();ctx.font=font;const cs=[...F.n].filter(c=>c!==' ');const cw=cs.map(c=>ctx.measureText(c).width);ctx.restore();
+     const base=cw.reduce((a,b)=>a+b,0);if(Ltot<base*1.2)continue;let sp=Math.min(26,(Ltot*.6-base)/Math.max(1,cs.length-1));sp=Math.max(4,sp);const tw=base+sp*(cs.length-1);
+     const at=d=>{let i=1;while(i<seg.length-1&&seg[i]<d)i++;const t=(d-seg[i-1])/((seg[i]-seg[i-1])||1),a=P[i-1],b=P[i];return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,Math.atan2(b[1]-a[1],b[0]-a[0])];};
+     let placed=null;
+     for(const frac of [.5,.35,.65,.25,.75]){const st=Ltot*frac-tw/2;if(st<0||st+tw>Ltot)continue;const g=[];let d=st,bad=false;
+       for(let k=0;k<cs.length;k++){const [x,y,a]=at(d+cw[k]/2);if(x<20||y<20||x>W-20||y>H-20){bad=true;break;}const bb={x:x-11,y:y-12,w:22,h:22};if(hit(bb)>=1000){bad=true;break;}g.push([cs[k],x,y,a,bb]);d+=cw[k]+sp;}
+       if(!bad){placed=g;break;}}
+     if(!placed)continue;
+     ctx.save();ctx.font=font;ctx.textAlign='center';ctx.textBaseline='middle';const col=F.t==='ridge'?'#2f6b2a':'#1f6fb5';
+     for(const [c,x,y,a,bb] of placed){let r=a;if(r>Math.PI/2)r-=Math.PI;if(r<-Math.PI/2)r+=Math.PI;ctx.save();ctx.translate(x,y);ctx.rotate(r);ctx.lineWidth=4.5;ctx.strokeStyle='rgba(255,255,255,.95)';ctx.strokeText(c,0,0);ctx.fillStyle=col;ctx.fillText(c,0,0);ctx.restore();boxes.push(bb);}
+     ctx.restore();const xs=placed.map(v=>v[1]),ys=placed.map(v=>v[2]);LBL.push({key,x:Math.min(...xs)-11,y:Math.min(...ys)-12,w:Math.max(...xs)-Math.min(...xs)+22,h:Math.max(...ys)-Math.min(...ys)+24});lineDone.add(F.n);}}
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
   const tileName=(px,py,t)=>{const key=lkey(t);if(ED.hid.has(key))return true;const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
     // 가로로 놓을 자리가 없으면 세로로 시도
@@ -758,7 +780,7 @@ async function renderReal(){
     put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF);
     put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
-   let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2))return;const n=nm(x);if(seen.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+   let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2))return;const n=nm(x);if(seen.has(n)||lineDone.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
      if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}
   // 고속도로·국도 이름 (가장 긴 구간 가운데에 회전 표기)
   const named={};ways.filter(x=>/^(motorway|trunk|primary)$/.test(hw(x))&&(x.tags.name||x.tags.ref)).forEach(x=>{const key=x.tags.name||x.tags.ref;(named[key]=named[key]||[]).push(x);});
@@ -970,6 +992,21 @@ function drawProfile(F1,PH,shown){
 function fitCanvas(){const box=$('cvBox');if(!box||cv.hidden)return;const r=box.getBoundingClientRect();const k=Math.min(r.width/W,r.height/H);cv.style.width=Math.floor(W*k)+'px';cv.style.height=Math.floor(H*k)+'px';}
 
 // (Gemini 프롬프트 기능은 2026-11-09 사용자 요청으로 제거)
+// 대표 능선·계곡 이름: OSM엔 선으로 거의 없고 카카오엔 점 하나뿐이라(공룡능선 위치 오류 사례),
+// '어느 지점에서 어느 지점까지'로 정의해 OSM 지점 위치를 이은 선을 따라 이름을 쓴다. near=[위도,경도] 동명이산 구분용.
+// 새 능선·계곡을 넣을 때: 지나는 지점 이름을 OSM(지도 DB 관리화면 검색)에 있는 이름 그대로, 순서대로.
+const FAMOUS_LINES=[
+  {n:'공룡능선',t:'ridge',via:['마등령','나한봉','1275봉','신선대','무너미고개'],near:[38.15,128.45]},
+  {n:'천불동계곡',t:'valley',via:['비선대','귀면암','양폭대피소','천당폭포'],near:[38.15,128.47]},
+  {n:'용아장성',t:'ridge',via:['옥녀봉','봉정암'],near:[38.137,128.43]},
+  {n:'서북능선',t:'ridge',via:['한계령','귀때기청봉','대승령','안산'],near:[38.12,128.37]},
+  {n:'화채능선',t:'ridge',via:['대청봉','화채봉'],near:[38.13,128.48]},
+  {n:'지리산 주능선',t:'ridge',via:['노고단','반야봉','삼도봉','토끼봉','명선봉','덕평봉','칠선봉','영신봉','촛대봉','연하봉','제석봉','천왕봉'],near:[35.32,127.63]},
+  {n:'칠선계곡',t:'valley',via:['칠선폭포','추성리'],near:[35.36,127.71]},
+  {n:'의상능선',t:'ridge',via:['의상봉','용출봉','용혈봉','증취봉','나월봉','나한봉','문수봉'],near:[37.64,126.966]},
+  {n:'덕유 주릉',t:'ridge',via:['향적봉','백암봉','동엽령','무룡산'],near:[35.83,127.74]},
+  {n:'자연성릉',t:'ridge',via:['관음봉','삼불봉'],near:[36.356,127.205]},
+];
 
 
 // ── 보관된 코스(GitHub hjwpro1971/gaja 저장소 tracks/) — gpx-map에서 지명을 편집해 올린 GPX. 공개 저장소라 토큰 없이 읽음

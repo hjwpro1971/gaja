@@ -241,6 +241,8 @@ TYPE_TAGS = {'peak': {'natural': 'peak'}, 'spring': {'natural': 'spring'}, 'shel
 def kakao_ok(p, osm_names):
     """카카오 장소를 쓸지: 봉우리·능선·바위 등 자연 지형은 카카오 좌표가 주소·입구 기준이라 자주 틀림 → OSM만 믿는다.
     OSM에 같은 이름이 범위 안에 있으면(거리 무관) 그쪽 위치가 맞으므로 카카오 것은 버린다."""
+    if p['type'] == 'valley' and p['name'].endswith('계곡'):
+        return p['name'].replace(' ', '') not in osm_names  # '○○계곡'은 이름 위치가 계곡 안이면 충분(구곡담계곡·천불동계곡)
     if p['type'] in ('peak', 'rock', 'valley') or re.search(r'능선|봉$|산$|바위', p['name']):
         return False
     return p['name'].replace(' ', '') not in osm_names
