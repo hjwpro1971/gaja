@@ -3,6 +3,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>산행 일러스트 지도</title>
 <link rel="icon" href="favicon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Nanum+Gothic:wght@400;700;800&display=swap">
 <style>
 :root{--bg:#f6f1e6;--panel:#fffdf8;--ink:#3d2b1f;--sub:#7a6450;--line:#e2d6c2;--accent:#a4522a}
 *{box-sizing:border-box}
@@ -84,6 +86,10 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <label class="chk"><input type="checkbox" id="optLegend" checked>관광안내도 범례 (Legend)</label>
     <label class="chk"><input type="checkbox" id="optScale" checked>축척 막대 (0 — 500m)</label>
     <div class="step" style="font-size:13px">🎨 지도 표현 (국제신문식)</div>
+    <label class="field">글꼴
+      <select id="optFont" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
+        <option value="pretendard" selected>Pretendard (깔끔)</option><option value="noto">Noto Sans KR (본고딕)</option><option value="nanum">나눔고딕</option><option value="malgun">맑은 고딕 (기존)</option>
+      </select></label>
     <label class="field">지형 표현
       <select id="optRelief" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
         <option value="contour" selected>등고선</option><option value="ridge">능선 줄기 (국제신문식)</option><option value="both">능선 줄기 + 옅은 등고선</option>
@@ -120,6 +126,10 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 <script>
 'use strict';
 let W=1920,H=1080;
+// 지도 글꼴 (선택): 웹 글꼴은 그리기 전에 다 받아 둬야 캔버스에 적용됨
+const FONTS={pretendard:'"Pretendard","Malgun Gothic",sans-serif',noto:'"Noto Sans KR","Malgun Gothic",sans-serif',nanum:'"Nanum Gothic","Malgun Gothic",sans-serif',malgun:'"Malgun Gothic","Apple SD Gothic Neo",sans-serif'};
+function mapFont(){const el=document.getElementById('optFont');return FONTS[el?el.value:'pretendard']||FONTS.malgun;}
+async function ensureFont(){const f=mapFont();if(!document.fonts)return;try{await Promise.race([Promise.all(['400','500','600','700','800'].map(w=>document.fonts.load(`${w} 20px ${f}`,'가나다산봉'))),new Promise(r=>setTimeout(r,4000))]);}catch(e){}}
 let SC=2,BIG=1; // BIG: 상세 PNG 저장 때 같은 범위를 2배 큰 그림으로(확대해야 보이던 지명까지)
 // 지명 편집: 코스마다 지운 지명(hid)과 옮긴 거리(off, 지도 논리 px)를 브라우저에 저장
 let ED={hid:new Set(),off:{}},EDIT=false;
@@ -367,7 +377,7 @@ function renderNews(){
 
   // 지점
   const shown=G.list.filter(w=>w.show);const top=Math.max(...shown.map(w=>w.ele));
-  const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+  const F1=mapFont();
   // 점 먼저 박스 등록
   shown.forEach(w=>{const [x,y]=xy[w.idx];boxes.push({x:x-8,y:y-8,w:16,h:16});});
   shown.forEach(w=>{const [x,y]=xy[w.idx];const fmt=v=>v.toLocaleString('ko-KR')+'m';
@@ -477,7 +487,7 @@ function findOSM(n,w,s,e){
 }
 let renderToken=0;
 async function renderReal(){
-  const my=++renderToken;
+  const my=++renderToken;await ensureFont();if(my!==renderToken)return;
   const lat0=G.pts[0].lat,k=Math.cos(lat0*Math.PI/180);
   const xs=G.pts.map(p=>p.lon*k),ys=G.pts.map(p=>p.lat);
   const asp=(Math.max(...xs)-Math.min(...xs))/(Math.max(...ys)-Math.min(...ys)||1e-9);
@@ -497,7 +507,7 @@ async function renderReal(){
   if(my!==renderToken)return;
   const paint=(osm)=>{
   cv.width=Math.round(W*SC);cv.height=Math.round(H*SC);ctx.setTransform(SC,0,0,SC,0,0);resetPreview();fitCanvas();
-  const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+  const F1=mapFont();
   // 높이장
   const step=4,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1,f0=new Float32Array(gw*gh);
   for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const [la,lo]=P.inv(i*step,j*step);f0[j*gw+i]=elev(la,lo);}
@@ -589,7 +599,7 @@ async function renderReal(){
     const nNear=cands.length;
     // 밀집 구간: 바로 옆이 막히면 좀 떨어진 빈자리에 두고 가는 지시선으로 잇는다(봉정암~쌍용폭포처럼 지점이 몰린 곳)
     if(opt.lead)for(const r of [45,70,100,140])for(let a=0;a<12;a++){const ang=a*Math.PI/6,cx=x+Math.cos(ang)*r,cy=y+Math.sin(ang)*r;cands.push([cx-x-(Math.cos(ang)<-.3?wd:Math.cos(ang)>.3?0:wd/2),cy-y-(Math.sin(ang)<-.3?h:Math.sin(ang)>.3?0:h/2)]);}
-    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit(b)+(i>=nNear?300:0);{const near=(px,py)=>Math.hypot(Math.max(b.x,Math.min(px,b.x+wd))-px,Math.max(b.y,Math.min(py,b.y+h))-py),own=near(x,y);for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&near(ax,ay)+4<own){sc+=2000;break;}} /* 남의 점에 더 가까운 자리는 피함(소청봉/중청봉 이름이 바뀌어 보이던 사례) */if(!best||sc<best.sc){best={...b,sc};bi=i;}});
+    let best=null,bi=0;cands.forEach(([dx,dy],i)=>{const b={x:x+dx,y:y+dy,w:wd,h};let sc=hit({x:b.x-2,y:b.y-1,w:b.w+4,h:b.h+2}) /* 글자끼리 최소 간격 */+(i>=nNear?300:0);{const near=(px,py)=>Math.hypot(Math.max(b.x,Math.min(px,b.x+wd))-px,Math.max(b.y,Math.min(py,b.y+h))-py),own=near(x,y);for(const [ax,ay] of ANCH)if((ax!==x||ay!==y)&&near(ax,ay)+4<own){sc+=2000;break;}} /* 남의 점에 더 가까운 자리는 피함(소청봉/중청봉 이름이 바뀌어 보이던 사례) */if(!best||sc<best.sc){best={...b,sc};bi=i;}});
     if(bi>=nNear){const cx=Math.max(best.x,Math.min(x,best.x+wd)),cy=Math.max(best.y,Math.min(y,best.y+h));ctx.save();ctx.strokeStyle='rgba(60,60,60,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(cx,cy);ctx.stroke();ctx.restore();}
     if(opt.optional&&best.sc>=1000){ctx.restore();return false;}
     {const o=edOff(key,x,y);if(o){best={...best,x:best.x+o[0],y:best.y+o[1]};
@@ -907,7 +917,7 @@ function trackStats(){
   return{km:d/1000,mx,up,time:tt.replace(/^약\s*/,'')};}
 // 명판·통계·범례·단면도 자리 계산 — 지명 라벨이 이 자리를 피해 가도록 먼저 예약
 function boardLayout(PH){
-  const F1='"Malgun Gothic","Apple SD Gothic Neo",sans-serif',L={reserve:[]};
+  const F1=mapFont(),L={reserve:[]};
   const title=$('title').value.trim(),sub=$('subtitle').value.trim();
   if($('optBoard').checked&&title){ctx.save();ctx.font=`bold 40px ${F1}`;let tw=ctx.measureText(title).width;ctx.font=`20px ${F1}`;if(sub)tw=Math.max(tw,ctx.measureText(sub).width);ctx.restore();
     L.board={x:28,y:28,w:Math.min(W*.6,tw+56),h:sub?112:76,title,sub};L.reserve.push({x:16,y:16,w:L.board.w+24,h:L.board.h+24});}
@@ -1102,7 +1112,7 @@ $('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
 drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
-['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn','optRelief'].forEach(id=>$(id).onchange=render);
+['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn','optRelief','optFont'].forEach(id=>$(id).onchange=render);
 window.addEventListener('resize',()=>{fitCanvas();if(G&&$('optStyle').value==='real'&&$('optAspect').value==='fill'){clearTimeout(window._rz);window._rz=setTimeout(render,500);}});
 // 제목·부제목·거리·시간 입력: 타이핑 중엔 보관해 둔 지도 위에 명판만 새로 올리고(즉시), 입력이 멈추면 1초 뒤 한 번만 전체 다시 그림
 let txtTimer=0;
