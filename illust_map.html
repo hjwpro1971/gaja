@@ -84,6 +84,10 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <label class="chk"><input type="checkbox" id="optLegend" checked>관광안내도 범례 (Legend)</label>
     <label class="chk"><input type="checkbox" id="optScale" checked>축척 막대 (0 — 500m)</label>
     <div class="step" style="font-size:13px">🎨 지도 표현 (국제신문식)</div>
+    <label class="field">지형 표현
+      <select id="optRelief" style="border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:14px;background:#fff">
+        <option value="contour" selected>등고선</option><option value="ridge">능선 줄기 (국제신문식)</option><option value="both">능선 줄기 + 옅은 등고선</option>
+      </select></label>
     <label class="chk"><input type="checkbox" id="optWhite">흰 바탕 (녹색 음영 빼고 등고선 옅게)</label>
     <label class="chk"><input type="checkbox" id="optDash">산행로 점선 (답사산행로 빨간 점선)</label>
     <label class="chk"><input type="checkbox" id="optUturn" checked>반환점 U자 화살표</label>
@@ -508,7 +512,8 @@ async function renderReal(){
 
   ctx.fillStyle='#fdfcf7';ctx.fillRect(0,0,W,H);
   // 고도 엷은 채색 (흰 바탕 옵션이면 생략)
-  if(!$('optWhite').checked){const oc=document.createElement('canvas');oc.width=gw;oc.height=gh;const o2=oc.getContext('2d'),img=o2.createImageData(gw,gh);
+  const RELIEF=$('optRelief').value;
+  if(!$('optWhite').checked&&RELIEF==='contour'){const oc=document.createElement('canvas');oc.width=gw;oc.height=gh;const o2=oc.getContext('2d'),img=o2.createImageData(gw,gh);
    for(let i=0;i<gw*gh;i++){const t=(f[i]-emin)/(emax-emin||1);img.data[i*4]=232-t*40;img.data[i*4+1]=244-t*20;img.data[i*4+2]=232-t*44;img.data[i*4+3]=Math.round(40+t*120);}
    o2.putImageData(img,0,0);ctx.save();ctx.filter='blur(2px)';ctx.drawImage(oc,0,0,W,H);ctx.restore();}
   const geo=g=>g.map(p=>P.fwd(p.lat,p.lon));
@@ -525,18 +530,41 @@ async function renderReal(){
   areas.filter(x=>x.tags.boundary!=='administrative').forEach(x=>{ctx.beginPath();x.px.forEach(r=>r.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1])));ctx.closePath();ctx.fillStyle='#cfe6f5';ctx.fill('evenodd');ctx.strokeStyle='#7fb6dd';ctx.lineWidth=1.2;ctx.stroke();});
   // 호수·저수지
   ways.filter(x=>x.tags.natural==='water').forEach(x=>{const p=geo(x.geometry);ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fillStyle='#cfe6f5';ctx.fill();ctx.strokeStyle='#7fb6dd';ctx.lineWidth=1.2;ctx.stroke();});
-  // 등고선
+  // 등고선 (능선 줄기 모드면 생략, '둘 다'면 아주 옅게)
   const lv0=Math.ceil(emin/iv)*iv;
   const cLab=[];let segN=0; // 계곡선(굵은 등고선) 위 고도 숫자 후보
-  for(let lv=lv0;lv<emax;lv+=iv){const ix=Math.round(lv/iv)%5===0;{const wb=$('optWhite').checked;ctx.strokeStyle=ix?(wb?'rgba(45,145,160,.5)':'rgba(45,145,160,.75)'):(wb?'rgba(70,165,175,.25)':'rgba(70,165,175,.45)');ctx.lineWidth=ix?(wb?1.1:1.45):(wb?.7:.85);}ctx.beginPath();
-    contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);if(ix&&++segN%9===0)cLab.push({lv,x:(p[0]+q[0])/2,y:(p[1]+q[1])/2,a:Math.atan2(q[1]-p[1],q[0]-p[0])});});ctx.stroke();}
+  if(RELIEF!=='ridge')for(let lv=lv0;lv<emax;lv+=iv){const ix=Math.round(lv/iv)%5===0;{const wb=$('optWhite').checked||RELIEF==='both';ctx.strokeStyle=ix?(wb?'rgba(45,145,160,.5)':'rgba(45,145,160,.75)'):(wb?'rgba(70,165,175,.25)':'rgba(70,165,175,.45)');ctx.lineWidth=ix?(wb?1.1:1.45):(wb?.7:.85);}ctx.beginPath();
+    contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);if(ix&&++segN%9===0)cLab.push({lv,x:(p[0]+q[0])/2,y:(p[1]+q[1])/2,a:Math.atan2(q[1]-p[1],q[0]-p[0])});});
+    if(RELIEF==='both'){ctx.globalAlpha=.55;ctx.stroke();ctx.globalAlpha=1;}else ctx.stroke();}
+  // 능선 줄기 (국제신문식): 고도를 뒤집어 물이 '위로' 흐른다고 보고 모이는 길 = 능선. 많이 모일수록 굵게
+  if(RELIEF!=='contour'){const N=gw*gh,rec=new Int32Array(N).fill(-1),acc=new Float32Array(N).fill(1),ord=new Uint32Array(N);
+    const nb=[[-1,-1,1.414],[0,-1,1],[1,-1,1.414],[-1,0,1],[1,0,1],[-1,1,1.414],[0,1,1],[1,1,1.414]];
+    // 상자 흐림(반경 r)을 가로·세로로
+    const blur=(src,r)=>{const t=new Float32Array(N),o=new Float32Array(N);for(let j=0;j<gh;j++){let s=0,c=0;for(let i=-r;i<gw+r;i++){if(i+r<gw){s+=src[j*gw+i+r];c++;}if(i-r-1>=0){s-=src[j*gw+i-r-1];c--;}if(i>=0&&i<gw)t[j*gw+i]=s/c;}}
+      for(let i=0;i<gw;i++){let s=0,c=0;for(let j=-r;j<gh+r;j++){if(j+r<gh){s+=t[(j+r)*gw+i];c++;}if(j-r-1>=0){s-=t[(j-r-1)*gw+i];c--;}if(j>=0&&j<gh)o[j*gw+i]=s/c;}}return o;};
+    const fs=blur(blur(f,2),2),wide=blur(blur(fs,7),7); // 부드러운 지형, 넓게 흐린 지형
+    for(let j=1;j<gh-1;j++)for(let i=1;i<gw-1;i++){const o=j*gw+i,v=fs[o];let best=0,bk=-1;
+      for(let k=0;k<8;k++){const q=(j+nb[k][1])*gw+i+nb[k][0],g=(fs[q]-v)/nb[k][2];if(g>best){best=g;bk=q;}}rec[o]=bk;}
+    for(let i=0;i<N;i++)ord[i]=i;ord.sort((a,b)=>fs[a]-fs[b]); // 낮은 곳부터 → 높은 쪽으로 쌓음
+    const cvx=o=>fs[o]-wide[o]>(emax-emin)*.004; // 주변보다 볼록하게 솟은 곳만 능선으로 (평평한 비탈의 평행선 제거)
+    for(let t=0;t<N;t++){const o=ord[t],r=rec[o];if(r>=0)acc[r]+=acc[o];}
+    const T=Math.max(40,Math.round(gw*gh/1600)); // 줄기로 볼 최소 모임(지도 크기에 비례)
+    // 줄기를 이어진 선으로 모아 부드럽게 그림: 각 셀에서 받는 쪽(rec)으로, 굵기는 모인 양의 로그
+    const wid=a=>Math.min(7,.9+Math.log2(a/T)*1.05),seen=new Uint8Array(N),strokes=[];
+    const heads=[];for(let o=0;o<N;o++)if(acc[o]>=T&&cvx(o))heads.push(o);heads.sort((a,b)=>acc[a]-acc[b]); // 가는 끝부터
+    for(const h of heads){if(seen[h])continue;let o=h;const pts=[];while(o>=0&&acc[o]>=T&&cvx(o)){pts.push(o);if(seen[o])break;seen[o]=1;o=rec[o];}if(o>=0&&pts.length&&!seen[o])pts.push(o);if(pts.length>1)strokes.push(pts);}
+    // 계단 모양을 없애려고 좌표를 앞뒤 3칸씩 평균, 굵기도 부드럽게. 국제신문처럼 진한 테두리 + 연한 녹색 띠
+    const sm2=strokes.map(st=>{const P=st.map(o=>[(o%gw)*step,Math.floor(o/gw)*step,wid(acc[o])]);return P.map((p,k)=>{let x=0,y=0,w=0,c=0;for(let d=-3;d<=3;d++){const q=P[Math.max(0,Math.min(P.length-1,k+d))];x+=q[0];y+=q[1];w+=q[2];c++;}return[x/c,y/c,w/c*1.25];});});
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+    for(const [col,add] of [['rgba(255,255,255,.75)',4],['#5f9a57',1.6],['#a9d39b',0]])for(const P of sm2)for(let k=1;k<P.length;k++){ctx.beginPath();ctx.moveTo(P[k-1][0],P[k-1][1]);ctx.lineTo(P[k][0],P[k][1]);ctx.strokeStyle=col;ctx.lineWidth=P[k-1][2]+add;ctx.stroke();}
+    ctx.restore();}
   // 하천
   ways.filter(x=>x.tags.waterway).forEach(x=>line(geo(x.geometry),'#388fd8',x.tags.waterway==='river'?4:1.8));
   // 도로
   const hw=x=>x.tags.highway;
   ways.filter(x=>/^(tertiary|unclassified|residential)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),'#b4b4b4',2));
   ways.filter(x=>hw(x)==='track').forEach(x=>line(geo(x.geometry),'#c9a27a',1.6,[6,4]));
-  ways.filter(x=>/^(path|footway)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),'#e2842b',2.4));
+  {const rd=$('optRelief').value!=='contour';ways.filter(x=>/^(path|footway)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),rd?'#e6b422':'#e2842b',rd?2:2.4,rd?[6,4]:null));}
   const tun=x=>x.tags.tunnel&&x.tags.tunnel!=='no';
   ways.filter(x=>/^(primary|secondary|motorway|trunk)$/.test(hw(x))&&tun(x)).forEach(x=>line(geo(x.geometry),'rgba(120,120,120,.55)',2.5,[8,6]));
   ways.filter(x=>/^(primary|secondary)$/.test(hw(x))&&!tun(x)).forEach(x=>{const p=geo(x.geometry);line(p,'#8d8d8d',6.5);line(p,'#fbfbf6',3.5);});
@@ -892,7 +920,7 @@ function drawBoard(L,F1,iv,PH,shown){
       if(i){ctx.strokeStyle='#e6e6e6';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(c.x+12+150*i,c.y+16);ctx.lineTo(c.x+12+150*i,c.y+c.h-16);ctx.stroke();}});
     ctx.restore();}
   if(L.legend){const g=L.legend;ctx.save();
-    const items=[['답사산행로',c=>{c.strokeStyle='#d7262e';c.lineWidth=5;if($('optDash').checked)c.setLineDash([9,6]);}],['산행로',c=>{c.strokeStyle='#e2842b';c.lineWidth=3;}],['등고선',c=>{c.strokeStyle='rgba(45,145,160,.9)';c.lineWidth=1.5;}],['물길',c=>{c.strokeStyle='#388fd8';c.lineWidth=2.5;}],['도로·임도',c=>{c.strokeStyle='#8d8d8d';c.lineWidth=6;}]];
+    const items=[['답사산행로',c=>{c.strokeStyle='#d7262e';c.lineWidth=5;if($('optDash').checked)c.setLineDash([9,6]);}],['산행로',c=>{if($('optRelief').value!=='contour'){c.strokeStyle='#e6b422';c.lineWidth=2.5;c.setLineDash([6,4]);}else{c.strokeStyle='#e2842b';c.lineWidth=3;}}],[$('optRelief').value==='ridge'?'능선':'등고선',c=>{if($('optRelief').value==='ridge'){c.strokeStyle='#5f9a57';c.lineWidth=5;}else{c.strokeStyle='rgba(45,145,160,.9)';c.lineWidth=1.5;}}],['물길',c=>{c.strokeStyle='#388fd8';c.lineWidth=2.5;}],['도로·임도',c=>{c.strokeStyle='#8d8d8d';c.lineWidth=6;}]];
     ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.fillRect(g.x,g.y,g.w,g.h);ctx.strokeRect(g.x,g.y,g.w,g.h);
     items.forEach(([t,f],i)=>{const yy=g.y+26+i*30;f(ctx);ctx.beginPath();ctx.moveTo(g.x+14,yy);ctx.lineTo(g.x+60,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,g.x+72,yy+6);});ctx.restore();}
   {const {x,y}=L.north;ctx.save();ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
@@ -1031,7 +1059,7 @@ $('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
 drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
-['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn'].forEach(id=>$(id).onchange=render);
+['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn','optRelief'].forEach(id=>$(id).onchange=render);
 window.addEventListener('resize',()=>{fitCanvas();if(G&&$('optStyle').value==='real'&&$('optAspect').value==='fill'){clearTimeout(window._rz);window._rz=setTimeout(render,500);}});
 // 제목·부제목·거리·시간 입력: 타이핑 중엔 보관해 둔 지도 위에 명판만 새로 올리고(즉시), 입력이 멈추면 1초 뒤 한 번만 전체 다시 그림
 let txtTimer=0;
