@@ -651,13 +651,6 @@ async function renderReal(){
   const nm=x=>x.tags['name:ko']||x.tags.name;
   const P0=x=>P.fwd(x.lat,x.lon);
   const byNear0=arr=>arr.map(x=>[(()=>{const [px,py]=P.fwd(x.lat,x.lon);return distToRoute(px,py);})(),x]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
-  // 대피소·산장 (산행로 근처) — 밀집 구간에서 다른 지명에 밀려 빠지지 않게 먼저 그림(소청대피소 누락 사례)
-  const hutDone=new Set();
-  byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
-    const [px,py]=P.fwd(x.lat,x.lon);if(typoWp(px,py,80,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
-    if(!dotOK(px,py))return;boxes.push({x:px-6,y:py-6,w:12,h:12});
-    if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
-    if(!drawIcon('rest',px,py,0)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
   // 대표 능선·계곡 이름: 지점들을 이은 선을 따라 한 글자씩 (능선=녹색, 계곡=파랑, 기울임)
   const lineDone=new Set();
   {const byName={};nodes.forEach(x=>{const n=nm(x);(byName[n]=byName[n]||[]).push(x);});
@@ -671,17 +664,25 @@ async function renderReal(){
      if(P[0][0]>P[P.length-1][0])P.reverse();
      const o=ED.off[key];if(o)P=P.map(([x,y])=>[x+o[0],y+o[1]]);
      const seg=[0];for(let i=1;i<P.length;i++)seg.push(seg[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));const Ltot=seg[seg.length-1];
-     const font=`italic bold 19px ${F1}`;ctx.save();ctx.font=font;const cs=[...F.n].filter(c=>c!==' ');const cw=cs.map(c=>ctx.measureText(c).width);ctx.restore();
-     const base=cw.reduce((a,b)=>a+b,0);if(Ltot<base*1.2)continue;let sp=Math.min(26,(Ltot*.6-base)/Math.max(1,cs.length-1));sp=Math.max(4,sp);const tw=base+sp*(cs.length-1);
-     const at=d=>{let i=1;while(i<seg.length-1&&seg[i]<d)i++;const t=(d-seg[i-1])/((seg[i]-seg[i-1])||1),a=P[i-1],b=P[i];return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,Math.atan2(b[1]-a[1],b[0]-a[0])];};
-     let placed=null;
-     for(const frac of [.5,.35,.65,.25,.75]){const st=Ltot*frac-tw/2;if(st<0||st+tw>Ltot)continue;const g=[];let d=st,bad=false;
-       for(let k=0;k<cs.length;k++){const [x,y,a]=at(d+cw[k]/2);if(x<20||y<20||x>W-20||y>H-20){bad=true;break;}const bb={x:x-11,y:y-12,w:22,h:22};if(hit(bb)>=1000){bad=true;break;}g.push([cs[k],x,y,a,bb]);d+=cw[k]+sp;}
-       if(!bad){placed=g;break;}}
+     let placed=null,font='';
+     for(const fs of [19,16,14])for(const off of [0,14,-14,28,-28,42,-42,56,-56]){if(placed)break;
+       font=`italic bold ${fs}px ${F1}`;ctx.save();ctx.font=font;const cs=[...F.n].filter(c=>c!==' ');const cw=cs.map(c=>ctx.measureText(c).width);ctx.restore();
+       const base=cw.reduce((a,b)=>a+b,0);if(Ltot<base*1.05)continue;let sp=Math.min(26,(Ltot*.6-base)/Math.max(1,cs.length-1));sp=Math.max(2,sp);const tw=base+sp*(cs.length-1);
+       const at=d=>{let i=1;while(i<seg.length-1&&seg[i]<d)i++;const t=(d-seg[i-1])/((seg[i]-seg[i-1])||1),a=P[i-1],b=P[i],an=Math.atan2(b[1]-a[1],b[0]-a[0]);return[a[0]+(b[0]-a[0])*t-Math.sin(an)*off,a[1]+(b[1]-a[1])*t+Math.cos(an)*off,an];};
+       for(const frac of [.5,.4,.6,.3,.7,.2,.8]){const st=Ltot*frac-tw/2;if(st<0||st+tw>Ltot)continue;const g=[];let d=st,bad=false;
+         for(let k=0;k<cs.length;k++){const [x,y,a]=at(d+cw[k]/2);if(x<20||y<20||x>W-20||y>H-20){bad=true;break;}const r=fs*.6,bb={x:x-r,y:y-r,w:r*2,h:r*2};if(hit(bb)>=1000){bad=true;break;}g.push([cs[k],x,y,a,bb]);d+=cw[k]+sp;}
+         if(!bad){placed=g;break;}}}
      if(!placed)continue;
      ctx.save();ctx.font=font;ctx.textAlign='center';ctx.textBaseline='middle';const col=F.t==='ridge'?'#2f6b2a':'#1f6fb5';
      for(const [c,x,y,a,bb] of placed){let r=a;if(r>Math.PI/2)r-=Math.PI;if(r<-Math.PI/2)r+=Math.PI;ctx.save();ctx.translate(x,y);ctx.rotate(r);ctx.lineWidth=4.5;ctx.strokeStyle='rgba(255,255,255,.95)';ctx.strokeText(c,0,0);ctx.fillStyle=col;ctx.fillText(c,0,0);ctx.restore();boxes.push(bb);}
      ctx.restore();const xs=placed.map(v=>v[1]),ys=placed.map(v=>v[2]);LBL.push({key,x:Math.min(...xs)-11,y:Math.min(...ys)-12,w:Math.max(...xs)-Math.min(...xs)+22,h:Math.max(...ys)-Math.min(...ys)+24});lineDone.add(F.n);}}
+  // 대피소·산장 (산행로 근처) — 밀집 구간에서 다른 지명에 밀려 빠지지 않게 먼저 그림(소청대피소 누락 사례)
+  const hutDone=new Set();
+  byNear0(nodes.filter(x=>x.tags.tourism==='alpine_hut'||x.tags.tourism==='wilderness_hut'||/대피소|산장/.test(nm(x)))).forEach(x=>{const n=nm(x);if(hutDone.has(n)||wpNames.has(n))return;
+    const [px,py]=P.fwd(x.lat,x.lon);if(typoWp(px,py,80,n)||px<0||py<0||px>W||py>H||distToRoute(px,py)>Math.max(W,H)*.06*ZF)return;
+    if(!dotOK(px,py))return;boxes.push({x:px-6,y:py-6,w:12,h:12});
+    if(!label(px,py,[{t:n,font:`600 16px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true})){boxes.pop();return;}
+    if(!drawIcon('rest',px,py,0)){ctx.save();ctx.fillStyle='#8a5a2b';ctx.beginPath();ctx.arc(px,py,3.5,0,7);ctx.fill();ctx.restore();}hutDone.add(n);});
   // 큰 지역명 — 시·군·구: 글자마다 네모 칸(신문 지도식) / 읍·면: 띄어 쓴 청회색 / 동: 굵은 검정
   const tileName=(px,py,t)=>{const key=lkey(t);if(ED.hid.has(key))return true;const s=44,g=14,cs=[...t],tw=cs.length*s+(cs.length-1)*g;
     // 가로로 놓을 자리가 없으면 세로로 시도
