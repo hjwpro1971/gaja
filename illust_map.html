@@ -40,7 +40,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
 </style></head><body>
 <header><h1>🗺️ 산행 일러스트 지도</h1><div id="zoomBar" class="row" style="display:none;align-items:center;gap:6px;margin-left:auto">
     <button id="btnZoomIn">＋ 확대</button><button id="btnZoomOut">－ 축소</button><input type="range" id="zoomSlider" min="35" max="400" step="5" value="100" title="배율 미세 조절" style="width:110px"><span id="zoomPct" style="font-size:12px;min-width:38px">100%</span><button id="btnZoomReset">⤢ 화면에 맞게</button>
-    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button><button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button><select id="optBig" title="상세 PNG 크기 — 클수록 지명이 많아지고 글자는 상대적으로 작아짐" style="border:1px solid var(--line);border-radius:6px;padding:4px;font-size:13px"><option value="1.25">1.25배</option><option value="1.5" selected>1.5배</option><option value="2">2배</option></select><button id="btnPngBig" class="main" disabled title="같은 범위를 2배 큰 그림으로 다시 그려 저장 — 확대해야 보이던 지명까지 들어감">⬇ 상세 PNG</button>
+    <button id="btnEdit">✏️ 지명 편집</button><button id="btnEdReset" title="이 코스에서 지우거나 옮긴 지명을 모두 원래대로">↺ 편집 되돌리기</button><button id="btnCache" title="브라우저에 저장된 지도 데이터·편집 기록·메뉴 설정 확인/초기화" style="display:inline-block">🧹 저장값 관리</button><button id="btnPng" class="main" disabled>⬇ 바탕 지도 PNG</button><select id="optBig" title="상세 PNG 크기 — 클수록 지명이 많아지고 글자는 상대적으로 작아짐" style="border:1px solid var(--line);border-radius:6px;padding:4px;font-size:13px"><option value="1.25">1.25배</option><option value="1.5" selected>1.5배</option><option value="2">2배</option></select><button id="btnPngBig" class="main" disabled title="같은 범위를 2배 큰 그림으로 다시 그려 저장 — 확대해야 보이던 지명까지 들어감">⬇ 상세 PNG</button>
     <span class="hint" id="zoomHint">휠: 확대·축소 · 끌기: 이동</span>
   </div></header>
 <main>
@@ -123,6 +123,12 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
     <button id="pickerClose" type="button">닫기</button>
   </div>
 </div>
+  <div id="cacheDlg" style="position:fixed;display:none;z-index:60;left:50%;top:18%;transform:translateX(-50%);background:#fff;border:1px solid #bbb;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:14px 16px;width:min(440px,92vw);font-size:14px">
+    <div style="font-weight:700;margin-bottom:4px">🧹 저장값 관리</div>
+    <div style="color:#777;font-size:12px;margin-bottom:10px">이 브라우저에 저장된 값이에요. 지우면 다시 받아오거나 처음 값으로 돌아가요.</div>
+    <div id="cacheRows"></div>
+    <div style="display:flex;gap:6px;justify-content:space-between;margin-top:12px"><button id="cacheAll" type="button" style="background:#d7262e;color:#fff;border-color:#d7262e">전체 초기화 후 새로고침</button><button id="cacheClose" type="button">닫기</button></div>
+  </div>
   <div id="edDlg" style="position:fixed;display:none;z-index:50;left:50%;top:30%;transform:translateX(-50%);background:#fff;border:1px solid #bbb;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:14px 16px;min-width:260px;font-size:14px">
     <div style="font-weight:700;margin-bottom:8px">지명 편집</div>
     <label style="display:block;margin-bottom:6px">이름 <input id="edName" type="text" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #bbb;border-radius:6px;font-size:14px"></label>
@@ -1242,6 +1248,27 @@ $('cvWrap').addEventListener('pointerup',e=>{if(!edDrag)return;const {L,x,y}=edD
   if(Math.abs(dx)+Math.abs(dy)<3){if(!EDIT){edHide();return;}edSel=L;edShow(L);const m=$('edMenu');m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
   const o=ED.off[L.key]||[0,0];let an=[o[2],o[3]];if(L.ax!=null&&G._P){an=G._P.inv(L.ax,L.ay);}
   ED.off[L.key]=L.key.startsWith('__')?[o[0]+dx,o[1]+dy]:[o[0]+dx,o[1]+dy,an[0],an[1]];edSave();edHide();render();});
+/* 저장값 관리: 이 브라우저(localStorage)에 쌓인 지도 데이터 캐시·지명 편집 기록·메뉴 설정을 보고 지움 */
+const lsKeys=pre=>{const r=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(pre))r.push(k);}}catch(e){}return r;};
+const lsSize=ks=>ks.reduce((s,k)=>{try{return s+(localStorage.getItem(k)||'').length;}catch(e){return s;}},0);
+const lsDel=ks=>ks.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+function cacheShow(){
+  const osm=lsKeys('illust_osm_'),ed=lsKeys('illust_ed_'),op=lsKeys('illust_opts'),cur=G?edKey():null;
+  const row=(t,d,id,lab)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #eee"><div style="flex:1"><b>${t}</b><div style="color:#777;font-size:12px">${d}</div></div><button type="button" id="${id}">${lab}</button></div>`;
+  let h=row('지도 데이터 캐시',`${osm.length}곳 · 약 ${Math.round(lsSize(osm)/1024)}KB (지명·지점을 받아 둔 것 — 지우면 다음에 다시 받아옴)`,'cOsm','지우기');
+  h+=row('지명 편집 기록',`${ed.length}개 코스 (지우고 옮기고 이름 바꾼 기록)`,'cEd','모두 지우기');
+  if(cur&&localStorage.getItem(cur))h+=row('이 코스의 편집 기록','지금 열린 코스만','cEdCur','이 코스만 지우기');
+  h+=row('메뉴 설정',op.length?'글꼴·지형 표현 등 선택값':'저장된 값 없음(처음 설정)','cOpt','처음 설정으로');
+  $('cacheRows').innerHTML=h;
+  const on=(id,f)=>{const b=$(id);if(b)b.onclick=f;};
+  on('cOsm',()=>{lsDel(osm);try{osmCache.clear();}catch(e){}cacheShow();if(G)render();});
+  on('cEd',()=>{lsDel(ed);if(G){edLoad();render();}cacheShow();});
+  on('cEdCur',()=>{try{localStorage.removeItem(cur);}catch(e){}if(G){edLoad();edHide();render();}cacheShow();});
+  on('cOpt',()=>{lsDel(op);location.reload();});
+}
+$('btnCache').onclick=()=>{cacheShow();$('cacheDlg').style.display='block';};
+$('cacheClose').onclick=()=>$('cacheDlg').style.display='none';
+$('cacheAll').onclick=()=>{if(!confirm('이 브라우저에 저장된 지도 데이터·편집 기록·메뉴 설정을 모두 지우고 새로고침할까요?'))return;lsDel(lsKeys('illust_'));location.reload();};
 /* 지도의 지명을 더블클릭하면 이름(GPX 지점이면 고도·들머리/날머리 표시까지) 고치기 */
 let edDlgL=null;
 $('cvWrap').addEventListener('dblclick',e=>{if(!G||!isReal()||e.target.closest('#edMenu'))return;const L=edFind(e);if(!L||L.key.startsWith('__'))return;
