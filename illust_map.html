@@ -1231,7 +1231,10 @@ $('btnEdit').onclick=()=>{EDIT=!EDIT;edSel=null;edHide();$('btnEdit').classList.
   $('zoomHint').textContent=EDIT?'누르면 🗑 지우기 · 끌면 옮기기':'휠: 확대·축소 · 끌기: 이동';};
 $('btnEdReset').onclick=()=>{if(!G)return;if(!confirm('이 코스에서 지우거나 옮긴 지명을 모두 원래대로 되돌릴까요?'))return;ED={hid:new Set(),off:{},ren:{}};edSave();edHide();render();};
 const edFind=e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*W,y=(e.clientY-r.top)/r.height*H;
-  const L=(G&&G._lbl)||[];for(let i=L.length-1;i>=0;i--){const b=L[i];if(x>=b.x-4&&x<=b.x+b.w+4&&y>=b.y-4&&y<=b.y+b.h+4)return b;}return null;};
+  const L=(G&&G._lbl)||[];
+  /* U자 화살표를 먼저 찾음 — 안 그러면 화살표 위를 눌러도 겹친 지명(장터목대피소 등)이 잡혀 옮겨지거나 지워짐 */
+  for(const b of L)if(b.key.startsWith('__uturn')&&x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h)return b;
+  for(let i=L.length-1;i>=0;i--){const b=L[i];if(x>=b.x-4&&x<=b.x+b.w+4&&y>=b.y-4&&y<=b.y+b.h+4)return b;}return null;};
 $('cvWrap').addEventListener('pointerdown',e=>{if(!EDIT||!isReal()||e.target.closest('#edMenu'))return;const L=edFind(e);edHide();edSel=null;if(!L)return;
   edDrag={L,x:e.clientX,y:e.clientY};$('cvWrap').setPointerCapture(e.pointerId);edShow(L);});
 $('cvWrap').addEventListener('pointermove',e=>{if(!edDrag)return;const k=edPx();edShow(edDrag.L,(e.clientX-edDrag.x)/k,(e.clientY-edDrag.y)/k);});
