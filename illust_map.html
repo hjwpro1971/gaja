@@ -529,6 +529,13 @@ async function renderReal(){
   const geo=g=>g.map(p=>P.fwd(p.lat,p.lon));
   const line=(pts,color,width,dash)=>{if(pts.length<2)return;ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);};
   const els=osm?osm.elements:[];
+  /* 지도 데이터의 영문 병기 제거: "운지사 Unji-sa" → "운지사". 한글이 있는 이름에서 영문 낱말만 빼고,
+     한글이 전혀 없는 영문 이름은 이름 없음으로 처리(지도엔 한글만 표시). 몇 번 실행해도 결과 같음 */
+  {const HG=/[가-힣]/,LAT=/[A-Za-z]/,TOK=/^[(\[]?[A-Za-z][A-Za-z.'’\-]*[)\]]?[,/]?$/;
+   const ko=n=>{if(!n||!LAT.test(n))return n;if(!HG.test(n))return '';
+     const s=n.replace(/\s*[\(\[][^()\[\]가-힣]*[A-Za-z][^()\[\]가-힣]*[\)\]]/g,'').split(/\s+/).filter(t=>!TOK.test(t)).join(' ').replace(/[\s\/·,]+$/,'').trim();
+     return HG.test(s)?s:n;};
+   for(const x of els){const t=x.tags;if(!t)continue;if(t['name:ko'])t['name:ko']=ko(t['name:ko'])||t['name:ko'];if(t.name)t.name=t['name:ko']||ko(t.name);}}
   const ways=els.filter(x=>x.type==='way'&&x.geometry);
   ctx.lineCap='round';ctx.lineJoin='round';
   // 면(지도 DB): 관계로 그려진 큰 호수, 행정구역. rings는 [[lat,lon],...] 바깥 테두리들
