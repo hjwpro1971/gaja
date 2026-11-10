@@ -646,8 +646,9 @@ async function renderReal(){
       const ang=(p,q)=>Math.atan2(q.lat-p.lat,(q.lon-p.lon)*Math.cos(p.lat*Math.PI/180));let d=Math.abs(ang(pts[i],pts[a])-ang(pts[i],pts[b]));if(d>Math.PI)d=2*Math.PI-d;
       if(d<.35&&hav(pts[a],pts[b])<60&&!done.some(j=>Math.abs(cum[j]-cum[i])<400)){let bi=i;for(let j=a;j<=b;j++)if(hav(pts[j],pts[a])+hav(pts[j],pts[b])>hav(pts[bi],pts[a])+hav(pts[bi],pts[b]))bi=j;if(!done.includes(bi))done.push(bi);}}
     G._uturn=done.map(i=>Math.round(cum[i]));
-    done.forEach(i=>{const [x,y]=xy[i],j=Math.max(0,i-8),[px,py]=xy[j],ang=Math.atan2(y-py,x-px);ctx.save();ctx.translate(x,y);ctx.rotate(ang);ctx.strokeStyle='#d7262e';ctx.lineWidth=5;ctx.lineCap='round';
-      ctx.beginPath();ctx.arc(10,0,13,-Math.PI*.55,Math.PI*.55,false);ctx.stroke();ctx.fillStyle='#d7262e';ctx.beginPath();const ex=10+13*Math.cos(Math.PI*.55),ey=13*Math.sin(Math.PI*.55);ctx.moveTo(ex-9,ey-1);ctx.lineTo(ex+3,ey-8);ctx.lineTo(ex+3,ey+7);ctx.closePath();ctx.fill();ctx.restore();boxes.push({x:x-20,y:y-20,w:40,h:40});});}
+    done.forEach(i=>{const [x,y]=xy[i],j=Math.max(0,i-8),[px,py]=xy[j],ang=Math.atan2(y-py,x-px);ctx.save();ctx.translate(x,y);ctx.strokeStyle='#d7262e';ctx.lineWidth=5;ctx.lineCap='round';
+      /* 지명점 위에서 출발 → 오른쪽 → 아래로 돌아 왼쪽을 향하는 시계방향 U턴 (진행 방향과 상관없이 항상 같은 모양) */
+      const R=14;ctx.beginPath();ctx.arc(0,R,R,-Math.PI/2,Math.PI/2,false);ctx.stroke();ctx.fillStyle='#d7262e';ctx.beginPath();ctx.moveTo(-12,2*R);ctx.lineTo(1,2*R-9);ctx.lineTo(1,2*R+9);ctx.closePath();ctx.fill();ctx.restore();boxes.push({x:x-14,y:y-4,w:44,h:36});});}
   const distToRoute=(x,y)=>{let m=Infinity;for(const p of samples){const d=Math.hypot(p[0]-x,p[1]-y);if(d<m)m=d;}return m;};
   const na=Math.max(6,Math.round(sm.length/70));
   for(let a=1;a<na;a++){const i=Math.floor(sm.length*a/na);const p=sm[Math.max(0,i-4)],q=sm[Math.min(sm.length-1,i+4)];const ang=Math.atan2(q[1]-p[1],q[0]-p[0]);
