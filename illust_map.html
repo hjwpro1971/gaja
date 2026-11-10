@@ -539,6 +539,7 @@ async function renderReal(){
   const geo=g=>g.map(p=>P.fwd(p.lat,p.lon));
   const line=(pts,color,width,dash)=>{if(pts.length<2)return;ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash||[]);ctx.stroke();ctx.setLineDash([]);};
   const els=osm?osm.elements:[];
+  G._els=els;
   /* 지도 데이터의 영문 병기 제거: "운지사 Unji-sa" → "운지사". 한글이 있는 이름에서 영문 낱말만 빼고,
      한글이 전혀 없는 영문 이름은 이름 없음으로 처리(지도엔 한글만 표시). 몇 번 실행해도 결과 같음 */
   {const HG=/[가-힣]/,LAT=/[A-Za-z]/,TOK=/^[(\[]?[A-Za-z][A-Za-z.'’\-]*[)\]]?[,/]?$/;
@@ -679,6 +680,8 @@ async function renderReal(){
   const oneOff=(a,b)=>{a=a.replace(/\s/g,'');b=b.replace(/\s/g,'');if(a===b)return true;if(a.length!==b.length||a.length<3)return false;let d=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i]&&++d>1)return false;return true;};
   const typoWp=(x,y,r,name)=>shown.some((w,i)=>w.name&&oneOff(w.name,name)&&Math.hypot(wpXY[i][0]-x,wpXY[i][1]-y)<r);
   const nearWp=(x,y,r,name)=>(name&&wpNames.has(name))||wpXY.some(([a,b],i)=>{const d=Math.hypot(a-x,b-y),wn=shown[i].name||'';return d<r||(name&&wn.length>=2&&d<120&&(name.includes(wn)||wn.includes(name)));});
+  /* GPX 지점과 '같은 곳'(이름이 같거나 포함) — nearWp는 거리만으로도 막아서 대피소 바로 옆 샘터(세석샘 등)까지 빠졌음 */
+  const sameWp=(x,y,r,name)=>(name&&wpNames.has(name))||shown.some((w,i)=>{const wn=w.name||'';if(wn.length<2||Math.hypot(wpXY[i][0]-x,wpXY[i][1]-y)>=Math.max(r,120))return false;return oneOff(wn,name)||name.includes(wn)||wn.includes(name);});
   const junk=/삼각점|헬기장|^봉우리$|^무명봉$/;
   const nodes=els.filter(x=>x.type==='node'&&x.tags&&x.tags.name);
   const center=x=>x.type==='node'?[x.lat,x.lon]:x.geometry?[x.geometry.reduce((s,p)=>s+p.lat,0)/x.geometry.length,x.geometry.reduce((s,p)=>s+p.lon,0)/x.geometry.length]:x.bounds?[(x.bounds.minlat+x.bounds.maxlat)/2,(x.bounds.minlon+x.bounds.maxlon)/2]:null;
@@ -755,12 +758,22 @@ async function renderReal(){
   // 주변 봉우리 (OSM)
   const peakXY=[];
   let pkN=0;const pkCap=Math.round(9*A*Z2),pkFar=Math.max(W,H)*.25*ZF; // 봉우리가 너무 많아 복잡하다는 피드백(설악산) — 산행로 가까운 것만
-  nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);if(junk.test(nm(x))||nearWp(px,py,40,nm(x))||pkN>=pkCap||distToRoute(px,py)>pkFar)return;pkN++;
+  /* 높은 봉우리(1000m 이상) 점 자리를 미리 비워 둠 — 더 높은 봉우리의 이름표가 낮은 봉우리 점을 덮어 버려 제석봉이 빠지던 문제 */
+  const pkResv=new Map();
+  {let c=0;nodes.filter(x=>x.tags.natural==='peak'&&parseFloat(x.tags.ele)>=1000).sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{if(c>=pkCap)return;const [px,py]=P.fwd(x.lat,x.lon);
+     if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x))||distToRoute(px,py)>pkFar)return;c++;const rb={x:px-10,y:py-13,w:20,h:14};pkResv.set(x,rb);boxes.push(rb);});}
+  nodes.filter(x=>x.tags.natural==='peak').sort((a,b)=>(parseFloat(b.tags.ele)||0)-(parseFloat(a.tags.ele)||0)).forEach(x=>{const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;peakXY.push([px,py]);{const rb=pkResv.get(x);if(rb){const ri=boxes.indexOf(rb);if(ri>=0)boxes.splice(ri,1);}} /* 미리 비워 둔 자기 자리는 풀고 시작 */
+    if(junk.test(nm(x))||nearWp(px,py,40,nm(x))||pkN>=pkCap||distToRoute(px,py)>pkFar)return;pkN++;
     const near=distToRoute(px,py)<Math.max(W,H)*.1*ZF; // 코스 인접 봉우리 / 원경 봉우리
     if(hit({x:px-10,y:py-13,w:20,h:14})>=1000)return; // 산 기호 자리에 이미 글자가 있으면 생략
-    if(!dotOK(px,py))return;const ib={x:px-10,y:py-13,w:20,h:14};boxes.push(ib);const el=parseFloat(x.tags.ele);
+    const el=parseFloat(x.tags.ele),major=el>=1000; /* 높은 봉우리(제석봉 등)는 이름 자리가 좁아도 가는 선으로 이어서라도 표시 */
+    if(!dotOK(px,py)&&!major)return;const ib={x:px-10,y:py-13,w:20,h:14};boxes.push(ib);
     const f1=near?`500 17px ${F1}`:`15px ${F1}`,c1=near?'#555':'#888',a=near?1:.75;
-    if(label(px,py-6,isFinite(el)?[{t:nm(x),font:f1,color:c1,alpha:a},{t:Math.round(el)+'m',font:`${near?15:13}px ${F1}`,color:c1,alpha:a}]:[{t:nm(x),font:f1,color:c1,alpha:a}],{optional:true,gap:9}))tri(px,py,near?.55:.42);
+    const pl=isFinite(el)?[{t:nm(x),font:f1,color:c1,alpha:a},{t:Math.round(el)+'m',font:`${near?15:13}px ${F1}`,color:c1,alpha:a}]:[{t:nm(x),font:f1,color:c1,alpha:a}];
+    let okP=label(px,py-6,pl,{optional:true,gap:9});
+    if(!okP&&major){const n0=nm(x);kseen[n0]=Math.max(0,(kseen[n0]||1)-1);okP=label(px,py-6,pl,{optional:true,gap:9,lead:true,leadR:[40,60,85,115,150,190]});
+      if(!okP){kseen[n0]=Math.max(0,(kseen[n0]||1)-1);okP=label(px,py-6,pl,{optional:true,gap:9,lead:true,leadR:[40,60,85,115,150,190],noAnch:true});}}
+    if(okP)tri(px,py,near?.55:.42);
     else boxes.splice(boxes.indexOf(ib),1);}); // 이름 자리가 없으면 아이콘도 그리지 않음 // 아이콘 자리는 이름을 붙인 뒤 예약 (다른 글자가 덮지 않게)
   // 고개
   let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x))||!dotOK(px,py))return;sdN++;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6});});
@@ -795,13 +808,18 @@ async function renderReal(){
      view:(x,y)=>{ctx.fillStyle='#d98b1f';ctx.beginPath();for(let i=0;i<10;i++){const r=i%2?2.6:6.5,a=-Math.PI/2+i*Math.PI/5;ctx.lineTo(x+r*Math.cos(a),y+r*Math.sin(a));}ctx.closePath();ctx.fill();},
      rock:(x,y)=>{ctx.fillStyle='#8c8c8c';ctx.beginPath();ctx.moveTo(x-6,y+4);ctx.lineTo(x-3,y-4);ctx.lineTo(x+4,y-5);ctx.lineTo(x+7,y+4);ctx.closePath();ctx.fill();}};
    const kind=t=>t.natural==='spring'?'spring':t.amenity==='shelter'?'rest':t.tourism==='alpine_hut'||t.tourism==='wilderness_hut'?'hut':t.waterway==='waterfall'?'fall':t.tourism==='viewpoint'?'view':t.natural==='rock'?'rock':null;
-   let k=0;const cap=Math.round(4*A*Z2),seen=new Set();
-   byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);if(seen.has(n)||hutDone.has(n)||/^(정자|쉼터|약수터|샘터|샘|약수|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||nearWp(px,py,30,n))return;
+   let k=0,gk=0;const cap=Math.round(7*A*Z2),seen=new Set();
+   byNear(nodes.filter(x=>kind(x.tags))).forEach(x=>{if(k>=cap)return;const n=nm(x);const gen=/^(샘터|샘|약수터|약수)$/.test(n); /* 이름이 '샘터'뿐인 샘도 산행엔 중요한 정보라 몇 개는 표시 */
+     if((!gen&&seen.has(n))||(gen&&gk>=3)||hutDone.has(n)||/^(정자|쉼터|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||sameWp(px,py,30,n))return;
      if(distToRoute(px,py)>Math.max(W,H)*.15*ZF)return; // 산행로에서 먼 작은 시설(폭포·샘터·쉼터)은 생략 — 아이콘이 많으면 복잡
      const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?12:0;
-     {const ib={x:px-6,y:py-6,w:12,h:12};if(hit(ib)>=1000||!dotOK(px,py))return;boxes.push(ib);}
-     if(!label(px,py,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10})){boxes.pop();return;}
-     if(!(img&&drawIcon(img,px,py,isz))){ctx.save();sym[kk](px,py);ctx.restore();}seen.add(n);k++;});
+     const vital=kk==='spring'||kk==='hut'||kk==='rest'; /* 샘·대피소·쉼터는 중요 정보: 남의 이름 옆이어도, 지점 바로 옆이어도 자리를 찾아 표시 */
+     let qx=px,qy=py;if(vital&&wpXY.some(([a,b])=>Math.hypot(a-px,b-py)<14)){qx=px+13;qy=py+12;} /* 대피소 점과 겹치면 살짝 비켜 그림 */
+     const ib={x:qx-6,y:qy-6,w:12,h:12};if(hit(ib)>=1000||(!vital&&!dotOK(qx,qy)))return;boxes.push(ib);
+     let okF=label(qx,qy,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10});
+     if(!okF&&vital){kseen[n]=Math.max(0,(kseen[n]||1)-1);okF=label(qx,qy,[{t:n,font:`600 14px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true,leadR:[40,60,85,115]});}
+     if(!okF){boxes.pop();return;}
+     if(!(img&&drawIcon(img,qx,qy,isz))){ctx.save();sym[kk](qx,qy);ctx.restore();}seen.add(n);k++;if(gen)gk++;});
    // 주차장(P)·탐방지원센터(i) — 대표적인 것만
    {const sE=[xy[0],xy[xy.length-1]],nearEnd=(x,y)=>Math.min(...sE.map(([a,b])=>Math.hypot(a-x,b-y)));
     const badge=(x,y,ch,col)=>{ctx.save();const bw=ch.length>1&&!/\p{Extended_Pictographic}/u.test(ch)?26:18;ctx.fillStyle=col;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-bw/2,y-9,bw,18,4);ctx.fill();ctx.stroke();
