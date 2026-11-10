@@ -1119,6 +1119,14 @@ $('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on');};
 drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');e.dataTransfer.files[0]&&load(e.dataTransfer.files[0]);};
+/* 메뉴 옵션은 브라우저에 기억해 다른 화면에 갔다 와도(새로고침 포함) 유지 */
+const OPT_IDS=['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn','optRelief','optFont','optBig'];
+const optRead=()=>{try{return JSON.parse(localStorage.getItem('illust_opts')||'{}')||{};}catch(e){return {};}};
+const optSave=()=>{try{const o={};OPT_IDS.forEach(id=>{const e=$(id);o[id]=e.type==='checkbox'?e.checked:e.value;});localStorage.setItem('illust_opts',JSON.stringify(o));}catch(e){}};
+{const o=optRead();OPT_IDS.forEach(id=>{const e=$(id);if(!e||!(id in o))return;
+  if(e.type==='checkbox')e.checked=!!o[id];
+  else if([...e.options].some(op=>op.value===String(o[id])))e.value=o[id];});}
+OPT_IDS.forEach(id=>$(id).addEventListener('change',optSave));
 ['optNum','optContour','optMtn','optTree','optStyle','optAspect','optBoard','optStats','optProfile','optLegend','optScale','optWhite','optDash','optUturn','optRelief','optFont'].forEach(id=>$(id).onchange=render);
 window.addEventListener('resize',()=>{fitCanvas();if(G&&$('optStyle').value==='real'&&$('optAspect').value==='fill'){clearTimeout(window._rz);window._rz=setTimeout(render,500);}});
 // 제목·부제목·거리·시간 입력: 타이핑 중엔 보관해 둔 지도 위에 명판만 새로 올리고(즉시), 입력이 멈추면 1초 뒤 한 번만 전체 다시 그림
