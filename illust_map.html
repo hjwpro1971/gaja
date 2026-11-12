@@ -618,9 +618,15 @@ async function renderReal(){
   ways.filter(x=>x.tags.waterway).forEach(x=>line(geo(x.geometry),'#388fd8',x.tags.waterway==='river'?4:1.8));
   // 도로
   const hw=x=>x.tags.highway;
-  ways.filter(x=>/^(tertiary|unclassified|residential)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),'#b4b4b4',2));
-  ways.filter(x=>hw(x)==='track').forEach(x=>line(geo(x.geometry),'#c9a27a',1.6,[6,4]));
-  {const rd=$('optRelief').value!=='contour';ways.filter(x=>/^(path|footway)$/.test(hw(x))).forEach(x=>line(geo(x.geometry),rd?'#e6b422':'#e2842b',rd?2:2.4,rd?[6,4]:null));}
+  /* 경로에서 실제 거리로 3km 넘게 떨어진 곳은 도심의 골목·샛길·산책로까지 그리면 산행 지도가 복잡해짐 — 큰 길·철도·하천만.
+     (화면 크기가 아니라 미터 기준: 코스가 길어 지도가 넓어져도 도심 상세가 같은 거리부터 사라짐) 지명은 4~6km 밖부터 생략 */
+  const MPP0=(()=>{const [a0,o0]=P.inv(W/2,H/2),[a1,o1]=P.inv(W/2+100,H/2);return hav({lat:a0,lon:o0},{lat:a1,lon:o1})/100;})();
+  const FARD=3000/MPP0,RTP=resample(G.pts.map(p=>P.fwd(p.lat,p.lon)),30);
+  const rdist=(x,y)=>{let m=1e9;for(const q of RTP){const d=Math.hypot(q[0]-x,q[1]-y);if(d<m)m=d;}return m;};
+  const farWay=x=>{const g=geo(x.geometry);if(!g||!g.length)return false;const m=g[g.length>>1];return rdist(m[0],m[1])>FARD;};
+  ways.filter(x=>/^(tertiary|unclassified|residential)$/.test(hw(x))&&!farWay(x)).forEach(x=>line(geo(x.geometry),'#b4b4b4',2));
+  ways.filter(x=>hw(x)==='track'&&!farWay(x)).forEach(x=>line(geo(x.geometry),'#c9a27a',1.6,[6,4]));
+  {const rd=$('optRelief').value!=='contour';ways.filter(x=>/^(path|footway)$/.test(hw(x))&&!farWay(x)).forEach(x=>line(geo(x.geometry),rd?'#e6b422':'#e2842b',rd?2:2.4,rd?[6,4]:null));}
   const tun=x=>x.tags.tunnel&&x.tags.tunnel!=='no';
   ways.filter(x=>/^(primary|secondary|motorway|trunk)$/.test(hw(x))&&tun(x)).forEach(x=>line(geo(x.geometry),'rgba(120,120,120,.55)',2.5,[8,6]));
   ways.filter(x=>/^(primary|secondary)$/.test(hw(x))&&!tun(x)).forEach(x=>{const p=geo(x.geometry);line(p,'#8d8d8d',6.5);line(p,'#fbfbf6',3.5);});
@@ -793,7 +799,7 @@ async function renderReal(){
   const byNear=arr=>arr.map(x=>[near(x),x]).sort((a,b)=>a[0]-b[0]).map(v=>v[1]);
   let waterN=0;const waterCap=Math.round(4*A*Z2*DEN);
   // 저수지·호수 이름 (파란 글씨)
-  byNear(ways.filter(x=>x.tags.natural==='water'&&x.tags.name)).forEach(x=>{if(waterN>=waterCap)return;const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);
+  byNear(ways.filter(x=>x.tags.natural==='water'&&x.tags.name)).forEach(x=>{if(waterN>=waterCap)return;const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(distToRoute(px,py)>FARD*1.67)return; 
     if(px>0&&py>0&&px<W&&py<H&&label(px,py,[{t:nm(x),font:`bold 18px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true})){waterN++;return;}
     // 큰 호수는 가운데가 화면 밖이거나 막혀 있을 수 있음 → 보이는 물 위 빈자리를 찾아서
     for(const [sx,sy] of spotsIn([geo(x.geometry)]).slice(0,6))if(label(sx,sy,[{t:nm(x),font:`bold 20px ${F1}`,color:'#2f7fc8'}],{center:true,optional:true})){waterN++;break;}});
@@ -806,6 +812,7 @@ async function renderReal(){
     adm.filter(a=>lv.includes(a.lvl)).sort((a,b)=>b.sp.length-a.sp.length).forEach(a=>{if(k>=cap||adminDone.has(a.n))return;
       for(const [px,py] of a.sp.slice(0,40)){const ok=a.lvl==='8'?label(px,py,[{t:a.n,font:`600 26px ${F1}`,color:'#8fa3b8',sp:14}],{center:true,optional:true}):tileName(px,py,a.n);if(ok){adminDone.add(a.n);k++;if(lv[0]==='6')n67++;break;}}});});
   nodes.filter(x=>x.tags.place&&!adminDone.has(nm(x))).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+    if(/^(suburb|quarter|neighbourhood)$/.test(pl)&&distToRoute(px,py)>FARD*1.33)return; /* 경로에서 먼 도심의 동 이름은 생략 */
     if(/^(county|city|borough)$/.test(pl)||(/^(town|suburb)$/.test(pl)&&/[시군구]$/.test(n)))tileName(px,py,n);
     else if(/[읍면]$/.test(n)&&/^(town|suburb|village|quarter)$/.test(pl))label(px,py,[{t:n,font:`600 26px ${F1}`,color:'#8fa3b8',sp:14}],{center:true,optional:true});
     else if(/^(town|suburb|quarter)$/.test(pl))label(px,py,[{t:n,font:`bold 21px ${F1}`,color:'#333'}],{center:true,optional:true});});
@@ -832,7 +839,7 @@ async function renderReal(){
   // 고개
   let sdN=0;byNear(nodes.filter(x=>x.tags.natural==='saddle'&&!/(갈림길|삼거리|사거리)$/.test(nm(x)))).forEach(x=>{if(sdN>=Math.round(6*A*Z2))return;const [px,py]=P.fwd(x.lat,x.lon);const sNear=distToRoute(px,py)<Math.max(W,H)*.1*ZF;if(px<0||py<0||px>W||py>H||junk.test(nm(x))||nearWp(px,py,40,nm(x))||(CORE&&!sNear)||!dotOK2(px,py,sNear))return;sdN++;label(px,py,[{t:nm(x),font:`600 17px ${F1}`,color:'#555'}],{optional:true,gap:6,ess:sNear});});
   // 마을
-  let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A*Z2*DEN))return;const [px,py]=P.fwd(x.lat,x.lon);if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
+  let vN=0;byNear(nodes.filter(x=>/^(village|hamlet|neighbourhood)$/.test(x.tags.place)&&!/[읍면]$/.test(nm(x)))).forEach(x=>{if(vN>=Math.round(10*A*Z2*DEN))return;const [px,py]=P.fwd(x.lat,x.lon);if(distToRoute(px,py)>FARD*2)return;if(label(px,py,[{t:nm(x),font:`${x.tags.place==='village'?'bold 21':'18'}px ${F1}`,color:'#333'}],{center:true,optional:true}))vN++;});
   // 역·학교·절 — 절은 "이름 卍", 학교는 주황 지붕 건물 그림, 역은 흰 동그라미
   const school=(x,y)=>{ctx.save();ctx.fillStyle='#fff';ctx.strokeStyle='#555';ctx.lineWidth=1.4;ctx.fillRect(x-9,y-6,18,11);ctx.strokeRect(x-9,y-6,18,11);
     ctx.fillStyle='#e8892a';ctx.beginPath();ctx.moveTo(x-11,y-6);ctx.lineTo(x,y-13);ctx.lineTo(x+11,y-6);ctx.closePath();ctx.fill();ctx.stroke();
@@ -840,6 +847,7 @@ async function renderReal(){
     ctx.fillStyle='#8fb4d6';ctx.fillRect(x-6,y-3,4,4);ctx.fillRect(x+2,y-3,4,4);ctx.restore();};
   let tmN=0,scN=0;
   byNear(els.filter(x=>x.tags&&x.tags.name&&(x.tags.railway==='station'||x.tags.amenity==='school'||x.tags.amenity==='place_of_worship'))).forEach(x=>{const c=center(x);if(!c)return;const [px,py]=P.fwd(c[0],c[1]);if(px<0||py<0||px>W||py>H)return;
+    if(distToRoute(px,py)>FARD*1.67)return; /* 경로에서 먼 역·학교·절은 생략 */
     const t=x.tags,temple=t.amenity==='place_of_worship'&&(t.religion==='buddhist'||/[사암]$/.test(nm(x)));
     if(t.amenity==='place_of_worship'&&!temple)return; // 교회 등은 신문 지도에 없으므로 생략
     if(nearWp(px,py,30,nm(x)))return; // GPX 지점과 같은(비슷한) 이름이면 생략 — GPX 지명이 우선
@@ -908,7 +916,7 @@ async function renderReal(){
     put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF&&(nearEnd(px,py)*mpp<1500||/안전센터/.test(nm(x)))); /* 안전센터(세렴안전센터 등)는 탐방로 중간에도 있음 */ // 안내소는 탐방로 입구(출발·도착)에만 있다 — 산 중턱에 찍히면 오류
     put(nodes.filter(isBus),'🚌','#1e6fb8',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
     put(nodes.filter(isWC),'WC','#7a7a7a',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
-    put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
+    put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>(nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)))&&distToRoute(px,py)<FARD*1.67);}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
    let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2*DEN))return;const n=nm(x);if(seen.has(n)||lineDone.has(n)||wpNames.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
      if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}
