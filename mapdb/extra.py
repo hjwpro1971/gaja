@@ -40,6 +40,9 @@ def db():
     CREATE INDEX IF NOT EXISTS kakao_ll ON kakao_poi(lat, lon);
     CREATE INDEX IF NOT EXISTS kakao_cellx ON kakao_poi(cell);
     CREATE TABLE IF NOT EXISTS kakao_cell(cell TEXT PRIMARY KEY, fetched REAL, n INTEGER);
+    CREATE TABLE IF NOT EXISTS forest_poi(id INTEGER PRIMARY KEY AUTOINCREMENT, mountain TEXT, name TEXT, lat REAL, lon REAL, ele REAL, type TEXT);
+    CREATE INDEX IF NOT EXISTS forest_ll ON forest_poi(lat, lon);
+    CREATE TABLE IF NOT EXISTS forest_meta(k TEXT PRIMARY KEY, v TEXT);
     """)
     # 2026-11-08: tourist_map에서 옮긴 90개는 좌표가 대부분 틀려(OSM 대조 63개가 0.3~8.6km 어긋남, 백담사 7.4km 등)
     # 사용 중지로 표시. 지우지는 않음 — active=1 인 것(앞으로 사람이 직접 확인해 넣는 것)만 내보낸다.
@@ -66,6 +69,34 @@ def import_custom_once(path):
                        for p in pois if p.get('name') and p.get('lat') is not None])
         c.commit()
         return len(pois)
+
+
+def import_forest(path):
+    """한국등산트레킹지원센터·산림청 100대명산 지점(2022-01 자료, make_forest_json.py로 만든 forest_pois.json).
+    OSM이 우선이고 이 표는 보충용. 파일이 바뀌었을 때만(수정시각 기준) 표를 통째로 다시 채운다. OSM 재생성과 무관."""
+    if not os.path.exists(path):
+        return 0
+    mt = str(int(os.path.getmtime(path)))
+    with _lock:
+        c = db()
+        old = c.execute("SELECT v FROM forest_meta WHERE k='mtime'").fetchone()
+        if old and old[0] == mt:
+            return 0
+        d = json.load(open(path, encoding='utf-8'))
+        rows = [(p.get('mountain'), p['name'], p['lat'], p['lon'], p.get('ele'), p.get('type') or 'poi')
+                for p in d.get('pois', []) if p.get('name') and p.get('lat') is not None]
+        c.execute('DELETE FROM forest_poi')
+        c.executemany('INSERT INTO forest_poi(mountain,name,lat,lon,ele,type) VALUES(?,?,?,?,?,?)', rows)
+        c.execute("INSERT OR REPLACE INTO forest_meta(k,v) VALUES('mtime',?)", (mt,))
+        c.execute("INSERT OR REPLACE INTO forest_meta(k,v) VALUES('source',?)", (d.get('source', ''),))
+        c.commit()
+        return len(rows)
+
+
+def forest_in(s, w, n, e):
+    c = db()
+    return [dict(zip(('id', 'mountain', 'name', 'lat', 'lon', 'ele', 'type'), r)) for r in c.execute(
+        'SELECT id,mountain,name,lat,lon,ele,type FROM forest_poi WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?', (s, n, w, e))]
 
 
 def classify(cat, name):
@@ -228,7 +259,9 @@ def stats():
             'kakao_cells': c.execute('SELECT count(*) FROM kakao_cell').fetchone()[0],
             'kakao_oldest': time.strftime('%Y-%m-%d', time.localtime(k[1])) if k[1] else None,
             'kakao_types': dict(c.execute('SELECT type,count(*) FROM kakao_poi GROUP BY type')),
-            'kakao_key': bool(KAKAO_KEY), 'keep_days': KEEP_DAYS}
+            'kakao_key': bool(KAKAO_KEY), 'keep_days': KEEP_DAYS,
+            'forest': c.execute('SELECT count(*) FROM forest_poi').fetchone()[0],
+            'forest_source': (c.execute("SELECT v FROM forest_meta WHERE k='source'").fetchone() or [''])[0]}
 
 
 # OSM 태그 흉내 — illust_map 등이 기존 OSM 점과 같은 방식으로 그리도록
@@ -250,15 +283,18 @@ def kakao_ok(p, osm_names):
 
 def as_nodes(osm_nodes, s, w, n, e, with_kakao=True):
     """직접 입력 + 카카오 지점을 Overpass 노드 모양으로. OSM에 이미 있는 것(같은 이름 300m 안, 또는 25m 안 아무 점)은 뺀다."""
+    ref = list(osm_nodes)  # 중복 판단 기준: OSM → (산림청 지점을 넣은 뒤) 카카오가 이를 기준으로 함
+
     def dup(name, lat, lon):
-        for o in osm_nodes:
+        for o in ref:
             dy, dx = (o['lat'] - lat) * 111000, (o['lon'] - lon) * 88000
             d2 = dy * dy + dx * dx
             if d2 < 625:
                 return True
             if d2 < 90000:  # 300m 안에서 이름이 같거나 한쪽이 다른 쪽을 포함 (조령샘 ↔ 조령산 조령샘터)
-                on = o['tags'].get('name:ko') or o['tags'].get('name') or ''
-                if len(on) >= 2 and (on == name or on in name or name in on):
+                on = (o['tags'].get('name:ko') or o['tags'].get('name') or '').replace(' ', '')
+                nm2 = name.replace(' ', '')
+                if len(on) >= 2 and (on == nm2 or on in nm2 or nm2 in on):
                     return True
         return False
     out = []
@@ -267,8 +303,15 @@ def as_nodes(osm_nodes, s, w, n, e, with_kakao=True):
             continue
         out.append({'type': 'node', 'id': -1000000 - p['id'], 'lat': p['lat'], 'lon': p['lon'],
                     'tags': {'name': p['name'], 'source': 'manual', **({'ele': str(p['ele'])} if p['ele'] else {}), **TYPE_TAGS.get(p['type'], {})}})
+    for p in forest_in(s, w, n, e):  # 산림청·등산트레킹지원센터 100대명산 지점(2022) — OSM에 없는 것만 보충
+        if dup(p['name'], p['lat'], p['lon']):
+            continue
+        node = {'type': 'node', 'id': -2000000 - p['id'], 'lat': p['lat'], 'lon': p['lon'],
+                'tags': {'name': p['name'], 'source': 'forest', **({'ele': str(int(p['ele']))} if p['ele'] else {}), **TYPE_TAGS.get(p['type'], {})}}
+        out.append(node)
+        ref.append(node)
     if with_kakao:
-        osm_names = {(o['tags'].get('name:ko') or o['tags'].get('name') or '').replace(' ', '') for o in osm_nodes}
+        osm_names = {(o['tags'].get('name:ko') or o['tags'].get('name') or '').replace(' ', '') for o in ref}
         for p in kakao_in(s, w, n, e):
             if not kakao_ok(p, osm_names) or dup(p['name'], p['lat'], p['lon']):
                 continue

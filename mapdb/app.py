@@ -310,6 +310,12 @@ sched = {'last_check': None, 'every_hours': 6, 'osm_days': OSM_REFRESH_DAYS}
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8000'))
+    try:
+        nf = extra.import_forest(os.path.join(DATA, 'forest_pois.json'))
+        if nf:
+            print(f'산림청 100대명산 지점 {nf}개 가져옴 (forest_pois.json)', flush=True)
+    except Exception as ex:  # noqa
+        print(f'산림청 지점 가져오기 실패: {ex}', flush=True)
     n = extra.import_custom_once(os.path.join(DATA, 'mountain_pois.json'))
     if n:
         print(f'직접 입력 지점 {n}개 가져옴 (mountain_pois.json)', flush=True)
