@@ -876,9 +876,11 @@ async function renderReal(){
      if(kind(x.tags)==='hut'){if(distToRoute(px,py)>Math.max(W,H)*.15*ZF)return;}
      else if(distToRoute(px,py)*mpp>FAC_MAX_M)return;
      const kk=kind(x.tags),img={spring:'spring',rest:'rest',hut:'rest',fall:'waterfall'}[kk],isz=img?12:0;
-     const vital=kk==='spring'||kk==='hut'||kk==='rest'; /* 샘·대피소·쉼터는 중요 정보: 남의 이름 옆이어도, 지점 바로 옆이어도 자리를 찾아 표시 */
+     const vital=kk==='spring'||kk==='hut'||kk==='rest'||distToRoute(px,py)<60*ZF; /* 샘·대피소·쉼터, 그리고 코스 바로 옆(약 60px 안)의 폭포·전망대 등은 중요 정보: 남의 이름 옆이어도, 지점 바로 옆이어도 자리를 찾아 표시(가로/세로 비율이 달라도 빠지지 않게) */
      let qx=px,qy=py;if(vital&&wpXY.some(([a,b])=>Math.hypot(a-px,b-py)<14)){qx=px+13;qy=py+12;} /* 대피소 점과 겹치면 살짝 비켜 그림 */
-     const ib={x:qx-6,y:qy-6,w:12,h:12};if(blocked(ib,vital)||(!vital&&!dotOK2(qx,qy)))return;boxes.push(ib);
+     /* 중요한 시설은 아이콘 자리가 막혀도 포기하지 않고 근처 빈자리(최대 약 20px)로 비켜서 그림 */
+     if(vital&&hit({x:qx-6,y:qy-6,w:12,h:12})>=1000){const px0=qx,py0=qy;let bs=null;for(const [ox,oy] of [[14,0],[-14,0],[0,-14],[0,14],[14,-14],[-14,-14],[14,14],[-14,14],[22,0],[-22,0],[0,-22],[0,22]]){const sc=hit({x:px0+ox-6,y:py0+oy-6,w:12,h:12});if(sc<1000){bs=[ox,oy];break;}}if(bs){qx=px0+bs[0];qy=py0+bs[1];}}
+     const ib={x:qx-6,y:qy-6,w:12,h:12};if((!vital&&blocked(ib,vital))||(vital&&hit(ib)>=2000)||(!vital&&!dotOK2(qx,qy)))return;boxes.push(ib);
      let okF=label(qx,qy,[{t:n,font:`600 15px ${F1}`,color:'#3b4a55'}],{optional:true,gap:img?12:10,ess:vital});
      if(!okF&&vital){kseen[n]=Math.max(0,(kseen[n]||1)-1);okF=label(qx,qy,[{t:n,font:`600 14px ${F1}`,color:'#3b4a55'}],{optional:true,gap:10,lead:true,leadR:[40,60,85,115],ess:vital});}
      if(!okF){boxes.pop();return;}
