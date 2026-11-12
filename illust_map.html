@@ -744,9 +744,12 @@ async function renderReal(){
      // 화면 안 부분만, 왼쪽→오른쪽으로 읽히게
      if(P[0][0]>P[P.length-1][0])P.reverse();
      const o=ED.off[key];if(o)P=P.map(([x,y])=>[x+o[0],y+o[1]]);
+     {const dl=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);let L0=0;for(let i=1;i<P.length;i++)L0+=dl(P[i-1],P[i]);
+      if(L0>0&&L0<240){const e=(a,b)=>[a[0]+(a[0]-b[0])*.35*L0/(dl(a,b)||1),a[1]+(a[1]-b[1])*.35*L0/(dl(a,b)||1)]; /* 짧은 선(사다리병창길 등)은 양끝을 연장선으로 늘려 글자가 들어가게 */
+       P=[e(P[0],P[1]),...P,e(P[P.length-1],P[P.length-2])];}}
      const seg=[0];for(let i=1;i<P.length;i++)seg.push(seg[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));const Ltot=seg[seg.length-1];
      let placed=null,font='';
-     for(const fs of [19,16,14])for(const off of [0,14,-14,28,-28,42,-42,56,-56]){if(placed)break;
+     for(const fs of [19,16,14,12])for(const off of [0,14,-14,28,-28,42,-42,56,-56]){if(placed)break;
        font=`italic bold ${fs}px ${F1}`;ctx.save();ctx.font=font;const cs=[...F.n].filter(c=>c!==' ');const cw=cs.map(c=>ctx.measureText(c).width);ctx.restore();
        const base=cw.reduce((a,b)=>a+b,0);if(Ltot<base*1.05)continue;let sp=Math.min(26,(Ltot*.6-base)/Math.max(1,cs.length-1));sp=Math.max(2,sp);const tw=base+sp*(cs.length-1);
        const at=d=>{let i=1;while(i<seg.length-1&&seg[i]<d)i++;const t=(d-seg[i-1])/((seg[i]-seg[i-1])||1),a=P[i-1],b=P[i],an=Math.atan2(b[1]-a[1],b[0]-a[0]);return[a[0]+(b[0]-a[0])*t-Math.sin(an)*off,a[1]+(b[1]-a[1])*t+Math.cos(an)*off,an];};
@@ -887,14 +890,19 @@ async function renderReal(){
     const put=(arr,ch,col,cap,ok,minEnd=45)=>{let k=0;const used=[];byNear(arr).forEach(x=>{if(k>=cap)return;const n=nm(x);const [px,py]=P.fwd(x.lat,x.lon);
       if(px<0||py<0||px>W||py>H||!ok(x,px,py))return;if(used.some(([a,b])=>Math.hypot(a-px,b-py)<60))return;
       if(nearEnd(px,py)<minEnd)return; // 출발·도착 표시와 겹치는 P/i는 생략 (출발·도착 마커가 대신함)
-      {const bb={x:px-14,y:py-11,w:28,h:22};if(hit(bb)>=1000||!dotOK(px,py))return;boxes.push(bb);} // 기호는 빈자리에만 (글자 위에 찍지 않음)
+      /* 기호는 빈자리에만 (글자 위에 찍지 않음). 안내소·안전센터는 폭포·대피소 점과 같은 자리인 경우가 많아 옆으로 비켜서라도 표시 */
+      let qx=px,qy=py,okb=false;for(const [ox,oy] of (ch==='i'?[[0,0],[-24,-14],[24,-14],[-24,16],[24,16],[0,-28]]:[[0,0]])){const bb={x:px+ox-14,y:py+oy-11,w:28,h:22};if(hit(bb)<1000&&dotOK(px,py)){boxes.push(bb);qx=px+ox;qy=py+oy;okb=true;break;}}
+      if(!okb)return;
       const wpSame=wpNames.has(n)||typoWp(px,py,25,n); // GPX 지점과 같은 이름이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
-      if(!wpSame&&!label(px,py,[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}],{optional:true,gap:13})){boxes.pop();return;}
-      badge(px,py,ch,col);used.push([px,py]);k++;});};
+      if(!wpSame){const L1=[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}];let okl=label(qx,qy,L1,{optional:true,gap:13});
+        if(!okl&&ch==='i'){kseen[n]=Math.max(0,(kseen[n]||1)-1);okl=label(qx,qy,L1,{optional:true,gap:13,lead:true});}
+        if(!okl&&ch!=='i'){boxes.pop();return;}} /* 안내소 기호는 이름 자리가 없어도 기호만이라도 표시 */
+      badge(qx,qy,ch,col);used.push([px,py]);k++;});};
     const isWC=x=>x.tags.amenity==='toilets',isBus=x=>x.tags.highway==='bus_stop'||x.tags.public_transport==='platform'||x.tags.amenity==='bus_station';
+    /* 안내소·안전센터 기호를 먼저 — 화장실(WC)·버스 기호가 같은 자리를 차지해 탐방안내소가 빠지던 문제 */
+    put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF&&(nearEnd(px,py)*mpp<1500||/안전센터/.test(nm(x)))); /* 안전센터(세렴안전센터 등)는 탐방로 중간에도 있음 */ // 안내소는 탐방로 입구(출발·도착)에만 있다 — 산 중턱에 찍히면 오류
     put(nodes.filter(isBus),'🚌','#1e6fb8',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
     put(nodes.filter(isWC),'WC','#7a7a7a',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
-    put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF&&(nearEnd(px,py)*mpp<1500||/안전센터/.test(nm(x)))); /* 안전센터(세렴안전센터 등)는 탐방로 중간에도 있음 */ // 안내소는 탐방로 입구(출발·도착)에만 있다 — 산 중턱에 찍히면 오류
     put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)));}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
    let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2*DEN))return;const n=nm(x);if(seen.has(n)||lineDone.has(n)||wpNames.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
