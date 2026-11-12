@@ -481,6 +481,9 @@ async function loadDEM(n,w,s,e){
     return at(ix,iy)*(1-fx)*(1-fy)+at(ix+1,iy)*fx*(1-fy)+at(ix,iy+1)*(1-fx)*fy+at(ix+1,iy+1)*fx*fy;};
 }
 const MAPDB_URL=new URLSearchParams(location.search).get('mapdb')||'/mapdb/api/bbox';
+/* 지도 DB의 OSM 원본 기준일(하단 출처 문구에 표시). 못 받아도 그냥 생략 */
+let DBDATE='';
+fetch(MAPDB_URL.replace(/\/bbox$/,'/stats')).then(r=>r.json()).then(j=>{const d=new Date(j&&j.meta&&j.meta.source_date);if(!isNaN(d)){DBDATE=d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');if(typeof G!=='undefined'&&G&&$('optStyle').value==='real')render();}}).catch(()=>{});
 async function loadOSM(n,w,s,e){
   const hit=findOSM(n,w,s,e);if(hit)return hit;
   const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
@@ -1072,7 +1075,7 @@ function drawBoard(L,F1,iv,PH,shown){
     ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.fillRect(g.x,g.y,g.w,g.h);ctx.strokeRect(g.x,g.y,g.w,g.h);
     items.forEach(([t,f],i)=>{const yy=g.y+26+i*30;f(ctx);ctx.beginPath();ctx.moveTo(g.x+14,yy);ctx.lineTo(g.x+60,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,g.x+72,yy+6);});ctx.restore();}
   {const {x,y}=L.north;ctx.save();ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
-  ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자 · 카카오 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-22,H-PH-20);ctx.restore();
+  ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자${DBDATE?' ('+DBDATE+' 기준)':''} · 카카오 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-22,H-PH-20);ctx.restore();
   // 축척 막대: 지도 아래 가운데 쪽, 0 — 깔끔한 거리
   if($('optScale').checked&&G._P){const P=G._P,[la0,lo0]=P.inv(W/2,H/2),[la1,lo1]=P.inv(W/2+100,H/2);const m100=hav({lat:la0,lon:lo0},{lat:la1,lon:lo1}); // 100px당 m
     const want=m100*2.2,nice=[50,100,200,250,500,1000,2000,2500,5000].reduce((a,b)=>Math.abs(b-want)<Math.abs(a-want)?b:a),len=nice/m100*100;

@@ -9,10 +9,12 @@ GET  /mapdb/api/refresh      갱신 진행 상태·로그
 POST /mapdb/api/refresh      OSM 최신 데이터 받아 DB 다시 만들기(백그라운드)
 GET  /mapdb/api/pois         tourist_map용: {osm:[KoreaPOIs 형식], kakao:[...], custom:[...]} (kakao=1이면 카카오 칸 갱신)
 GET  /mapdb/api/custom       직접 입력한 지점 전체 (tourist_map의 MountainPOIs)
+GET  /mapdb/api/dem/z/x/y.png  지형(고도) 타일 캐시 — 처음 한 번만 외부(AWS)에서 받아 data/dem/ 에 저장, 이후엔 NAS에서 바로
+                             (illust_map이 확대할 때마다 외부 서버에서 타일을 받느라 3초씩 걸리던 것을 없애려고 2026-11-12 추가)
 
 bbox·pois 에 kakao=1 을 붙이면 그 범위의 카카오 장소(30일 보관, extra.py)를 함께 준다.
 """
-import json, os, sqlite3, subprocess, sys, threading, time
+import json, math, os, sqlite3, subprocess, sys, threading, time, urllib.request
 import extra
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -21,6 +23,54 @@ DATA = os.environ.get('DATA_ROOT', '/data')
 DB = os.path.join(DATA, 'mapdb.sqlite')
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_AREA = 0.6  # 한 번에 조회할 수 있는 범위(위도×경도 제곱도). 약 60km×50km
+
+DEM_SRC = 'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'
+DEM_DIR = os.path.join(DATA, 'dem')
+PNG_MAGIC = bytes([0x89, 0x50, 0x4E, 0x47])  # PNG 파일 시작 4바이트
+dem_locks, dem_locks_guard = {}, threading.Lock()  # 같은 타일을 동시에 여러 번 받지 않게 타일별 잠금
+
+
+def dem_in_korea(z, x, y):
+    """한국 부근 타일만 받아 준다(아무 좌표나 중계하는 프록시가 되지 않게). 타일 중심의 위·경도로 판정."""
+    n = 2 ** z
+    lon = (x + 0.5) / n * 360 - 180
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 0.5) / n))))
+    return 32 <= lat <= 40 and 123 <= lon <= 133
+
+
+def dem_tile(z, x, y):
+    """타일 PNG 바이트. 저장돼 있으면 그대로, 없으면 외부에서 받아 저장한 뒤 돌려준다."""
+    path = os.path.join(DEM_DIR, str(z), str(x), f'{y}.png')
+    if os.path.exists(path):
+        with open(path, 'rb') as f:
+            return f.read()
+    with dem_locks_guard:
+        lk = dem_locks.setdefault(path, threading.Lock())
+    try:
+        with lk:
+            if os.path.exists(path):  # 기다리는 동안 다른 요청이 이미 저장함
+                with open(path, 'rb') as f:
+                    return f.read()
+            last = None
+            for _ in range(2):
+                try:
+                    req = urllib.request.Request(DEM_SRC.format(z=z, x=x, y=y), headers={'User-Agent': 'gaja-mapdb'})
+                    with urllib.request.urlopen(req, timeout=25) as r:
+                        data = r.read()
+                    if data[:4] != PNG_MAGIC:
+                        raise ValueError('PNG가 아닌 응답')
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    tmp = f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
+                    with open(tmp, 'wb') as f:
+                        f.write(data)
+                    os.replace(tmp, path)  # 다 쓴 뒤 교체 — 반쯤 쓰인 파일이 남지 않게
+                    return data
+                except Exception as ex:  # noqa
+                    last = ex
+            raise RuntimeError(f'DEM 타일 받기 실패 {z}/{x}/{y}: {last}')
+    finally:
+        with dem_locks_guard:
+            dem_locks.pop(path, None)
 
 job = {'running': False, 'started': None, 'ended': None, 'ok': None, 'log': []}
 local = threading.local()
@@ -141,6 +191,15 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_tile(self, body):
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'public, max-age=31536000, immutable')  # 타일은 바뀌지 않으므로 브라우저도 오래 보관
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -182,6 +241,18 @@ class H(BaseHTTPRequestHandler):
                 names = {(x['name'] or '').replace(' ', '') for x in op}
                 return self.send(200, {'osm': op, 'custom': extra.custom_in(s, w, n, e),
                                        'kakao': [k for k in extra.kakao_in(s, w, n, e) if extra.kakao_ok(k, names)] if kk else []})
+            if p.startswith('/mapdb/api/dem/'):
+                parts = p[len('/mapdb/api/dem/'):].split('/')
+                if len(parts) != 3 or not parts[2].endswith('.png'):
+                    return self.send(400, {'error': '잘못된 요청입니다.'})
+                z, x, y = int(parts[0]), int(parts[1]), int(parts[2][:-4])
+                if not (5 <= z <= 15 and 0 <= x < 2 ** z and 0 <= y < 2 ** z) or not dem_in_korea(z, x, y):
+                    return self.send(400, {'error': '지원하지 않는 타일입니다.'})
+                try:
+                    return self.send_tile(dem_tile(z, x, y))
+                except RuntimeError as ex:
+                    sys.stderr.write(str(ex) + chr(10))
+                    return self.send(502, {'error': '지형 타일을 받지 못했습니다.'})
             if p == '/mapdb/api/lines':
                 return self.send(200, {'report': extra.lines_report()})
             if p == '/mapdb/api/custom':
@@ -233,7 +304,7 @@ def scheduler():
         time.sleep(6 * 3600)
 
 
-OSM_REFRESH_DAYS = 30
+OSM_REFRESH_DAYS = 7  # 2026-11-13 사용자 요청: 30일→7일 (Geofabrik은 매일 갱신)
 sched = {'last_check': None, 'every_hours': 6, 'osm_days': OSM_REFRESH_DAYS}
 
 
