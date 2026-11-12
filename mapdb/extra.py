@@ -43,6 +43,7 @@ def db():
     CREATE TABLE IF NOT EXISTS forest_poi(id INTEGER PRIMARY KEY AUTOINCREMENT, mountain TEXT, name TEXT, lat REAL, lon REAL, ele REAL, type TEXT);
     CREATE INDEX IF NOT EXISTS forest_ll ON forest_poi(lat, lon);
     CREATE TABLE IF NOT EXISTS forest_meta(k TEXT PRIMARY KEY, v TEXT);
+    CREATE TABLE IF NOT EXISTS hidden_poi(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, lat REAL, lon REAL, note TEXT, created TEXT);
     """)
     # 2026-11-08: tourist_map에서 옮긴 90개는 좌표가 대부분 틀려(OSM 대조 63개가 0.3~8.6km 어긋남, 백담사 7.4km 등)
     # 사용 중지로 표시. 지우지는 않음 — active=1 인 것(앞으로 사람이 직접 확인해 넣는 것)만 내보낸다.
@@ -69,6 +70,55 @@ def import_custom_once(path):
                        for p in pois if p.get('name') and p.get('lat') is not None])
         c.commit()
         return len(pois)
+
+
+# ── 제외 목록: 없어졌는데 OSM·카카오·산림청에 남아 있는 지점을 모든 지도에서 영구히 뺀다 (OSM 재생성과 무관) ──
+HIDE_M = 300  # 이름이 같고 이 거리(m) 안에 있으면 같은 지점으로 보고 제외
+
+
+def hide_add(name, lat, lon, note=''):
+    name = (name or '').strip()
+    if not name or lat is None or lon is None:
+        raise ValueError('이름과 좌표가 필요합니다')
+    with _lock:
+        c = db()
+        key = name.replace(' ', '')
+        for hid, hn, hla, hlo in c.execute('SELECT id,name,lat,lon FROM hidden_poi'):
+            if hn.replace(' ', '') == key and abs(hla - lat) * 111000 < 30 and abs(hlo - lon) * 88000 < 30:
+                return hid
+        cur = c.execute('INSERT INTO hidden_poi(name,lat,lon,note,created) VALUES(?,?,?,?,?)',
+                        (name, float(lat), float(lon), note, time.strftime('%Y-%m-%d %H:%M:%S')))
+        c.commit()
+        return cur.lastrowid
+
+
+def hide_list():
+    c = db()
+    return [dict(zip(('id', 'name', 'lat', 'lon', 'note', 'created'), r)) for r in
+            c.execute('SELECT id,name,lat,lon,note,created FROM hidden_poi ORDER BY id DESC')]
+
+
+def hide_del(hid=None):
+    with _lock:
+        c = db()
+        n = c.execute('DELETE FROM hidden_poi' + ('' if hid is None else ' WHERE id=?'), () if hid is None else (hid,)).rowcount
+        c.commit()
+        return n
+
+
+def apply_hidden(elements):
+    hs = [(h['name'].replace(' ', ''), h['lat'], h['lon']) for h in hide_list()]
+    if not hs:
+        return elements
+    out = []
+    for e in elements:
+        t = e.get('tags') if e.get('type') == 'node' else None
+        if t:
+            nm = (t.get('name:ko') or t.get('name') or '').replace(' ', '')
+            if nm and any(nm == hn and abs(e['lat'] - hla) * 111000 < HIDE_M and abs(e['lon'] - hlo) * 88000 < HIDE_M for hn, hla, hlo in hs):
+                continue
+        out.append(e)
+    return out
 
 
 def import_forest(path):
@@ -260,6 +310,7 @@ def stats():
             'kakao_oldest': time.strftime('%Y-%m-%d', time.localtime(k[1])) if k[1] else None,
             'kakao_types': dict(c.execute('SELECT type,count(*) FROM kakao_poi GROUP BY type')),
             'kakao_key': bool(KAKAO_KEY), 'keep_days': KEEP_DAYS,
+            'hidden': c.execute('SELECT count(*) FROM hidden_poi').fetchone()[0],
             'forest': c.execute('SELECT count(*) FROM forest_poi').fetchone()[0],
             'forest_source': (c.execute("SELECT v FROM forest_meta WHERE k='source'").fetchone() or [''])[0]}
 

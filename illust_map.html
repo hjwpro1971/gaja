@@ -118,7 +118,7 @@ textarea{width:100%;min-height:260px;border:1px solid var(--line);border-radius:
   <div id="cvBox" style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center">
   <div id="cvWrap" style="position:relative;overflow:hidden;border-radius:6px;touch-action:none;width:fit-content;max-width:100%">
   <div id="edBox" style="position:absolute;display:none;border:2px dashed #d7262e;background:rgba(215,38,46,.08);pointer-events:none;z-index:2"></div>
-  <div id="edMenu" style="position:absolute;display:none;z-index:3;gap:4px"><button id="edDel" style="padding:4px 8px;font-size:13px;background:#d7262e;color:#fff;border-color:#d7262e">🗑 지우기</button></div><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
+  <div id="edMenu" style="position:absolute;display:none;z-index:3;gap:4px"><button id="edDel" style="padding:4px 8px;font-size:13px;background:#d7262e;color:#fff;border-color:#d7262e">🗑 지우기</button><button id="edHideDb" title="없어진 시설이 DB(OSM·카카오·산림청)에 남아 있을 때 — 모든 지도에서 영구히 빼기" style="display:none;padding:4px 8px;font-size:13px;background:#444;color:#fff;border-color:#444">🚫 DB에서 영구 제외</button></div><canvas id="cv" width="1920" height="1080" hidden style="transform-origin:0 0;display:block"></canvas></div></div>
 </section>
 </main>
 
@@ -1347,7 +1347,7 @@ $('cvWrap').addEventListener('pointerdown',e=>{if(!EDIT||!isReal()||e.target.clo
   edDrag={L,x:e.clientX,y:e.clientY};$('cvWrap').setPointerCapture(e.pointerId);edShow(L);});
 $('cvWrap').addEventListener('pointermove',e=>{if(!edDrag)return;const k=edPx();edShow(edDrag.L,(e.clientX-edDrag.x)/k,(e.clientY-edDrag.y)/k);});
 $('cvWrap').addEventListener('pointerup',e=>{if(!edDrag)return;const {L,x,y}=edDrag;edDrag=null;const k=edPx(),dx=(e.clientX-x)/k,dy=(e.clientY-y)/k;
-  if(Math.abs(dx)+Math.abs(dy)<3){if(!EDIT){edHide();return;}edSel=L;edShow(L);const m=$('edMenu');m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
+  if(Math.abs(dx)+Math.abs(dy)<3){if(!EDIT){edHide();return;}edSel=L;edShow(L);const m=$('edMenu');$('edHideDb').style.display=(L.ax!=null&&!L.wp&&!L.key.startsWith('__'))?'':'none';m.style.display='flex';m.style.left=(L.x*k)+'px';m.style.top=Math.max(0,L.y*k-34)+'px';return;}
   const o=ED.off[L.key]||[0,0];let an=[o[2],o[3]];if(L.ax!=null&&G._P){an=G._P.inv(L.ax,L.ay);}
   ED.off[L.key]=L.key.startsWith('__')?[o[0]+dx,o[1]+dy]:[o[0]+dx,o[1]+dy,an[0],an[1]];edSave();edHide();render();});
 /* 저장값 관리: 이 브라우저(localStorage)에 쌓인 지도 데이터 캐시·지명 편집 기록·메뉴 설정을 보고 지움 */
@@ -1361,7 +1361,12 @@ function cacheShow(){
   h+=row('지명 편집 기록',`${ed.length}개 코스 (지우고 옮기고 이름 바꾼 기록)`,'cEd','모두 지우기');
   if(cur&&localStorage.getItem(cur))h+=row('이 코스의 편집 기록','지금 열린 코스만','cEdCur','이 코스만 지우기');
   h+=row('메뉴 설정',op.length?'글꼴·지형 표현 등 선택값':'저장된 값 없음(처음 설정)','cOpt','처음 설정으로');
-  $('cacheRows').innerHTML=h;
+  $('cacheRows').innerHTML=h+'<div id="hidRows" style="padding:6px 0;border-top:1px solid #eee"><b>DB에서 제외한 지점</b><div id="hidList" style="color:#777;font-size:12px">불러오는 중…</div></div>';
+  fetch(MAPDB_URL.replace(/\/bbox$/,'/hidden')).then(r=>r.json()).then(j=>{const L=j.hidden||[];const box=$('hidList');if(!box)return;
+    box.innerHTML=L.length?L.map(x=>`<div style="display:flex;align-items:center;gap:8px;padding:2px 0;color:#333;font-size:13px"><span style="flex:1">${String(x.name).replace(/</g,'&lt;')} <span style="color:#999;font-size:11px">(${x.lat.toFixed(4)}, ${x.lon.toFixed(4)})</span></span><button type="button" data-hid="${x.id}">복원</button></div>`).join(''):'없음 (지도에서 지명을 누르고 "🚫 DB에서 영구 제외"로 추가)';
+    box.querySelectorAll('button[data-hid]').forEach(b=>b.onclick=async()=>{try{await fetch(MAPDB_URL.replace(/\/bbox$/,'/unhide'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:+b.dataset.hid})});
+      lsDel(lsKeys('illust_osm_'));try{osmCache.clear();}catch(_){}cacheShow();if(G)render();}catch(e){alert('복원하지 못했습니다');}});
+  }).catch(()=>{const box=$('hidList');if(box)box.textContent='목록을 불러오지 못했습니다';});
   const on=(id,f)=>{const b=$(id);if(b)b.onclick=f;};
   on('cOsm',()=>{lsDel(osm);try{osmCache.clear();}catch(e){}cacheShow();if(G)render();});
   on('cEd',()=>{lsDel(ed);if(G){edLoad();render();}cacheShow();});
@@ -1387,6 +1392,16 @@ $('edOk').onclick=()=>{const L=edDlgL;if(!L)return;const nm=$('edName').value.tr
 $('edDlg').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('edOk').click();}else if(e.key==='Escape')edDlgClose();});
 const edDelete=()=>{if(!edSel)return;ED.hid.add(edSel.key);edSave();edSel=null;edHide();render();};
 $('edDel').onclick=e=>{e.stopPropagation();edDelete();};
+/* 없어진 지점을 지도 DB 제외 목록에 올림 — OSM·카카오·산림청 어디서 왔든 모든 코스에서 빠짐(복원은 '저장값 관리') */
+const dbApi=p=>MAPDB_URL.replace(/\/bbox$/,'/'+p);
+$('edHideDb').onclick=async e=>{e.stopPropagation();const L=edSel;if(!L||L.ax==null||!G||!G._P)return;
+  const name=L.t0||L.key.replace(/#\d+$/,'');const [la,lo]=G._P.inv(L.ax,L.ay);
+  if(!confirm(`"${name}"을(를) 지도 DB에서 영구히 제외할까요?\n(이 이름·위치 300m 안의 같은 이름이 모든 코스에서 안 나옵니다. 잘못 빼면 '🧹 저장값 관리'에서 복원할 수 있어요.)`))return;
+  try{const r=await fetch(dbApi('hide'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,lat:la,lon:lo,note:'지도에서 제외('+(G.name||'')+')'})});
+    if(!r.ok)throw new Error(r.status);
+    lsDel(lsKeys('illust_osm_'));try{osmCache.clear();}catch(_){}  /* 받아 둔 지도 데이터에도 남아 있으니 같이 비움 */
+    edSel=null;edHide();render();}
+  catch(err){alert('제외하지 못했습니다: '+err.message);}};
 document.addEventListener('keydown',e=>{if(EDIT&&edSel&&(e.key==='Delete'||e.key==='Backspace')&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();edDelete();}});
 // 테스트용: ?gpx=경로 로 바로 불러오기
 const q=new URLSearchParams(location.search).get('gpx');

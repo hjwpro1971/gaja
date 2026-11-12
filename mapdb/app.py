@@ -9,6 +9,7 @@ GET  /mapdb/api/refresh      갱신 진행 상태·로그
 POST /mapdb/api/refresh      OSM 최신 데이터 받아 DB 다시 만들기(백그라운드)
 GET  /mapdb/api/pois         tourist_map용: {osm:[KoreaPOIs 형식], kakao:[...], custom:[...]} (kakao=1이면 카카오 칸 갱신)
 GET  /mapdb/api/custom       직접 입력한 지점 전체 (tourist_map의 MountainPOIs)
+GET  /mapdb/api/hidden       '없어짐'으로 제외한 지점 목록   POST /mapdb/api/hide {name,lat,lon} 제외 추가   POST /mapdb/api/unhide {id | all:true} 복원
 GET  /mapdb/api/dem/z/x/y.png  지형(고도) 타일 캐시 — 처음 한 번만 외부(AWS)에서 받아 data/dem/ 에 저장, 이후엔 NAS에서 바로
                              (illust_map이 확대할 때마다 외부 서버에서 타일을 받느라 3초씩 걸리던 것을 없애려고 2026-11-12 추가)
 
@@ -204,6 +205,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
     def do_GET(self):
@@ -226,7 +228,10 @@ class H(BaseHTTPRequestHandler):
                 if q.get('only') != 'hiking':
                     r['elements'] += extra.lines_in(s, w, n, e)
                     r['elements'] += extra.as_nodes([x for x in r['elements'] if x['type'] == 'node'], s, w, n, e, kk)
+                    r['elements'] = extra.apply_hidden(r['elements'])  # 사용자가 '없어짐'으로 제외한 지점은 어느 출처든 뺀다
                 return self.send(200, r)
+            if p == '/mapdb/api/hidden':
+                return self.send(200, {'hidden': extra.hide_list()})
             if p == '/mapdb/api/pois':
                 s, w, n, e = (float(q[k]) for k in ('s', 'w', 'n', 'e'))
                 if (n - s) * (e - w) > MAX_AREA or n <= s or e <= w:
@@ -270,6 +275,16 @@ class H(BaseHTTPRequestHandler):
             return self.send(400, {'error': '잘못된 요청입니다.'})
 
     def do_POST(self):
+        pp = urlparse(self.path).path.rstrip('/')
+        if pp in ('/mapdb/api/hide', '/mapdb/api/unhide'):
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+                if pp.endswith('/unhide'):
+                    return self.send(200, {'removed': extra.hide_del(None if body.get('all') else int(body['id']))})
+                hid = extra.hide_add(body.get('name'), body.get('lat'), body.get('lon'), body.get('note', ''))
+                return self.send(200, {'id': hid, 'hidden': len(extra.hide_list())})
+            except (ValueError, KeyError, TypeError) as ex:
+                return self.send(400, {'error': str(ex)})
         if urlparse(self.path).path.rstrip('/') == '/mapdb/api/refresh':
             if job['running']:
                 return self.send(409, {'error': '이미 갱신 중입니다.', **job})
