@@ -887,7 +887,9 @@ async function renderReal(){
    const mpp=(()=>{const [la0,lo0]=P.inv(W/2,H/2),[la1,lo1]=P.inv(W/2+100,H/2);return hav({lat:la0,lon:lo0},{lat:la1,lon:lo1})/100;})(); // 1px당 m
    const FAC_MAX_M=300;
    // 같은 시설을 OSM과 카카오가 서로 다른 이름·약간 다른 좌표로 가진 경우(예: 총각샘/지리산 총각샘터) → 카카오쪽 버림
-   const kakaoDupe=x=>x.tags.source==='kakao'&&nodes.some(o=>o!==x&&o.tags.source!=='kakao'&&kind(o.tags)===kind(x.tags)&&hav(o,x)<500);
+   const stem=n=>String(n).replace(/\s+/g,'').replace(/(폭포|샘터|샘|약수터|약수|쉼터|대피소|산장|정자|전망대)$/,'').replace(/^[가-힣]{2,4}산(?=[가-힣]{2,})/,'');
+   /* 같은 종류가 500m 안에 있어도 이름 줄기가 서로 다르면 다른 시설(세심폭포 ≠ 구룡폭포). 이름이 같거나 한쪽이 다른 쪽을 포함하거나 40m 안일 때만 중복 */
+   const kakaoDupe=x=>x.tags.source==='kakao'&&nodes.some(o=>{if(o===x||o.tags.source==='kakao'||kind(o.tags)!==kind(x.tags))return false;const d=hav(o,x);if(d>=500)return false;if(d<40)return true;const a=stem(nm(x)),b=stem(nm(o));return !a||!b||a===b||a.includes(b)||b.includes(a);});
    let k=0,gk=0;const cap=Math.round(7*A*Z2),seen=new Set();
    byNear(nodes.filter(x=>kind(x.tags)&&!kakaoDupe(x)&&!(CORE&&/^(view|rock)$/.test(kind(x.tags))))).forEach(x=>{if(k>=cap)return;const n=nm(x);const gen=/^(샘터|샘|약수터|약수)$/.test(n); /* 이름이 '샘터'뿐인 샘도 산행엔 중요한 정보라 몇 개는 표시 */
      if((!gen&&seen.has(n))||(gen&&gk>=3)||hutDone.has(n)||hutKeys.has(hutKey(n))||wpHutKeys.has(hutKey(n))||/^(정자|쉼터|전망대|폭포|바위|산장|대피소)$/.test(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H||sameWp(px,py,30,n))return;
@@ -932,7 +934,9 @@ async function renderReal(){
     put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>(nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)))&&distToRoute(px,py)<FARD*1.67);}
    // 계곡 이름 (카카오에 많음) — 청록 기울임 글씨, 개수 적게
    let v=0;byNear(nodes.filter(x=>x.tags.natural==='valley')).forEach(x=>{if(v>=Math.round(4*A*Z2*DEN))return;const n=nm(x);if(seen.has(n)||lineDone.has(n)||wpNames.has(n))return;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
-     if(label(px,py,[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}],{center:true,optional:true})){seen.add(n);v++;}});}
+     const vl=[{t:n,font:`italic 600 16px ${F1}`,color:'#2e7d86'}];
+     if(label(px,py,vl,{center:true,optional:true})){seen.add(n);v++;}
+     else if(distToRoute(px,py)<60*ZF){kseen[n]=Math.max(0,(kseen[n]||1)-1);if(label(px,py,vl,{optional:true,gap:10,lead:true})){seen.add(n);v++;}} /* 코스 바로 옆 계곡은 이름 자리가 막히면 비켜서 가는 선으로 이음 */});}
   // 고속도로·국도 이름 (가장 긴 구간 가운데에 회전 표기)
   const named={};ways.filter(x=>/^(motorway|trunk|primary)$/.test(hw(x))&&(x.tags.name||x.tags.ref)).forEach(x=>{const key=x.tags.name||x.tags.ref;(named[key]=named[key]||[]).push(x);});
   Object.entries(named).forEach(([key,arr])=>{const x=arr.sort((a,b)=>b.geometry.length-a.geometry.length)[0];const p=geo(x.geometry);if(p.length<4)return;const m=Math.floor(p.length/2),a=p[Math.max(0,m-2)],b=p[Math.min(p.length-1,m+2)];
