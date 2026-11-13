@@ -916,16 +916,17 @@ async function renderReal(){
       if(px<0||py<0||px>W||py>H||!ok(x,px,py))return;if(used.some(([a,b])=>Math.hypot(a-px,b-py)<60))return;
       if(nearEnd(px,py)<minEnd)return; // 출발·도착 표시와 겹치는 P/i는 생략 (출발·도착 마커가 대신함)
       /* 기호는 빈자리에만 (글자 위에 찍지 않음). 안내소·안전센터는 폭포·대피소 점과 같은 자리인 경우가 많아 옆으로 비켜서라도 표시 */
-      let qx=px,qy=py,okb=false;for(const [ox,oy] of (ch==='i'?[[0,0],[-24,-14],[24,-14],[-24,16],[24,16],[0,-28]]:[[0,0]])){const bb={x:px+ox-14,y:py+oy-11,w:28,h:22};if(hit(bb)<1000&&dotOK(px,py)){boxes.push(bb);qx=px+ox;qy=py+oy;okb=true;break;}}
+      let qx=px,qy=py,okb=false;for(const [ox,oy] of (ch==='🚌'?[[0,0]]:[[0,0],[-24,-14],[24,-14],[-24,16],[24,16],[0,-28],[0,34],[36,22],[-36,26],[48,0],[-48,0],[0,52],[52,36],[-52,40],[64,-4],[64,26],[80,0],[80,48],[-64,26],[0,72],[44,64],[-44,66],[100,20]])){const bb={x:px+ox-14,y:py+oy-11,w:28,h:22};if(hit(bb)<1000&&(dotOK(px,py)||ch==='i'||ch==='WC')){boxes.push(bb);qx=px+ox;qy=py+oy;okb=true;break;} /* 안내소·화장실은 들머리·날머리 이름표 곁이어도 표시 */}
       if(!okb)return;
       const wpSame=wpNames.has(n)||typoWp(px,py,25,n); // GPX 지점과 같은 이름이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
       if(!wpSame&&ch!=='🚌'){const L1=[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}];let okl=label(qx,qy,L1,{optional:true,gap:13});
         if(!okl&&ch==='i'){kseen[n]=Math.max(0,(kseen[n]||1)-1);okl=label(qx,qy,L1,{optional:true,gap:13,lead:true});}
         if(!okl&&ch!=='i'){boxes.pop();return;}} /* 안내소 기호는 이름 자리가 없어도 기호만이라도 표시 */
+      if(Math.hypot(qx-px,qy-py)>30){ctx.save();ctx.strokeStyle='rgba(60,60,60,.65)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(qx,qy);ctx.stroke();ctx.fillStyle='rgba(60,60,60,.8)';ctx.beginPath();ctx.arc(px,py,2.2,0,7);ctx.fill();ctx.restore();} /* 멀리 비켜 놓았으면 실제 지점과 가는 선으로 이음 */
       badge(qx,qy,ch,col);used.push([px,py]);k++;});};
     const isWC=x=>x.tags.amenity==='toilets',isBus=x=>x.tags.highway==='bus_stop'||x.tags.public_transport==='platform'||x.tags.amenity==='bus_station';
     /* 안내소·안전센터 기호를 먼저 — 화장실(WC)·버스 기호가 같은 자리를 차지해 탐방안내소가 빠지던 문제 */
-    put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF&&(nearEnd(px,py)*mpp<1500||/안전센터/.test(nm(x)))); /* 안전센터(세렴안전센터 등)는 탐방로 중간에도 있음 */ // 안내소는 탐방로 입구(출발·도착)에만 있다 — 산 중턱에 찍히면 오류
+    put(nodes.filter(isInfo),'i','#2e8b57',Math.round(3*ZF),(x,px,py)=>distToRoute(px,py)<Math.max(W,H)*.12*ZF&&(nearEnd(px,py)*mpp<1500||/안전센터/.test(nm(x))),12); /* 안전센터(세렴안전센터 등)는 탐방로 중간에도 있음. 들머리·날머리 바로 옆 안내소도 표시(minEnd 12) */ // 안내소는 탐방로 입구(출발·도착)에만 있다 — 산 중턱에 찍히면 오류
     put(nodes.filter(isBus),'🚌','#1e6fb8',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
     put(nodes.filter(isWC),'WC','#7a7a7a',Math.round(2*ZF),(x,px,py)=>nearEnd(px,py)<Math.max(W,H)*.08*ZF,12);
     put(nodes.filter(isPark),'P','#2f6fc8',Math.round(3*ZF),(x,px,py)=>(nearEnd(px,py)<Math.max(W,H)*.1*ZF||/탐방|국립공원|공영|등산|입구|매표소/.test(nm(x)))&&distToRoute(px,py)<FARD*1.67);}
