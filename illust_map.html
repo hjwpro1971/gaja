@@ -450,12 +450,17 @@ function makeProj(g,fx,fy,px=0,py=0){
 }
 const demCache=new Map(),osmCache=new Map();
 function loadImg(url){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res(im);im.onerror=()=>rej(new Error(url));im.src=url;});}
-let demZ=0;const demTiles=new Map(); // 'z/x/y' → Float32Array(256*256) 고도(m)
+let demZ=0,USED_GSI=false;const tileLon=(z,x)=>(x+.5)/2**z*360-180;const demTiles=new Map(); // 'z/x/y' → Float32Array(256*256) 고도(m)
 async function demTile(z,x,y){const k=z+'/'+x+'/'+y;if(demTiles.has(k))return demTiles.get(k);
   // 1순위: NAS 타일 저장소(/mapdb/api/dem) — 처음 한 번만 외부(AWS)에서 받아 NAS에 저장해 두므로 이후엔 즉시. 실패하면 예전처럼 외부에서 직접.
-  const pr=(async()=>{const im=await loadImg(`${MAPDB_URL.replace(/\/bbox$/,'/dem')}/${z}/${x}/${y}.png`).catch(()=>loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`));
+  /* 일본(경도 134 이상)은 국토지리원 고도 타일(dem_png, 출처 표시만 하면 자유 이용). 고도 = (R·65536+G·256+B)·0.01m, 값 2^23은 자료 없음 */
+  const jp=tileLon(z,x)>=134&&z<=14;
+  const pr=(async()=>{const im=jp?await loadImg(`https://cyberjapandata.gsi.go.jp/xyz/dem_png/${z}/${x}/${y}.png`).catch(()=>loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`).then(i=>(i._tr=1,i))):await loadImg(`${MAPDB_URL.replace(/\/bbox$/,'/dem')}/${z}/${x}/${y}.png`).catch(()=>loadImg(`https://elevation-tiles-prod.s3.amazonaws.com/terrarium/${z}/${x}/${y}.png`));
+    if(jp&&!im._tr)USED_GSI=true;
     const c=document.createElement('canvas');c.width=c.height=256;const c2=c.getContext('2d',{willReadFrequently:true});c2.drawImage(im,0,0);
-    const d=c2.getImageData(0,0,256,256).data,el=new Float32Array(65536);for(let i=0;i<65536;i++)el[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;
+    const d=c2.getImageData(0,0,256,256).data,el=new Float32Array(65536);
+    if(jp&&!im._tr){for(let i=0;i<65536;i++){const v=d[i*4]*65536+d[i*4+1]*256+d[i*4+2];el[i]=v<8388608?v*.01:v===8388608?0:(v-16777216)*.01;}}
+    else for(let i=0;i<65536;i++)el[i]=d[i*4]*256+d[i*4+1]+d[i*4+2]/256-32768;
     // 원본 데이터의 불량 줄(수천 m 튀는 값) 제거: 좌우·상하 이웃과 150m 넘게 차이 나면 이웃 평균으로 교체
     for(let pass=0;pass<2;pass++)for(let yy=1;yy<255;yy++)for(let xx=1;xx<255;xx++){const o=yy*256+xx,v=el[o],h=(el[o-1]+el[o+1])/2,vv=(el[o-256]+el[o+256])/2;
       if(Math.abs(v-h)>150&&Math.abs(el[o-1]-el[o+1])<150)el[o]=h;else if(Math.abs(v-vv)>150&&Math.abs(el[o-256]-el[o+256])<150)el[o]=vv;}
@@ -484,16 +489,54 @@ const MAPDB_URL=new URLSearchParams(location.search).get('mapdb')||'/mapdb/api/b
 /* 지도 DB의 OSM 원본 기준일(하단 출처 문구에 표시). 못 받아도 그냥 생략 */
 let DBDATE='';
 fetch(MAPDB_URL.replace(/\/bbox$/,'/stats')).then(r=>r.json()).then(j=>{const d=new Date(j&&j.meta&&j.meta.source_date);if(!isNaN(d)){DBDATE=d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');if(typeof G!=='undefined'&&G&&$('optStyle').value==='real')render();}}).catch(()=>{});
+/* ── 일본: 국토지리원 벡터 타일(optimal_bvmap-v1, 출처 표시만 하면 자유 이용)의 지명 층(Anno)에서 산·고개·산장·계곡 이름을 뽑는다.
+   코드: 312 산·봉우리·능선, 332 고개(乗越·峠)·바위, 673/681 산장·대피소, 323 계곡·沢, 7201 표고점. (타일은 Mapbox Vector Tile 형식이라 필요한 만큼만 직접 해독) */
+const GSI_JP_RE=/乗越|峠|コル|鞍部|垰/;
+function mvtDecode(buf){const u=buf;let p=0;const vr=()=>{let r=0,s=0,b;do{b=u[p++];r+=(b&127)*2**s;s+=7;}while(b&128);return r;};
+  const msg=(a,b2,fn)=>{const sp=p;p=a;while(p<b2){const k=vr(),f=k>>>3,t=k&7;if(t===0)fn(f,vr(),0,0);else if(t===2){const l=vr(),st=p;fn(f,null,st,st+l);p=st+l;}else if(t===5)p+=4;else if(t===1)p+=8;else break;}p=sp;};
+  const str=(a,b2)=>new TextDecoder().decode(u.subarray(a,b2)),L={};
+  msg(0,u.length,(f,v,a,b)=>{if(f!==3)return;const Y={name:'',keys:[],vals:[],feats:[],ext:4096};
+    msg(a,b,(f2,v2,a2,b2)=>{if(f2===1)Y.name=str(a2,b2);else if(f2===3)Y.keys.push(str(a2,b2));else if(f2===5)Y.ext=v2;
+      else if(f2===4){let val=null;msg(a2,b2,(f3,v3,a3,b3)=>{if(f3===1)val=str(a3,b3);else if(v3!=null)val=v3;});Y.vals.push(val);}
+      else if(f2===2){const F={type:0,tags:[],geom:[]};msg(a2,b2,(f3,v3,a3,b3)=>{if(f3===3)F.type=v3;else if(f3===2){const sp=p;p=a3;while(p<b3)F.tags.push(vr());p=sp;}else if(f3===4){const sp=p;p=a3;while(p<b3)F.geom.push(vr());p=sp;}});Y.feats.push(F);}});
+    L[Y.name]=Y;});return L;}
+async function loadJapan(n,w,s,e){
+  let z=14;const lx=lon=>Math.floor((lon+180)/360*2**z),ly=lat=>{const r=lat*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*2**z);};
+  const cnt=()=>(lx(e)-lx(w)+1)*(ly(s)-ly(n)+1);while(z>11&&cnt()>80)z--; // 넓은 범위는 한 단계씩 낮춰 타일 80장 안으로(낮은 단계엔 큰 산만 남음)
+  const x0=lx(w),x1=lx(e),y0=ly(n),y1=ly(s);if(cnt()>80)throw new Error('범위가 너무 큼');
+  const T=[];for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)T.push([x,y]);
+  const zz=v=>(v>>>1)^-(v&1),els=[];
+  await Promise.all(T.map(async([tx,ty])=>{let L;try{const r=await fetch(`https://cyberjapandata.gsi.go.jp/xyz/optimal_bvmap-v1/${z}/${tx}/${ty}.pbf`,{signal:AbortSignal.timeout(30000)});if(!r.ok)return;L=mvtDecode(new Uint8Array(await r.arrayBuffer()));}catch(err){return;}
+    const A=L.Anno;if(!A)return;const ll=(px,py)=>{const X=(tx+px/A.ext)/2**z,Y=(ty+py/A.ext)/2**z;return[Math.atan(Math.sinh(Math.PI*(1-2*Y)))*180/Math.PI,X*360-180];};
+    const F=A.feats.map(f=>{const t={};for(let i=0;i<f.tags.length;i+=2)t[A.keys[f.tags[i]]]=A.vals[f.tags[i+1]];let x=0,y=0;const g=f.geom;if(g.length>=3){x=zz(g[1]);y=zz(g[2]);}return{t,x,y};});
+    const spots=F.filter(f=>f.t.vt_code===7201).map(f=>({...f,v:+f.t.vt_text}));
+    F.forEach(f=>{const c=f.t.vt_code,nm=f.t.vt_text;if(!nm||typeof nm!=='string')return;const [la,lo]=ll(f.x,f.y);let tags=null;
+      if(c===312){tags={name:nm,natural:'peak'};let b=null,bd=90;spots.forEach(q=>{const d=Math.hypot(q.x-f.x,q.y-f.y);if(d<bd){bd=d;b=q;}});if(b)tags.ele=String(b.v);}
+      else if(c===332)tags=GSI_JP_RE.test(nm)?{name:nm,natural:'saddle'}:{name:nm,natural:'rock'};
+      else if(c===673||c===681)tags={name:nm,tourism:'alpine_hut'};
+      else if(c===323)tags={name:nm,natural:'valley'};
+      if(tags){tags.source='gsi';els.push({type:'node',id:'gsi'+tx+'_'+ty+'_'+els.length,lat:la,lon:lo,tags});}});}));
+  USED_GSI=true;return{version:.6,generator:'gsi-jp',elements:els};}
 async function loadOSM(n,w,s,e){
   const hit=findOSM(n,w,s,e);if(hit)return hit;
   const key=[n,w,s,e].map(v=>v.toFixed(4)).join(',');
   try{const c=localStorage.getItem('illust_osm_'+key);if(c){const j=JSON.parse(c);osmCache.set(key,j);return j;}}catch(e){}
   // 1순위: NAS 지도 DB(/mapdb) — 한국 OSM을 미리 담아둬서 수 초 안에 응답. 없거나 실패하면 외부 Overpass로
-  try{const mc=new AbortController(),mt=setTimeout(()=>mc.abort(),60000);
+  const JP=(w+e)/2>=134; // 일본: 지도 DB엔 한국만 있으므로 국토지리원 지명 타일에서
+  if(JP){const j=await loadJapan(n,w,s,e);osmCache.set(key,j);return j;}
+  if(!JP)  try{const mc=new AbortController(),mt=setTimeout(()=>mc.abort(),60000);
     const r=await fetch(`${MAPDB_URL}?s=${s}&w=${w}&n=${n}&e=${e}&kakao=1`,{signal:mc.signal});clearTimeout(mt);
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.elements)){osmCache.set(key,j);return j;}}}catch(err){}
   const b=`${s},${w},${n},${e}`;
-  const q=`[out:json][timeout:110];(
+  const q=JP?`[out:json][timeout:110];(
+node["natural"~"^(peak|saddle|spring|hot_spring|cave_entrance)$"]["name"](${b});
+node["tourism"~"^(alpine_hut|wilderness_hut|camp_site|viewpoint)$"]["name"](${b});
+node["amenity"~"^(shelter|toilets)$"](${b});
+node["place"~"^(village|hamlet|locality|town)$"]["name"](${b});
+way["highway"~"^(path|footway|track|unclassified|residential|tertiary|secondary|primary)$"](${b});
+way["waterway"~"^(river|stream)$"](${b});
+way["natural"="water"](${b});
+);out geom tags;`:`[out:json][timeout:110];(
 node["natural"~"^(peak|saddle)$"]["name"](${b});
 node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|borough|county)$"]["name"](${b});
 node["railway"="station"]["name"](${b});
@@ -1102,7 +1145,7 @@ function drawBoard(L,F1,iv,PH,shown){
     ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='#888';ctx.lineWidth=1.5;ctx.fillRect(g.x,g.y,g.w,g.h);ctx.strokeRect(g.x,g.y,g.w,g.h);
     items.forEach(([t,f],i)=>{const yy=g.y+26+i*30;f(ctx);ctx.beginPath();ctx.moveTo(g.x+14,yy);ctx.lineTo(g.x+60,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#333';ctx.font=`600 17px ${F1}`;ctx.fillText(t,g.x+72,yy+6);});ctx.restore();}
   {const {x,y}=L.north;ctx.save();ctx.fillStyle='#333';ctx.beginPath();ctx.moveTo(x,y-34);ctx.lineTo(x+12,y+6);ctx.lineTo(x,y-2);ctx.lineTo(x-12,y+6);ctx.closePath();ctx.fill();ctx.font=`bold 22px ${F1}`;ctx.textAlign='center';ctx.fillText('N',x,y+32);ctx.restore();}
-  ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`지도 데이터 © OpenStreetMap 기여자${DBDATE?' ('+DBDATE+' 기준)':''} · 카카오 · 지형 © AWS Terrain Tiles · 등고선 ${iv}m`,W-22,H-PH-20);ctx.restore();
+  ctx.save();ctx.font=`13px ${F1}`;ctx.fillStyle='rgba(60,60,60,.7)';ctx.textAlign='right';ctx.fillText(`${USED_GSI?'지도 데이터 © 국토지리원(地理院タイル)':'지도 데이터 © OpenStreetMap 기여자'+(DBDATE?' ('+DBDATE+' 기준)':'')+' · 카카오'} · 지형 ${USED_GSI?'© 국토지리원':'© AWS Terrain Tiles'} · 등고선 ${iv}m`,W-22,H-PH-20);ctx.restore();
   // 축척 막대: 지도 아래 가운데 쪽, 0 — 깔끔한 거리
   if($('optScale').checked&&G._P){const P=G._P,[la0,lo0]=P.inv(W/2,H/2),[la1,lo1]=P.inv(W/2+100,H/2);const m100=hav({lat:la0,lon:lo0},{lat:la1,lon:lo1}); // 100px당 m
     const want=m100*2.2,nice=[50,100,200,250,500,1000,2000,2500,5000].reduce((a,b)=>Math.abs(b-want)<Math.abs(a-want)?b:a),len=nice/m100*100;
@@ -1184,13 +1227,20 @@ function showPicker(){const q=$('pickerQ').value.trim().toLowerCase(),L=$('picke
 //    "봉우리" 같은 자동 이름 대신 운장산 서봉·연석산·늦은목이 처럼 실제 이름이 붙는다
 async function autoNameFromDB(g){
   const pts=g.pts,lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon),pad=.01;
+  const JPR=(Math.min(...lons)+Math.max(...lons))/2>=134;
+  let cands;
+  if(JPR){ // 일본: 국토지리원 지명 타일에서 (일본어 이름 그대로)
+    const j=await loadJapan(Math.max(...lats)+pad,Math.min(...lons)-pad,Math.min(...lats)-pad,Math.max(...lons)+pad);
+    cands=j.elements.map(x=>{const t=x.tags;return{name:t.name,lat:x.lat,lon:x.lon,ele:t.ele!=null?+t.ele:null,type:t.natural==='peak'?'peak':t.natural==='saddle'?'pass':t.tourism==='alpine_hut'?'shelter':null,pri:3};}).filter(c=>c.name&&c.type);
+  }else{
   const base=MAPDB_URL.replace(/\/bbox$/,'/pois');
-  const r=await fetch(`${base}?s=${Math.min(...lats)-pad}&w=${Math.min(...lons)-pad}&n=${Math.max(...lats)+pad}&e=${Math.max(...lons)+pad}&kakao=1`,{signal:AbortSignal.timeout(60000)});
-  if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();
-  const ty=p=>p.natural==='peak'?'peak':p.natural==='saddle'?'pass':p.amenity==='place_of_worship'?'temple':p.natural==='spring'?'spring':(p.amenity==='shelter'||p.tourism==='alpine_hut')?'shelter':p.tourism==='viewpoint'?'view':null;
-  const cands=[...(j.custom||[]).map(p=>({...p,pri:5})),...(j.osm||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:p.ele,type:ty(p),pri:3})),
-    ...(j.kakao||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:null,type:p.type==='pass'?'pass':p.type,pri:2}))]
-    .filter(c=>c.name&&/[가-힣]/.test(c.name)&&!/삼각점|헬기장|^봉우리$|주차장|화장실|^정자$|^쉼터$/.test(c.name)&&['peak','pass','temple','spring','shelter','view','rest','waterfall'].includes(c.type));
+    const r=await fetch(`${base}?s=${Math.min(...lats)-pad}&w=${Math.min(...lons)-pad}&n=${Math.max(...lats)+pad}&e=${Math.max(...lons)+pad}&kakao=1`,{signal:AbortSignal.timeout(60000)});
+    if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();
+    const ty=p=>p.natural==='peak'?'peak':p.natural==='saddle'?'pass':p.amenity==='place_of_worship'?'temple':p.natural==='spring'?'spring':(p.amenity==='shelter'||p.tourism==='alpine_hut')?'shelter':p.tourism==='viewpoint'?'view':null;
+    cands=[...(j.custom||[]).map(p=>({...p,pri:5})),...(j.osm||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:p.ele,type:ty(p),pri:3})),
+      ...(j.kakao||[]).map(p=>({name:p.name,lat:p.lat,lon:p.lon,ele:null,type:p.type==='pass'?'pass':p.type,pri:2}))]
+      .filter(c=>c.name&&/[가-힣]/.test(c.name)&&!/삼각점|헬기장|^봉우리$|주차장|화장실|^정자$|^쉼터$/.test(c.name)&&['peak','pass','temple','spring','shelter','view','rest','waterfall'].includes(c.type));
+  }
   // 각 후보의 경로 위 위치(가까운 트랙점)와 거리
   const step=Math.max(1,Math.floor(pts.length/1500)),cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+hav(pts[i-1],pts[i]));
   const lim={peak:150,pass:120,temple:120,spring:100,shelter:150,view:100,rest:80,waterfall:100};
