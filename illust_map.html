@@ -807,11 +807,15 @@ async function renderReal(){
   // 행정구역 면: 화면에 보이는 그 구역 안쪽 빈자리에 이름 (시·군·구 → 시·도 → 읍·면 순, 동은 점 지명이 대신함)
   const adminDone=new Set();
   const adm=areas.filter(x=>x.tags.boundary==='administrative'&&nm(x)).map(x=>({x,n:nm(x),lvl:x.tags.admin_level,sp:spotsIn(x.px)})).filter(a=>a.sp.length&&(a.lvl!=='8'||/[읍면]$/.test(a.n)));
+  /* 코스가 지나지 않는 시·군·구·시도·읍면은 이름을 쓰지 않음(월악산: 코스는 제천시인데 충주시까지 나오던 것). 해당 구역이 하나도 없으면 예전처럼 전부 허용 */
+  const RSP=resample(xy,120),routeIn=a=>RSP.some(([x,y])=>inPoly(x,y,a.x.px));
+  const admOff=new Set(adm.filter(a=>/^[67]$/.test(a.lvl)&&!routeIn(a)).map(a=>a.n));
   let n67=0;
   [['6','7'],['4'],['8']].forEach(lv=>{const cap=Math.round((lv[0]==='4'?(n67>=2?1:2):lv[0]==='8'?2:3)*ZF);let k=0;
-    adm.filter(a=>lv.includes(a.lvl)).sort((a,b)=>b.sp.length-a.sp.length).forEach(a=>{if(k>=cap||adminDone.has(a.n))return;
+    (()=>{const L0=adm.filter(a=>lv.includes(a.lvl)),L1=L0.filter(routeIn);return L1.length?L1:L0;})().sort((a,b)=>b.sp.length-a.sp.length).forEach(a=>{if(k>=cap||adminDone.has(a.n))return;
       for(const [px,py] of a.sp.slice(0,40)){const ok=a.lvl==='8'?label(px,py,[{t:a.n,font:`600 26px ${F1}`,color:'#8fa3b8',sp:14}],{center:true,optional:true}):tileName(px,py,a.n);if(ok){adminDone.add(a.n);k++;if(lv[0]==='6')n67++;break;}}});});
   nodes.filter(x=>x.tags.place&&!adminDone.has(nm(x))).forEach(x=>{const n=nm(x),pl=x.tags.place;const [px,py]=P.fwd(x.lat,x.lon);if(px<0||py<0||px>W||py>H)return;
+    if(admOff.has(n))return; /* 코스가 지나지 않는 시·군 이름은 생략 */
     if(/^(suburb|quarter|neighbourhood)$/.test(pl)&&distToRoute(px,py)>FARD*1.33)return; /* 경로에서 먼 도심의 동 이름은 생략 */
     if(/^(county|city|borough)$/.test(pl)||(/^(town|suburb)$/.test(pl)&&/[시군구]$/.test(n)))tileName(px,py,n);
     else if(/[읍면]$/.test(n)&&/^(town|suburb|village|quarter)$/.test(pl))label(px,py,[{t:n,font:`600 26px ${F1}`,color:'#8fa3b8',sp:14}],{center:true,optional:true});
@@ -907,7 +911,7 @@ async function renderReal(){
       let qx=px,qy=py,okb=false;for(const [ox,oy] of (ch==='i'?[[0,0],[-24,-14],[24,-14],[-24,16],[24,16],[0,-28]]:[[0,0]])){const bb={x:px+ox-14,y:py+oy-11,w:28,h:22};if(hit(bb)<1000&&dotOK(px,py)){boxes.push(bb);qx=px+ox;qy=py+oy;okb=true;break;}}
       if(!okb)return;
       const wpSame=wpNames.has(n)||typoWp(px,py,25,n); // GPX 지점과 같은 이름이면 이름은 GPX 쪽이 이미 적혀 있음 → 기호만
-      if(!wpSame){const L1=[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}];let okl=label(qx,qy,L1,{optional:true,gap:13});
+      if(!wpSame&&ch!=='🚌'){const L1=[{t:short(n),font:`600 15px ${F1}`,color:'#2b4a6b'}];let okl=label(qx,qy,L1,{optional:true,gap:13});
         if(!okl&&ch==='i'){kseen[n]=Math.max(0,(kseen[n]||1)-1);okl=label(qx,qy,L1,{optional:true,gap:13,lead:true});}
         if(!okl&&ch!=='i'){boxes.pop();return;}} /* 안내소 기호는 이름 자리가 없어도 기호만이라도 표시 */
       badge(qx,qy,ch,col);used.push([px,py]);k++;});};
