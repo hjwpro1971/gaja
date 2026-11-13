@@ -546,15 +546,22 @@ async function renderReal(){
   const paint=(osm)=>{
   cv.width=Math.round(W*SC);cv.height=Math.round(H*SC);ctx.setTransform(SC,0,0,SC,0,0);resetPreview();fitCanvas();
   const F1=mapFont();
-  // 높이장
-  const step=4,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1,f0=new Float32Array(gw*gh);
-  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const [la,lo]=P.inv(i*step,j*step);f0[j*gw+i]=elev(la,lo);}
-  const f=new Float32Array(gw*gh);
-  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){let sum=0,c=0;for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=gw||jj>=gh)continue;sum+=f0[jj*gw+ii];c++;}f[j*gw+i]=sum/c;}
-  // 결측값(-32768 등) 제거 후 범위 산정
-  const sorted=Array.from(f).filter(v=>v>-100&&v<9000).sort((a,b)=>a-b);
-  const emin=sorted[Math.floor(sorted.length*.002)]||0,emax=sorted[Math.floor(sorted.length*.998)]||1000;
-  for(let i=0;i<f.length;i++)if(!(f[i]>-100&&f[i]<9000))f[i]=emin;
+  // 높이장 — 지명·제목·지점 이름을 고칠 때마다 다시 계산하지 않도록 같은 지형 범위면 저장해 둔 것을 씀(고도 읽기·정렬이 한 번 그리는 시간의 절반 가까이)
+  const step=4,gw=Math.ceil(W/step)+1,gh=Math.ceil(H/step)+1;
+  const gkey=[n,w,s,e,W,H].join(',');
+  let GC=G._gridCache;
+  if(!GC||GC.key!==gkey){
+    const f0=new Float32Array(gw*gh);
+    for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const [la,lo]=P.inv(i*step,j*step);f0[j*gw+i]=elev(la,lo);}
+    const f=new Float32Array(gw*gh);
+    for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){let sum=0,c=0;for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=gw||jj>=gh)continue;sum+=f0[jj*gw+ii];c++;}f[j*gw+i]=sum/c;}
+    // 결측값(-32768 등) 제거 후 범위 산정
+    const sorted=Float32Array.from(f).filter(v=>v>-100&&v<9000).sort();
+    const emin=sorted[Math.floor(sorted.length*.002)]||0,emax=sorted[Math.floor(sorted.length*.998)]||1000;
+    for(let i=0;i<f.length;i++)if(!(f[i]>-100&&f[i]<9000))f[i]=emin;
+    GC=G._gridCache={key:gkey,f,f0,gw,gh,step,emin,emax,seg:{}};
+  }
+  const {f,f0,emin,emax}=GC;
   const F={f,gw,gh,step,emin,emax};
   const iv=[10,20,25,50,100].find(v=>(emax-emin)/v<=60)||100;
 
@@ -590,7 +597,8 @@ async function renderReal(){
   const lv0=Math.ceil(emin/iv)*iv;
   const cLab=[];let segN=0; // 계곡선(굵은 등고선) 위 고도 숫자 후보
   if(RELIEF!=='ridge')for(let lv=lv0;lv<emax;lv+=iv){const ix=Math.round(lv/iv)%5===0;{const wb=$('optWhite').checked||RELIEF==='both';ctx.strokeStyle=ix?(wb?'rgba(45,145,160,.5)':'rgba(45,145,160,.75)'):(wb?'rgba(70,165,175,.25)':'rgba(70,165,175,.45)');ctx.lineWidth=ix?(wb?1.1:1.45):(wb?.7:.85);}ctx.beginPath();
-    contours(F,lv,(p,q)=>{ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);if(ix&&++segN%9===0)cLab.push({lv,x:(p[0]+q[0])/2,y:(p[1]+q[1])/2,a:Math.atan2(q[1]-p[1],q[0]-p[0])});});
+    {let sg=GC.seg[lv];if(!sg){sg=[];contours(F,lv,(p,q)=>{sg.push(p[0],p[1],q[0],q[1]);});GC.seg[lv]=sg;} /* 계산한 선분은 저장해 두고 다시 그릴 때 재사용 */
+     for(let k=0;k<sg.length;k+=4){const p0=sg[k],p1=sg[k+1],q0=sg[k+2],q1=sg[k+3];ctx.moveTo(p0,p1);ctx.lineTo(q0,q1);if(ix&&++segN%9===0)cLab.push({lv,x:(p0+q0)/2,y:(p1+q1)/2,a:Math.atan2(q1-p1,q0-p0)});}}
     if(RELIEF==='both'){ctx.globalAlpha=.55;ctx.stroke();ctx.globalAlpha=1;}else ctx.stroke();}
   // 능선 줄기: 고도를 뒤집어 물이 '위로' 흐른다고 보고 모이는 길 = 능선. 많이 모일수록 굵게
   if(RELIEF!=='contour'){const N=gw*gh,rec=new Int32Array(N).fill(-1),acc=new Float32Array(N).fill(1),ord=new Uint32Array(N);
@@ -635,7 +643,7 @@ async function renderReal(){
 
   // ---- 라벨 충돌 관리 ----
   const xy=G.pts.map(p=>P.fwd(p.lat,p.lon)),sm=resample(xy,4),samples=resample(xy,10);G._sm=sm;
-  const LAY=boardLayout(PH);const boxes=LAY.reserve.slice();const RES=boxes.length;G._boxes=boxes;G._samples=null; // 명판·통계·방위·범례·단면도·출처 자리 예약 // 제목·방위·범례·출처 자리 예약
+  const LAY=boardLayout(PH);G._resKey=JSON.stringify(LAY.reserve);const boxes=LAY.reserve.slice();const RES=boxes.length;G._boxes=boxes;G._samples=null; // 명판·통계·방위·범례·단면도·출처 자리 예약 // 제목·방위·범례·출처 자리 예약
   const hit=b=>{let sc=0;if(b.x<18||b.y<18||b.x+b.w>W-18||b.y+b.h>H-18)sc+=5000;for(const o of boxes)if(b.x<o.x+o.w&&b.x+b.w>o.x&&b.y<o.y+o.h&&b.y+b.h>o.y)sc+=1000;
     for(const p of samples)if(p[0]>b.x-3&&p[0]<b.x+b.w+3&&p[1]>b.y-3&&p[1]<b.y+b.h+3)sc+=60;return sc;};
   const LBL=G._lbl=[],kseen={};G._P=P;const ANCH=[];
@@ -1266,8 +1274,10 @@ let txtTimer=0;
   if($('optStyle').value==='real'&&G._base&&G._boardArgs){try{const [,F1,iv,PH,shown]=G._boardArgs;
       ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(G._base,0,0);ctx.restore();
       ctx.save();ctx.setTransform(SC,0,0,SC,0,0);const keep=G._lbl;G._lbl=null;try{drawBoard(boardLayout(PH),F1,iv,PH,shown);}finally{G._lbl=keep;}
-      ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.restore();}catch(e){}
-    txtTimer=setTimeout(render,1000);}
+      ctx.strokeStyle='#2a2a2a';ctx.lineWidth=4;ctx.strokeRect(6,6,W-12,H-12);ctx.restore();
+      G._resSame=(G._resKey===JSON.stringify(boardLayout(PH).reserve));}catch(e){G._resSame=false;}
+    /* 명판 크기가 그대로면 지명 자리가 달라질 일이 없으니 전체 다시 그리기를 건너뜀(글 고칠 때 멈칫하던 것) */
+    if(!G._resSame)txtTimer=setTimeout(render,1000);}
   else txtTimer=setTimeout(render,400);});
 {const st=new URLSearchParams(location.search).get('style');if(st)$('optStyle').value=st;}
 // ── 미리보기 모달: 지금 캔버스에 그려진 지도를 그대로 크게 열어 확대·축소·이동 (휠·끌기·버튼·키보드·터치 핀치)
