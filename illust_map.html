@@ -725,7 +725,7 @@ async function renderReal(){
     if(pk){tri(x,y-6,isTop?1.05:.75);if(isTop){ctx.save();ctx.strokeStyle='#5a3a1a';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(x,y-28);ctx.lineTo(x,y-44);ctx.stroke();ctx.fillStyle='#d32f2f';ctx.beginPath();ctx.moveTo(x,y-44);ctx.lineTo(x+13,y-39);ctx.lineTo(x,y-34);ctx.closePath();ctx.fill();ctx.restore();boxes.push({x:x-4,y:y-46,w:20,h:16});}}
     else if(ic){drawIcon(kd,x,y,ic);boxes.push({x:x-ic*.6,y:y-ic-6,w:ic*1.2,h:ic+4});}
     ctx.save();ctx.fillStyle='#d32f2f';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,4.5,0,7);ctx.fill();ctx.stroke();ctx.restore();
-    label(x,y,pk?[{t:w.name,font:`${isTop?'800 24.7':'bold 19.7'}px ${F1}`,color:'#212121'},{t:w.ele.toLocaleString('ko-KR')+'m',font:`${isTop?'bold 17.7':'600 15.7'}px ${F1}`,color:'#333'}]:[{t:w.name,font:`600 17.7px ${F1}`,color:'#333'}],{up:pk?10:0,gap:ic?14:10,lead:true,wp:w});});
+    label(x,y,pk?[{t:w.name,font:`${isTop?'800 24.7':'bold 19.7'}px ${F1}`,color:'#212121'},{t:w.ele.toLocaleString('ko-KR')+'m',font:`${isTop?'bold 17.7':'600 15.7'}px ${F1}`,color:'#333'}]:[{t:w.name,font:`bold 18.7px ${F1}`,color:'#222'}],{up:pk?10:0,gap:ic?14:10,lead:true,wp:w});});
   const wpNames=new Set(shown.map(w=>w.name).filter(Boolean));
   // 이름이 한 글자만 다른 가까운 GPX 지점(오타: 수령동대피소↔수렴동대피소)이면 같은 곳으로 봄 — 거리만으로 판단하면 소청봉 옆 소청대피소까지 빠짐
   const oneOff=(a,b)=>{a=a.replace(/\s/g,'');b=b.replace(/\s/g,'');if(a===b)return true;if(a.length!==b.length||a.length<3)return false;let d=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i]&&++d>1)return false;return true;};
