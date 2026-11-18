@@ -1,0 +1,6873 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
+  <meta name="theme-color" content="#2e7d32">
+  
+  <meta name="apple-mobile-web-app-title" id="appleAppTitle" content="아토-가자go">
+  <title>아토-가자go</title>
+  <script>
+
+    
+
+    
+
+    
+    (function() {
+      try {
+        const ua = navigator.userAgent || '';
+        const isInApp = /KAKAOTALK|NAVER|Line\/|FBAN|FBAV|Instagram|Snapchat|Twitter/i.test(ua);
+        if (!isInApp) return;
+
+        const isAndroid = /Android/i.test(ua);
+        if (isAndroid) {
+          if (/KAKAOTALK/i.test(ua)) {
+            
+            window.location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(window.location.href);
+          } else {
+            const target = window.location.href;
+            const noScheme = target.replace(/^https?:\/\//, '');
+            window.location.href = 'intent://' + noScheme +
+              '#Intent;scheme=https;package=com.android.chrome;end';
+          }
+        } else {
+          
+          
+          window.__gajaShowOpenInBrowserBanner = true;
+        }
+      } catch(e) {}
+    })();
+
+
+    
+
+    
+
+    
+    
+    const CACHE_NAME = 'gaja-trail-cache-v232';
+    window.__GAJA_CACHE_NAME = CACHE_NAME;
+
+    
+    (function() {
+      const APP_BUILD = 'v20261023_roundtrip_confirming_banner';
+      try {
+        if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
+          localStorage.setItem('gajago_app_build', APP_BUILD);
+          if ('caches' in window) {
+            caches.keys().then(keys => {
+              keys.filter(k => k !== CACHE_NAME).forEach(k => caches.delete(k));
+            });
+          }
+          if (!sessionStorage.getItem('gajago_reloaded_flag')) {
+            sessionStorage.setItem('gajago_reloaded_flag', '1');
+            window.location.reload();
+            return;
+          }
+        }
+      } catch(e) {}
+    })();
+
+    (function() {
+      try {
+        const p = new URLSearchParams(window.location.search);
+        let n = p.get('name') || p.get('title');
+        let u = p.get('url') || p.get('file');
+        if (!n && u) {
+          const m = decodeURIComponent(u).match(/([^\/\?#&=:"']+\.gpx)/i);
+          if (m && m[1]) {
+            n = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+          }
+        }
+        if (n) {
+          let name = decodeURIComponent(n).trim();
+          if (!name.includes('등산지도') && !name.includes('등산로') && !name.includes('지도')) {
+            name = name + ' 등산지도';
+          }
+          document.title = name;
+          const meta = document.getElementById('appleAppTitle');
+          if (meta) meta.content = name;
+        }
+      } catch(e) {}
+    })();
+  </script>
+
+  
+  
+  <script>
+    window.navermap_authFailure = function() {
+      alert('네이버 지도 인증 실패: 이 주소가 지도 API 키의 등록 도메인에 없습니다.');
+    };
+  </script>
+  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=k2cvxz4csj"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "맑은 고딕", sans-serif;
+      background: #f8faf8;
+    }
+
+    #mapContainer {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      overflow: hidden;
+      z-index: 1;
+    }
+    #map {
+      width: 100%; height: 100%;
+      position: absolute !important; top: 0; left: 0;
+      transform-origin: center center;
+    }
+    
+    #map.heading-up {
+      
+      width: calc(120 * var(--real-vh, 1vh)) !important;
+      height: calc(120 * var(--real-vh, 1vh)) !important;
+      top: 70% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) rotate(0deg);
+      
+      transition: transform 0.5s ease-out;
+      will-change: transform;
+      backface-visibility: hidden;
+    }
+    
+    .top-header {
+      position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+      display: flex; gap: 8px; align-items: center; pointer-events: none;
+    }
+    .title-box {
+      pointer-events: auto; flex: 1; min-width: 0;
+      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px);
+      padding: 10px 12px; border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #c8e6c9;
+      display: flex; justify-content: center; align-items: center; text-align: center;
+    }
+    .title-box h1 {
+      font-size: 15px; font-weight: 800; color: #1b5e20;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      min-width: 32px; 
+    }
+    
+    @media (max-width: 400px) {
+      
+      .btn-install { display: none; }
+      .btn-route-list .btn-text { display: none; }
+      .btn-route-list { padding: 6px 9px; }
+      .title-box { padding: 10px 8px; gap: 4px; }
+      .title-box h1 { min-width: 0; }
+    }
+    
+    .fab-col {
+      
+      position: absolute; right: 14px; top: 128px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: top 0.2s ease;
+    }
+    .fab-btn {
+      width: 46px; height: 46px; border-radius: 50%; background: #ffffff;
+      border: 1px solid #c8e6c9; box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+      display: flex; justify-content: center; align-items: center;
+      font-size: 20px; cursor: pointer; color: #2e7d32; transition: all 0.2s;
+    }
+    .fab-btn:active { transform: scale(0.92); }
+    .fab-btn.active {
+      background: #1b5e20; color: #ffffff;
+      border: 2px solid #81c784;
+      box-shadow: 0 0 14px rgba(46, 125, 50, 0.5);
+    }
+
+    
+    .layer-menu {
+      
+      position: absolute; right: 68px; top: 238px; z-index: 1000;
+      background: #ffffff; border-radius: 12px; padding: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2); border: 1px solid #c8e6c9;
+      display: none; flex-direction: column; gap: 6px; min-width: 150px;
+    }
+    .layer-item {
+      padding: 8px 12px; font-size: 13px; font-weight: 700; color: #333;
+      border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .layer-item.selected { background: #e8f5e9; color: #1b5e20; }
+    .layer-item:hover { background: #f1f8e9; }
+
+    
+    .gps-toast {
+      
+      position: absolute; top: 68px; left: 12px; right: 12px; z-index: 999;
+      background: #e8f5e9; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); border: 2px solid #2e7d32;
+      padding: 10px 18px; font-size: 17px; font-weight: 700; color: #1b5e20;
+      line-height: 1.4; text-align: center; white-space: normal; display: none; pointer-events: none;
+      transition: top 0.2s ease, right 0.2s ease;
+    }
+    .gps-toast.warning {
+      background: #ffcdd2; border: 3px solid #c62828; color: #b71c1c;
+      
+      animation: offTrailPulse 1s ease-in-out infinite;
+    }
+    @keyframes offTrailPulse {
+      0%, 100% { background: #ffcdd2; }
+      50% { background: #ef9a9a; }
+    }
+    
+    .gps-toast.reversed {
+      background: #ffebee; border: 2px solid #e57373; color: #c62828;
+    }
+    
+    .gps-waiting-overlay {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 1200; display: flex; flex-direction: column; align-items: center;
+      gap: 14px; background: rgba(27,94,32,0.92); -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px); padding: 28px 34px; border-radius: 20px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.35); pointer-events: none;
+    }
+    .gps-waiting-spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 4px solid rgba(255,255,255,0.35); border-top-color: #ffffff;
+      animation: gpsWaitingSpin 0.9s linear infinite;
+    }
+    @keyframes gpsWaitingSpin { to { transform: rotate(360deg); } }
+    .gps-waiting-text {
+      color: #ffffff; font-size: 16px; font-weight: 700; text-align: center;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .gps-waiting-spinner { animation: none; border-top-color: rgba(255,255,255,0.35); }
+    }
+
+    
+    .start-hike-overlay {
+      position: absolute; top: 68px; left: 12px; right: 12px; z-index: 999;
+      display: none; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .start-hike-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; background: linear-gradient(135deg, #2e7d32, #1b5e20);
+      color: #ffffff; font-size: 18px; font-weight: 800; border: none;
+      border-radius: 16px; padding: 16px 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+      cursor: pointer; animation: startHikePulse 1.6s ease-in-out infinite;
+    }
+    .start-hike-btn:active { transform: scale(0.97); }
+    @keyframes startHikePulse {
+      0%, 100% { box-shadow: 0 4px 16px rgba(27,94,32,0.3); }
+      50% { box-shadow: 0 4px 22px rgba(46,125,50,0.65); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .start-hike-btn { animation: none; }
+    }
+
+    
+    #appVersionBadge {
+      position: fixed; left: 8px; bottom: 6px; z-index: 900;
+      font-size: 10px; color: rgba(0,0,0,0.38); background: rgba(255,255,255,0.55);
+      padding: 2px 6px; border-radius: 8px; pointer-events: auto;
+      font-family: monospace; user-select: none;
+    }
+
+    
+    .bottom-direction-arrow {
+      position: absolute; left: 50%; bottom: 100px; z-index: 998;
+      width: 88px; height: 88px; margin-left: -44px;
+      display: none; justify-content: center; align-items: center;
+      pointer-events: none;
+    }
+    .bottom-direction-arrow .arrow-bg {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(6px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25); border: 3px solid #1976d2;
+    }
+    .bottom-direction-arrow.reversed .arrow-bg {
+      border-color: #d32f2f;
+    }
+    .bottom-direction-arrow .arrow-rotor {
+      position: relative; width: 100%; height: 100%;
+      display: flex; justify-content: center; align-items: center;
+      
+    }
+    .bottom-direction-arrow .arrow-glyph {
+      font-size: 48px; line-height: 1;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+    }
+    .bottom-direction-arrow .arrow-label {
+      position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%);
+      
+      font-size: 17px; font-weight: 800; color: #1b5e20;
+      
+      white-space: normal; width: max-content; max-width: 220px; text-align: center;
+      background: rgba(255,255,255,0.9);
+      padding: 4px 10px; border-radius: 8px;
+    }
+    .bottom-direction-arrow.reversed .arrow-label {
+      color: #c62828;
+    }
+
+    
+    .custom-gps-icon {
+      overflow: visible !important;
+    }
+    .gps-marker-container {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+    }
+    .sim-speed-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.9); border: 2px solid #ccc;
+      font-size: 13px; font-weight: bold; cursor: pointer;
+      display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3); color: #333;
+      transition: all 0.2s;
+    }
+    .sim-speed-btn.active {
+      background: #e65100; color: #fff; border-color: #e65100;
+    }
+    
+    .sim-scrub-track {
+      
+      position: absolute; left: 162px; right: 60px; bottom: 16px; height: 46px;
+      z-index: 9999; display: none;
+      background: rgba(255,255,255,0.55); border-radius: 23px;
+      touch-action: none; -webkit-user-select: none; user-select: none;
+    }
+    .sim-scrub-track.active { display: block; }
+    .sim-scrub-fill {
+      position: absolute; top: 6px; bottom: 6px; left: 6px;
+      height: auto; background: rgba(230,81,0,0.35); border-radius: 17px;
+      pointer-events: none;
+    }
+    .sim-scrub-handle {
+      position: absolute; top: 5px; width: 36px; height: 36px;
+      margin-left: -18px; border-radius: 50%; background: #e65100;
+      border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; pointer-events: none;
+    }
+    .gps-heading-wrapper {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      top: 0;
+      left: 0;
+      transform-origin: 40px 40px;
+      pointer-events: none;
+    }
+    .gps-heading-svg {
+      width: 80px;
+      height: 80px;
+      display: block;
+    }
+    .my-gps-pulse {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.35);
+      border: 2px solid rgba(25, 118, 210, 0.6);
+      animation: pulseGps 2s infinite ease-out;
+      pointer-events: none;
+    }
+    .my-gps-dot {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #1976d2;
+      border: 3.5px solid #ffffff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+      pointer-events: none;
+      transition: background 0.2s;
+    }
+    @keyframes pulseGps {
+      0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.7); }
+      70% { box-shadow: 0 0 0 18px rgba(25, 118, 210, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
+    }
+    
+    .gps-marker-container.is-warning .my-gps-dot {
+      background: #d32f2f;
+    }
+    .gps-marker-container.is-warning .my-gps-pulse {
+      background: rgba(211, 47, 47, 0.35);
+      border-color: rgba(211, 47, 47, 0.6);
+    }
+    .gps-marker-container.is-warning polygon {
+      fill: #b71c1c !important;
+    }
+
+    
+    .route-badge {
+      color: #ffffff; font-size: 11px; font-weight: bold; padding: 3px 8px;
+      border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); white-space: nowrap;
+      text-align: center; display: inline-block;
+    }
+
+    
+    .empty-modal {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(5px);
+      display: none; justify-content: center; align-items: center; padding: 20px;
+      box-sizing: border-box;
+    }
+    .modal-box {
+      position: relative;
+      background: #ffffff; padding: 28px 22px; border-radius: 20px;
+      text-align: center; max-width: 360px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .modal-close-btn {
+      position: absolute; top: 12px; right: 12px;
+      background: none; border: none; font-size: 20px; color: #888;
+      cursor: pointer; padding: 4px; border-radius: 50%; width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close-btn:hover { background: #f0f0f0; color: #111; }
+    .modal-box .icon { font-size: 44px; margin-bottom: 8px; }
+    .modal-box h2 { font-size: 19px; color: #1b5e20; margin-bottom: 8px; }
+    .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
+
+    
+
+    
+    .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
+    .saved-route-item {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      background: #f1f8e9; border: 1.5px solid #c8e6c9; border-radius: 12px;
+      padding: 12px 14px; cursor: pointer;
+    }
+    .saved-route-item:active { background: #e8f5e9; }
+    .saved-route-info { flex: 1; min-width: 0; }
+    .saved-route-name { font-size: 14px; font-weight: 800; color: #1b5e20; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .saved-route-date { font-size: 11px; color: #689f38; margin-top: 2px; }
+    .saved-route-tile-badge { display: block; font-size: 10.5px; font-weight: 700; margin-top: 3px; }
+    .saved-route-tile-badge.tile-complete { color: #2e7d32; }
+    .saved-route-tile-badge.tile-partial { color: #e65100; }
+    .saved-route-tile-badge.tile-none { color: #9e9e9e; }
+    .saved-route-del {
+      flex-shrink: 0;
+      background: #ffebee; border: 1.5px solid #ffcdd2; font-size: 18px; cursor: pointer;
+      padding: 6px 10px; border-radius: 10px; color: #d32f2f; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+    }
+    .saved-route-del:hover { background: #ffcdd2; transform: scale(1.15); }
+    .btn-route-list {
+      background: #e8f5e9; border: 1.5px solid #81c784; color: #1b5e20;
+      font-size: 12.5px; font-weight: 800; padding: 6px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-route-list:hover { background: #c8e6c9; }
+    
+    .btn-install {
+      background: #e3f2fd; border: 1.5px solid #90caf9; color: #1565c0;
+      font-size: 12.5px; font-weight: 800; padding: 6px 12px; border-radius: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .btn-install:hover { background: #bbdefb; }
+
+    
+    #zoomCtl {
+      position: fixed; right: 14px; bottom: 24px; z-index: 1000;
+      display: flex; flex-direction: column;
+      border: 1.5px solid #c8e6c9; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    }
+    #zoomCtl button {
+      width: 40px; height: 40px; line-height: 40px; padding: 0; border: 0;
+      font-size: 22px; font-weight: 900; color: #1b5e20; background: #ffffff;
+      transition: background 0.15s; cursor: pointer;
+    }
+    #zoomCtl button + button { border-top: 1px solid #c8e6c9; }
+    #zoomCtl button:active, #zoomCtl button:hover { background: #e8f5e9; color: #2e7d32; }
+
+  </style>
+</head>
+<body>
+
+
+<div id="inAppBrowserBanner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:100000; background:#1b5e20; color:#fff; padding:12px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+  ⚠️ 카카오톡 등 인앱 브라우저에서는 GPS가 부정확할 수 있습니다.<br>
+  우측 상단 <b>[···]</b> 또는 공유 버튼에서 <b>"Safari로 열기"</b>를 선택해주세요.
+  <button type="button" onclick="document.getElementById('inAppBrowserBanner').style.display='none'" style="position:absolute; top:8px; right:10px; background:none; border:none; color:#fff; font-size:16px; cursor:pointer;">✕</button>
+</div>
+<script>
+  if (window.__gajaShowOpenInBrowserBanner) {
+    document.getElementById('inAppBrowserBanner').style.display = 'block';
+  }
+</script>
+
+<div id="mapContainer">
+  <div id="map"></div>
+  <div id="zoomCtl"><button onclick="zoomMapBy(1)" title="확대">+</button><button onclick="zoomMapBy(-1)" title="축소">−</button></div>
+</div>
+
+
+<div class="sim-scrub-track" id="simScrubTrack">
+  <div class="sim-scrub-fill" id="simScrubFill"></div>
+  <div class="sim-scrub-handle" id="simScrubHandle">⛰️</div>
+</div>
+
+
+<div class="top-header" id="topHeader">
+  <div class="title-box" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+    <h1 id="trailName" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto;">🚩 가자go 등산지도</h1>
+    <button type="button" class="btn-install" id="installBtn" onclick="showInstallGuide()" title="홈 화면에 추가 (v116)" style="flex-shrink: 0;">
+      📲<span class="btn-text"> 바로가기</span>
+    </button>
+    <button type="button" class="btn-route-list" onclick="showSavedRouteList()" title="저장된 등산로 코스 목록 보기" style="flex-shrink: 0;">
+      📋<span class="btn-text"> 내 코스</span>
+    </button>
+  </div>
+</div>
+
+
+<div class="sim-control-panel" style="position: absolute; left: 16px; bottom: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+  <div id="simSpeedOptions" style="display: none; flex-direction: column; gap: 6px; margin-bottom: 4px;">
+    <button class="sim-speed-btn" onclick="setSimSpeed(5, event)">5x</button>
+    <button class="sim-speed-btn" onclick="setSimSpeed(4, event)">4x</button>
+    <button class="sim-speed-btn active" onclick="setSimSpeed(3, event)">3x</button>
+    <button class="sim-speed-btn" onclick="setSimSpeed(2, event)">2x</button>
+    <button class="sim-speed-btn" id="simSpeed1x" onclick="setSimSpeed(1, event)">1x</button>
+    <button class="sim-speed-btn" onclick="setSimSpeed(0.5, event)">0.5x</button>
+  </div>
+  <div style="display: flex; flex-direction: row; gap: 8px;">
+    <button class="fab-btn" id="simBtn" onclick="toggleSimulation()" title="따라가기" style="background: rgba(255,255,255,0.9);">▶️</button>
+    <button class="fab-btn" id="simPauseBtn" onclick="toggleSimulationPause()" title="일시정지" style="background: rgba(255,255,255,0.9); display: none;">⏸️</button>
+  </div>
+</div>
+
+
+<div class="fab-col">
+  
+  <button class="fab-btn" id="wayfindBtn" onclick="toggleWayfindingMode()" title="길찾기 (다음 주요지점 안내, 다시 누르면 종료)" style="display:none;">🔍</button>
+  <button class="fab-btn" id="gpsBtn" onclick="toggleGPS()" title="내 위치">🎯</button>
+  
+  <button class="fab-btn" id="lowPowerBtn" onclick="toggleLowPowerMode()" title="저전력 알림 모드 (5초 간격 GPS + 갈림길 알림)" style="display:none;">🔕</button>
+  <button class="fab-btn" onclick="fitRoute()" title="전체 경로">🏠</button>
+  <button class="fab-btn" onclick="toggleLayerMenu()" title="지도 변경">🗺️</button>
+  <button class="fab-btn" onclick="resetOriginNow()" title="원점 다시 잡기">🔄</button>
+  
+  <button class="fab-btn" onclick="confirmEndHike()" title="등산 완료 (이번 산행을 종료합니다)">🏁</button>
+</div>
+
+
+<div class="bottom-direction-arrow" id="bottomDirectionArrow">
+  <div class="arrow-bg"></div>
+  <div class="arrow-rotor" id="bottomArrowRotor">
+    <div class="arrow-glyph" id="bottomArrowGlyph">⬆️</div>
+  </div>
+  <div class="arrow-label" id="bottomArrowLabel">12시 방향</div>
+</div>
+
+
+<div class="gps-waiting-overlay" id="gpsWaitingOverlay" style="display:none;">
+  <div class="gps-waiting-spinner"></div>
+  <div class="gps-waiting-text">📡 GPS 수신 중...</div>
+</div>
+
+
+<div class="start-hike-overlay" id="startHikeOverlay">
+  <button type="button" class="start-hike-btn" id="startHikeBtn" onclick="confirmStartHike()">🚀 등산 시작</button>
+</div>
+
+
+
+<div class="layer-menu" id="layerMenu">
+  <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도(등고선)</div>
+  <div class="layer-item" id="lyrBasic" onclick="switchLayer('basic')">🧭 네이버 일반지도</div>
+  <div class="layer-item" id="lyrSatellite" onclick="switchLayer('satellite')">🛰️ 네이버 위성지도</div>
+  
+</div>
+
+
+<div class="empty-modal" id="emptyModal" style="display: none;">
+  <div class="modal-box">
+    <button class="modal-close-btn" onclick="closeModal()" title="닫기">✕</button>
+    <div class="icon">⛰️</div>
+    <h2 id="modalTitle">저장된 등산로 코스</h2>
+    <p id="modalDesc">이전에 열어보았거나 저장된 등산로 코스 목록입니다.</p>
+
+    <div style="margin-top: 16px; font-size: 12px; color: #2e7d32; font-weight: 700; text-align: center;">👣 Crafted by <b>가자go</b></div>
+    
+    <div class="saved-route-list" id="savedRouteList" style="display: none; margin-top: 16px;"></div>
+  </div>
+</div>
+
+
+<div class="gps-toast" id="gpsToast"></div>
+
+
+<div id="appVersionBadge" onclick="showVersionDetail()"></div>
+
+
+<div id="gpsDebugOverlay" style="display:none; position:fixed; top:4px; left:4px; z-index:99999; background:rgba(0,0,0,0.75); color:#0f0; font:11px/1.4 monospace; padding:6px 8px; border-radius:6px; max-width:92vw; white-space:pre-wrap; pointer-events:none;"></div>
+
+<script>
+
+  
+
+  
+  
+  if ('serviceWorker' in navigator) {
+    let refreshing = false;
+
+    
+
+    
+
+    
+    
+    let reloadPending = false;
+    function reloadIfSafe() {
+      if (refreshing) return;
+      if (typeof watchId !== 'undefined' && watchId !== null) {
+        reloadPending = true;
+        showToastBadge('🔄 새 버전이 준비되었습니다.\n등산 완료 후 자동으로 적용됩니다.');
+        return;
+      }
+      refreshing = true;
+      window.location.reload();
+    }
+    window.__gajaReloadIfSafe = reloadIfSafe;
+    window.__gajaIsReloadPending = () => reloadPending;
+    navigator.serviceWorker.addEventListener('controllerchange', reloadIfSafe);
+
+
+    
+
+    
+    function lockPortraitOrientation() {
+      try {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+          || window.navigator.standalone === true; 
+        if (!isStandalone) return;
+        if (screen.orientation && typeof screen.orientation.lock === 'function') {
+          screen.orientation.lock('portrait').catch(err => {
+            console.log('화면 세로 고정 실패(기기/브라우저 미지원 가능):', err && err.message);
+          });
+        }
+      } catch (err) {
+        console.log('화면 세로 고정 시도 중 예외:', err && err.message);
+      }
+    }
+    window.addEventListener('load', lockPortraitOrientation);
+
+    window.addEventListener('load', () => {
+
+      
+
+      
+
+      
+
+      
+
+      navigator.serviceWorker.register('./sw.js?v=' + (((window.__GAJA_CACHE_NAME || '').match(/\d+$/)) || ['0'])[0], { updateViaCache: 'none' })
+        .then(reg => {
+
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                
+                
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+
+          reg.update(); 
+          console.log('PWA ServiceWorker 등록 및 갱신 완료:', reg.scope);
+        })
+        .catch(err => console.warn('PWA ServiceWorker 등록 알림:', err));
+
+
+      
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg) reg.update();
+          });
+
+          
+          if (typeof lockPortraitOrientation === 'function') lockPortraitOrientation();
+        }
+      });
+    });
+  }
+
+
+  
+
+  
+
+  const INSTALL_GUIDE_SEEN_KEY = 'gajago_install_guide_seen';
+
+  function isRunningStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true || 
+           localStorage.getItem(INSTALL_GUIDE_SEEN_KEY) === '1';
+  }
+
+  function showInstallGuide() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const msg = isIOS
+      ? '📲 홈 화면에 추가하기\n\n하단 [공유] 버튼(⬆️)을 누른 뒤\n"홈 화면에 추가"를 선택하세요.'
+      : '📲 홈 화면에 추가하기\n\n우측 상단 메뉴(⋮)를 누른 뒤\n"홈 화면에 추가"를 선택하세요.';
+    showToastBadge(msg, 5000);
+    try { localStorage.setItem(INSTALL_GUIDE_SEEN_KEY, '1'); } catch(e) {}
+    const btn = document.getElementById('installBtn');
+    if (btn) btn.style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (isRunningStandalone()) {
+      const btn = document.getElementById('installBtn');
+      if (btn) btn.style.display = 'none';
+    }
+  });
+
+
+  
+
+  
+
+  
+  
+  const MotionState = Object.freeze({
+    MOVING: 'MOVING',
+    STOPPING: 'STOPPING',               
+    STOPPED: 'STOPPED',
+    MOVING_CANDIDATE: 'MOVING_CANDIDATE' 
+  });
+
+  class GpsFilterEngine {
+    constructor(config = {}) {
+      this.config = {
+        MAX_ACCURACY: 15.0,      
+        MIN_INTERVAL_MS: 400,    
+        MIN_DISTANCE: 1.5,       
+        
+        STOP_SPEED_CUTOFF_KMH: 0.3, 
+        MOVE_SPEED_CUTOFF_KMH: 1.0, 
+        STOPPING_CONFIRM_MS: 2000,  
+        MOVE_CONFIRM_STREAK: 2,     
+        BEARING_THRESHOLD: 15.0,
+        CLUSTER_WINDOW_SEC: 15,  
+        CLUSTER_RADIUS_M: 7.0,   
+        ...config
+      };
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
+      this.recentPoints = [];
+      this.recentSpeeds = [];       
+      this.state = MotionState.MOVING;
+      this.stoppingEnteredAt = null;      
+      this.movingCandidateStreak = 0;     
+    }
+
+    
+    reset() {
+      this.lastConfirmed = null;
+      this.totalDistance = 0;
+      this.recentPoints = [];
+      this.recentSpeeds = [];
+      this.state = MotionState.MOVING;
+      this.stoppingEnteredAt = null;
+      this.movingCandidateStreak = 0;
+    }
+
+
+    forceStopped() {
+      this.state = MotionState.STOPPED;
+      this.stoppingEnteredAt = null;
+      this.movingCandidateStreak = 0;
+    }
+
+    
+    
+    _isTrappedInRadius(latestRaw) {
+      const windowStart = latestRaw.timestamp - (this.config.CLUSTER_WINDOW_SEC * 1000);
+      this.recentPoints = this.recentPoints.filter(p => p.timestamp >= windowStart);
+      this.recentPoints.push({ latitude: latestRaw.latitude, longitude: latestRaw.longitude, timestamp: latestRaw.timestamp });
+
+      if (this.recentPoints.length < 3) return false;
+      const timeSpan = (this.recentPoints[this.recentPoints.length - 1].timestamp - this.recentPoints[0].timestamp) / 1000;
+      if (timeSpan < this.config.CLUSTER_WINDOW_SEC * 0.8) return false;
+
+      const anchor = this.recentPoints[0];
+      return this.recentPoints.every(p => haversineMeters(anchor.latitude, anchor.longitude, p.latitude, p.longitude) <= this.config.CLUSTER_RADIUS_M);
+    }
+
+    
+    process(raw) {
+      
+      if (raw.accuracy > this.config.MAX_ACCURACY) return null;
+      if (this.lastConfirmed && (raw.timestamp - this.lastConfirmed.timestamp < this.config.MIN_INTERVAL_MS)) {
+        return null;
+      }
+
+      
+      if (!this.lastConfirmed) {
+        this.lastConfirmed = { latitude: raw.latitude, longitude: raw.longitude, bearing: null, isStopped: false, timestamp: raw.timestamp };
+        return {
+          latitude: raw.latitude, longitude: raw.longitude,
+          bearing: null, totalDistance: 0, isStopped: false,
+          state: this.state, stateChanged: false, timestamp: raw.timestamp
+        };
+      }
+
+      
+      const rawDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, raw.latitude, raw.longitude);
+      const elapsedSec = Math.max((raw.timestamp - this.lastConfirmed.timestamp) / 1000, 0.001); 
+      const calculatedSpeedMps = rawDist / elapsedSec; 
+      const calculatedSpeedKmh = calculatedSpeedMps * 3.6; 
+
+
+      
+      
+      const isBelowMinDistance = rawDist < this.config.MIN_DISTANCE;
+
+      
+      if (!isBelowMinDistance) {
+        this.recentSpeeds.push(calculatedSpeedKmh);
+        if (this.recentSpeeds.length > 3) {
+          this.recentSpeeds.shift();
+        }
+      }
+      const avgSpeedKmh = this.recentSpeeds.length > 0
+        ? this.recentSpeeds.reduce((a, b) => a + b, 0) / this.recentSpeeds.length
+        : 0;
+
+      
+      const isTrapped = this._isTrappedInRadius(raw);
+
+      
+      const isWalkingVibration = (typeof walkVibrationLevel !== 'undefined') && (walkVibrationLevel > 0.8);
+
+      const prevState = this.state;
+
+      
+      if (this.state === MotionState.MOVING) {
+        
+        
+        if ((calculatedSpeedKmh <= this.config.STOP_SPEED_CUTOFF_KMH || isBelowMinDistance) && !isWalkingVibration) {
+          this.state = MotionState.STOPPING;
+          this.stoppingEnteredAt = raw.timestamp;
+        }
+      } else if (this.state === MotionState.STOPPING) {
+        
+        if (!((calculatedSpeedKmh <= this.config.STOP_SPEED_CUTOFF_KMH || isBelowMinDistance) && !isWalkingVibration)) {
+          this.state = MotionState.MOVING;
+          this.stoppingEnteredAt = null;
+        } else {
+          
+          
+          const stoppingElapsedMs = raw.timestamp - this.stoppingEnteredAt;
+          if (stoppingElapsedMs >= this.config.STOPPING_CONFIRM_MS || (isTrapped && !isWalkingVibration)) {
+            this.state = MotionState.STOPPED;
+            this.stoppingEnteredAt = null;
+          }
+        }
+      } else if (this.state === MotionState.STOPPED) {
+
+        
+        
+        const highSpeedCount = this.recentSpeeds.filter(s => s >= this.config.MOVE_SPEED_CUTOFF_KMH).length;
+        if (isWalkingVibration && !isTrapped) {
+          this.state = MotionState.MOVING;
+          this.movingCandidateStreak = 0;
+        } else if ((avgSpeedKmh >= this.config.MOVE_SPEED_CUTOFF_KMH || highSpeedCount >= 2) && !isTrapped) {
+          this.state = MotionState.MOVING_CANDIDATE;
+          this.movingCandidateStreak = 1;
+        }
+      } else if (this.state === MotionState.MOVING_CANDIDATE) {
+
+        const highSpeedCount = this.recentSpeeds.filter(s => s >= this.config.MOVE_SPEED_CUTOFF_KMH).length;
+        if (isWalkingVibration && !isTrapped) {
+          this.state = MotionState.MOVING;
+          this.movingCandidateStreak = 0;
+        } else if ((avgSpeedKmh >= this.config.MOVE_SPEED_CUTOFF_KMH || highSpeedCount >= 2) && !isTrapped) {
+          this.movingCandidateStreak++;
+          if (this.movingCandidateStreak >= this.config.MOVE_CONFIRM_STREAK) {
+            this.state = MotionState.MOVING;
+            this.movingCandidateStreak = 0;
+          }
+        } else {
+          this.state = MotionState.STOPPED;
+          this.movingCandidateStreak = 0;
+        }
+      }
+
+      const stateChanged = this.state !== prevState;
+      
+      
+      const isStopped = this.state === MotionState.STOPPED;
+
+      if (isStopped) {
+        
+        this.lastConfirmed = { ...this.lastConfirmed, isStopped: true, timestamp: raw.timestamp };
+        return {
+          latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
+          bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
+          isStopped: true, state: this.state, stateChanged, timestamp: raw.timestamp
+        };
+      }
+
+      
+      
+      if (isBelowMinDistance) {
+        return {
+          latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
+          bearing: this.lastConfirmed.bearing, totalDistance: this.totalDistance,
+          isStopped: false, state: this.state, stateChanged, timestamp: raw.timestamp
+        };
+      }
+
+
+      
+      
+      
+      const smoothLat = raw.latitude;
+      const smoothLon = raw.longitude;
+
+
+      
+
+      
+
+      const coordinateBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      let newBearing;
+      
+      
+      const stopSpeedCutoffMps = this.config.STOP_SPEED_CUTOFF_KMH / 3.6;
+      const hasValidHeading = raw.heading !== undefined && raw.heading !== null && !isNaN(raw.heading)
+        && raw.speed !== null && raw.speed >= stopSpeedCutoffMps;
+
+      const HEADING_DISAGREEMENT_THRESHOLD = 45.0; 
+
+      if (hasValidHeading) {
+        const disagreement = Math.abs(shortestAngleDiff(raw.heading, coordinateBearing));
+        if (disagreement >= HEADING_DISAGREEMENT_THRESHOLD) {
+          
+          
+          console.warn(`⚠️ heading 불일치 감지: raw.heading=${raw.heading.toFixed(1)}° vs coordinateBearing=${coordinateBearing.toFixed(1)}° (차이 ${disagreement.toFixed(1)}°) → 좌표계산 채택`);
+          newBearing = coordinateBearing;
+        } else {
+          newBearing = raw.heading;
+        }
+      } else {
+        newBearing = coordinateBearing;
+      }
+
+
+      console.log(`[GPS] speed=${raw.speed} accuracy=${raw.accuracy} rawHeading=${hasValidHeading ? raw.heading.toFixed(1) : 'N/A'} coordBearing=${coordinateBearing.toFixed(1)} chosenBearing=${newBearing.toFixed(1)}`);
+
+      if (this.lastConfirmed.bearing !== null) {
+        const bearingDelta = Math.abs(shortestAngleDiff(newBearing, this.lastConfirmed.bearing));
+        if (bearingDelta < this.config.BEARING_THRESHOLD) {
+          newBearing = this.lastConfirmed.bearing;
+        }
+      }
+
+      
+      const stepDist = haversineMeters(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
+      this.totalDistance += stepDist;
+
+      this.lastConfirmed = { latitude: smoothLat, longitude: smoothLon, bearing: newBearing, isStopped: false, timestamp: raw.timestamp };
+
+      return {
+        latitude: smoothLat, longitude: smoothLon,
+        bearing: newBearing, totalDistance: this.totalDistance,
+        isStopped: false, state: this.state, stateChanged, timestamp: raw.timestamp
+      };
+    }
+  }
+
+  const gpsFilterEngine = new GpsFilterEngine();
+  
+
+  let map = null;
+  let currentLayerType = 'terrain'; 
+  let polyline = null;
+  let markers = [];
+  let routeBadgeEls = []; 
+  let currentPoints = [];
+  let userGpsMarker = null;
+  let watchId = null;
+
+  
+
+  
+
+  
+  
+  let lowPowerModeEnabled = false;
+  let isLowPowerPolling = false;
+  let lowPowerPollTimerId = null;
+  let lastKnownPos = null;
+
+  
+  
+  let lastArrowVectorPos = null;        
+  let lastMovementVectorHeading = null; 
+  let lastMovementVectorUpdatedAt = null; 
+  let isReverseDirectionWarning = false;
+  const ARROW_VECTOR_MIN_MOVE_M = 3; 
+
+  
+
+  
+  
+  
+  const REVERSE_WARNING_CONFIRM_STREAK = 3; 
+  let reverseWarningStreak = 0;
+  let lastRouteDistanceForReverseCheck = null; 
+
+
+  
+
+  
+  let pendingRoundTripPair = null; 
+  let pendingDirectionConfirmHeading = null; 
+  let pendingDirectionConfirmStreak = 0; 
+  const ROUNDTRIP_DIRECTION_CONFIRM_STREAK = 3; 
+  const ROUNDTRIP_DIRECTION_TOLERANCE_DEG = 45; 
+
+  
+
+  const ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M = 20;
+
+  
+  
+  let isCurrentlyStopped = false; 
+  let guideLine = null; 
+
+  function calculateBearing(lat1, lon1, lat2, lon2) {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+              Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+    let brng = Math.atan2(y, x) * 180 / Math.PI;
+    return (brng + 360) % 360;
+  }
+
+  let isHeadingUp = false;      
+  let showHeadingArrow = false; 
+  let stopEnteredAt = null;     
+  let isMapBeingDragged = false;     
+  let isMapDragReturnPending = false; 
+
+  
+  let isProgrammaticZoomInProgress = false;
+  let lastToastUpdate = 0;
+  let gpsMovementHeading = null;
+
+
+  
+
+  
+
+  
+
+  
+  
+  
+  const HIKING_SESSION_KEY = 'gajago_hiking_session_v1';
+  function loadHikingSession() {
+    try {
+      const raw = localStorage.getItem(HIKING_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return (s && s.active) ? s : null;
+    } catch(e) { return null; }
+  }
+  
+  
+  function startHikingSession(routeKey) {
+    try {
+      localStorage.setItem(HIKING_SESSION_KEY, JSON.stringify({
+        active: true, routeKey, startedAt: Date.now()
+      }));
+    } catch(e) {}
+  }
+  function endHikingSession() {
+    try { localStorage.removeItem(HIKING_SESSION_KEY); } catch(e) {}
+  }
+  function makeRouteKey(courseName, sourceUrl) {
+    return `${courseName || ''}::${sourceUrl || ''}`;
+  }
+  let currentRouteKey = null; 
+
+
+  
+  
+  let isSegmentRotationMode = false; 
+  let mapRotationDeg = 0;            
+
+  
+  
+  let currentRotationOriginDist = null;
+
+  
+  
+  
+  const FIRST_ORIGIN_MIN_FIXES = 3;
+  let firstOriginFixCount = 0;
+
+
+  
+
+  const SLEEP_AFTER_STOPPED_MS = 5 * 60 * 1000;   
+  const SLEEP_WATCHDOG_MS = 2 * 60 * 1000;        
+  const WALK_VIBRATION_WAKE_THRESHOLD = 0.8;      
+  let isGpsSleeping = false;      
+  let sleepWatchdogTimerId = null; 
+  let sleepCheckPos = null;        
+  let sleepCheckStartedAt = null;  
+
+
+  
+
+  
+
+  
+  
+
+  
+  function shortestAngleDiff(target, current) {
+    let diff = (target - current) % 360;
+    if (diff < -180) diff += 360;
+    if (diff > 180) diff -= 360;
+    return diff;
+  }
+
+
+  
+
+  
+
+  
+  
+  
+  function renderGpsArrow(headingDeg) {
+    if (headingDeg === null || headingDeg === undefined || isNaN(headingDeg)) return;
+    const wrapper = document.getElementById('gpsHeadingWrapper');
+    if (wrapper) {
+      wrapper.style.transform = `rotate(${headingDeg}deg)`;
+    }
+  }
+
+
+  
+  
+  
+  function updateGpsMarkerWarningStyle() {
+
+    const shouldWarn = isOffTrailState || isReverseDirectionWarning;
+    const marker = userGpsMarker || simMarker;
+    const el = markerEl(marker);
+    if (!el) return;
+    const container = el.querySelector('.gps-marker-container');
+    if (!container) return;
+    container.classList.toggle('is-warning', shouldWarn);
+  }
+
+  
+  let walkVibrationLevel = 0;
+  window.addEventListener('devicemotion', (e) => {
+    if (!e.acceleration) return;
+    const a = e.acceleration;
+    const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+    if (!isNaN(mag)) {
+      if (mag > walkVibrationLevel) walkVibrationLevel = mag; 
+      else walkVibrationLevel = walkVibrationLevel * 0.9 + mag * 0.1; 
+
+      
+      if (mag > WALK_VIBRATION_WAKE_THRESHOLD && typeof wakeGpsFromVibration === 'function') {
+        wakeGpsFromVibration();
+      }
+    }
+  });
+
+
+  function setHeadingUpMode(enable, isQuiet = false) {
+    isHeadingUp = enable;
+    const mapEl = document.getElementById('map');
+    if (enable && lastKnownPos) {
+      if (!isQuiet) {
+        showToastBadge('📍 [내 위치 켜짐]\n화면이 자동으로 꺼지지 않습니다.');
+      }
+
+      isSegmentRotationMode = true;
+      currentRotationOriginDist = null; 
+      firstOriginFixCount = 0;
+      if (mapEl) mapEl.classList.add('heading-up');
+      {
+        const z = getPreferredGpsZoom();
+        applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: false });
+      }
+
+      
+      
+      
+      setTimeout(refreshMapSize, 520);
+    } else if (!enable) {
+      isSegmentRotationMode = false;
+      currentRotationOriginDist = null;
+      firstOriginFixCount = 0;
+      mapRotationDeg = 0;
+      appliedMapRotationDeg = 0;
+      updateRouteBadgeRotation();
+      if (mapEl) {
+        mapEl.classList.remove('heading-up');
+        mapEl.style.transform = '';
+      }
+      setTimeout(refreshMapSize, 520);
+    }
+  }
+
+
+  let audioCtx = null;
+  let lastBeepTime = 0;
+  let beepStreak = 0; 
+
+
+  async function playTwoToneBeep(freqHz) {
+    try {
+
+      if (!audioCtx || audioCtx.state === 'closed') {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      
+
+      
+      
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
+      if (audioCtx.state !== 'running') {
+        throw new Error('AudioContext not running after resume (state=' + audioCtx.state + ')');
+      }
+
+      [0, 0.35].forEach(delay => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.value = freqHz;
+        const t = audioCtx.currentTime + delay;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        osc.start(t);
+        osc.stop(t + 0.25);
+      });
+
+      
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      } else {
+        console.warn('⚠️ 이 기기/브라우저는 진동(vibrate)을 지원하지 않습니다 — 소리와 화면 깜빡임에만 의존합니다.');
+      }
+    } catch (e) {
+
+      
+      console.warn('⚠️ 비프음 재생 실패:', e);
+      try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e2) {}
+    }
+  }
+
+
+  
+
+  
+
+  
+
+  let ttsEnabled = true;
+  let lastTtsUtterance = '';
+  let lastTtsTime = 0;
+  function speakGuidance(text) {
+    return; 
+    if (!ttsEnabled || !('speechSynthesis' in window)) return;
+
+    
+    const now = Date.now();
+    if (text === lastTtsUtterance && now - lastTtsTime < 2000) return;
+    lastTtsUtterance = text;
+    lastTtsTime = now;
+    try {
+      window.speechSynthesis.cancel(); 
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ko-KR';
+      utter.rate = 1.05;
+      window.speechSynthesis.speak(utter);
+    } catch (e) {
+      console.warn('⚠️ 음성 안내 재생 실패:', e);
+    }
+  }
+
+  function playOffTrailBeep() {
+    const now = Date.now();
+
+    let cooldown = 30000;
+    if (beepStreak >= 8) cooldown = 120000;
+    else if (beepStreak >= 4) cooldown = 60000;
+
+    if (now - lastBeepTime < cooldown) return;
+    lastBeepTime = now;
+    beepStreak++;
+
+    playTwoToneBeep(880); 
+  }
+
+  
+  
+  function playBackOnTrailBeep() {
+    playTwoToneBeep(440);
+  }
+
+  
+  function resetOffTrailStreak() {
+    beepStreak = 0;
+    playBackOnTrailBeep();
+  }
+
+
+  
+  function playTurnAlertBeep() {
+    playTwoToneBeep(660);
+  }
+
+
+  
+  
+  function playPassedMilestoneBeep() {
+    playTwoToneBeep(550);
+  }
+
+  function getOrCreateCompassNoticeToast() {
+    let b = document.getElementById('compassNoticeToast');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'compassNoticeToast';
+      b.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.95); color:#fff; font-size:13px; font-weight:700; padding:10px 20px; border-radius:20px; box-shadow:0 4px 16px rgba(0,0,0,0.25); text-align:center; backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.4s; line-height:1.5; white-space:pre-line;';
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+
+  function showToastBadge(msg, durationMs) {
+
+    
+    
+    if (isPersistentToastActive) return;
+    const b = getOrCreateCompassNoticeToast();
+    b.innerText = msg;
+    b.style.opacity = '1';
+    b.style.display = 'block';
+    clearTimeout(b._timer);
+    b._timer = setTimeout(() => {
+      b.style.opacity = '0';
+      setTimeout(() => { b.style.display = 'none'; }, 400);
+    }, durationMs || 3200);
+  }
+
+
+  
+
+  
+  
+  let isPersistentToastActive = false;
+  function showPersistentToastBadge(msg) {
+    const b = getOrCreateCompassNoticeToast();
+
+    clearTimeout(b._timer);
+    b._timer = null;
+    b.innerText = msg;
+    b.style.opacity = '1';
+    b.style.display = 'block';
+    isPersistentToastActive = true;
+  }
+  function hidePersistentToastBadge() {
+
+    
+    if (!isPersistentToastActive) return;
+    const b = document.getElementById('compassNoticeToast');
+    if (b) {
+      b.style.opacity = '0';
+      setTimeout(() => { b.style.display = 'none'; }, 400);
+    }
+    isPersistentToastActive = false;
+  }
+
+  
+  
+  function stopCompass() {}
+
+
+  
+  let isBottomArrowVisible = false;
+  
+  
+  let lastShownArrowAngle = null;
+  let lastShownArrowLabel = null;
+
+  
+  
+  
+  function showBottomDirectionArrow(angleDiff, clockLabel, isReversed) {
+    const el = document.getElementById('bottomDirectionArrow');
+    const rotor = document.getElementById('bottomArrowRotor');
+    const label = document.getElementById('bottomArrowLabel');
+    if (!el || !rotor || !label) return;
+
+    el.style.display = 'flex';
+    el.classList.toggle('reversed', !!isReversed);
+    rotor.style.transform = `rotate(${angleDiff}deg)`;
+    label.textContent = clockLabel;
+    isBottomArrowVisible = true;
+    
+    
+    lastShownArrowAngle = angleDiff;
+    lastShownArrowLabel = clockLabel;
+  }
+
+  function hideBottomDirectionArrow() {
+    const el = document.getElementById('bottomDirectionArrow');
+    if (el) el.style.display = 'none';
+    isBottomArrowVisible = false;
+  }
+
+  
+  
+  function createGpsIconHtml(heading) {
+    const rot = (heading !== null && !isNaN(heading)) ? heading : 0;
+
+    let innerContent = `
+      <svg id="gpsArrowSvg" viewBox="0 0 80 80" class="gps-heading-svg">
+        <defs>
+          <radialGradient id="coneGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+            <stop offset="0%" stop-color="#1976d2" stop-opacity="0.65"/>
+            <stop offset="55%" stop-color="#0288d1" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#0288d1" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        
+        <path d="M 40 40 L 12 2 A 44 44 0 0 1 68 2 Z" fill="url(#coneGrad)"/>
+        
+        <polygon points="40,3 48,23 40,19 32,23" fill="#0d47a1" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    `;
+    
+    const arrowHtml = showHeadingArrow ? `
+        <div class="gps-heading-wrapper" id="gpsHeadingWrapper" style="transform: rotate(${rot}deg);">
+          ${innerContent}
+        </div>
+    ` : '';
+    
+    return `
+      <div class="gps-marker-container">
+        ${arrowHtml}
+        <div class="my-gps-pulse"></div>
+        <div class="my-gps-dot"></div>
+      </div>
+    `;
+  }
+
+  
+
+  
+
+
+  
+
+  function updateRealVhUnit() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--real-vh', `${vh}px`);
+  }
+  updateRealVhUnit();
+  window.addEventListener('resize', updateRealVhUnit);
+  window.addEventListener('orientationchange', updateRealVhUnit);
+
+
+  
+  
+  function getPreferredGpsZoom() {
+    try {
+      const saved = localStorage.getItem('gajago_last_zoom');
+      if (saved !== null) {
+        const z = parseFloat(saved);
+        if (!isNaN(z)) return z;
+      }
+    } catch(e) {}
+    return Math.max(map.getZoom(), 16);
+  }
+
+
+  
+  const toLatLng = (lat, lon) => new naver.maps.LatLng(lat, lon);
+  const toPath = latlngs => latlngs.map(p => toLatLng(p[0], p[1]));
+
+  
+  
+  function makeHtmlMarker(lat, lon, className, html, anchorX, anchorY, zIndex, sizePx) {
+    const el = document.createElement('div');
+    el.className = className;
+    if (sizePx) { el.style.width = sizePx + 'px'; el.style.height = sizePx + 'px'; }
+    el.innerHTML = html;
+    const marker = new naver.maps.Marker({
+      position: toLatLng(lat, lon),
+      map,
+      icon: { content: el, anchor: new naver.maps.Point(anchorX, anchorY) },
+      zIndex: zIndex || 0,
+    });
+    marker._el = el;
+    return marker;
+  }
+  const markerEl = m => (m && m._el) || null;
+  const removeOverlay = o => { if (o) o.setMap(null); };
+
+
+  let programmaticMoveFallbackTimer = null;
+  function markProgrammaticMoveUntilIdle(fallbackMs) {
+    isProgrammaticZoomInProgress = true;
+    clearTimeout(programmaticMoveFallbackTimer);
+    naver.maps.Event.once(map, 'idle', () => {
+      isProgrammaticZoomInProgress = false;
+      clearTimeout(programmaticMoveFallbackTimer);
+    });
+    programmaticMoveFallbackTimer = setTimeout(() => { isProgrammaticZoomInProgress = false; }, fallbackMs || 400);
+  }
+
+  
+  function setMapView(lat, lon, zoom, animate) {
+    markProgrammaticMoveUntilIdle(animate ? 1500 : 400);
+    if (animate) {
+      map.morph(toLatLng(lat, lon), zoom);
+    } else {
+      map.setZoom(zoom, false);
+      map.setCenter(toLatLng(lat, lon));
+    }
+  }
+
+
+  
+
+  
+
+  
+  
+  
+  function refreshMapSize() {
+    if (!map) return;
+    const el = document.getElementById('map');
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const heading = el.classList.contains('heading-up');
+    map.setOptions({ scrollWheel: !heading, pinchZoom: !heading, disableDoubleClickZoom: heading });
+    const cur = map.getSize();
+    if (!w || !h || (cur && cur.width === w && cur.height === h)) return;
+    const c = map.getCenter();
+    map.setSize(new naver.maps.Size(w, h));
+
+    el.style.width = '';
+    el.style.height = '';
+    map.setCenter(c);
+  }
+
+
+  
+
+  function relocateNaverAttribution() {
+    const mapEl = document.getElementById('map');
+    if (!mapEl) return;
+    let host = document.getElementById('naverAttr');
+    mapEl.querySelectorAll(':scope > div').forEach(d => {
+      const isCorner = d.style.position === 'absolute' && d.style.zIndex === '100';
+      if (!isCorner) return;
+      if (!(d.querySelector('.map_copyright') || d.querySelector('img[src*="naver-logo"]'))) return;
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'naverAttr';
+        host.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:1500;pointer-events:none;';
+        document.body.appendChild(host);
+      }
+      host.appendChild(d);
+    });
+  }
+
+  function zoomMapBy(delta) {
+    if (!map) return;
+    map.setZoom(map.getZoom() + delta, true);
+  }
+  window.zoomMapBy = zoomMapBy;
+
+  
+  function initMap() {
+    map = new naver.maps.Map('map', {
+      center: toLatLng(35.755, 127.674),
+      zoom: 14,
+      minZoom: 7,
+      maxZoom: 19,
+      mapTypeId: naver.maps.MapTypeId.TERRAIN,
+      zoomControl: false,
+      logoControl: true,
+      mapDataControl: true,   
+      scaleControl: false,
+      draggable: false,      
+      pinchZoom: true,
+      scrollWheel: true,
+      keyboardShortcuts: false,
+    });
+
+
+    
+    
+    const DRAG_RETURN_DELAY_MS = 7000;
+    let dragReturnTimer = null;
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    let zoomSettleTimer = null;
+    naver.maps.Event.addListener(map, 'zoom_changed', () => {
+      if (isProgrammaticZoomInProgress) return;
+      if (zoomSettleTimer === null) {
+        isMapBeingDragged = true;
+        isMapDragReturnPending = false;
+        if (dragReturnTimer) {
+          clearTimeout(dragReturnTimer);
+          dragReturnTimer = null;
+        }
+      }
+      clearTimeout(zoomSettleTimer);
+      zoomSettleTimer = setTimeout(() => { zoomSettleTimer = null; onUserZoomEnd(); }, 250);
+    });
+    function onUserZoomEnd() {
+
+      
+
+      try { localStorage.setItem('gajago_last_zoom', String(map.getZoom())); } catch(e) {}
+      if (simInterval !== null || isSimPaused) simUserZoomed = true; 
+      isMapBeingDragged = false;
+      isMapDragReturnPending = true;
+      if (dragReturnTimer) clearTimeout(dragReturnTimer);
+      dragReturnTimer = setTimeout(() => {
+        dragReturnTimer = null;
+        isMapDragReturnPending = false;
+        if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
+          const z = map.getZoom();
+          applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: true });
+
+          if (isSegmentRotationMode) recalculateGajaMapFromScratch('zoomEnd');
+        }
+      }, DRAG_RETURN_DELAY_MS);
+    }
+
+
+    
+
+    
+
+    
+
+    
+    let manualDragActive = false;
+    let manualDragLastX = 0;
+    let manualDragLastY = 0;
+
+
+    
+
+    
+
+    
+
+    
+    function finishMapRotationTransitionNow() {
+      const el = document.getElementById('map');
+      if (!el) return;
+
+      
+
+      
+
+      if (!el.classList.contains('heading-up')) return;
+      el.style.transition = 'none';
+      el.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
+
+      
+      
+      void el.offsetHeight;
+
+      requestAnimationFrame(() => {
+        const el2 = document.getElementById('map');
+        if (el2) el2.style.transition = '';
+      });
+    }
+
+    function rotateDragDelta(dx, dy, angleDeg) {
+
+      
+
+      
+
+      
+
+      
+      
+      const rad = angleDeg * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      return {
+        x: dx * cos - dy * sin,
+        y: dx * sin + dy * cos
+      };
+    }
+
+    function startManualMapDrag(clientX, clientY) {
+
+      
+      if (isWayfindActive) return;
+      manualDragActive = true;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+
+      isMapBeingDragged = true;
+      isMapDragReturnPending = false;
+      if (dragReturnTimer) {
+        clearTimeout(dragReturnTimer);
+        dragReturnTimer = null;
+      }
+
+      
+      
+      finishMapRotationTransitionNow();
+    }
+
+    function moveManualMapDrag(clientX, clientY) {
+      if (!manualDragActive) return;
+
+      const dx = clientX - manualDragLastX;
+      const dy = clientY - manualDragLastY;
+      manualDragLastX = clientX;
+      manualDragLastY = clientY;
+      if (dx === 0 && dy === 0) return;
+
+
+      
+
+      
+
+      
+      
+      
+      const corrected = rotateDragDelta(dx, dy, appliedMapRotationDeg);
+      
+      
+      map.panBy(new naver.maps.Point(-corrected.x, -corrected.y));
+    }
+
+    function endManualMapDrag() {
+      if (!manualDragActive) return;
+      manualDragActive = false;
+
+      isMapBeingDragged = false;
+      isMapDragReturnPending = true;
+      if (dragReturnTimer) clearTimeout(dragReturnTimer);
+      dragReturnTimer = setTimeout(() => {
+        dragReturnTimer = null;
+        isMapDragReturnPending = false;
+        if (isHeadingUp && lastKnownPos && !isMapBeingDragged) {
+          const z = map.getZoom();
+          applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, z, { animate: true });
+
+          
+          if (isSegmentRotationMode) recalculateGajaMapFromScratch('dragEnd');
+        }
+      }, DRAG_RETURN_DELAY_MS);
+    }
+
+    
+    naver.maps.Event.addListener(map, 'idle', relocateNaverAttribution);
+
+    
+    
+    if (typeof ResizeObserver === 'function') {
+      let rafId = null;
+      new ResizeObserver(() => {
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => { rafId = null; refreshMapSize(); });
+      }).observe(document.getElementById('map'));
+    }
+
+    
+    
+    const mapContainerEl = map.getElement().parentElement || map.getElement();
+
+    mapContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      startManualMapDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    mapContainerEl.addEventListener('touchmove', (e) => {
+      if (!manualDragActive || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      moveManualMapDrag(touch.clientX, touch.clientY);
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
+    mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
+
+
+    const isHeadingUpMap = () => document.getElementById('map').classList.contains('heading-up');
+    let lastWheelZoomAt = 0;
+    mapContainerEl.addEventListener('wheel', (e) => {
+      if (!isHeadingUpMap()) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastWheelZoomAt < 250) return;
+      lastWheelZoomAt = now;
+      zoomMapBy(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+    mapContainerEl.addEventListener('dblclick', (e) => {
+      if (!isHeadingUpMap()) return;
+      e.preventDefault();
+      zoomMapBy(1);
+    });
+    
+    let pinchRefDist = null;
+    const touchDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    mapContainerEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        pinchRefDist = touchDist(e.touches);
+        endManualMapDrag(); 
+      }
+    }, { passive: true });
+    mapContainerEl.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 2 || pinchRefDist === null || !isHeadingUpMap()) return;
+      const d = touchDist(e.touches);
+      const ratio = d / pinchRefDist;
+      if (ratio > 1.6) { zoomMapBy(1); pinchRefDist = d; }
+      else if (ratio < 0.62) { zoomMapBy(-1); pinchRefDist = d; }
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    mapContainerEl.addEventListener('touchend', () => { pinchRefDist = null; }, { passive: true });
+
+    
+    mapContainerEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      startManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!manualDragActive) return;
+      moveManualMapDrag(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseup', endManualMapDrag);
+
+    
+    switchLayer('terrain');
+  }
+
+
+  const LAYER_TO_MAP_TYPE = { terrain: 'TERRAIN', basic: 'NORMAL', satellite: 'SATELLITE' };
+  function switchLayer(type) {
+    if (!LAYER_TO_MAP_TYPE[type]) type = 'terrain';
+    currentLayerType = type;
+
+    document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
+    const selId = { terrain: 'lyrTerrain', basic: 'lyrBasic', satellite: 'lyrSatellite' }[type];
+    const selEl = document.getElementById(selId);
+    if (selEl) selEl.classList.add('selected');
+
+    if (map) map.setMapTypeId(naver.maps.MapTypeId[LAYER_TO_MAP_TYPE[type]]);
+
+    document.getElementById('layerMenu').style.display = 'none';
+  }
+
+  function toggleLayerMenu() {
+    const menu = document.getElementById('layerMenu');
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+
+  
+
+  
+
+  function pointToSegmentMeters(plat, plon, alat, alon, blat, blon) {
+    const latRef = plat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+
+    const px = (plon - alon) * mPerDegLon;
+    const py = (plat - alat) * mPerDegLat;
+    const bx = (blon - alon) * mPerDegLon;
+    const by = (blat - alat) * mPerDegLat;
+
+    const segLenSq = bx * bx + by * by;
+    let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = bx * t;
+    const closestY = by * t;
+    const dx = px - closestX;
+    const dy = py - closestY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+
+  
+  
+  
+  function pointToSegmentMetersWithT(plat, plon, alat, alon, blat, blon) {
+    const latRef = plat * Math.PI / 180;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(latRef);
+
+    const px = (plon - alon) * mPerDegLon;
+    const py = (plat - alat) * mPerDegLat;
+    const bx = (blon - alon) * mPerDegLon;
+    const by = (blat - alat) * mPerDegLat;
+
+    const segLenSq = bx * bx + by * by;
+    let t = segLenSq > 0 ? (px * bx + py * by) / segLenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestX = bx * t;
+    const closestY = by * t;
+    const dx = px - closestX;
+    const dy = py - closestY;
+    return { distance: Math.sqrt(dx * dx + dy * dy), t, segLenM: Math.sqrt(segLenSq) };
+  }
+
+
+  
+  let lastNearestIdx = -1; 
+  const TRAIL_WINDOW_RADIUS = 60; 
+  const TRAIL_FALLBACK_THRESHOLD_M = 50; 
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  let trailTrackingMode = 'SEARCHING'; 
+  let offCandidateStreak = 0; 
+  const LOCK_REACQUIRE_DIST_M = TRAIL_FALLBACK_THRESHOLD_M; 
+  const LOCK_REACQUIRE_STREAK = 3; 
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  const SEGMENT_ADVANCE_MIN_ABS_M = 15; 
+  const SEGMENT_ADVANCE_MIN_MARGIN_M = 3; 
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  const MIN_INDEX_DELTA = 1; 
+
+  
+  
+  
+  const TRACK_DIRECTION_CONFIRM_STREAK = 3;
+  let trackDirectionCandidate = null; 
+  let trackDirectionCandidateStreak = 0;
+  let lastConfirmedTrackIdx = null; 
+
+  
+  
+  
+  let isReversingOnTrail = false;
+
+
+  
+
+  
+
+
+  
+  
+  function resetTrackDirectionState() {
+    isReversingOnTrail = false;
+    trackDirectionCandidate = null;
+    trackDirectionCandidateStreak = 0;
+    lastConfirmedTrackIdx = null;
+    moveDirectionSign = 1;
+    lastMoveDirectionIdx = null;
+  }
+
+
+  
+
+  
+
+  
+
+  
+  
+  let moveDirectionSign = 1; 
+  let lastMoveDirectionIdx = null;
+
+  
+
+  
+
+  
+
+  
+  const MOVE_DIRECTION_NOISE_IDX = 2;
+  function updateMoveDirection(nearestIdx, justReacquired) {
+    if (lastMoveDirectionIdx === null || justReacquired) {
+      lastMoveDirectionIdx = nearestIdx;
+      return;
+    }
+    const delta = nearestIdx - lastMoveDirectionIdx;
+    if (Math.abs(delta) <= MOVE_DIRECTION_NOISE_IDX) return; 
+    lastMoveDirectionIdx = nearestIdx;
+    moveDirectionSign = delta > 0 ? 1 : -1;
+  }
+
+
+  
+
+  
+
+  
+
+  
+  const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
+  const REVERSE_SEGMENT_PENALTY_M = 30;
+
+  
+  const MIN_SEGMENT_LEN_FOR_BEARING_M = 3;
+
+  
+  function findNearestInRange(lat, lon, points, startIdx, endIdx) {
+    let minScore = Infinity; 
+    let nearestActualDist = Infinity; 
+    let nearestPoint = points[startIdx] || points[0];
+    let nearestIdx = startIdx;
+
+    
+
+    
+
+    let rawMinDist = Infinity;
+    let rawNearestIdx = startIdx;
+
+
+    
+    for (let i = startIdx; i < endIdx; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+
+      const d = pointToSegmentMeters(lat, lon, a.lat, a.lon, b.lat, b.lon);
+
+      
+
+      
+
+      
+
+      
+      
+      
+      const RAW_TIE_EPSILON_M = 0.01;
+      if (d < rawMinDist + RAW_TIE_EPSILON_M) {
+        rawMinDist = Math.min(d, rawMinDist);
+        rawNearestIdx = i;
+      }
+
+      
+
+      
+      
+      const score = d;
+
+
+      
+      const SCORE_TIE_EPSILON_M = 0.01;
+      if (score < minScore + SCORE_TIE_EPSILON_M) {
+        minScore = Math.min(score, minScore);
+        nearestActualDist = d;
+        nearestIdx = i;
+        const dA = haversineMeters(lat, lon, a.lat, a.lon);
+        const dB = haversineMeters(lat, lon, b.lat, b.lon);
+        nearestPoint = dA <= dB ? a : b;
+      }
+    }
+
+    return { distance: nearestActualDist, point: nearestPoint, index: nearestIdx, rawIndex: rawNearestIdx };
+  }
+
+
+  
+
+  
+
+
+
+  let cumulativeDistances = [];
+  let currentMilestones = []; 
+  let currentSegmentBearings = []; 
+  let segmentLengths = []; 
+
+  
+  
+  function buildMilestones(points, waypoints, cumDistances) {
+    if (!points || !points.length) return [];
+    const totalDistM = (cumDistances && cumDistances.length) ? cumDistances[cumDistances.length - 1] : 0;
+    const list = [];
+
+    
+
+    
+    const seen = new Set();
+
+    if (waypoints && waypoints.length > 0) {
+      waypoints.forEach(w => {
+        const n = (w.name || '').trim();
+        if (!n) return;
+        const coordKey = w.lat.toFixed(5) + ',' + w.lon.toFixed(5); 
+        if (seen.has(coordKey)) return;
+        seen.add(coordKey);
+
+
+        
+
+        
+
+        const WAYPOINT_MATCH_RADIUS_M = 30;
+        
+        
+
+        let globalMinD = Infinity;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const d = pointToSegmentMeters(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
+          if (d < globalMinD) globalMinD = d;
+        }
+        
+        
+        if (globalMinD > 100 && !n.includes('들머리') && !n.includes('날머리')) {
+          return;
+        }
+
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+        const matchThreshold = globalMinD > WAYPOINT_MATCH_RADIUS_M ? globalMinD + 1 : WAYPOINT_MATCH_RADIUS_M;
+
+        
+
+        
+
+        
+        
+        const candidates = [];
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const r = pointToSegmentMetersWithT(w.lat, w.lon, a.lat, a.lon, b.lat, b.lon);
+          if (r.distance <= matchThreshold) candidates.push({ idx: i, dist: r.distance, t: r.t, segLenM: r.segLenM });
+        }
+
+        
+
+        
+
+        
+
+        
+
+        
+        const ROUNDTRIP_CLUSTER_INDEX_GAP = 10; 
+        candidates.sort((c1, c2) => c1.idx - c2.idx);
+        const clusters = [];
+        candidates.forEach(c => {
+          const lastCluster = clusters[clusters.length - 1];
+          if (lastCluster && (c.idx - lastCluster.lastIdx) <= ROUNDTRIP_CLUSTER_INDEX_GAP) {
+            lastCluster.lastIdx = c.idx;
+            if (c.dist < lastCluster.best.dist) lastCluster.best = c;
+          } else {
+            clusters.push({ best: c, lastIdx: c.idx });
+          }
+        });
+
+        let icon = '📍';
+        let color = '#2e7d32';
+
+        
+
+        
+        const isPeak = n.endsWith('봉') || n.endsWith('산') || n.includes('정상') || n.includes('최고지점');
+        if (n.includes('들머리') || n.includes('출발')) {
+          icon = '🚩'; color = '#1976d2';
+        } else if (n.includes('날머리') || n.includes('도착')) {
+          icon = '🏁'; color = '#d32f2f';
+        } else if (isPeak) {
+          icon = '⛰️'; color = '#e65100';
+        } else if (n.endsWith('재') || n.endsWith('령') || n.endsWith('고개')) {
+          icon = '🏔️'; color = '#00838f';
+        } else if (n.endsWith('사') || n.endsWith('암') || n.includes('절')) {
+          icon = '⛩️'; color = '#c2185b';
+        } else if (n.includes('삼거리') || n.includes('사거리') || n.includes('갈림길') || n.includes('분기')) {
+          icon = '🔀'; color = '#6a1b9a';
+        }
+
+
+        
+
+        
+
+        
+
+        
+
+        
+        let selectedClusters = clusters;
+        if (n.includes('들머리') || n.includes('출발')) {
+          selectedClusters = clusters.length
+            ? [clusters.reduce((a, b) => (cumDistances[a.best.idx] || 0) <= (cumDistances[b.best.idx] || 0) ? a : b)]
+            : clusters;
+        } else if (n.includes('날머리') || n.includes('도착')) {
+          selectedClusters = clusters.length
+            ? [clusters.reduce((a, b) => (cumDistances[a.best.idx] || 0) >= (cumDistances[b.best.idx] || 0) ? a : b)]
+            : clusters;
+        }
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+        const pushedMilestones = [];
+        selectedClusters.forEach(cluster => {
+          const nearestIdx = cluster.best.idx;
+          const t = cluster.best.t || 0;
+          const segLenM = cluster.best.segLenM || 0;
+
+          
+          const distM = (cumDistances && cumDistances[nearestIdx] !== undefined) ? cumDistances[nearestIdx] + t * segLenM : 0;
+          const segA = points[nearestIdx];
+          const segB = points[nearestIdx + 1] || segA;
+          const trailLat = segA.lat + (segB.lat - segA.lat) * t;
+          const trailLon = segA.lon + (segB.lon - segA.lon) * t;
+          const m = {
+            name: n, lat: w.lat, lon: w.lon, ele: w.ele, distanceM: distM, icon, color,
+            trailLat, trailLon, isPeak,
+          };
+          list.push(m);
+          pushedMilestones.push(m);
+        });
+        if (pushedMilestones.length === 2) {
+          pushedMilestones[0].roundTripPeer = pushedMilestones[1];
+          pushedMilestones[1].roundTripPeer = pushedMilestones[0];
+        }
+      });
+    }
+
+
+    
+
+    const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
+    if (!hasPeak) {
+      const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
+      if (withEle.length > 0) {
+        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+        const peakIdx = points.indexOf(peak);
+        const peakDistM = (cumDistances && cumDistances[peakIdx] !== undefined) ? cumDistances[peakIdx] : (totalDistM / 2);
+        list.push({
+          name: `정상 (${Math.round(peak.ele)}m)`,
+          lat: peak.lat,
+          lon: peak.lon,
+          ele: peak.ele,
+          distanceM: peakDistM,
+          icon: '⛰️',
+          color: '#e65100',
+          trailLat: peak.lat, 
+          trailLon: peak.lon,
+          isPeak: true,
+          autoNamed: true, hideMarker: true, 
+        });
+      }
+    }
+
+
+    
+
+    
+
+    
+    
+    if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
+      const startPt = points[0];
+      list.push({ name: '들머리', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2', trailLat: startPt.lat, trailLon: startPt.lon });
+    }
+
+    
+
+    
+
+    const turnIdx = points.roundTripTurnIdx;
+    
+    
+    if (turnIdx != null && points[turnIdx] && !list.some(m => m.name.includes('반환점')
+        || Math.abs((m.distanceM || 0) - ((cumDistances && cumDistances[turnIdx]) || 0)) < 60)) {
+      const tp = points[turnIdx];
+      const turnDistM = (cumDistances && cumDistances[turnIdx]) || 0;
+      list.push({ name: '반환점', lat: tp.lat, lon: tp.lon, distanceM: turnDistM, icon: '🔁', color: '#7b1fa2', trailLat: tp.lat, trailLon: tp.lon, hideMarker: true }); 
+    }
+    if (!list.some(m => m.name.includes('날머리') || m.name.includes('도착'))) {
+      const endPt = points[points.length - 1];
+      list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
+    }
+    
+    
+    
+    const startM = list.find(m => m.name.includes('들머리') || m.name.includes('출발'));
+    const endM = list.find(m => m.name.includes('날머리') || m.name.includes('도착'));
+    
+    if (startM && endM && startM !== endM) {
+      const dist = haversineMeters(startM.lat, startM.lon, endM.lat, endM.lon);
+      if (dist < 50) {
+        startM.name = '들·날머리 (원점회귀)';
+        startM.icon = '🔄';
+        startM.color = '#7b1fa2'; 
+        
+        
+        
+        endM.hideMarker = true;
+      }
+    }
+
+    list.sort((a, b) => a.distanceM - b.distanceM);
+
+
+    
+
+    
+
+    
+
+    return list;
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+
+  let currentMilestoneIdx = 0; 
+  let nextMilestoneIdx = 1;    
+
+
+  function getCurrentSection() {
+    const A = currentMilestones[currentMilestoneIdx];
+    const B = currentMilestones[nextMilestoneIdx];
+    if (!A || !B) return null;
+    return { fromMilestone: A, toMilestone: B, isForward: nextMilestoneIdx > currentMilestoneIdx };
+  }
+
+
+  
+
+  function peekNextSection(section) {
+    if (!section) return null;
+    const bIdx = currentMilestones.indexOf(section.toMilestone);
+    if (bIdx < 0) return null;
+    const dir = section.isForward ? 1 : -1;
+    let cIdx = bIdx + dir;
+    let nextDir = dir;
+    if (cIdx < 0 || cIdx >= currentMilestones.length) { nextDir = -dir; cIdx = bIdx + nextDir; }
+    const C = currentMilestones[cIdx];
+    if (!C) return null;
+    return { fromMilestone: section.toMilestone, toMilestone: C, isForward: nextDir > 0 };
+  }
+
+
+  
+  function advanceSection(arrivedAtIdx) {
+    const wasForward = nextMilestoneIdx > currentMilestoneIdx;
+    currentMilestoneIdx = arrivedAtIdx;
+    let dir = wasForward ? 1 : -1;
+    let next = currentMilestoneIdx + dir;
+    if (next < 0 || next >= currentMilestones.length) dir = -dir; 
+    nextMilestoneIdx = currentMilestoneIdx + dir;
+  }
+
+
+  
+  function findPointsIndexAtDistance(distances, targetDistM) {
+    let idx = 0;
+    for (let i = 0; i < distances.length; i++) {
+      if (distances[i] <= targetDistM) idx = i; else break;
+    }
+    return idx;
+  }
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  function getSectionIndexRange(section) {
+    const dFrom = section.fromMilestone.distanceM;
+    const dTo = section.toMilestone.distanceM;
+    const lo = Math.max(0, Math.min(dFrom, dTo) - SECTION_ADVANCE_MARGIN_M);
+    const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    const hi = Math.min(totalDist, Math.max(dFrom, dTo) + SECTION_ADVANCE_MARGIN_M);
+    const idxLo = findPointsIndexAtDistance(cumulativeDistances, lo);
+    let idxHi = Math.max(idxLo + 1, findPointsIndexAtDistance(cumulativeDistances, hi));
+    while (idxHi < cumulativeDistances.length - 1 && cumulativeDistances[idxHi] < hi) {
+      idxHi++;
+    }
+    return { idxLo, idxHi };
+  }
+
+
+  
+  
+  
+  function projectOntoCurrentSection(lat, lon, section) {
+    const { idxLo, idxHi } = getSectionIndexRange(section);
+    if (!currentPoints || idxHi <= idxLo) return null;
+    let best = null;
+    for (let i = idxLo; i < idxHi; i++) {
+      const a = currentPoints[i], b = currentPoints[i + 1];
+      if (!a || !b) continue;
+      const r = pointToSegmentMetersWithT(lat, lon, a.lat, a.lon, b.lat, b.lon);
+      if (!best || r.distance < best.distance) best = { ...r, segmentIndex: i };
+    }
+    if (!best) return null;
+    const routeDistance = (cumulativeDistances[best.segmentIndex] || 0) + best.t * best.segLenM;
+    const a = currentPoints[best.segmentIndex], b = currentPoints[best.segmentIndex + 1];
+    return {
+      segmentIndex: best.segmentIndex,
+      projectionRatio: best.t,
+      projectedLat: a.lat + (b.lat - a.lat) * best.t,
+      projectedLon: a.lon + (b.lon - a.lon) * best.t,
+      routeDistance,
+      distance: best.distance,
+    };
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function resolveInitialSectionByProjection(lat, lon) {
+    if (!currentMilestones || currentMilestones.length < 2) {
+      currentMilestoneIdx = 0;
+      nextMilestoneIdx = Math.min(1, Math.max(0, currentMilestones.length - 1));
+      return;
+    }
+    let best = null;
+    for (let i = 0; i < currentMilestones.length - 1; i++) {
+      const candidateSection = { fromMilestone: currentMilestones[i], toMilestone: currentMilestones[i + 1], isForward: true };
+      const proj = projectOntoCurrentSection(lat, lon, candidateSection);
+      if (proj && (!best || proj.distance < best.proj.distance)) {
+        best = { idx: i, proj };
+      }
+    }
+    if (!best) {
+      currentMilestoneIdx = 0;
+      nextMilestoneIdx = Math.min(1, currentMilestones.length - 1);
+      return;
+    }
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    
+    
+    const bestFrom = currentMilestones[best.idx];
+    const bestTo = currentMilestones[best.idx + 1];
+    const fromTarget = bestFrom.roundTripPeer || bestFrom;
+    const toTarget = bestTo.roundTripPeer || bestTo;
+
+    const hasAnyPeer = !!bestFrom.roundTripPeer || !!bestTo.roundTripPeer;
+
+    let pairIdx = -1;
+    if (hasAnyPeer) {
+      for (let i = 0; i < currentMilestones.length - 1; i++) {
+        if (currentMilestones[i] === toTarget && currentMilestones[i + 1] === fromTarget) {
+          pairIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (pairIdx >= 0) {
+      
+      
+      const pairSection = { fromMilestone: currentMilestones[pairIdx], toMilestone: currentMilestones[pairIdx + 1], isForward: true };
+      const pairProj = projectOntoCurrentSection(lat, lon, pairSection);
+      const pairDistance = pairProj ? pairProj.distance : Infinity;
+      const distGap = Math.abs(best.proj.distance - pairDistance);
+
+      if (distGap >= ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M) {
+        
+        
+        currentMilestoneIdx = best.idx;
+        nextMilestoneIdx = best.idx + 1;
+
+        if (pendingRoundTripPair
+            && (pendingRoundTripPair.candidateIdxA === best.idx || pendingRoundTripPair.candidateIdxA === pairIdx)
+            && (pendingRoundTripPair.candidateIdxB === best.idx || pendingRoundTripPair.candidateIdxB === pairIdx)) {
+          pendingRoundTripPair = null;
+          pendingDirectionConfirmHeading = null;
+          pendingDirectionConfirmStreak = 0;
+          hidePersistentToastBadge();
+        }
+      } else {
+
+        
+        
+        
+        currentMilestoneIdx = best.idx;
+        nextMilestoneIdx = best.idx + 1;
+
+
+        
+
+        
+        
+        
+        const normA = Math.min(best.idx, pairIdx);
+        const normB = Math.max(best.idx, pairIdx);
+        const samePairAsBefore = pendingRoundTripPair
+          && pendingRoundTripPair.candidateIdxA === normA
+          && pendingRoundTripPair.candidateIdxB === normB;
+        pendingRoundTripPair = { candidateIdxA: normA, candidateIdxB: normB };
+        if (!samePairAsBefore) {
+          pendingDirectionConfirmHeading = null;
+          pendingDirectionConfirmStreak = 0;
+          showPersistentToastBadge('🧭 이동방향을 확인중입니다. 이동해주세요');
+        }
+      }
+    } else {
+      
+      currentMilestoneIdx = best.idx;
+      nextMilestoneIdx = best.idx + 1;
+    }
+  }
+
+
+
+  
+
+  
+  
+  
+  function reconfirmPendingRoundTripPair(movementHeading) {
+    if (!pendingRoundTripPair || movementHeading === null || movementHeading === undefined) return;
+
+    if (pendingDirectionConfirmHeading === null) {
+      pendingDirectionConfirmHeading = movementHeading;
+      pendingDirectionConfirmStreak = 1;
+      return;
+    }
+    const diff = Math.abs(shortestAngleDiff(movementHeading, pendingDirectionConfirmHeading));
+    if (diff <= ROUNDTRIP_DIRECTION_TOLERANCE_DEG) {
+      pendingDirectionConfirmStreak++;
+    } else {
+      pendingDirectionConfirmHeading = movementHeading;
+      pendingDirectionConfirmStreak = 1;
+    }
+
+    if (pendingDirectionConfirmStreak < ROUNDTRIP_DIRECTION_CONFIRM_STREAK) return;
+
+    const { candidateIdxA, candidateIdxB } = pendingRoundTripPair;
+    const sectionA = { fromMilestone: currentMilestones[candidateIdxA], toMilestone: currentMilestones[candidateIdxA + 1] };
+    const sectionB = { fromMilestone: currentMilestones[candidateIdxB], toMilestone: currentMilestones[candidateIdxB + 1] };
+    const bearingA = calculateBearing(sectionA.fromMilestone.trailLat, sectionA.fromMilestone.trailLon, sectionA.toMilestone.trailLat, sectionA.toMilestone.trailLon);
+    const bearingB = calculateBearing(sectionB.fromMilestone.trailLat, sectionB.fromMilestone.trailLon, sectionB.toMilestone.trailLat, sectionB.toMilestone.trailLon);
+    const diffA = Math.abs(shortestAngleDiff(movementHeading, bearingA));
+    const diffB = Math.abs(shortestAngleDiff(movementHeading, bearingB));
+    const chosenIdx = diffA <= diffB ? candidateIdxA : candidateIdxB;
+
+    const didSwitch = currentMilestoneIdx !== chosenIdx;
+    if (didSwitch) {
+      currentMilestoneIdx = chosenIdx;
+      nextMilestoneIdx = chosenIdx + 1;
+    }
+
+    pendingRoundTripPair = null;
+    pendingDirectionConfirmHeading = null;
+    pendingDirectionConfirmStreak = 0;
+
+    hidePersistentToastBadge();
+    if (didSwitch) {
+      showToastBadge('🔁 실제 이동 방향에 맞춰 경로를 다시 확인했습니다.');
+    }
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  const ROTATION_TARGET_MAX_LOOKAHEAD_M = 100;
+  const SIM_ROTATION_TARGET_LOOKAHEAD_M = 500;
+  function findNextRotationTarget(originDist, isReversing, maxLookaheadM) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const totalDistM = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    if (totalDistM <= 0) return null;
+    const lookaheadM = (maxLookaheadM === undefined) ? ROTATION_TARGET_MAX_LOOKAHEAD_M : maxLookaheadM;
+
+    
+    const maxLookaheadDistM = isReversing
+      ? Math.max(0, originDist - lookaheadM)
+      : Math.min(totalDistM, originDist + lookaheadM);
+
+    
+    
+    let nearestMilestone = null;
+    if (currentMilestones && currentMilestones.length > 0) {
+      currentMilestones.forEach(m => {
+        const isAheadInDirection = isReversing
+          ? (m.distanceM < originDist && m.distanceM >= maxLookaheadDistM)
+          : (m.distanceM > originDist && m.distanceM <= maxLookaheadDistM);
+        if (!isAheadInDirection) return;
+        if (!nearestMilestone || Math.abs(m.distanceM - originDist) < Math.abs(nearestMilestone.distanceM - originDist)) {
+          nearestMilestone = m;
+        }
+      });
+    }
+    if (nearestMilestone) {
+      return { name: nearestMilestone.name, distanceM: nearestMilestone.distanceM, lat: nearestMilestone.trailLat, lon: nearestMilestone.trailLon, isMilestone: true };
+    }
+
+    
+    const pt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, maxLookaheadDistM);
+    if (!pt) return null;
+    return { name: '@' + lookaheadM + 'm', distanceM: maxLookaheadDistM, lat: pt.lat, lon: pt.lon, isMilestone: false };
+  }
+
+
+  
+  
+  
+  function classifyTurnAngle(angle) {
+    const abs = Math.abs(angle);
+    if (abs < 5) return '직진';
+    if (angle > 0) return abs >= 120 ? '급우회전' : (abs >= 30 ? '우회전' : '약간우회전');
+    return abs >= 120 ? '급좌회전' : (abs >= 30 ? '좌회전' : '약간좌회전');
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  function isBigLandmarkName(name) {
+    return (name || '').trim() !== '갈림길';
+  }
+  const bigLandmarkMilestonesCache = { source: null, list: null };
+  function getBigLandmarkMilestones() {
+    if (bigLandmarkMilestonesCache.source === currentMilestones) {
+      return bigLandmarkMilestonesCache.list;
+    }
+    const list = (currentMilestones || []).filter(m => isBigLandmarkName(m.name));
+    bigLandmarkMilestonesCache.source = currentMilestones;
+    bigLandmarkMilestonesCache.list = list;
+    return list;
+  }
+
+  
+
+  
+
+  
+
+  
+
+  
+  function findNextBigLandmark(section, proj) {
+    const source = getBigLandmarkMilestones();
+    if (!source || source.length < 2 || !section || !proj) return null;
+    const routeDistance = proj.routeDistance;
+    let prevM = source[0];
+    let nextM = source[source.length - 1];
+    for (let i = 0; i < source.length; i++) {
+      if (source[i].distanceM <= routeDistance) prevM = source[i];
+      if (source[i].distanceM > routeDistance) { nextM = source[i]; break; }
+    }
+    if (!section.isForward) {
+      return { prevM: nextM, nextM: prevM };
+    }
+    return { prevM, nextM };
+  }
+
+  function findNextMilestone(traveledDist, isReversing, graceM) {
+    const source = currentMilestones;
+    if (!source || source.length < 2) return null;
+    const grace = (graceM === undefined) ? 15 : graceM;
+    let prevM = source[0];
+    let nextM = source[source.length - 1];
+
+    
+
+    for (let i = 0; i < source.length; i++) {
+      if (source[i].distanceM <= traveledDist + grace) {
+        prevM = source[i];
+      }
+      if (source[i].distanceM > traveledDist) {
+        nextM = source[i];
+        break;
+      }
+    }
+    if (isReversing) {
+
+      
+      return { prevM: nextM, nextM: prevM };
+    }
+    return { prevM, nextM };
+  }
+
+  function buildCumulativeDistances(points) {
+    const dists = [0];
+    for (let i = 1; i < points.length; i++) {
+      const d = haversineMeters(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+      dists.push(dists[i-1] + d);
+    }
+    return dists;
+  }
+
+
+  
+
+  function buildSegmentBearings(points) {
+    const bearings = [];
+
+    
+    
+    segmentLengths = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      bearings.push(calculateBearing(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+      segmentLengths.push(haversineMeters(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+    }
+    return bearings;
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  const ARROW_LOOKAHEAD_M = 15;
+
+  
+
+  
+  
+  
+  const PEAK_SIMPLIFY_RADIUS_M = 40; 
+  const PEAK_LOOKAHEAD_M = 50; 
+  function isNearPeakMilestone(traveledDist) {
+    if (!currentMilestones || currentMilestones.length === 0) return false;
+    return currentMilestones.some(m => m.isPeak && Math.abs(traveledDist - m.distanceM) <= PEAK_SIMPLIFY_RADIUS_M);
+  }
+
+  
+  
+
+
+  
+
+  
+  
+  
+  function computeArrowHeadingV2(gpsLat, gpsLon, routeDistance) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2 || routeDistance === null || routeDistance === undefined) return null;
+    const lookahead = isNearPeakMilestone(routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, routeDistance + lookahead);
+    if (!targetPt) return null;
+    return calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
+  }
+
+
+  function computeMovementVectorHeading(prevLat, prevLon, currLat, currLon) {
+    if (prevLat === null || prevLat === undefined || currLat === null || currLat === undefined) return null;
+    const movedM = haversineMeters(prevLat, prevLon, currLat, currLon);
+    if (movedM < ARROW_VECTOR_MIN_MOVE_M) return null; 
+    return calculateBearing(prevLat, prevLon, currLat, currLon);
+  }
+
+
+  
+
+  
+
+  
+  function smoothPolylinePoints(points) {
+    if (!points || points.length < 3) return (points || []).map(p => [p.lat, p.lon]);
+
+    const SMOOTH_SKIP_DIST_M = 8;   
+    const SMOOTH_SEGMENTS = 6;      
+
+    const catmullRom = (p0, p1, p2, p3, t) => {
+      const t2 = t * t, t3 = t2 * t;
+      return 0.5 * (
+        (2 * p1) +
+        (-p0 + p2) * t +
+        (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+        (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+      );
+    };
+
+    const result = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i === 0 ? 0 : i - 1];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2 < points.length ? i + 2 : points.length - 1];
+
+      result.push([p1.lat, p1.lon]);
+
+      const segDist = haversineMeters(p1.lat, p1.lon, p2.lat, p2.lon);
+      if (segDist < SMOOTH_SKIP_DIST_M) continue; 
+
+      for (let s = 1; s < SMOOTH_SEGMENTS; s++) {
+        const t = s / SMOOTH_SEGMENTS;
+        const lat = catmullRom(p0.lat, p1.lat, p2.lat, p3.lat, t);
+        const lon = catmullRom(p0.lon, p1.lon, p2.lon, p3.lon, t);
+        result.push([lat, lon]);
+      }
+    }
+    const last = points[points.length - 1];
+    result.push([last.lat, last.lon]);
+    return result;
+  }
+
+
+  
+  
+  function findPointAheadByDistance(points, distances, fromIdx, targetMeters) {
+    if (!points || points.length === 0 || fromIdx < 0) return null;
+    const fromDist = distances[fromIdx];
+    const targetDist = fromDist + targetMeters;
+
+    for (let i = fromIdx; i < points.length - 1; i++) {
+      if (distances[i + 1] >= targetDist) {
+        
+        const segStart = distances[i];
+        const segEnd = distances[i + 1];
+        const segLen = segEnd - segStart;
+        const t = segLen > 0 ? (targetDist - segStart) / segLen : 0;
+        return {
+          lat: points[i].lat + (points[i+1].lat - points[i].lat) * t,
+          lon: points[i].lon + (points[i+1].lon - points[i].lon) * t
+        };
+      }
+    }
+    
+    return points[points.length - 1];
+  }
+
+
+  
+  
+  function pointAtCumulativeDistance(points, distances, targetDistM) {
+    return findPointAheadByDistance(points, distances, 0, targetDistM);
+  }
+
+
+  
+
+  function pointAtCumulativeDistanceBehind(points, distances, targetDistM) {
+    if (!points || points.length === 0) return null;
+    for (let i = points.length - 1; i > 0; i--) {
+      if (distances[i - 1] <= targetDistM) {
+        const segStart = distances[i - 1];
+        const segEnd = distances[i];
+        const segLen = segEnd - segStart;
+        const t = segLen > 0 ? (targetDistM - segStart) / segLen : 0;
+        return {
+          lat: points[i - 1].lat + (points[i].lat - points[i - 1].lat) * t,
+          lon: points[i - 1].lon + (points[i].lon - points[i - 1].lon) * t
+        };
+      }
+    }
+    return points[0];
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  function computeGuidanceHeading(fromLat, fromLon, targetLat, targetLon) {
+    if (fromLat === undefined || fromLon === undefined || targetLat === undefined || targetLon === undefined) return null;
+    if (fromLat === null || fromLon === null || targetLat === null || targetLon === null) return null;
+    return calculateBearing(fromLat, fromLon, targetLat, targetLon);
+  }
+
+
+  
+
+  
+
+  
+  function applyMapViewWithOffset(lat, lon, zoom, viewOpts) {
+
+    
+
+    if (isWayfindActive) return;
+
+    
+    const opts = isSegmentRotationMode ? { animate: false } : viewOpts;
+
+
+    
+
+    
+
+    
+    
+    
+    setMapView(lat, lon, zoom, !!(opts && opts.animate));
+  }
+
+
+  
+
+  
+
+  
+  let appliedMapRotationDeg = 0; 
+  function applySegmentRotation(bearingDeg) {
+    const mapEl = document.getElementById('map');
+    if (!mapEl || bearingDeg === null || isNaN(bearingDeg)) return;
+    const delta = shortestAngleDiff(bearingDeg, mapRotationDeg);
+    appliedMapRotationDeg += delta; 
+    mapEl.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
+    mapRotationDeg = bearingDeg;
+
+    
+    
+    updateRouteBadgeRotation();
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  const B_POINT_NEAR_THRESHOLD_M = 30; 
+  const FAR_STATE_DRIFT_THRESHOLD_DEG = 90; 
+  const FAR_STATE_DRIFT_CONFIRM_STREAK = 3; 
+
+  
+
+  
+  const FAR_STATE_REFRESH_DISTANCE_M = 25;
+
+  
+
+  const FAR_STATE_REFRESH_DISTANCE_SIM_M = 500;
+
+  
+
+  
+  
+  function getFarStateRefreshDistanceM() {
+    return isSimulationMode ? FAR_STATE_REFRESH_DISTANCE_SIM_M : FAR_STATE_REFRESH_DISTANCE_M;
+  }
+  let sectionApproachState = null; 
+  let lastAppliedFarBearing = null; 
+  let farDriftStreak = 0; 
+  let lastAppliedFarRouteDistance = null; 
+
+
+  
+
+  function computeSectionApproachBearing(gpsLat, gpsLon, section, proj) {
+
+    
+
+    
+
+    
+    const remainingToTarget = section.isForward
+      ? section.toMilestone.distanceM - proj.routeDistance
+      : proj.routeDistance - section.toMilestone.distanceM;
+    if (remainingToTarget >= 0 && remainingToTarget <= B_POINT_NEAR_THRESHOLD_M) {
+      
+      return {
+        state: 'near',
+        bearing: calculateBearing(gpsLat, gpsLon, section.toMilestone.trailLat, section.toMilestone.trailLon),
+      };
+    }
+
+    const lookahead = isNearPeakMilestone(proj.routeDistance) ? PEAK_LOOKAHEAD_M : ARROW_LOOKAHEAD_M;
+    const targetPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + lookahead);
+    if (!targetPt) return null;
+    return {
+      state: 'far',
+      bearing: calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon),
+    };
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function computeWeightedHeadingOverRange(fromDist, toDist) {
+    if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const lo = Math.min(fromDist, toDist);
+    const hi = Math.max(fromDist, toDist);
+    let sx = 0, sy = 0;
+    let i = 0;
+    while (i < cumulativeDistances.length - 1 && cumulativeDistances[i] < lo) i++;
+    let prevPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, lo);
+    while (i < cumulativeDistances.length - 1 && cumulativeDistances[i] < hi) {
+      const p = currentPoints[i];
+      const segLen = haversineMeters(prevPt.lat, prevPt.lon, p.lat, p.lon);
+      if (segLen > 0.1) {
+        const b = calculateBearing(prevPt.lat, prevPt.lon, p.lat, p.lon);
+        const rad = b * Math.PI / 180;
+        sx += Math.cos(rad) * segLen;
+        sy += Math.sin(rad) * segLen;
+      }
+      prevPt = p;
+      i++;
+    }
+    const endPt = pointAtCumulativeDistance(currentPoints, cumulativeDistances, hi);
+    const segLen = haversineMeters(prevPt.lat, prevPt.lon, endPt.lat, endPt.lon);
+    if (segLen > 0.1) {
+      const b = calculateBearing(prevPt.lat, prevPt.lon, endPt.lat, endPt.lon);
+      const rad = b * Math.PI / 180;
+      sx += Math.cos(rad) * segLen;
+      sy += Math.sin(rad) * segLen;
+    }
+    if (sx === 0 && sy === 0) return null;
+    return (Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360;
+  }
+
+  const BEARING_BASELINE_M = 30;
+
+
+  
+  
+  
+  function computeOutgoingBearingAtMilestone(section) {
+    const nextSection = peekNextSection(section);
+    if (!nextSection) return null;
+    const B = section.toMilestone;
+    return computeWeightedHeadingOverRange(B.distanceM, B.distanceM + BEARING_BASELINE_M);
+  }
+
+
+  function resetGajaMapRotationState() {
+    sectionApproachState = null;
+    lastAppliedFarBearing = null;
+    farDriftStreak = 0;
+    lastAppliedFarRouteDistance = null;
+
+    
+    lastArrowVectorPos = null;
+    lastMovementVectorHeading = null;
+    lastMovementVectorUpdatedAt = null;
+    isReverseDirectionWarning = false;
+    reverseWarningStreak = 0;
+    lastRouteDistanceForReverseCheck = null;
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  const GPS_RELIABILITY = { NORMAL: 'NORMAL', SUSPECT: 'SUSPECT', REJECTED: 'REJECTED' };
+
+  
+  const GPS_MAX_WALK_SPEED_MPS = 5.0;
+  
+  
+  const GPS_REJECT_SPEED_MULTIPLIER = 3.0;
+  
+  
+  const GPS_SUSPECT_SECTION_DIST_M = 60;
+  let lastConfirmedGpsPos = null; 
+  let sectionAdvanceConfirmStreak = 0; 
+  const SECTION_ADVANCE_CONFIRM_STREAK = 3; 
+  let consecutiveRejectedCount = 0; 
+
+
+  function classifyGpsReliability(lat, lon, accuracy, timestamp, proj) {
+
+    
+    
+    if (isGpsReplayMode) return GPS_RELIABILITY.NORMAL;
+    if (!lastConfirmedGpsPos) return GPS_RELIABILITY.NORMAL; 
+
+    
+    if (timestamp === undefined || timestamp === null) return GPS_RELIABILITY.NORMAL;
+
+    const distFromLast = haversineMeters(lastConfirmedGpsPos.lat, lastConfirmedGpsPos.lon, lat, lon);
+    const elapsedSec = Math.max((timestamp - lastConfirmedGpsPos.timestamp) / 1000, 0.001);
+    const speedMps = distFromLast / elapsedSec;
+
+    
+    const sectionDistSuspect = proj ? proj.distance >= GPS_SUSPECT_SECTION_DIST_M : false;
+    const accuracySuspect = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy > 30 : false;
+
+    
+    
+    if (speedMps >= GPS_MAX_WALK_SPEED_MPS * GPS_REJECT_SPEED_MULTIPLIER) {
+      return GPS_RELIABILITY.REJECTED;
+    }
+    if (speedMps >= GPS_MAX_WALK_SPEED_MPS) {
+      
+      
+      return (sectionDistSuspect && accuracySuspect) ? GPS_RELIABILITY.REJECTED : GPS_RELIABILITY.SUSPECT;
+    }
+
+    if (sectionDistSuspect && accuracySuspect) {
+      return GPS_RELIABILITY.SUSPECT;
+    }
+    return GPS_RELIABILITY.NORMAL;
+  }
+
+
+  
+  
+  function resetForFreshGpsFix(options) {
+    const opts = options || {};
+    const resetMapOrientation = opts.resetMapOrientation !== false;
+
+    gpsFilterEngine.reset();
+    gpsMovementHeading = null;
+    isCurrentlyStopped = false;
+    isOffTrailState = false;
+    offTrailStreakCount = 0;
+    returnStreakCount = 0;
+    enterStreakCount = 0;
+
+    lastConfirmedGpsPos = null;
+    sectionAdvanceConfirmStreak = 0;
+    consecutiveRejectedCount = 0;
+    
+    
+    resetTrailSearchWindow();
+    resetGajaMapRotationState();
+    lastAlertedMilestoneKey = null;
+    remainingBeepThresholds = null;
+
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
+
+
+    
+
+    
+
+    
+
+    
+    
+    
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
+
+
+    
+    
+    pendingRoundTripPair = null;
+    pendingDirectionConfirmHeading = null;
+    pendingDirectionConfirmStreak = 0;
+    hidePersistentToastBadge();
+
+    if (resetMapOrientation) {
+      if (userGpsMarker) { removeOverlay(userGpsMarker); userGpsMarker = null; }
+      isHeadingUp = false;
+      mapRotationDeg = 0;
+      appliedMapRotationDeg = 0;
+      isFirstFix = true;
+      hideBottomDirectionArrow();
+    }
+    currentRotationOriginDist = null;
+  }
+
+
+  
+
+  
+
+  
+  
+  const SECTION_ADVANCE_MARGIN_M = 15;
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function maybeAdvanceSection(section, proj, reliability) {
+    if (!section || !proj) return false;
+    const targetDist = section.toMilestone.distanceM;
+    const passedForward = section.isForward && proj.routeDistance >= targetDist - SECTION_ADVANCE_MARGIN_M;
+    const passedBackward = !section.isForward && proj.routeDistance <= targetDist + SECTION_ADVANCE_MARGIN_M;
+    if (!passedForward && !passedBackward) {
+      sectionAdvanceConfirmStreak = 0;
+      return false;
+    }
+    if (reliability === GPS_RELIABILITY.REJECTED) {
+      return false; 
+    }
+    
+    sectionAdvanceConfirmStreak++;
+    if (sectionAdvanceConfirmStreak < SECTION_ADVANCE_CONFIRM_STREAK) return false;
+    sectionAdvanceConfirmStreak = 0;
+    const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
+    advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
+    return true;
+  }
+
+
+  
+
+  
+  function maybeAdvanceSectionForPreview(section, proj) {
+    if (!section || !proj) return false;
+    const targetDist = section.toMilestone.distanceM;
+    const passedForward = section.isForward && proj.routeDistance >= targetDist - SECTION_ADVANCE_MARGIN_M;
+    const passedBackward = !section.isForward && proj.routeDistance <= targetDist + SECTION_ADVANCE_MARGIN_M;
+    if (!passedForward && !passedBackward) return false;
+    const arrivedMilestoneIdx = currentMilestones.findIndex(m => m === section.toMilestone);
+    advanceSection(arrivedMilestoneIdx >= 0 ? arrivedMilestoneIdx : nextMilestoneIdx);
+    return true;
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function updateGajaMap(gpsLat, gpsLon, accuracy, timestamp) {
+    const section = getCurrentSection();
+    if (!section) return null; 
+    const proj = projectOntoCurrentSection(gpsLat, gpsLon, section);
+    if (!proj) return null;
+
+    const reliability = classifyGpsReliability(gpsLat, gpsLon, accuracy, timestamp, proj);
+    if (reliability === GPS_RELIABILITY.NORMAL) {
+      lastConfirmedGpsPos = { lat: gpsLat, lon: gpsLon, timestamp };
+    }
+
+
+    
+
+    
+    
+    if (maybeAdvanceSection(section, proj, reliability)) {
+      sectionApproachState = null;
+      lastAppliedFarBearing = null;
+      farDriftStreak = 0;
+      lastAppliedFarRouteDistance = null;
+      const newSection = getCurrentSection();
+
+      
+      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone, reliability };
+      const newProj = projectOntoCurrentSection(gpsLat, gpsLon, newSection);
+      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone: section.toMilestone, reliability };
+      const coreResult = updateGajaMapCore(newSection, newProj, gpsLat, gpsLon, reliability);
+      return Object.assign(coreResult, { advanced: true, arrivedMilestone: section.toMilestone, reliability });
+    }
+    return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability), { advanced: false, arrivedMilestone: null, reliability });
+  }
+
+
+  
+
+  
+
+  
+  
+  
+  const PREVIEW_ROTATION_REFRESH_DISTANCE_M = 500;
+  let previewLastRotatedRouteDistance = null; 
+
+  function resetPreviewRotationState() {
+    previewLastRotatedRouteDistance = null;
+  }
+
+
+  
+
+  
+  
+  const PREVIEW_LOOKAHEAD_M = 300;
+  function computePreviewBearing(lat, lon, section, proj) {
+    const remainingToB = section.isForward
+      ? section.toMilestone.distanceM - proj.routeDistance
+      : proj.routeDistance - section.toMilestone.distanceM;
+    if (remainingToB <= PREVIEW_LOOKAHEAD_M) {
+      return calculateBearing(lat, lon, section.toMilestone.trailLat, section.toMilestone.trailLon);
+    }
+    const targetPt = section.isForward
+      ? pointAtCumulativeDistance(currentPoints, cumulativeDistances, proj.routeDistance + PREVIEW_LOOKAHEAD_M)
+      : pointAtCumulativeDistanceBehind(currentPoints, cumulativeDistances, proj.routeDistance - PREVIEW_LOOKAHEAD_M);
+    return calculateBearing(lat, lon, targetPt.lat, targetPt.lon);
+  }
+
+  function updateGajaMapForPreview(lat, lon) {
+    const section = getCurrentSection();
+    if (!section) return null;
+    const proj = projectOntoCurrentSection(lat, lon, section);
+    if (!proj) return null;
+
+    const advanced = maybeAdvanceSectionForPreview(section, proj);
+    if (advanced) {
+      const arrivedMilestone = section.toMilestone;
+      const newSection = getCurrentSection();
+      if (!newSection) return { section, proj, recentered: false, advanced: true, arrivedMilestone };
+      const newProj = projectOntoCurrentSection(lat, lon, newSection);
+      if (!newProj) return { section: newSection, proj, recentered: false, advanced: true, arrivedMilestone };
+      
+      applySegmentRotation(computePreviewBearing(lat, lon, newSection, newProj));
+      previewLastRotatedRouteDistance = newProj.routeDistance;
+      return { section: newSection, proj: newProj, recentered: true, advanced: true, arrivedMilestone };
+    }
+
+
+    
+
+    
+    
+    const PREVIEW_DRIFT_THRESHOLD_DEG = 30;
+    const bearing = computePreviewBearing(lat, lon, section, proj);
+    const driftDeg = Math.abs(shortestAngleDiff(bearing, mapRotationDeg));
+
+    
+    if (previewLastRotatedRouteDistance === null
+        || Math.abs(proj.routeDistance - previewLastRotatedRouteDistance) >= PREVIEW_ROTATION_REFRESH_DISTANCE_M
+        || driftDeg >= PREVIEW_DRIFT_THRESHOLD_DEG) {
+      applySegmentRotation(bearing);
+      previewLastRotatedRouteDistance = proj.routeDistance;
+      return { section, proj, recentered: true, advanced: false, arrivedMilestone: null };
+    }
+
+    return { section, proj, recentered: false, advanced: false, arrivedMilestone: null };
+  }
+
+  function updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability) {
+    const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
+    if (!approach) return { section, proj, recentered: false };
+
+
+    
+
+    
+
+    
+
+    const isFirstJudgement = sectionApproachState === null;
+
+
+    
+
+    
+    let driftConfirmed = false;
+    if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarBearing !== null) {
+      const drift = Math.abs(shortestAngleDiff(approach.bearing, lastAppliedFarBearing));
+      if (drift >= FAR_STATE_DRIFT_THRESHOLD_DEG) {
+        farDriftStreak++;
+        if (farDriftStreak >= FAR_STATE_DRIFT_CONFIRM_STREAK) {
+          driftConfirmed = true;
+          farDriftStreak = 0;
+        }
+      } else {
+        farDriftStreak = 0;
+      }
+    } else {
+      farDriftStreak = 0;
+    }
+
+
+    
+
+    
+    let distanceRefreshDue = false;
+    if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarRouteDistance !== null) {
+      if (Math.abs(proj.routeDistance - lastAppliedFarRouteDistance) >= getFarStateRefreshDistanceM()) {
+        distanceRefreshDue = true;
+      }
+    }
+
+
+    
+    
+    const shouldApply = isFirstJudgement || driftConfirmed || distanceRefreshDue;
+
+    if (!shouldApply) {
+      sectionApproachState = approach.state;
+      return { section, proj, recentered: false, bearing: approach.bearing };
+    }
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    
+    if (reliability !== undefined && reliability !== GPS_RELIABILITY.NORMAL) {
+      return { section, proj, recentered: false, bearing: approach.bearing };
+    }
+
+    applySegmentRotation(approach.bearing); 
+    sectionApproachState = approach.state; 
+    if (approach.state === 'far') {
+      lastAppliedFarBearing = approach.bearing;
+      lastAppliedFarRouteDistance = proj.routeDistance;
+    } else {
+      lastAppliedFarRouteDistance = null; 
+    }
+    return { section, proj, recentered: true, bearing: approach.bearing };
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function recalculateGajaMapFromScratch(reason) {
+    if (!lastKnownPos) return;
+    sectionApproachState = null;
+
+    
+    if (!getCurrentSection()) {
+      resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
+    }
+    updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
+  }
+
+
+  
+  function updateRouteBadgeRotation() {
+    routeBadgeEls.forEach(marker => {
+      const el = markerEl(marker);
+      if (!el) return;
+      const badge = el.querySelector('.route-badge');
+      if (badge) badge.style.transform = `rotate(${appliedMapRotationDeg}deg)`;
+    });
+  }
+
+
+  function angleDiffToClockDirection(angleDiff) {
+    const norm = ((angleDiff % 360) + 360) % 360; 
+    if (norm >= 345 || norm < 15) return { clock: '12시 방향 (직진)', arrow: '⬆️' };
+    if (norm >= 15 && norm < 45) return { clock: '1시 방향', arrow: '↗️' };
+    if (norm >= 45 && norm < 75) return { clock: '2시 방향', arrow: '↗️' };
+    if (norm >= 75 && norm < 105) return { clock: '3시 방향 (우회전)', arrow: '➡️' };
+    if (norm >= 105 && norm < 135) return { clock: '4시 방향', arrow: '↘️' };
+    if (norm >= 135 && norm < 165) return { clock: '5시 방향', arrow: '↘️' };
+    if (norm >= 165 && norm < 195) return { clock: '6시 방향 (되돌아가기)', arrow: '⬇️' };
+    if (norm >= 195 && norm < 225) return { clock: '7시 방향', arrow: '↙️' };
+    if (norm >= 225 && norm < 255) return { clock: '8시 방향', arrow: '↙️' };
+    if (norm >= 255 && norm < 285) return { clock: '9시 방향 (좌회전)', arrow: '⬅️' };
+    if (norm >= 285 && norm < 315) return { clock: '10시 방향', arrow: '↖️' };
+    if (norm >= 315 && norm < 345) return { clock: '11시 방향', arrow: '↖️' };
+    return { clock: '12시 방향', arrow: '⬆️' };
+  }
+
+
+  
+  
+  
+  function angleDiffToPlainKorean(angleDiff) {
+    const abs = Math.abs(angleDiff);
+    const side = angleDiff >= 0 ? '오른쪽' : '왼쪽';
+    if (abs <= 15) return '그대로 직진하세요';
+    if (abs <= 45) return `${side}으로 조금 방향을 트세요`;
+    if (abs <= 100) return `${side}으로 방향을 트세요`;
+    return `${side}으로 크게 돌아서 경로를 찾으세요`;
+  }
+
+
+  
+
+  
+
+  
+
+  let isWayfindActive = false;
+  let wayfindingTargetMilestone = null; 
+  const WAYFINDING_ARRIVAL_RADIUS_M = 15; 
+
+
+  
+  
+  function findNextWaypointMilestone(traveledDist) {
+    if (!currentMilestones || currentMilestones.length === 0) return null;
+    let best = null;
+    currentMilestones.forEach(m => {
+      if (m.distanceM > traveledDist) {
+        if (!best || m.distanceM < best.distanceM) best = m;
+      }
+    });
+    return best;
+  }
+
+
+  
+
+  
+
+  
+  function updateWayfindingProgress(lat, lon, traveledDist) {
+    if (!isWayfindActive) return;
+
+    if (!wayfindingTargetMilestone) {
+      
+      wayfindingTargetMilestone = findNextWaypointMilestone(traveledDist || 0);
+    }
+
+    const target = wayfindingTargetMilestone;
+    if (!target) {
+      
+      if (guideLine) { removeOverlay(guideLine); guideLine = null; }
+      return;
+    }
+
+    const distToTarget = haversineMeters(lat, lon, target.lat, target.lon);
+
+
+    const guideCoords = [[lat, lon], [target.lat, target.lon]];
+    if (!guideLine) {
+      guideLine = new naver.maps.Polyline({
+        path: toPath(guideCoords), map,
+        strokeColor: '#00e676', strokeWeight: 3.5, strokeStyle: 'shortdash', strokeOpacity: 0.95
+      });
+    } else {
+      guideLine.setPath(toPath(guideCoords));
+    }
+
+    
+    if (distToTarget <= WAYFINDING_ARRIVAL_RADIUS_M) {
+      const nextTarget = findNextWaypointMilestone(traveledDist || 0);
+      if (nextTarget && nextTarget !== wayfindingTargetMilestone) {
+        showToastBadge(`✅ ${wayfindingTargetMilestone ? wayfindingTargetMilestone.name : ''} 도착 — 다음: ${nextTarget.name}`);
+      }
+      wayfindingTargetMilestone = nextTarget;
+    }
+  }
+
+
+  
+
+  
+  
+  
+  function openWayfindingMode() {
+    if (!currentMilestones || currentMilestones.length === 0) {
+      alert('이 코스에는 안내할 주요 지점(갈림길/봉우리/지명)이 없습니다.');
+      return;
+    }
+    if (!lastKnownPos) {
+      alert('현재 위치를 아직 확인할 수 없어요.\n[내 위치] 버튼을 먼저 눌러주세요.');
+      return;
+    }
+    isWayfindActive = true;
+    wayfindingTargetMilestone = null; 
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.add('active');
+    showToastBadge('🔍 길찾기 모드 시작\n다음 주요 지점까지 녹색선으로 안내합니다.');
+  }
+  window.openWayfindingMode = openWayfindingMode;
+
+
+  
+  function toggleWayfindingMode() {
+    if (isWayfindActive) {
+      closeWayfindingMode();
+    } else {
+      openWayfindingMode();
+    }
+  }
+  window.toggleWayfindingMode = toggleWayfindingMode;
+
+  function closeWayfindingMode() {
+    isWayfindActive = false;
+    wayfindingTargetMilestone = null;
+
+    
+    const btn = document.getElementById('wayfindBtn');
+    if (btn) btn.classList.remove('active');
+    if (guideLine) { removeOverlay(guideLine); guideLine = null; }
+  }
+  window.closeWayfindingMode = closeWayfindingMode;
+
+
+
+  function resetTrailSearchWindow() {
+    lastNearestIdx = -1;
+
+    trailTrackingMode = 'SEARCHING';
+    offCandidateStreak = 0;
+    
+    
+    resetTrackDirectionState();
+  }
+
+  
+  function latLonToTile(lat, lon, zoom) {
+    const latRad = lat * Math.PI / 180;
+    const n = Math.pow(2, zoom);
+    const x = Math.floor((lon + 180) / 360 * n);
+    const y = Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n);
+    return { x, y };
+  }
+
+  function getTilesForBounds(minLat, maxLat, minLon, maxLon, zoom) {
+    const p1 = latLonToTile(maxLat, minLon, zoom);
+    const p2 = latLonToTile(minLat, maxLon, zoom);
+    const minX = Math.min(p1.x, p2.x);
+    const maxX = Math.max(p1.x, p2.x);
+    const minY = Math.min(p1.y, p2.y);
+    const maxY = Math.max(p1.y, p2.y);
+
+    const tiles = [];
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        tiles.push({ z: zoom, x, y });
+      }
+    }
+    return tiles;
+  }
+
+  
+  function parseGPX(xmlText) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, 'application/xml');
+    const trkpts = Array.from(xml.getElementsByTagName('trkpt'));
+    if (!trkpts.length) throw new Error('트랙 좌표를 찾을 수 없습니다.');
+
+    const points = trkpts.map(pt => {
+      const lat = parseFloat(pt.getAttribute('lat'));
+      const lon = parseFloat(pt.getAttribute('lon'));
+      const eleEl = pt.getElementsByTagName('ele')[0];
+      const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+      const timeEl = pt.getElementsByTagName('time')[0];
+      const time = timeEl ? new Date(timeEl.textContent) : null;
+      return { lat, lon, ele, time };
+    }).filter(p => !isNaN(p.lat) && !isNaN(p.lon));
+
+    const cleanedPoints = removeGpxSpikes(points);
+    const wpts = Array.from(xml.getElementsByTagName('wpt')).map(wpt => {
+      const lat = parseFloat(wpt.getAttribute('lat'));
+      const lon = parseFloat(wpt.getAttribute('lon'));
+      const nameEl = wpt.getElementsByTagName('name')[0];
+      const name = nameEl ? nameEl.textContent.trim() : '';
+      const eleEl = wpt.getElementsByTagName('ele')[0];
+      const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+      return { lat, lon, name, ele };
+    }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
+    cleanedPoints.waypoints = wpts;
+
+
+    
+
+    
+
+    try {
+      const roundtripEl = xml.getElementsByTagNameNS('*', 'roundtrip')[0]
+        || xml.getElementsByTagName('gajago:roundtrip')[0];
+      cleanedPoints.isExplicitRoundTrip = !!(roundtripEl && roundtripEl.textContent.trim() === 'true');
+    } catch (e) {
+      cleanedPoints.isExplicitRoundTrip = false;
+    }
+
+    return cleanedPoints;
+  }
+
+
+  
+
+  
+  
+  
+  function removeGpxSpikes(points) {
+    if (!points || points.length < 3) return points;
+
+    const SPIKE_ANGLE_THRESHOLD = 150; 
+    const SPIKE_MAX_AC_DIST_M = 15;    
+
+    const result = [points[0]];
+    for (let i = 1; i < points.length - 1; i++) {
+      const a = result[result.length - 1];
+      const b = points[i];
+      const c = points[i + 1];
+
+      const bearingAB = calculateBearing(a.lat, a.lon, b.lat, b.lon);
+      const bearingBC = calculateBearing(b.lat, b.lon, c.lat, c.lon);
+      const turnAngle = Math.abs(shortestAngleDiff(bearingBC, bearingAB));
+      const distAC = haversineMeters(a.lat, a.lon, c.lat, c.lon);
+
+      const isSpike = turnAngle >= SPIKE_ANGLE_THRESHOLD && distAC <= SPIKE_MAX_AC_DIST_M;
+      if (isSpike) {
+        console.warn(`⚠️ GPX 스파이크 감지 및 제거: 인덱스 ${i}, 꺾인각 ${turnAngle.toFixed(1)}°, A-C거리 ${distAC.toFixed(1)}m`);
+        continue; 
+      }
+      result.push(b);
+    }
+    result.push(points[points.length - 1]);
+    return result;
+  }
+
+  
+  
+  const SAVED_ROUTES_KEY = 'saved_hiking_routes_v2';
+
+  
+  
+  
+  const MAX_SAVED_ROUTES = 10;
+
+  function extractGpxFileName(str) {
+    if (!str) return '';
+    try { str = decodeURIComponent(str); } catch(e) {}
+    const m = str.match(/([^\/\?#&=:"']+\.gpx)/i);
+    return m ? m[1].toLowerCase().replace(/\.gpx$/i, '').trim() : '';
+  }
+
+  function normalizeCourseKey(name, url) {
+    const file = extractGpxFileName(url) || extractGpxFileName(name);
+    if (file) {
+      return file.replace(/[_-\s]+/g, '').toLowerCase();
+    }
+    if (name) {
+      let n = name;
+      try { n = decodeURIComponent(n); } catch(e) {}
+      return n.replace(/^🚩\s*/, '')
+              .replace(/등산지도|등산로|지도/g, '')
+              .replace(/[_-\s]+/g, '')
+              .toLowerCase()
+              .trim();
+    }
+    return '';
+  }
+
+  function isSameRoute(a, b) {
+    if (!a || !b) return false;
+    if (a.sourceUrl && b.sourceUrl && a.sourceUrl === b.sourceUrl) return true;
+    const keyA = normalizeCourseKey(a.name, a.sourceUrl);
+    const keyB = normalizeCourseKey(b.name, b.sourceUrl);
+    if (keyA && keyB && keyA === keyB) return true;
+    return false;
+  }
+
+  function loadSavedRoutes() {
+    try {
+      const raw = localStorage.getItem(SAVED_ROUTES_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) return [];
+
+      
+      const unique = [];
+      list.forEach(item => {
+        if (!unique.some(u => isSameRoute(u, item))) {
+          unique.push(item);
+        }
+      });
+      let isModified = unique.length !== list.length;
+      if (unique.length > MAX_SAVED_ROUTES) {
+        unique.length = MAX_SAVED_ROUTES;
+        isModified = true;
+      }
+      
+      if (isModified) {
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(unique));
+        
+        if (typeof cleanupEvictedCourseTiles === 'function') {
+          cleanupEvictedCourseTiles().catch(() => {});
+        }
+      }
+      return unique;
+    } catch(e) { return []; }
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  const LAST_OPENED_COURSE_KEY = 'gajago_last_opened_course_v1';
+  function saveLastOpenedCourse(courseName, sourceUrl) {
+    if (!sourceUrl) return; 
+    try {
+      localStorage.setItem(LAST_OPENED_COURSE_KEY, JSON.stringify({ name: courseName, sourceUrl }));
+    } catch(e) {}
+  }
+  function loadLastOpenedCourse() {
+    try {
+      const raw = localStorage.getItem(LAST_OPENED_COURSE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+
+  function saveRouteToStorage(courseName, sourceUrl, points) {
+    try {
+
+      
+
+      
+
+      const newRoute = {
+        name: courseName,
+        sourceUrl: sourceUrl || null,
+        points: points,
+        waypoints: points.waypoints || [],
+        isExplicitRoundTrip: !!points.isExplicitRoundTrip,
+        savedAt: Date.now()
+      };
+      let list = loadSavedRoutes();
+      
+      list = list.filter(r => !isSameRoute(r, newRoute));
+      list.unshift(newRoute);
+      if (list.length > MAX_SAVED_ROUTES) list = list.slice(0, MAX_SAVED_ROUTES);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      
+      cleanupEvictedCourseTiles().catch(() => {});
+    } catch(e) {
+      try {
+        let list = loadSavedRoutes();
+        list = list.slice(0, Math.ceil(list.length / 2));
+        const newRoute = { 
+          name: courseName, 
+          sourceUrl: sourceUrl || null, 
+          points: points, 
+          waypoints: points.waypoints || [], 
+          savedAt: Date.now() 
+        };
+        list = list.filter(r => !isSameRoute(r, newRoute));
+        list.unshift(newRoute);
+        localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(list));
+      } catch(e2) {}
+    }
+  }
+
+  function findSavedRoute(courseName, url) {
+    const target = { name: courseName, sourceUrl: url };
+    return loadSavedRoutes().find(r => isSameRoute(r, target)) || null;
+  }
+
+
+  
+
+  
+
+  
+
+  
+  
+  function expandRoundTripPoints(points) {
+    if (!points || !points.isExplicitRoundTrip || points.length < 2) return points;
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first.lat === last.lat && first.lon === last.lon) {
+      if (points.roundTripTurnIdx == null) points.roundTripTurnIdx = Math.floor((points.length - 1) / 2);
+      return points; 
+    }
+    const turnIdx = points.length - 1;
+    const back = points.slice(0, turnIdx).reverse().map(p => Object.assign({}, p));
+    const expanded = points.concat(back);
+    expanded.waypoints = points.waypoints;
+    expanded.isExplicitRoundTrip = true;
+    expanded.roundTripTurnIdx = turnIdx;
+    return expanded;
+  }
+
+  function drawRoute(points, courseName, sourceUrl, isFromCache) {
+    if (!map || !points.length) return;
+    points = expandRoundTripPoints(points);
+    currentPoints = points;
+
+    
+    
+    
+    explicitRoundTripFlag = !!points.isExplicitRoundTrip;
+    resetTrailSearchWindow(); 
+    resetGajaMapRotationState(); 
+
+    
+
+    
+
+    
+
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
+    gpsFilterEngine.reset(); 
+    cumulativeDistances = buildCumulativeDistances(points); 
+    currentSegmentBearings = buildSegmentBearings(points); 
+    lastAlertedMilestoneKey = null; 
+    remainingBeepThresholds = null;
+    
+    
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
+    
+    
+    lastArrowVectorPos = null;
+    lastMovementVectorHeading = null;
+    lastMovementVectorUpdatedAt = null;
+    isReverseDirectionWarning = false;
+    reverseWarningStreak = 0;
+    lastRouteDistanceForReverseCheck = null;
+
+    if (polyline) removeOverlay(polyline);
+    markers.forEach(removeOverlay);
+    markers = [];
+    routeBadgeEls = []; 
+
+
+    
+
+    
+    
+    const drawPoints = (points.roundTripTurnIdx != null)
+      ? points.slice(0, points.roundTripTurnIdx + 1)
+      : points;
+    const latlngs = smoothPolylinePoints(drawPoints);
+
+    
+    polyline = new naver.maps.Polyline({
+      path: toPath(latlngs), map,
+      strokeColor: '#d32f2f',
+      strokeWeight: 5,
+      strokeOpacity: 0.95
+    });
+    polyline._latlngs = latlngs; 
+
+    fitRoute();
+
+
+    
+
+    
+    const makeBadge = (lat, lon, title, bg) => {
+      const marker = makeHtmlMarker(lat, lon, 'custom-badge-icon',
+        `<div class="route-badge" style="background:${bg}; transform: rotate(${appliedMapRotationDeg}deg);">${title}</div>`,
+        30, 12, 10);
+      routeBadgeEls.push(marker);
+      return marker;
+    };
+
+    currentMilestones = buildMilestones(points, points.waypoints, cumulativeDistances);
+    if (currentMilestones && currentMilestones.length > 0) {
+      currentMilestones.forEach(m => {
+        if (!m.hideMarker) {
+          markers.push(makeBadge(m.lat, m.lon, `${m.icon} ${m.name}`, m.color));
+        }
+      });
+    } else {
+      const start = points[0];
+      const end = points[points.length - 1];
+      markers.push(makeBadge(start.lat, start.lon, '🚩 들머리', '#1976d2'));
+      markers.push(makeBadge(end.lat, end.lon, '🏁 날머리', '#d32f2f'));
+      const withEle = points.filter(p => p.ele !== null);
+      if (withEle.length) {
+        const peak = withEle.reduce((a, b) => b.ele > a.ele ? b : a);
+        markers.push(makeBadge(peak.lat, peak.lon, `⛰️ 정상 (${Math.round(peak.ele)}m)`, '#e65100'));
+      }
+    }
+
+    
+
+    if (courseName) {
+      document.getElementById('trailName').innerText = '🚩 ' + courseName;
+      let cleanTitle = courseName.replace(/^🚩\s*/, '').trim();
+      if (!cleanTitle.includes('등산지도') && !cleanTitle.includes('등산로') && !cleanTitle.includes('지도')) {
+        cleanTitle += ' 등산지도';
+      }
+      document.title = cleanTitle;
+      const meta = document.getElementById('appleAppTitle');
+      if (meta) meta.content = cleanTitle;
+    }
+
+    
+    
+    saveRouteToStorage(courseName, sourceUrl, points);
+
+    saveLastOpenedCourse(courseName, sourceUrl);
+
+    document.getElementById('emptyModal').style.display = 'none';
+
+
+    const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
+    autoSaveOfflineMap(points, tileCourseKey);
+
+
+    
+
+    
+    
+    
+    lowPowerModeEnabled = false;
+    isLowPowerPolling = false;
+    try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
+
+
+    
+    
+    
+    const routeKey = makeRouteKey(courseName, sourceUrl);
+    currentRouteKey = routeKey;
+    const session = loadHikingSession();
+    if (session && session.routeKey === routeKey) {
+      if (watchId === null && !isLowPowerPolling) {
+        startGpsTracking();
+      }
+    } else if (watchId === null && !isLowPowerPolling) {
+      showStartHikeOverlay();
+    }
+  }
+
+
+  
+
+  function fitRoute() {
+    if (!map || !polyline || !polyline._latlngs || !polyline._latlngs.length) return;
+    markProgrammaticMoveUntilIdle(1500);
+    const pts = polyline._latlngs;
+    const bounds = new naver.maps.LatLngBounds(toLatLng(pts[0][0], pts[0][1]), toLatLng(pts[0][0], pts[0][1]));
+    pts.forEach(p => bounds.extend(toLatLng(p[0], p[1])));
+    
+    map.fitBounds(bounds, { top: 85, right: 40, bottom: 45, left: 40 });
+  }
+
+
+  
+  
+  
+  const TILES_SAVED_KEY = 'gajago_tiles_saved_v1';
+
+  
+  
+  const TILE_CACHE_NAME = window.__GAJA_CACHE_NAME || 'gaja-trail-cache-v220';
+
+  function getTileSaveStatus(courseKey) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      return map[courseKey] || null; 
+    } catch(e) { return null; }
+  }
+
+  function setTileSaveStatus(courseKey, statusObj) {
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      map[courseKey] = statusObj;
+      localStorage.setItem(TILES_SAVED_KEY, JSON.stringify(map));
+    } catch(e) {}
+  }
+
+  
+  function getTileCourseKey(courseName, sourceUrl) {
+    return normalizeCourseKey(courseName, sourceUrl) || (sourceUrl || courseName || 'unknown');
+  }
+
+
+  
+
+  async function cleanupEvictedCourseTiles() {
+    if (!('caches' in window)) return;
+
+    let tileStatusMap;
+    try {
+      const raw = localStorage.getItem(TILES_SAVED_KEY);
+      tileStatusMap = raw ? JSON.parse(raw) : {};
+    } catch(e) { return; }
+
+    const trackedKeys = Object.keys(tileStatusMap);
+    if (trackedKeys.length === 0) return;
+
+    const activeKeys = new Set(
+      loadSavedRoutes().map(r => getTileCourseKey(r.name, r.sourceUrl))
+    );
+    const evictedKeys = trackedKeys.filter(k => !activeKeys.has(k));
+    if (evictedKeys.length === 0) return;
+
+    try {
+      const cache = await caches.open(TILE_CACHE_NAME);
+      for (const key of evictedKeys) {
+        const entry = tileStatusMap[key];
+        const urls = (entry && entry.tileUrls) || [];
+        for (const url of urls) {
+          await cache.delete(url).catch(() => {});
+        }
+        delete tileStatusMap[key];
+      }
+      localStorage.setItem(TILES_SAVED_KEY, JSON.stringify(tileStatusMap));
+      console.log(`🧹 저장 목록에서 밀려난 코스 ${evictedKeys.length}개의 오프라인 타일 정리 완료`);
+    } catch(e) {}
+  }
+
+  
+  let isSavingCache = false;
+
+  
+  
+  async function autoSaveOfflineMap(points, courseKey) {
+    return;
+  }
+
+  
+  function closeModal() {
+    const modal = document.getElementById('emptyModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  
+  function showSavedRouteList(message) {
+    const routes = loadSavedRoutes();
+    const modal = document.getElementById('emptyModal');
+    if (!modal) return;
+    const desc = document.getElementById('modalDesc');
+    const listEl = document.getElementById('savedRouteList');
+
+    if (!routes || routes.length === 0) {
+      if (desc) desc.innerHTML = message || '현재 오프라인으로 저장된 등산로 코스가 없습니다.<br><br>💡 GPX 파일을 열거나 블로그 등산지도 링크를 누르시면 자동으로 저장됩니다.';
+      if (listEl) {
+        listEl.innerHTML = '';
+        listEl.style.display = 'none';
+      }
+      modal.style.display = 'flex';
+      return;
+    }
+
+    if (desc) desc.innerHTML = message || '저장된 코스를 터치하시면 오프라인 지도로 즉시 열립니다.';
+    if (listEl) {
+      listEl.innerHTML = routes.map((r, i) => {
+        const dateStr = r.savedAt ? new Date(r.savedAt).toLocaleDateString('ko-KR') : '';
+        const safeName = (r.name || '등산 코스').replace(/</g, '&lt;');
+        const tileKey = getTileCourseKey(r.name, r.sourceUrl);
+        const tileStatus = getTileSaveStatus(tileKey);
+        let tileBadge;
+        if (tileStatus && tileStatus.status === 'complete') {
+          tileBadge = '<span class="saved-route-tile-badge tile-complete">✅ 오프라인 지도 저장됨</span>';
+        } else if (tileStatus && tileStatus.status === 'partial') {
+          tileBadge = `<span class="saved-route-tile-badge tile-partial">⚠️ 일부 미저장(${tileStatus.failedCount}개) — 열면 이어받음</span>`;
+        } else {
+          tileBadge = '<span class="saved-route-tile-badge tile-none">⏳ 오프라인 지도 미저장 — 열면 자동 저장</span>';
+        }
+        return `
+          <div class="saved-route-item" onclick="openSavedRouteByIndex(${i})">
+            <div class="saved-route-info">
+              <div class="saved-route-name">⛰️ ${safeName}</div>
+              <div class="saved-route-date">저장일: ${dateStr}</div>
+              ${tileBadge}
+            </div>
+            <button type="button" class="saved-route-del" onclick="deleteSavedRouteByIndex(event, ${i})" title="이 코스 삭제">
+              🗑️
+            </button>
+          </div>
+        `;
+      }).join('');
+      listEl.style.display = 'flex';
+    }
+    modal.style.display = 'flex';
+  }
+  window.showSavedRouteList = showSavedRouteList;
+
+
+  
+
+  
+  function isHikeInProgress() {
+    return typeof watchId !== 'undefined' && watchId !== null;
+  }
+
+  function openSavedRouteByIndex(index) {
+    if (isHikeInProgress()) {
+      alert('⚠️ 등산 안내 중에는 다른 코스를 열 수 없습니다.\n\n먼저 "🏁 등산 완료"를 눌러 현재 산행을 종료해 주세요.');
+      return;
+    }
+    const routes = loadSavedRoutes();
+    const r = routes[index];
+    if (!r) return;
+    closeModal();
+    if (r.waypoints) r.points.waypoints = r.waypoints;
+
+    
+    
+    r.points.isExplicitRoundTrip = !!r.isExplicitRoundTrip;
+    drawRoute(r.points, r.name, r.sourceUrl);
+  }
+  window.openSavedRouteByIndex = openSavedRouteByIndex;
+
+  function deleteSavedRouteByIndex(event, index) {
+    if (event) event.stopPropagation();
+    const routes = loadSavedRoutes();
+    const target = routes[index];
+    const targetName = target ? target.name : '이 코스';
+    if (confirm(`'${targetName}' 코스를 저장 목록에서 삭제하시겠습니까?`)) {
+      routes.splice(index, 1);
+      localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+      showSavedRouteList();
+
+      
+      
+      
+      cleanupEvictedCourseTiles().catch(() => {});
+
+      
+
+      if (target && target.sourceUrl) {
+        const lastCourse = loadLastOpenedCourse();
+        if (lastCourse && lastCourse.sourceUrl === target.sourceUrl) {
+          try { localStorage.removeItem(LAST_OPENED_COURSE_KEY); } catch(e) {}
+        }
+      }
+    }
+  }
+  window.deleteSavedRouteByIndex = deleteSavedRouteByIndex;
+
+  
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.name.toLowerCase().endsWith('.gpx')) {
+        const fakeEvt = { target: { files: [file] } };
+        onFileSelected(fakeEvt);
+      } else {
+        alert('이 파일은 열 수 없어요.\n\n등산로 지도(.gpx) 파일만 불러올 수 있습니다.\n다른 파일을 다시 선택해 주세요.');
+      }
+    }
+  });
+
+  function onFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (isHikeInProgress()) {
+      alert('⚠️ 등산 안내 중에는 다른 코스를 열 수 없습니다.\n\n먼저 "🏁 등산 완료"를 눌러 현재 산행을 종료해 주세요.');
+      e.target.value = '';
+      return;
+    }
+
+    const courseName = file.name.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+    const sourceUrl = 'file:' + file.name;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const points = parseGPX(evt.target.result);
+        closeModal();
+        drawRoute(points, courseName, sourceUrl);
+      } catch(err) {
+        console.error('GPX 파싱 실패:', err);
+        alert('이 등산로 파일을 읽을 수 없어요.\n\n파일이 손상되었거나 등산로 지도 파일이 아닌 것 같습니다.\n다른 파일로 다시 시도해보세요.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+
+  let isOffTrailState = false;
+  let offTrailStreakCount = 0; 
+  const RETURN_CONFIRM_STREAK = 3; 
+  let returnStreakCount = 0; 
+
+  
+
+  
+  
+  const ENTER_CONFIRM_STREAK = 3; 
+  let enterStreakCount = 0; 
+
+
+  
+
+  
+
+  
+
+  
+  
+  const OFFTRAIL_BASE_ENTER_M = 20;
+  const OFFTRAIL_BASE_RETURN_M = 12;
+  const OFFTRAIL_MAX_ENTER_M = 35;
+  const OFFTRAIL_MAX_RETURN_M = 25;
+
+  
+
+  const TRAILHEAD_ENTRY_DISTANCE_M = 30;
+  const TRAILHEAD_ENTER_M = 60;
+  const TRAILHEAD_MAX_ENTER_M = 80;
+
+
+  
+  
+  const TRAIL_APPROACH_MAX_M = 100; 
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  let isApproachingTrailhead = false; 
+  let isTrailTooFar = false;          
+
+  
+
+  
+
+  
+
+  
+  function updateTrailheadApproach(section, proj, arrowHeading) {
+    isApproachingTrailhead = false;
+    isTrailTooFar = false;
+    if (!currentPoints || currentPoints.length === 0 || !section || !proj) return;
+
+    
+    
+    if (currentRotationOriginDist !== null) return;
+
+    const minDistanceM = proj.distance;
+
+
+    if (minDistanceM <= OFFTRAIL_BASE_ENTER_M) return;
+
+    const toast = document.getElementById('gpsToast');
+    const distStr = minDistanceM >= 1000 ? (minDistanceM / 1000).toFixed(2) + 'km' : Math.round(minDistanceM) + 'm';
+
+    if (minDistanceM > TRAIL_APPROACH_MAX_M) {
+      
+      isTrailTooFar = true;
+      if (toast) {
+        toast.style.display = 'block';
+        toast.className = 'gps-toast';
+        toast.innerText = `📡 경로까지 ${distStr}`;
+      }
+      return;
+    }
+
+
+    isApproachingTrailhead = true;
+
+    
+    if (arrowHeading !== null && arrowHeading !== undefined) {
+      applySegmentRotation(arrowHeading);
+    }
+    if (toast) {
+      toast.style.display = 'block';
+      toast.className = 'gps-toast';
+      toast.innerText = `🚩 경로까지 ${distStr} · 녹색선을 따라 가세요`;
+    }
+  }
+  function updateOffTrailHysteresis(minDistanceM, accuracy, isNearTrailhead) {
+    const acc = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy : 0;
+    
+    const slack = Math.max(0, acc - 15);
+    const baseEnter = isNearTrailhead ? TRAILHEAD_ENTER_M : OFFTRAIL_BASE_ENTER_M;
+    const maxEnter = isNearTrailhead ? TRAILHEAD_MAX_ENTER_M : OFFTRAIL_MAX_ENTER_M;
+    const enterThreshold = Math.min(maxEnter, baseEnter + slack);
+    const returnThreshold = Math.min(OFFTRAIL_MAX_RETURN_M, OFFTRAIL_BASE_RETURN_M + slack);
+    if (!isOffTrailState && minDistanceM > enterThreshold) {
+      enterStreakCount++;
+      if (enterStreakCount >= ENTER_CONFIRM_STREAK) {
+        isOffTrailState = true;
+        enterStreakCount = 0;
+        returnStreakCount = 0;
+      }
+    } else if (!isOffTrailState) {
+
+      enterStreakCount = 0;
+    } else if (isOffTrailState && minDistanceM < returnThreshold) {
+      returnStreakCount++;
+      if (returnStreakCount >= RETURN_CONFIRM_STREAK) {
+        isOffTrailState = false;
+        offTrailStreakCount = 0;
+        returnStreakCount = 0;
+        resetOffTrailStreak(); 
+      }
+    } else if (isOffTrailState) {
+      
+      returnStreakCount = 0;
+    }
+    updateGpsMarkerWarningStyle();
+  }
+
+
+  
+
+  let lastArrowHeadingForGuidance = null;
+  function getCurrentAbsHeadingForGuidance() {
+    return lastArrowHeadingForGuidance;
+  }
+
+  
+  const ARRIVAL_DISTANCE_M = 20;       
+  const ARRIVAL_MIN_TRAVELED_M = 50;   
+
+
+  
+
+  
+  
+
+
+  
+
+  
+
+  
+  
+  const ROTATION_ARRIVAL_GRACE_M = 12;
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function updateSegmentRotationTrigger(section, advanced, arrivedMilestone) {
+    if (!isSegmentRotationMode) return;
+
+    
+
+    
+
+    
+
+    
+    if ((isMapBeingDragged || isMapDragReturnPending) && !forceOriginReset) return;
+    if (isWayfindActive) return;
+    if (!lastKnownPos || !section) return;
+
+    const isFirstRotation = currentRotationOriginDist === null;
+
+    if (!isFirstRotation) {
+
+      
+      
+      
+      if (!advanced || !arrivedMilestone) return;
+      playPassedMilestoneBeep();
+      currentRotationOriginDist = arrivedMilestone.distanceM;
+      return;
+    }
+
+
+    
+    
+    firstOriginFixCount++;
+    if (firstOriginFixCount < FIRST_ORIGIN_MIN_FIXES) return; 
+
+    currentRotationOriginDist = section.fromMilestone.distanceM;
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  function getBearingAndTargetForOriginReset(lat, lon, section) {
+    const target = section && section.toMilestone;
+    if (!target || typeof target.trailLat !== 'number' || typeof target.trailLon !== 'number') return null;
+    return {
+      bearing: calculateBearing(lat, lon, target.trailLat, target.trailLon),
+      targetLat: target.trailLat,
+      targetLon: target.trailLon,
+    };
+  }
+
+
+  
+
+  
+  const ORIGIN_RESET_VIEW_PADDING_RATIO = 2.6; 
+  function applyOriginResetFitView(aLat, aLon, bLat, bLon) {
+    if (!map) return;
+    
+    
+    if (isWayfindActive) return;
+    const centerLat = (aLat + bLat) / 2;
+    const centerLon = (aLon + bLon) / 2;
+    const distM = haversineMeters(aLat, aLon, bLat, bLon);
+
+    
+    const mapSize = map.getSize(); 
+    const shortSidePx = Math.max(100, Math.min(mapSize.width, mapSize.height));
+    const desiredMetersPerPx = (distM * ORIGIN_RESET_VIEW_PADDING_RATIO) / shortSidePx;
+    let zoom = 15;
+    if (distM > 0 && desiredMetersPerPx > 0) {
+      
+      const latRad = centerLat * Math.PI / 180;
+      const metersPerPxAtZ0 = 156543.03392 * Math.cos(latRad);
+      zoom = Math.log2(metersPerPxAtZ0 / desiredMetersPerPx);
+    }
+    zoom = Math.max(14, Math.min(18, Math.round(zoom)));
+    setMapView(centerLat, centerLon, zoom, true);
+  }
+
+  let forceOriginReset = false;
+  function resetOriginNow() {
+    if (!isSegmentRotationMode || !lastKnownPos) {
+      showToastBadge('📍 먼저 [내 위치] 버튼으로 GPS를 켜주세요.');
+      return;
+    }
+
+    
+
+    
+    
+    
+    resetForFreshGpsFix({ resetMapOrientation: false });
+
+    firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; 
+    forceOriginReset = true;
+
+    
+    
+    resolveInitialSectionByProjection(lastKnownPos.lat, lastKnownPos.lon);
+    const section = getCurrentSection();
+    let targetInfo = null;
+    if (section) {
+      const proj = projectOntoCurrentSection(lastKnownPos.lat, lastKnownPos.lon, section);
+      
+      
+      updateSegmentRotationTrigger(section, false, null);
+
+      targetInfo = getBearingAndTargetForOriginReset(lastKnownPos.lat, lastKnownPos.lon, section);
+      if (targetInfo) {
+        applySegmentRotation(targetInfo.bearing);
+        renderGpsArrow(targetInfo.bearing);
+        lastArrowHeadingForGuidance = targetInfo.bearing;
+      } else {
+        
+        
+        updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
+        const arrowHeading = computeArrowHeadingV2(lastKnownPos.lat, lastKnownPos.lon, proj ? proj.routeDistance : 0);
+        if (arrowHeading !== null) {
+          renderGpsArrow(arrowHeading);
+          lastArrowHeadingForGuidance = arrowHeading;
+        }
+      }
+    }
+
+
+    
+
+    if (map && lastKnownPos) {
+      if (targetInfo) {
+        applyOriginResetFitView(lastKnownPos.lat, lastKnownPos.lon, targetInfo.targetLat, targetInfo.targetLon);
+      } else {
+        const currentZoom = Math.max(map.getZoom(), 15);
+        applyMapViewWithOffset(lastKnownPos.lat, lastKnownPos.lon, currentZoom, { animate: true });
+      }
+    }
+
+    forceOriginReset = false;
+    showToastBadge('🔄 현재 위치 기준으로 원점을 다시 잡았습니다.');
+  }
+  window.resetOriginNow = resetOriginNow;
+
+
+  
+
+  
+
+  function updateNavigationToast(accuracy, section, proj, arrowHeading, offTrailDistanceM, offTrailNearestPoint) {
+
+    
+
+    
+    if (lastKnownPos) {
+      updateTrailheadApproach(section, proj, arrowHeading);
+      if (isApproachingTrailhead || isTrailTooFar) return;
+    }
+
+    const toast = document.getElementById('gpsToast');
+    if (!toast || toast.style.display === 'none') return;
+    if (!lastKnownPos || !section || !proj) return;
+
+
+    
+    
+    
+    const guidancePoint = offTrailNearestPoint;
+    const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : proj.distance;
+    if (guidancePoint && isOffTrailState) {
+      hideBottomDirectionArrow(); 
+      
+      if (accuracy > 25 && offTrailStreakCount < 4) {
+        toast.className = 'gps-toast';
+        toast.innerText = `📡 숲·계곡 GPS 수신 대기 중 (오차 ±${Math.round(accuracy)}m)`;
+        return;
+      }
+      offTrailStreakCount++;
+
+      
+      const isNearTrailheadNotice = isSegmentRotationMode && currentRotationOriginDist === null && proj.routeDistance < TRAILHEAD_ENTRY_DISTANCE_M;
+      if (isNearTrailheadNotice) {
+        toast.className = 'gps-toast';
+        let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
+        toast.innerText = `🚩 들머리 진입 중 · 입구를 따라 조금만 더 이동하세요 (${distStr})`;
+        return;
+      }
+
+      const toTrailBearing = calculateBearing(lastKnownPos.lat, lastKnownPos.lon, guidancePoint.lat, guidancePoint.lon);
+      const toTrailAngleDiff = shortestAngleDiff(toTrailBearing, getCurrentAbsHeadingForGuidance());
+      toast.className = 'gps-toast warning';
+      let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
+      toast.innerText = `🚨 [이탈] 경로에서 ${distStr} 벗어났어요. ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
+
+
+      
+      
+      
+      if (offTrailStreakCount >= 1) {
+        playOffTrailBeep();
+        speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
+      }
+      return;
+    }
+
+    
+    const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+    const traveledDist = proj.routeDistance;
+    const remainingDist = Math.max(0, totalDist - traveledDist);
+    const remainingStr = remainingDist >= 0 ? `${(remainingDist / 1000).toFixed(2)}km` : '';
+    const fmtM = m => `${(m / 1000).toFixed(2)}km`;
+    const totalDistStr = `${(totalDist / 1000).toFixed(2)}km`;
+    const traveledDistStr = `${(traveledDist / 1000).toFixed(2)}km`;
+
+
+    
+    
+    const prevM = section.fromMilestone;
+    const nextM = section.toMilestone;
+    const distToNextM = Math.abs(nextM.distanceM - traveledDist);
+
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    const outBearing = computeOutgoingBearingAtMilestone(section);
+    let turnAngle = null;
+    let turnLabel = null;
+    if (outBearing !== null) {
+      const referenceBearing = computeWeightedHeadingOverRange(nextM.distanceM - BEARING_BASELINE_M, nextM.distanceM);
+      if (referenceBearing !== null) {
+        turnAngle = shortestAngleDiff(outBearing, referenceBearing);
+        turnLabel = classifyTurnAngle(turnAngle);
+      }
+    }
+
+    
+
+    
+    
+    if (postArrivalArrowFixCount !== null && distToNextM > TURN_ALERT_DISTANCE_M) {
+      if (lastShownArrowAngle !== null) {
+        showBottomDirectionArrow(lastShownArrowAngle, lastShownArrowLabel, false);
+      }
+    } else {
+      showUpcomingTurnAlert({ name: nextM.name, distanceM: nextM.distanceM, turnAngle, turnLabel }, distToNextM);
+    }
+
+    toast.className = 'gps-toast';
+
+    
+    
+    
+    const escName = s => String(s || '').replace(/</g, '&lt;');
+
+    
+
+    const bigResult = findNextBigLandmark(section, proj);
+    const dispPrevM = bigResult ? bigResult.prevM : prevM;
+    const dispNextM = bigResult ? bigResult.nextM : nextM;
+    const dispDistToNextM = bigResult ? Math.abs(dispNextM.distanceM - traveledDist) : distToNextM;
+    
+    
+    const dispName = m => ((m.name === '반환점' || m.autoNamed) ? '' : escName(m.name));
+    const prevName = dispName(dispPrevM);
+    const nextName = dispName(dispNextM);
+    const routeLabel = (prevName && nextName) ? `${prevName} → ${nextName} · `
+      : (prevName ? `${prevName} · ` : (nextName ? `${nextName} · ` : ''));
+    toast.innerHTML = `🧭 ${routeLabel}${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
+
+
+    
+    if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
+      showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
+
+      endHikingSession();
+      stopGpsTracking();
+    }
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  const TURN_ALERT_DISTANCE_M = 50;   
+  const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; 
+
+  
+
+  
+  
+  let endHikeAlertShown = false;
+  let remainingBeepThresholds = null; 
+
+  
+
+  
+  
+  
+  let postArrivalArrowFixCount = null; 
+  let postArrivalArrowMilestoneKey = null; 
+  const POST_ARRIVAL_ARROW_HOLD_FIXES = 3; 
+
+  function showUpcomingTurnAlert(nextM, distToNextM) {
+
+    
+    
+    
+    const key = nextM.name + '@' + nextM.distanceM; 
+
+    
+    
+    
+    if (distToNextM > TURN_ALERT_DISTANCE_M) {
+      hideBottomDirectionArrow();
+      lastAlertedMilestoneKey = null; 
+      remainingBeepThresholds = null;
+      return;
+    }
+    
+    
+    postArrivalArrowFixCount = null;
+    postArrivalArrowMilestoneKey = null;
+
+
+    
+
+    
+    
+    const isRealStraight = nextM.turnLabel === '직진';
+    const hasDirection = nextM.turnLabel && nextM.turnAngle !== null;
+    let clockOnly = null; 
+
+    if (hasDirection) {
+
+      
+      
+      
+      clockOnly = nextM.turnLabel;
+      const label = nextM.autoNamed ? `${clockOnly}` : `${nextM.name}에서 ${clockOnly}`; 
+      
+      
+      showBottomDirectionArrow(nextM.turnAngle, label, false);
+    } else {
+      
+      
+      hideBottomDirectionArrow();
+    }
+
+
+    if (isRealStraight) {
+      if (key !== lastAlertedMilestoneKey) {
+        lastAlertedMilestoneKey = null;
+        remainingBeepThresholds = null;
+      }
+      return;
+    }
+
+    if (key !== lastAlertedMilestoneKey) {
+      
+      lastAlertedMilestoneKey = key;
+
+      
+      
+      const beepThresholdSource = isSimulationMode ? [Math.max(...TURN_ALERT_BEEP_THRESHOLDS_M)] : TURN_ALERT_BEEP_THRESHOLDS_M;
+      
+      
+      remainingBeepThresholds = beepThresholdSource.filter(t => t < distToNextM);
+
+      
+      
+      
+      const closestThreshold = Math.min(...beepThresholdSource);
+      if (distToNextM <= closestThreshold) {
+        playTurnAlertBeep();
+        speakTurnApproach(nextM, closestThreshold, clockOnly);
+      }
+    } else if (remainingBeepThresholds && remainingBeepThresholds.length > 0) {
+      
+      
+      const nextThreshold = Math.max(...remainingBeepThresholds);
+      if (distToNextM <= nextThreshold) {
+        playTurnAlertBeep();
+        speakTurnApproach(nextM, nextThreshold, clockOnly);
+        remainingBeepThresholds = remainingBeepThresholds.filter(t => t !== nextThreshold);
+      }
+    }
+  }
+
+
+  
+
+  
+
+  
+  
+  function speakTurnApproach(nextM, threshold, clockOnly) {
+    if (isSimulationMode && threshold !== 50) return;
+
+    const text = clockOnly ? clockOnly : nextM.name;
+    speakGuidance(text);
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  let wasTrackingBeforeHidden = false;
+
+  let wasPollingBeforeHidden = false;
+
+  document.addEventListener('visibilitychange', () => {
+
+    
+
+    if (isNativeApp()) return;
+    if (document.visibilityState === 'hidden') {
+
+      
+      if (watchId !== null) {
+        wasTrackingBeforeHidden = true;
+        if (lowPowerModeEnabled) {
+          wasPollingBeforeHidden = true;
+          startLowPowerPolling(); 
+        } else {
+          wasPollingBeforeHidden = false;
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+          stopCompass();
+
+          
+
+          
+
+          
+          
+          stopSleepMonitor();
+        }
+      }
+
+    } else if (document.visibilityState === 'visible') {
+      const wasPolling = isLowPowerPolling;
+      if (wasTrackingBeforeHidden || wasPolling) {
+        wasTrackingBeforeHidden = false;
+
+
+        
+        
+        if (wasPolling) stopLowPowerPolling();
+
+
+        
+
+        
+
+        
+
+        
+        startGpsTracking(); 
+      }
+    }
+  });
+
+  
+  let simInterval = null;
+  let simIndex = 0;
+  let simMarker = null;
+  const SIM_DEFAULT_SPEED = 3; 
+  let simSpeed = SIM_DEFAULT_SPEED;
+
+  
+
+  
+
+  
+  
+  
+  let simPlayDirection = 1; 
+  let simUserZoomed = false; 
+
+  
+
+  
+  
+  let explicitRoundTripFlag = false;
+  function isRoundTripCourse() {
+    if (explicitRoundTripFlag) return true;
+    if (!currentMilestones || currentMilestones.length < 1) return false;
+    return currentMilestones.some(m => m.name && m.name.includes('원점회귀'));
+  }
+
+  let isSimulationMode = false;
+
+
+  
+
+  
+
+  let isGpsReplayMode = false;
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  let simLastNearestIdx = -1;
+  let simMoveDirectionSign = 1;
+  let simLastMoveDirectionIdx = null;
+
+
+  
+
+  
+  
+  let simTrackDirectionCandidate = null;
+  let simTrackDirectionCandidateStreak = 0;
+  let simLastConfirmedTrackIdx = null;
+  let simIsReversingOnTrail = false;
+
+  function updateTrackDirectionForSim(nearestIdx) {
+    if (simLastConfirmedTrackIdx === null) {
+      simLastConfirmedTrackIdx = nearestIdx;
+      return;
+    }
+    const rawDelta = nearestIdx - simLastConfirmedTrackIdx;
+    simLastConfirmedTrackIdx = nearestIdx;
+    if (Math.abs(rawDelta) < MIN_INDEX_DELTA) return;
+    const candidate = rawDelta > 0 ? 'forward' : 'backward';
+    if (candidate === simTrackDirectionCandidate) {
+      simTrackDirectionCandidateStreak++;
+    } else {
+      simTrackDirectionCandidate = candidate;
+      simTrackDirectionCandidateStreak = 1;
+    }
+    if (simTrackDirectionCandidateStreak >= TRACK_DIRECTION_CONFIRM_STREAK) {
+      simIsReversingOnTrail = (simTrackDirectionCandidate === 'backward');
+    }
+  }
+  function resetSimTrackDirectionState() {
+    simIsReversingOnTrail = false;
+    simTrackDirectionCandidate = null;
+    simTrackDirectionCandidateStreak = 0;
+    simLastConfirmedTrackIdx = null;
+  }
+
+
+  
+
+  
+
+  function nearestPointOnTrailForSim(idx, points) {
+    if (!points || points.length === 0) {
+      simLastNearestIdx = -1;
+      return { distance: 0, point: null, index: -1 };
+    }
+    const maxIdx = points.length - 2;
+    const bestIdx = Math.max(0, Math.min(idx, Math.max(maxIdx, 0)));
+
+    
+    
+    if (simLastMoveDirectionIdx === null) {
+      simLastMoveDirectionIdx = bestIdx;
+    } else {
+      const delta = bestIdx - simLastMoveDirectionIdx;
+      simLastMoveDirectionIdx = bestIdx;
+      if (delta !== 0) simMoveDirectionSign = delta > 0 ? 1 : -1;
+    }
+    simLastNearestIdx = bestIdx;
+    return { distance: 0, point: points[bestIdx], index: bestIdx };
+  }
+
+
+  
+  
+  function computeArrowHeadingForSim(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
+    if (isNearTrailheadNow) {
+      const target = nearestOnTrailPoint || (currentPoints && currentPoints.length > 0 ? currentPoints[0] : null);
+      if (!target) return null;
+      return calculateBearing(lat, lon, target.lat, target.lon);
+    }
+    if (!currentPoints || nearestIdx < 0 || !cumulativeDistances || cumulativeDistances.length < 2) return null;
+    const dist = (traveledDist !== undefined && traveledDist !== null) ? traveledDist : (cumulativeDistances[nearestIdx] || 0);
+    const targetDist = dist + simMoveDirectionSign * ARROW_LOOKAHEAD_M;
+    const aheadPt = findPointAheadByDistance(currentPoints, cumulativeDistances, 0, Math.max(0, targetDist));
+    if (!aheadPt) return null;
+    return calculateBearing(lat, lon, aheadPt.lat, aheadPt.lon);
+  }
+
+  function setSimSpeed(speed, event) {
+    simSpeed = speed;
+    
+    
+    document.querySelectorAll('.sim-speed-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.textContent.trim() === speed + 'x');
+    });
+  }
+
+
+  function finishSimulationAndGoHome() {
+    toggleSimulation();
+    setTimeout(() => { if (simInterval === null && !isSimPaused) fitRoute(); }, 600);
+  }
+
+
+  
+  function renderSimFrame(idx, mapViewOpts) {
+    if (!currentPoints || idx < 0 || idx >= currentPoints.length) return;
+    const pt = currentPoints[idx];
+
+    
+    const lat = pt.lat;
+    const lon = pt.lon;
+
+
+    
+
+    
+
+    
+
+    
+    const simNearest = nearestPointOnTrailForSim(idx, currentPoints);
+    updateTrackDirectionForSim(simNearest.index); 
+    const simTraveledDist = cumulativeDistances[simNearest.index] || 0;
+    const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
+    const simArrowHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
+
+
+    if (!simMarker) {
+      simMarker = makeHtmlMarker(lat, lon, 'custom-gps-icon', createGpsIconHtml(simArrowHeading), 40, 40, 1000, 80);
+    } else {
+      simMarker.setPosition(toLatLng(lat, lon));
+    }
+    if (simArrowHeading !== null) renderGpsArrow(simArrowHeading);
+
+    lastKnownPos = { lat, lon };
+    isCurrentlyStopped = false;
+    isOffTrailState = false;
+
+
+    updatePoiProximity(lat, lon);
+
+
+    
+
+    
+    
+    if (!getCurrentSection()) {
+      resolveInitialSectionByProjection(lat, lon);
+    }
+    const simGajaMapResult = updateGajaMapForPreview(lat, lon);
+    const simSection = simGajaMapResult ? simGajaMapResult.section : null;
+    const simProj = simGajaMapResult ? simGajaMapResult.proj : null;
+    const simOffTrailNearestPoint = simProj ? { lat: simProj.projectedLat, lon: simProj.projectedLon } : null;
+
+    if (simGajaMapResult) {
+      updateSegmentRotationTrigger(simSection, simGajaMapResult.advanced, simGajaMapResult.arrivedMilestone);
+    }
+
+    
+    
+    updateNavigationToast(5, simSection, simProj, simArrowHeading, simProj ? simProj.distance : 0, simOffTrailNearestPoint);
+
+
+    
+
+    
+    if (isMapBeingDragged || isMapDragReturnPending) return;
+    const currentZoom = simUserZoomed ? map.getZoom() : Math.max(map.getZoom(), 15);
+    applyMapViewWithOffset(lat, lon, currentZoom, mapViewOpts);
+  }
+
+  
+  let simScrubDragging = false;
+
+  function updateSimScrubHandle() {
+    const handle = document.getElementById('simScrubHandle');
+    const fill = document.getElementById('simScrubFill');
+    if (!handle || !fill || !currentPoints || currentPoints.length < 2) return;
+    const progress = simIndex / (currentPoints.length - 1); 
+    
+    
+    handle.style.left = `${progress * 100}%`;
+    fill.style.width = `${progress * 100}%`;
+  }
+
+  function simScrubIndexFromClientX(clientX) {
+    const track = document.getElementById('simScrubTrack');
+    if (!track || !currentPoints || currentPoints.length < 2) return null;
+    const rect = track.getBoundingClientRect();
+    let progress = (clientX - rect.left) / rect.width;
+    progress = Math.max(0, Math.min(1, progress));
+    return Math.round(progress * (currentPoints.length - 1));
+  }
+
+  function handleSimScrubStart(evt) {
+    if (!simInterval) return; 
+    simScrubDragging = true;
+    const point = evt.touches ? evt.touches[0] : evt;
+    const idx = simScrubIndexFromClientX(point.clientX);
+    if (idx !== null) {
+      simIndex = idx;
+      renderSimFrame(simIndex, { animate: false });
+      updateSimScrubHandle();
+    }
+    evt.preventDefault();
+  }
+
+  function handleSimScrubMove(evt) {
+    if (!simScrubDragging) return;
+    const point = evt.touches ? evt.touches[0] : evt;
+    const idx = simScrubIndexFromClientX(point.clientX);
+    if (idx !== null) {
+      simIndex = idx;
+      renderSimFrame(simIndex, { animate: false });
+      updateSimScrubHandle();
+    }
+    evt.preventDefault();
+  }
+
+  function handleSimScrubEnd() {
+    simScrubDragging = false;
+  }
+
+  function initSimScrubEvents() {
+    const track = document.getElementById('simScrubTrack');
+    if (!track || track._simScrubBound) return;
+    track._simScrubBound = true;
+    track.addEventListener('touchstart', handleSimScrubStart, { passive: false });
+    window.addEventListener('touchmove', handleSimScrubMove, { passive: false });
+    window.addEventListener('touchend', handleSimScrubEnd);
+    track.addEventListener('mousedown', handleSimScrubStart);
+    window.addEventListener('mousemove', handleSimScrubMove);
+    window.addEventListener('mouseup', handleSimScrubEnd);
+  }
+
+
+  let isSimPaused = false;
+
+  function toggleSimulation() {
+    if (!currentPoints || currentPoints.length < 2) {
+      alert('먼저 등산로 코스를 불러와주세요.');
+      return;
+    }
+    const btn = document.getElementById('simBtn');
+    const pauseBtn = document.getElementById('simPauseBtn');
+    const speedOpts = document.getElementById('simSpeedOptions');
+
+    
+    if (simInterval || isSimPaused) {
+      if (simInterval) clearTimeout(simInterval);
+      simInterval = null;
+      isSimPaused = false;
+      btn.innerText = '▶️';
+      btn.classList.remove('active');
+      pauseBtn.style.display = 'none';
+      pauseBtn.innerText = '⏸️';
+      speedOpts.style.display = 'none';
+      if (simMarker) {
+        removeOverlay(simMarker);
+        simMarker = null;
+      }
+      showHeadingArrow = false;
+      const toast = document.getElementById('gpsToast');
+      toast.style.display = 'none';
+      showToastBadge('🛑 따라가기 미리보기 모드를 종료했습니다.');
+      const scrubTrack = document.getElementById('simScrubTrack');
+      if (scrubTrack) scrubTrack.classList.remove('active');
+      
+      
+      const mapEl = document.getElementById('map');
+      isSegmentRotationMode = false;
+      isSimulationMode = false;
+      currentRotationOriginDist = null;
+      mapRotationDeg = 0;
+      appliedMapRotationDeg = 0;
+      updateRouteBadgeRotation();
+      if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
+      setTimeout(refreshMapSize, 520);
+      return;
+    }
+
+    if (watchId !== null) stopGpsTracking(); 
+
+
+    
+
+    
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
+
+
+    
+    btn.innerText = '⏹️';
+    btn.classList.add('active');
+    pauseBtn.style.display = 'flex';
+    speedOpts.style.display = 'flex';
+    simIndex = 0;
+    simPlayDirection = 1; 
+    simUserZoomed = false;
+    setSimSpeed(SIM_DEFAULT_SPEED); 
+
+    
+
+    simLastNearestIdx = -1;
+    simMoveDirectionSign = 1;
+    simLastMoveDirectionIdx = null;
+    resetSimTrackDirectionState(); 
+
+    
+
+    
+    resetGajaMapRotationState();
+    resetPreviewRotationState(); 
+
+    
+
+    
+    
+    
+    currentMilestoneIdx = -1;
+    nextMilestoneIdx = -1;
+
+    
+    showHeadingArrow = true;
+
+
+    
+    {
+      const mapEl = document.getElementById('map');
+      isSegmentRotationMode = true;
+      isSimulationMode = true;
+      currentRotationOriginDist = null;
+      firstOriginFixCount = FIRST_ORIGIN_MIN_FIXES; 
+      if (mapEl) mapEl.classList.add('heading-up');
+    }
+    showToastBadge('▶️ 모의 주행 (따라가기) 시작\n산행 전 전체 경로를 미리 따라가 봅니다.');
+
+    const toast = document.getElementById('gpsToast');
+    toast.style.display = 'block';
+    toast.className = 'gps-toast';
+
+    const scrubTrack = document.getElementById('simScrubTrack');
+    if (scrubTrack) scrubTrack.classList.add('active');
+    initSimScrubEvents();
+    updateSimScrubHandle();
+
+
+    setTimeout(refreshMapSize, 520);
+    
+    startSimInterval();
+  }
+
+  
+  const SIM_BASE_INTERVAL_MS = 250;
+
+
+  
+
+  
+
+  
+
+  function startSimInterval() {
+    function tick() {
+      if (!currentPoints || currentPoints.length === 0) {
+        toggleSimulation();
+        return;
+      }
+
+      
+      const needsSimReverse = isRoundTripCourse() && currentPoints.roundTripTurnIdx == null;
+      if (simIndex >= currentPoints.length || simIndex < 0) {
+        if (needsSimReverse && simPlayDirection === 1 && simIndex >= currentPoints.length) {
+          simPlayDirection = -1;
+          simIndex = currentPoints.length - 1;
+          showToastBadge('🔁 반환점 도착 — 왕복 코스라 되돌아가는 구간을 이어서 재생합니다.');
+        } else if (isRoundTripCourse() && simPlayDirection === -1 && simIndex < 0) {
+          finishSimulationAndGoHome(); 
+          return;
+        } else {
+          finishSimulationAndGoHome();
+          return;
+        }
+      }
+      renderSimFrame(simIndex, { animate: true, duration: 0.25 });
+      updateSimScrubHandle();
+
+
+      
+
+      let stepDistanceM = 4;
+      if (simSpeed === 0.5) stepDistanceM = 2;
+      else if (simSpeed === 2) stepDistanceM = 10;
+      else if (simSpeed === 3) stepDistanceM = 20;
+      else if (simSpeed === 4) stepDistanceM = 40;
+      else if (simSpeed === 5) stepDistanceM = 80;
+
+
+      
+
+      
+      
+      
+      const SIM_DECEL_START_M = 60;
+      const SIM_DECEL_SLOW_M = 50;
+      const SIM_SLOW_STEP_M = 2; 
+      let decelSpeedRatio = 1; 
+      if (currentMilestones && currentMilestones.length >= 2) {
+        const traveledDist = cumulativeDistances[simIndex] || 0;
+        const milestoneResult = findNextMilestone(traveledDist, isReversingOnTrail);
+        if (milestoneResult) {
+          const distToNext = isReversingOnTrail
+            ? Math.max(0, traveledDist - milestoneResult.nextM.distanceM)
+            : Math.max(0, milestoneResult.nextM.distanceM - traveledDist);
+          const slowStepDistanceM = Math.max(SIM_SLOW_STEP_M, stepDistanceM); 
+          let targetStepDistanceM = stepDistanceM;
+          if (distToNext <= SIM_DECEL_SLOW_M) {
+            targetStepDistanceM = SIM_SLOW_STEP_M;
+          } else if (distToNext <= SIM_DECEL_START_M) {
+            
+            const decelRatio = (distToNext - SIM_DECEL_SLOW_M) / (SIM_DECEL_START_M - SIM_DECEL_SLOW_M);
+            targetStepDistanceM = SIM_SLOW_STEP_M + (stepDistanceM - SIM_SLOW_STEP_M) * decelRatio;
+          }
+
+          
+          decelSpeedRatio = stepDistanceM / Math.max(targetStepDistanceM, 0.001);
+        }
+      }
+
+
+      
+      let nextIndex = simIndex + simPlayDirection;
+      const startDist = cumulativeDistances[simIndex] || 0;
+      if (simPlayDirection === 1) {
+        while (nextIndex < currentPoints.length) {
+          const currentDist = cumulativeDistances[nextIndex] || 0;
+          if (currentDist - startDist >= stepDistanceM) break;
+          nextIndex++;
+        }
+      } else {
+        while (nextIndex >= 0) {
+          const currentDist = cumulativeDistances[nextIndex] || 0;
+          if (startDist - currentDist >= stepDistanceM) break;
+          nextIndex--;
+        }
+      }
+      simIndex = nextIndex;
+
+
+      
+      
+      const SIM_MAX_DELAY_MS = 1500;
+      const delayMs = Math.min(SIM_BASE_INTERVAL_MS * decelSpeedRatio, SIM_MAX_DELAY_MS);
+      simInterval = setTimeout(tick, delayMs);
+    }
+    simInterval = setTimeout(tick, SIM_BASE_INTERVAL_MS);
+  }
+
+
+  
+  
+  function toggleSimulationPause() {
+    if (!isSimPaused && !simInterval) return; 
+    const pauseBtn = document.getElementById('simPauseBtn');
+
+    if (simInterval) {
+      
+      clearTimeout(simInterval);
+      simInterval = null;
+      isSimPaused = true;
+      if (pauseBtn) pauseBtn.innerText = '▶️';
+      showToastBadge('⏸️ 일시정지했습니다.');
+
+      
+
+      finishMapRotationTransitionNow();
+      return;
+    }
+
+
+    
+    
+    try {
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
+    isSimPaused = false;
+    if (pauseBtn) pauseBtn.innerText = '⏸️';
+    showToastBadge('▶️ 이어서 재생합니다.');
+    startSimInterval();
+  }
+  window.toggleSimulationPause = toggleSimulationPause;
+
+  
+  function toggleGPS() {
+    if (simInterval !== null || isSimPaused) toggleSimulation(); 
+
+    if (isGpsSleeping) {
+      exitGpsSleep('사용자가 직접 재개');
+      return;
+    }
+
+    if (watchId !== null || isLowPowerPolling) {
+      stopGpsTracking();
+    } else {
+
+      
+      
+      
+      const session = loadHikingSession();
+      if (session && session.routeKey === currentRouteKey) {
+        startGpsTracking();
+      } else {
+        showStartHikeOverlay();
+      }
+    }
+  }
+
+
+  
+  
+  function confirmEndHike() {
+    if (!confirm('🏁 이번 산행을 종료할까요?\n\n다음에 이 코스를 다시 열면 새 산행으로 시작됩니다.')) return;
+    endHikingSession();
+    stopGpsTracking();
+    showToastBadge('🏁 산행을 종료했습니다. 수고하셨습니다!');
+  }
+  window.confirmEndHike = confirmEndHike;
+
+  function stopGpsTracking() {
+    const btn = document.getElementById('gpsBtn');
+    const toast = document.getElementById('gpsToast');
+    setHeadingUpMode(false, true);
+    showHeadingArrow = false;
+    stopSleepMonitor(); 
+    if (isNativeApp()) {
+      try { window.AndroidBridge.stopForegroundLocation(); } catch(e) {}
+    } else if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+    watchId = null;
+    stopCompass();
+    if (userGpsMarker) { removeOverlay(userGpsMarker); userGpsMarker = null; }
+    if (guideLine) { removeOverlay(guideLine); guideLine = null; }
+    hidePoiProximityModalOnExit(); 
+    btn.innerText = '📍';
+    btn.classList.remove('active');
+    toast.style.display = 'none';
+    hideBottomDirectionArrow();
+    
+    const waitingOverlayStop = document.getElementById('gpsWaitingOverlay');
+    if (waitingOverlayStop) waitingOverlayStop.style.display = 'none';
+    showToastBadge('📍 내 위치 추적을 종료했습니다.');
+
+
+    
+    stopLowPowerPolling();
+    lowPowerModeEnabled = false;
+    try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
+    updateLowPowerBtnUI();
+
+
+    if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
+      window.location.reload();
+    }
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  const LOW_POWER_POLL_INTERVAL_MS = 5000;
+
+  function toggleLowPowerMode() {
+
+    if (isNativeApp()) {
+      showToastBadge('📍 이 앱은 화면이 꺼져도 항상 정상 GPS로 동작합니다.');
+      return;
+    }
+    
+    
+    if (watchId === null && !isLowPowerPolling) {
+      showToastBadge('📍 먼저 [내 위치]로 GPS를 켜주세요.');
+      return;
+    }
+    lowPowerModeEnabled = !lowPowerModeEnabled;
+    try {
+      if (lowPowerModeEnabled) localStorage.setItem('gajago_low_power_mode', '1');
+      else localStorage.removeItem('gajago_low_power_mode');
+    } catch(e) {}
+
+    if (lowPowerModeEnabled) {
+      showToastBadge('🔔 저전력 모드 예약됨\n화면이 꺼지면 5초 간격으로 전환됩니다.');
+
+      
+
+      
+      
+      try {
+        if (!audioCtx || audioCtx.state === 'closed') {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      } catch(e) {}
+    } else {
+      showToastBadge('🔕 저전력 모드를 해제했습니다.');
+      
+      
+      if (isLowPowerPolling) {
+        stopLowPowerPolling();
+        startGpsTracking();
+      }
+    }
+    updateLowPowerBtnUI();
+  }
+  window.toggleLowPowerMode = toggleLowPowerMode;
+
+  
+  
+  function startLowPowerPolling() {
+    isLowPowerPolling = true;
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    stopSleepMonitor(); 
+    if (lowPowerPollTimerId) clearInterval(lowPowerPollTimerId);
+    pollOnceForLowPower(); 
+    lowPowerPollTimerId = setInterval(pollOnceForLowPower, LOW_POWER_POLL_INTERVAL_MS);
+  }
+
+
+  function stopLowPowerPolling() {
+    isLowPowerPolling = false;
+    if (lowPowerPollTimerId) { clearInterval(lowPowerPollTimerId); lowPowerPollTimerId = null; }
+  }
+
+  function pollOnceForLowPower() {
+    if (!isLowPowerPolling) return;
+    navigator.geolocation.getCurrentPosition(
+      handleGpsPositionUpdate,
+      handleLowPowerPollError,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+  }
+
+
+  
+
+  
+
+  
+  function handleLowPowerPollError() {
+    console.warn('⚠️ 저전력 폴링 중 GPS 픽스 실패(다음 폴링에서 재시도)');
+  }
+
+  function updateLowPowerBtnUI() {
+    const btn = document.getElementById('lowPowerBtn');
+    if (!btn) return;
+
+    btn.classList.toggle('active', lowPowerModeEnabled);
+    btn.innerText = lowPowerModeEnabled ? '🔔' : '🔕';
+  }
+
+
+  let isFirstFix = true;
+
+
+  
+
+  
+  
+  function showStartHikeOverlay() {
+    const overlay = document.getElementById('startHikeOverlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+  }
+  window.showStartHikeOverlay = showStartHikeOverlay;
+
+  function hideStartHikeOverlay() {
+    const overlay = document.getElementById('startHikeOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  
+  function confirmStartHike() {
+    hideStartHikeOverlay();
+
+    startHikingSession(currentRouteKey);
+    endHikeAlertShown = false;
+    startGpsTracking();
+  }
+  window.confirmStartHike = confirmStartHike;
+
+  function startGpsTracking() {
+    const btn = document.getElementById('gpsBtn');
+    const toast = document.getElementById('gpsToast');
+
+    if (!navigator.geolocation) {
+      alert('이 브라우저에서는 내 위치 기능을 사용할 수 없어요.\n\n📱 스마트폰 기본 브라우저(예: 삼성 인터넷, 크롬, Safari)로 다시 열어 주세요.');
+      return;
+    }
+
+    showHeadingArrow = true;
+
+
+    
+
+    
+    resetForFreshGpsFix();
+
+
+    
+
+    
+    
+    isSegmentRotationMode = true;
+    currentRotationOriginDist = null;
+    firstOriginFixCount = 0;
+
+
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) {}
+
+    btn.innerText = '🧭';
+    btn.classList.add('active');
+    toast.style.display = 'block';
+    toast.className = 'gps-toast';
+    toast.innerText = '📡 GPS 수신 중...';
+    showToastBadge('📍 [내 위치 켜짐]');
+
+    
+    
+    const waitingOverlay = document.getElementById('gpsWaitingOverlay');
+    if (waitingOverlay) waitingOverlay.style.display = 'flex';
+
+    isFirstFix = true;
+
+
+    
+
+    
+
+    
+    
+    if (isNativeApp()) {
+      watchId = 'native';
+      try { window.AndroidBridge.startForegroundLocation(); } catch(e) {}
+    } else {
+      watchId = navigator.geolocation.watchPosition(
+        handleGpsPositionUpdate,
+        handleGpsError,
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      );
+    }
+
+    startSleepMonitor();
+  }
+
+
+  
+
+  
+
+  
+
+  function isNativeApp() {
+    return typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge !== null;
+  }
+
+  window.handleNativeLocationUpdate = function(lat, lon, accuracy, speed, bearing) {
+    const fakePos = {
+      coords: {
+        latitude: lat,
+        longitude: lon,
+        accuracy: accuracy,
+        speed: speed,
+        heading: bearing
+      }
+    };
+    handleGpsPositionUpdate(fakePos);
+  };
+
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  const POI_PROXIMITY_ENTER_M = 10; 
+  const POI_PROXIMITY_EXIT_M = 25;  
+  let _poiSignpostCache = null; 
+  let _poiSignpostFetchAttempted = false;
+  let _activeProximityPoi = null; 
+  let _poiModalManuallyDismissedKey = null; 
+
+  async function fetchCoursePoiSignposts() {
+    if (_poiSignpostFetchAttempted) return _poiSignpostCache;
+    _poiSignpostFetchAttempted = true;
+    try {
+      const res = await fetch('/api/poi?category=SIGN');
+      if (!res.ok) return null;
+      const data = await res.json();
+      _poiSignpostCache = data.items || [];
+      return _poiSignpostCache;
+    } catch (e) {
+      return null; 
+    }
+  }
+
+
+  
+
+  
+
+  
+
+  
+
+  
+  
+  
+  function setTopToastHiddenByPoi(hidden) {
+    const toast = document.getElementById('gpsToast');
+    if (!toast) return;
+    toast.style.visibility = hidden ? 'hidden' : '';
+  }
+
+  function showPoiProximityModal(poi) {
+    let modal = document.getElementById('poiProximityModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'poiProximityModal';
+
+      modal.style.cssText = 'position:absolute; top:68px; left:12px; right:12px; z-index:999; background:rgba(17,24,20,0.96); color:#fff; border-radius:16px; padding:10px 16px; box-shadow:0 4px 16px rgba(0,0,0,0.18); backdrop-filter:blur(8px); display:flex; align-items:flex-start; gap:10px;';
+      document.body.appendChild(modal);
+    }
+
+    const destinations = [poi.signpost1, poi.signpost2, poi.signpost3, poi.signpost4]
+      .map(s => (s || '').split(';')[0].trim())
+      .filter(Boolean)
+      .filter(d => d !== 'NA'); 
+    const bodyText = destinations.length > 0 ? destinations.join(' · ') : '안내판';
+
+    modal.innerHTML = `
+      <div style="font-size:22px; line-height:1; margin-top:2px;">🪧</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:11px; font-weight:700; color:#a5d6a7; margin-bottom:3px;">이정표 안내판</div>
+        <div style="font-size:15px; font-weight:700; line-height:1.4; word-break:keep-all;">${bodyText}</div>
+      </div>
+      <button onclick="window.__dismissPoiProximityModal && window.__dismissPoiProximityModal()"
+        style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:26px; height:26px; border-radius:50%; font-size:14px; cursor:pointer; flex-shrink:0;">✕</button>
+    `;
+    modal.style.display = 'flex';
+    setTopToastHiddenByPoi(true);
+  }
+
+
+  function hidePoiProximityModalOnExit() {
+    const modal = document.getElementById('poiProximityModal');
+    if (modal) modal.style.display = 'none';
+    _activeProximityPoi = null;
+    _poiModalManuallyDismissedKey = null;
+    setTopToastHiddenByPoi(false);
+  }
+
+
+  
+
+  function dismissPoiProximityModal() {
+    const modal = document.getElementById('poiProximityModal');
+    if (modal) modal.style.display = 'none';
+    if (_activeProximityPoi) {
+      _poiModalManuallyDismissedKey = _activeProximityPoi.id != null
+        ? String(_activeProximityPoi.id) : (_activeProximityPoi.lat + ',' + _activeProximityPoi.lon);
+    }
+    setTopToastHiddenByPoi(false);
+  }
+  window.__dismissPoiProximityModal = dismissPoiProximityModal;
+
+
+  async function updatePoiProximity(lat, lon) {
+    const signs = await fetchCoursePoiSignposts();
+    if (!signs || signs.length === 0) return;
+
+    
+    
+    if (_activeProximityPoi) {
+      const d = haversineMeters(lat, lon, _activeProximityPoi.lat, _activeProximityPoi.lon);
+      if (d > POI_PROXIMITY_EXIT_M) {
+        hidePoiProximityModalOnExit();
+      } else {
+        return; 
+      }
+    }
+
+    
+    
+    let nearest = null, nearestD = Infinity;
+    for (const s of signs) {
+      const d = haversineMeters(lat, lon, s.lat, s.lon);
+      if (d <= POI_PROXIMITY_ENTER_M && d < nearestD) {
+        nearest = s; nearestD = d;
+      }
+    }
+    if (!nearest) return;
+
+    const key = nearest.id != null ? String(nearest.id) : (nearest.lat + ',' + nearest.lon);
+    if (key === _poiModalManuallyDismissedKey) return; 
+
+    _activeProximityPoi = nearest;
+    showPoiProximityModal(nearest);
+  }
+
+  
+  
+
+  function handleGpsPositionUpdate(pos) {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const accuracy = Math.round(pos.coords.accuracy);
+        const nowTs = Date.now();
+
+
+        
+
+        
+        const sectionForReliabilityPreview = getCurrentSection();
+        const projForReliabilityPreview = sectionForReliabilityPreview
+          ? projectOntoCurrentSection(lat, lon, sectionForReliabilityPreview)
+          : null;
+        const reliabilityPreview = classifyGpsReliability(lat, lon, accuracy, nowTs, projForReliabilityPreview);
+
+        if (reliabilityPreview === GPS_RELIABILITY.REJECTED) {
+
+          
+          if (lastKnownPos) {
+            consecutiveRejectedCount++;
+            if (consecutiveRejectedCount === 5) {
+              showToastBadge('📡 GPS 신호가 불안정합니다 — 잠시 후 다시 확인해주세요.');
+
+              
+
+              
+
+              
+              
+              lastConfirmedGpsPos = null;
+              sectionAdvanceConfirmStreak = 0;
+            }
+            return;
+          }
+        }
+        consecutiveRejectedCount = 0;
+        lastKnownPos = { lat, lon }; 
+
+
+        
+        
+        updatePoiProximity(lat, lon);
+
+
+        
+        
+        const result = gpsFilterEngine.process({
+          latitude: lat,
+          longitude: lon,
+          accuracy: accuracy,
+          speed: pos.coords.speed,
+          heading: pos.coords.heading,
+          timestamp: Date.now()
+        });
+
+
+        
+
+        
+
+        
+        
+        
+        if (result) {
+          const wasStoppedBefore = isCurrentlyStopped;
+          isCurrentlyStopped = result.isStopped;
+
+          
+          
+          if (isCurrentlyStopped && !wasStoppedBefore) {
+            stopEnteredAt = Date.now();
+          } else if (!isCurrentlyStopped) {
+            stopEnteredAt = null;
+          }
+        }
+
+
+        
+
+
+        
+
+        
+
+        
+        if (!getCurrentSection()) {
+          resolveInitialSectionByProjection(lat, lon);
+        }
+        const gajaMapResult = updateGajaMap(lat, lon, accuracy, nowTs);
+        const section = gajaMapResult ? gajaMapResult.section : null;
+        const sectionProj = gajaMapResult ? gajaMapResult.proj : null;
+        const gpsReliability = gajaMapResult ? gajaMapResult.reliability : GPS_RELIABILITY.NORMAL;
+
+
+        
+        const traveledDistForEntry = sectionProj ? sectionProj.routeDistance : 0;
+        const isNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
+
+
+        
+
+        
+
+        
+        const offTrailDistanceM = sectionProj ? sectionProj.distance : 0;
+        const offTrailNearestPoint = sectionProj
+          ? { lat: sectionProj.projectedLat, lon: sectionProj.projectedLon }
+          : null;
+
+        
+        if (sectionProj && gpsReliability !== GPS_RELIABILITY.REJECTED) {
+          updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
+        }
+
+
+        
+        if (isWayfindActive && sectionProj) {
+          updateWayfindingProgress(lat, lon, sectionProj.routeDistance);
+        }
+
+
+        
+        
+        if (result && !result.isStopped && result.bearing !== null) {
+          gpsMovementHeading = result.bearing;
+        }
+
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        const routeDistanceForArrow = sectionProj ? sectionProj.routeDistance : traveledDistForEntry;
+        const gpxProgressHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
+
+        let movementHeading = null;
+        if (lastArrowVectorPos) {
+          movementHeading = computeMovementVectorHeading(lastArrowVectorPos.lat, lastArrowVectorPos.lon, lat, lon);
+          if (movementHeading !== null) {
+            lastMovementVectorHeading = movementHeading;
+            lastMovementVectorUpdatedAt = Date.now();
+            lastArrowVectorPos = { lat, lon };
+
+            
+            reconfirmPendingRoundTripPair(movementHeading);
+          }
+
+        } else {
+          lastArrowVectorPos = { lat, lon };
+        }
+
+
+        
+        
+        const arrowHeading = lastMovementVectorHeading !== null ? lastMovementVectorHeading : gpxProgressHeading;
+
+
+        
+
+        
+
+        
+
+        
+
+        let rawReversed = false;
+        const routeDistanceDelta = lastRouteDistanceForReverseCheck !== null
+          ? routeDistanceForArrow - lastRouteDistanceForReverseCheck : null;
+        if (routeDistanceDelta !== null && Math.abs(routeDistanceDelta) >= ARROW_VECTOR_MIN_MOVE_M) {
+          const movedForward = section.isForward ? routeDistanceDelta > 0 : routeDistanceDelta < 0;
+          rawReversed = !movedForward;
+          lastRouteDistanceForReverseCheck = routeDistanceForArrow;
+        } else if (lastRouteDistanceForReverseCheck === null) {
+          lastRouteDistanceForReverseCheck = routeDistanceForArrow;
+        }
+
+        if (rawReversed) {
+          reverseWarningStreak++;
+          if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
+            isReverseDirectionWarning = true;
+          }
+        } else {
+          reverseWarningStreak = 0;
+          isReverseDirectionWarning = false;
+        }
+
+        if (arrowHeading !== null) {
+          renderGpsArrow(arrowHeading);
+          lastArrowHeadingForGuidance = arrowHeading; 
+        }
+        updateGpsMarkerWarningStyle();
+
+
+        
+        
+        if (gajaMapResult) {
+          updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
+        }
+
+
+        
+        if (gajaMapResult && gajaMapResult.advanced && gajaMapResult.arrivedMilestone) {
+          
+          
+          const m = gajaMapResult.arrivedMilestone;
+          postArrivalArrowFixCount = 0;
+          postArrivalArrowMilestoneKey = m.name + '@' + m.distanceM;
+        } else if (postArrivalArrowFixCount !== null) {
+          postArrivalArrowFixCount++;
+          if (postArrivalArrowFixCount >= POST_ARRIVAL_ARROW_HOLD_FIXES) {
+            hideBottomDirectionArrow();
+            postArrivalArrowFixCount = null;
+            postArrivalArrowMilestoneKey = null;
+          }
+        }
+
+
+        if (gajaMapResult && gajaMapResult.advanced && gajaMapResult.arrivedMilestone && !endHikeAlertShown) {
+          const m = gajaMapResult.arrivedMilestone;
+          if (m.name && (m.name.includes('날머리') || m.name.includes('도착'))) {
+            endHikeAlertShown = true;
+            confirmEndHike();
+
+            if (watchId === null) return;
+          }
+        }
+
+
+        
+        
+        updateNavigationToast(accuracy, section, sectionProj, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
+
+        
+        if (!userGpsMarker) {
+          userGpsMarker = makeHtmlMarker(lat, lon, 'custom-gps-icon', createGpsIconHtml(getCurrentAbsHeadingForGuidance()), 40, 40, 1000, 80);
+          {
+            const z = getPreferredGpsZoom();
+            applyMapViewWithOffset(lat, lon, z, { animate: true });
+          }
+          
+          if (!isHeadingUp) {
+            setHeadingUpMode(true, true);
+          }
+          
+          
+          const waitingOverlayDone = document.getElementById('gpsWaitingOverlay');
+          if (waitingOverlayDone) waitingOverlayDone.style.display = 'none';
+        } else {
+          userGpsMarker.setPosition(toLatLng(lat, lon));
+          if (isFirstFix) {
+            const z = getPreferredGpsZoom();
+            applyMapViewWithOffset(lat, lon, z, { animate: true });
+          } else if (isHeadingUp && !isMapBeingDragged && !isMapDragReturnPending) {
+
+            
+
+            const z = map.getZoom();
+            applyMapViewWithOffset(lat, lon, z, { animate: false });
+          }
+        }
+        isFirstFix = false;
+
+
+        
+
+        
+
+        
+        if (isWayfindActive) {
+          
+        } else if (sectionProj && sectionProj.distance > 12) {
+          const guideCoords = [[lat, lon], [sectionProj.projectedLat, sectionProj.projectedLon]];
+          if (!guideLine) {
+            guideLine = new naver.maps.Polyline({
+              path: toPath(guideCoords), map,
+              strokeColor: '#00e676',
+              strokeWeight: 3.5,
+              strokeStyle: 'shortdash',
+              strokeOpacity: 0.95
+            });
+          } else {
+            guideLine.setPath(toPath(guideCoords));
+          }
+        } else if (guideLine) {
+          removeOverlay(guideLine);
+          guideLine = null;
+        }
+  }
+
+  function handleGpsError() {
+    const toast = document.getElementById('gpsToast');
+    const btn = document.getElementById('gpsBtn');
+    toast.className = 'gps-toast warning';
+    toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
+    btn.innerText = '📍';
+    btn.classList.remove('active');
+    watchId = null;
+    showHeadingArrow = false;
+    stopCompass();
+    if (guideLine) { removeOverlay(guideLine); guideLine = null; }
+    stopSleepMonitor();
+    
+    
+    const waitingOverlayErr = document.getElementById('gpsWaitingOverlay');
+    if (waitingOverlayErr) waitingOverlayErr.style.display = 'none';
+
+
+    if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
+      window.location.reload();
+    }
+  }
+
+
+  
+
+  
+
+  
+
+
+  let sleepTickTimerId = null;
+
+  function startSleepMonitor() {
+    if (sleepTickTimerId) clearInterval(sleepTickTimerId);
+    sleepTickTimerId = setInterval(handleSleepTimerTick, 10000); 
+  }
+
+  function stopSleepMonitor() {
+    if (sleepTickTimerId) { clearInterval(sleepTickTimerId); sleepTickTimerId = null; }
+    if (sleepWatchdogTimerId) { clearInterval(sleepWatchdogTimerId); sleepWatchdogTimerId = null; }
+    isGpsSleeping = false;
+    sleepCheckPos = null;
+    sleepCheckStartedAt = null;
+  }
+
+  function handleSleepTimerTick() {
+
+    
+    
+    
+    if (isNativeApp()) return;
+    if (isGpsSleeping || watchId === null) return; 
+    if (!isCurrentlyStopped || stopEnteredAt === null) return;
+    if (Date.now() - stopEnteredAt >= SLEEP_AFTER_STOPPED_MS) {
+      enterGpsSleep();
+    }
+  }
+
+  function enterGpsSleep() {
+    if (isGpsSleeping || watchId === null) return;
+    isGpsSleeping = true;
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    showToastBadge('🔋 5분간 움직임이 없어 절전 모드로 전환합니다.\n다시 걸으면 자동으로 위치 추적이 재개됩니다.');
+
+    
+    
+    if (sleepWatchdogTimerId) clearInterval(sleepWatchdogTimerId);
+    sleepWatchdogTimerId = setInterval(runSleepWatchdogCheck, SLEEP_WATCHDOG_MS);
+  }
+
+  
+  
+  function wakeGpsFromVibration() {
+    if (!isGpsSleeping) return;
+    exitGpsSleep('진동 감지');
+  }
+
+
+  const SLEEP_WATCHDOG_CHECK_MS = 8000;
+  const SLEEP_WATCHDOG_MOVE_THRESHOLD_M = 8;
+
+  function runSleepWatchdogCheck() {
+    if (!isGpsSleeping) return; 
+    sleepCheckPos = null;
+    sleepCheckStartedAt = Date.now();
+
+    const checkWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        if (!sleepCheckPos) {
+          sleepCheckPos = { lat, lon };
+          return;
+        }
+        const movedM = haversineMeters(sleepCheckPos.lat, sleepCheckPos.lon, lat, lon);
+        if (movedM >= SLEEP_WATCHDOG_MOVE_THRESHOLD_M) {
+          navigator.geolocation.clearWatch(checkWatchId);
+          exitGpsSleep('watchdog 이동 확인');
+        }
+      },
+      () => {  },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: SLEEP_WATCHDOG_CHECK_MS }
+    );
+
+    
+    
+    setTimeout(() => {
+      if (isGpsSleeping) {
+        navigator.geolocation.clearWatch(checkWatchId);
+      }
+    }, SLEEP_WATCHDOG_CHECK_MS + 500);
+  }
+
+
+  function restartWatchPositionOnly() {
+    isFirstFix = false; 
+    watchId = navigator.geolocation.watchPosition(
+      handleGpsPositionUpdate,
+      handleGpsError,
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    );
+  }
+
+  function exitGpsSleep(reason) {
+    if (!isGpsSleeping) return;
+    isGpsSleeping = false;
+    if (sleepWatchdogTimerId) { clearInterval(sleepWatchdogTimerId); sleepWatchdogTimerId = null; }
+    sleepCheckPos = null;
+    sleepCheckStartedAt = null;
+    stopEnteredAt = null; 
+
+    if (watchId === null) {
+
+      
+      
+      restartWatchPositionOnly();
+    }
+    showToastBadge(`📍 위치 추적을 재개합니다. (${reason})`);
+  }
+
+
+  
+  async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+
+      
+
+      
+      return await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+
+  
+  function withCacheBuster(url) {
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + '_cb=' + Date.now();
+  }
+
+  
+  async function fetchGPXFile(targetUrl) {
+    let cleanUrl = targetUrl.trim();
+    
+    for (let i = 0; i < 3; i++) {
+      try {
+        const next = decodeURIComponent(cleanUrl);
+        if (next === cleanUrl) break;
+        cleanUrl = next;
+      } catch(e) { break; }
+    }
+    try {
+      cleanUrl = encodeURI(cleanUrl);
+    } catch(e) {}
+
+    const errors = [];
+
+
+    
+    const isOwnRepoUrl = /hjwpro1971\.github\.io|raw\.githubusercontent\.com\/hjwpro1971/.test(cleanUrl);
+    try {
+      const res = await fetchWithTimeout(isOwnRepoUrl ? withCacheBuster(cleanUrl) : cleanUrl, 5000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+        errors.push(`1) 직접 다운로드: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`1) 직접 다운로드 실패: HTTP ${res.status}`);
+      }
+    } catch(e) {
+      errors.push(`1) 직접 다운로드 실패: ${e.message || '네트워크/CORS 제한'}`);
+    }
+
+    
+    
+    try {
+      const match = cleanUrl.match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (match && match[1]) {
+        let fname = match[1];
+        try { fname = decodeURIComponent(fname); } catch(e) {}
+        const fallbacks = [
+          withCacheBuster(`./tracks/${encodeURIComponent(fname)}`),
+          withCacheBuster(`https://hjwpro1971.github.io/gaja/tracks/${encodeURIComponent(fname)}`),
+          withCacheBuster(`https://raw.githubusercontent.com/hjwpro1971/gaja/main/tracks/${encodeURIComponent(fname)}`)
+        ];
+        for (const fb of fallbacks) {
+          try {
+            const res = await fetchWithTimeout(fb, 5000);
+            if (res.ok) {
+              const text = await res.text();
+              if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+                console.log('대체 트랙 저장소에서 복구 성공:', fb);
+                return text;
+              }
+            }
+          } catch(e) {}
+        }
+        errors.push(`2) 저장소 대체 복구: '${fname}' 파일 없음`);
+      } else {
+        errors.push(`2) 저장소 대체 복구: 파일명 추출 불가`);
+      }
+    } catch(e) {
+      errors.push(`2) 저장소 대체 복구 실패: ${e.message}`);
+    }
+
+
+
+    
+    try {
+      const res = await fetchWithTimeout('/api/gpx-proxy?url=' + encodeURIComponent(cleanUrl), 6000);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('<trkpt') || text.includes('<gpx') || text.includes('<wpt'))) {
+          return text;
+        }
+        errors.push(`3) 로컬 프록시: 정상 GPX 아님 (HTTP ${res.status})`);
+      } else {
+        errors.push(`3) 로컬 프록시 실패: HTTP ${res.status}`);
+      }
+    } catch(e) {
+      errors.push(`3) 로컬 프록시 실패: ${e.message || '연결 불가'}`);
+    }
+
+    throw new Error('모든 방식으로 등산로 파일을 불러오지 못했습니다.\n[상세 사유]\n' + errors.join('\n'));
+  }
+
+
+  
+  function showVersionDetail() {
+    const full = window.__GAJA_CACHE_NAME || '알 수 없음';
+    if (typeof showToastBadge === 'function') {
+      showToastBadge(`🔖 현재 버전: ${full}`);
+    } else {
+      alert('현재 버전: ' + full);
+    }
+  }
+  window.showVersionDetail = showVersionDetail;
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    initMap();
+
+    
+    const versionBadgeEl = document.getElementById('appVersionBadge');
+    if (versionBadgeEl) {
+      const full = window.__GAJA_CACHE_NAME || '';
+      const m = full.match(/v\d+$/);
+      versionBadgeEl.innerText = m ? m[0] : full;
+    }
+
+
+    const urlParams = new URLSearchParams(window.location.search);
+    isGpsReplayMode = urlParams.get('replay') === '1';
+    const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
+    let gpxUrl = urlParams.get('url') || urlParams.get('file');
+    const courseName = urlParams.get('name');
+    let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
+
+
+    
+    
+    if (!hadGpxUrl) {
+      const lastCourse = loadLastOpenedCourse();
+      if (lastCourse && lastCourse.sourceUrl) {
+        gpxUrl = lastCourse.sourceUrl;
+        decodedCourseName = lastCourse.name || '';
+      }
+    }
+
+    if (!decodedCourseName && gpxUrl) {
+      const m = decodeURIComponent(gpxUrl).match(/([^\/\?#&=:"']+\.gpx)/i);
+      if (m && m[1]) {
+        decodedCourseName = m[1].replace(/\.gpx$/i, '').replace(/_\d{8}$/, '').replace(/_{2,}/g, ' ').replace(/_/g, ' ').trim();
+      }
+    }
+    if (!decodedCourseName) decodedCourseName = '등산로 코스';
+
+    
+    const trailEl = document.getElementById('trailName');
+    if (trailEl) trailEl.innerText = '🚩 ' + decodedCourseName;
+    let pageTitle = decodedCourseName;
+    if (!pageTitle.includes('등산지도') && !pageTitle.includes('등산로') && !pageTitle.includes('지도')) {
+      pageTitle += ' 등산지도';
+    }
+    document.title = pageTitle;
+    const appleMeta = document.getElementById('appleAppTitle');
+    if (appleMeta) appleMeta.content = pageTitle;
+
+
+    
+
+    
+    
+    if (gpxUrl) {
+      const loadingEl = document.createElement('div');
+      loadingEl.id = 'gpxLoadingBadge';
+      loadingEl.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(27,94,32,0.92); color:#fff; font-size:13px; font-weight:700; padding:10px 18px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.25); backdrop-filter:blur(4px); pointer-events:none;';
+      loadingEl.innerText = '🔄 등산 코스 불러오는 중...';
+      document.body.appendChild(loadingEl);
+
+      try {
+        
+        const xml = await fetchGPXFile(gpxUrl);
+        const points = parseGPX(xml);
+        drawRoute(points, decodedCourseName, gpxUrl);
+      } catch(err) {
+        console.warn('원격 GPX 다운로드 실패. 오프라인 캐시 폴백 시도:', err);
+        
+        const cached = findSavedRoute(decodedCourseName, gpxUrl);
+        if (cached) {
+          console.log('오프라인 캐시에서 등산로 복원 완료:', cached.name);
+          if (cached.waypoints) cached.points.waypoints = cached.waypoints;
+          
+          cached.points.isExplicitRoundTrip = !!cached.isExplicitRoundTrip;
+          drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true);
+          
+          const fastBadge = document.createElement('div');
+          fastBadge.style.cssText = 'position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:99999; background:rgba(27,94,32,0.95); color:#ffffff; font-size:13px; font-weight:800; padding:10px 20px; border-radius:24px; box-shadow:0 4px 16px rgba(0,0,0,0.3); backdrop-filter:blur(4px); pointer-events:none; transition:opacity 0.5s;';
+          fastBadge.innerHTML = '⚡ 오프라인 저장된 코스를 열었습니다';
+          document.body.appendChild(fastBadge);
+          setTimeout(() => {
+            fastBadge.style.opacity = '0';
+            setTimeout(() => fastBadge.remove(), 500);
+          }, 1800);
+        } else {
+          alert('등산로를 불러오지 못했습니다.\n\n인터넷 연결을 확인하고 다시 시도해 주세요.\n(또는 내 코스 목록에서 열어보세요)');
+          showSavedRouteList('저장된 GPX 목록을 불러왔습니다.');
+        }
+      } finally {
+        const badge = document.getElementById('gpxLoadingBadge');
+        if (badge) badge.remove();
+      }
+
+      
+
+    } else if (!hadGpxUrl) {
+      showSavedRouteList();
+    }
+
+
+  });
+</script>
+
+</body>
+</html>
