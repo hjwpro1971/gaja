@@ -5400,8 +5400,6 @@
     isOffTrailState = false;
 
 
-    updatePoiProximity(lat, lon);
-
 
     
 
@@ -5808,7 +5806,6 @@
     stopCompass();
     if (userGpsMarker) { removeOverlay(userGpsMarker); userGpsMarker = null; }
     if (guideLine) { removeOverlay(guideLine); guideLine = null; }
-    hidePoiProximityModalOnExit(); 
     btn.innerText = '📍';
     btn.classList.remove('active');
     toast.style.display = 'none';
@@ -6060,145 +6057,6 @@
     handleGpsPositionUpdate(fakePos);
   };
 
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  const POI_PROXIMITY_ENTER_M = 10; 
-  const POI_PROXIMITY_EXIT_M = 25;  
-  let _poiSignpostCache = null; 
-  let _poiSignpostFetchAttempted = false;
-  let _activeProximityPoi = null; 
-  let _poiModalManuallyDismissedKey = null; 
-
-  async function fetchCoursePoiSignposts() {
-    if (_poiSignpostFetchAttempted) return _poiSignpostCache;
-    _poiSignpostFetchAttempted = true;
-    try {
-      const res = await fetch('/api/poi?category=SIGN');
-      if (!res.ok) return null;
-      const data = await res.json();
-      _poiSignpostCache = data.items || [];
-      return _poiSignpostCache;
-    } catch (e) {
-      return null; 
-    }
-  }
-
-
-  
-
-  
-
-  
-
-  
-
-  
-  
-  
-  function setTopToastHiddenByPoi(hidden) {
-    const toast = document.getElementById('gpsToast');
-    if (!toast) return;
-    toast.style.visibility = hidden ? 'hidden' : '';
-  }
-
-  function showPoiProximityModal(poi) {
-    let modal = document.getElementById('poiProximityModal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'poiProximityModal';
-
-      modal.style.cssText = 'position:absolute; top:68px; left:12px; right:12px; z-index:999; background:rgba(17,24,20,0.96); color:#fff; border-radius:16px; padding:10px 16px; box-shadow:0 4px 16px rgba(0,0,0,0.18); backdrop-filter:blur(8px); display:flex; align-items:flex-start; gap:10px;';
-      document.body.appendChild(modal);
-    }
-
-    const destinations = [poi.signpost1, poi.signpost2, poi.signpost3, poi.signpost4]
-      .map(s => (s || '').split(';')[0].trim())
-      .filter(Boolean)
-      .filter(d => d !== 'NA'); 
-    const bodyText = destinations.length > 0 ? destinations.join(' · ') : '안내판';
-
-    modal.innerHTML = `
-      <div style="font-size:22px; line-height:1; margin-top:2px;">🪧</div>
-      <div style="flex:1; min-width:0;">
-        <div style="font-size:11px; font-weight:700; color:#a5d6a7; margin-bottom:3px;">이정표 안내판</div>
-        <div style="font-size:15px; font-weight:700; line-height:1.4; word-break:keep-all;">${bodyText}</div>
-      </div>
-      <button onclick="window.__dismissPoiProximityModal && window.__dismissPoiProximityModal()"
-        style="background:rgba(255,255,255,0.12); border:none; color:#fff; width:26px; height:26px; border-radius:50%; font-size:14px; cursor:pointer; flex-shrink:0;">✕</button>
-    `;
-    modal.style.display = 'flex';
-    setTopToastHiddenByPoi(true);
-  }
-
-
-  function hidePoiProximityModalOnExit() {
-    const modal = document.getElementById('poiProximityModal');
-    if (modal) modal.style.display = 'none';
-    _activeProximityPoi = null;
-    _poiModalManuallyDismissedKey = null;
-    setTopToastHiddenByPoi(false);
-  }
-
-
-  
-
-  function dismissPoiProximityModal() {
-    const modal = document.getElementById('poiProximityModal');
-    if (modal) modal.style.display = 'none';
-    if (_activeProximityPoi) {
-      _poiModalManuallyDismissedKey = _activeProximityPoi.id != null
-        ? String(_activeProximityPoi.id) : (_activeProximityPoi.lat + ',' + _activeProximityPoi.lon);
-    }
-    setTopToastHiddenByPoi(false);
-  }
-  window.__dismissPoiProximityModal = dismissPoiProximityModal;
-
-
-  async function updatePoiProximity(lat, lon) {
-    const signs = await fetchCoursePoiSignposts();
-    if (!signs || signs.length === 0) return;
-
-    
-    
-    if (_activeProximityPoi) {
-      const d = haversineMeters(lat, lon, _activeProximityPoi.lat, _activeProximityPoi.lon);
-      if (d > POI_PROXIMITY_EXIT_M) {
-        hidePoiProximityModalOnExit();
-      } else {
-        return; 
-      }
-    }
-
-    
-    
-    let nearest = null, nearestD = Infinity;
-    for (const s of signs) {
-      const d = haversineMeters(lat, lon, s.lat, s.lon);
-      if (d <= POI_PROXIMITY_ENTER_M && d < nearestD) {
-        nearest = s; nearestD = d;
-      }
-    }
-    if (!nearest) return;
-
-    const key = nearest.id != null ? String(nearest.id) : (nearest.lat + ',' + nearest.lon);
-    if (key === _poiModalManuallyDismissedKey) return; 
-
-    _activeProximityPoi = nearest;
-    showPoiProximityModal(nearest);
-  }
-
-  
-  
-
   function handleGpsPositionUpdate(pos) {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
@@ -6237,11 +6095,6 @@
         }
         consecutiveRejectedCount = 0;
         lastKnownPos = { lat, lon }; 
-
-
-        
-        
-        updatePoiProximity(lat, lon);
 
 
         
