@@ -2426,8 +2426,9 @@
       }
     }
 
-    // 트랙 양 끝이 어떤 구간에도 속하지 못하는 사각지대 방지 — 첫/마지막 지명이
-    // 트랙 시작/끝에서 15m 넘게 떨어져 있으면(예: 순환 코스) 숨김 마일스톤으로 덮는다.
+
+    
+
     const COVERAGE_GAP_M = 15;
     if (list.length > 0 && Math.min(...list.map(m => m.distanceM)) > COVERAGE_GAP_M) {
       const startPt = points[0];
@@ -2601,8 +2602,10 @@
       return;
     }
 
-    // 시작≈끝(50m 이내)인 순환 코스에서 시작 지점 GPS가 마지막 구간으로 확정되면
-    // 걸을수록 현재 구간에서 멀어져 "경로까지 Nm"만 뜬다 — 첫 구간을 우선한다.
+
+    
+
+    
     if (currentPoints && currentPoints.length > 1 && best.idx > 0) {
       const p0 = currentPoints[0], pN = currentPoints[currentPoints.length - 1];
       const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
