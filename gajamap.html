@@ -2426,6 +2426,18 @@
       }
     }
 
+    // 트랙 양 끝이 어떤 구간에도 속하지 못하는 사각지대 방지 — 첫/마지막 지명이
+    // 트랙 시작/끝에서 15m 넘게 떨어져 있으면(예: 순환 코스) 숨김 마일스톤으로 덮는다.
+    const COVERAGE_GAP_M = 15;
+    if (list.length > 0 && Math.min(...list.map(m => m.distanceM)) > COVERAGE_GAP_M) {
+      const startPt = points[0];
+      list.push({ name: '코스 시작', lat: startPt.lat, lon: startPt.lon, distanceM: 0, icon: '🚩', color: '#1976d2', trailLat: startPt.lat, trailLon: startPt.lon, hideMarker: true, autoNamed: true });
+    }
+    if (list.length > 0 && totalDistM - Math.max(...list.map(m => m.distanceM)) > COVERAGE_GAP_M) {
+      const endPt = points[points.length - 1];
+      list.push({ name: '코스 끝', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon, hideMarker: true, autoNamed: true });
+    }
+
     list.sort((a, b) => a.distanceM - b.distanceM);
 
 
@@ -2587,6 +2599,20 @@
       currentMilestoneIdx = 0;
       nextMilestoneIdx = Math.min(1, currentMilestones.length - 1);
       return;
+    }
+
+    // 시작≈끝(50m 이내)인 순환 코스에서 시작 지점 GPS가 마지막 구간으로 확정되면
+    // 걸을수록 현재 구간에서 멀어져 "경로까지 Nm"만 뜬다 — 첫 구간을 우선한다.
+    if (currentPoints && currentPoints.length > 1 && best.idx > 0) {
+      const p0 = currentPoints[0], pN = currentPoints[currentPoints.length - 1];
+      const totalDist = cumulativeDistances[cumulativeDistances.length - 1] || 0;
+      if (haversineMeters(p0.lat, p0.lon, pN.lat, pN.lon) < 50 && best.proj.routeDistance >= totalDist - 50) {
+        const firstSection = { fromMilestone: currentMilestones[0], toMilestone: currentMilestones[1], isForward: true };
+        const firstProj = projectOntoCurrentSection(lat, lon, firstSection);
+        if (firstProj && firstProj.distance <= best.proj.distance + 40) {
+          best = { idx: 0, proj: firstProj };
+        }
+      }
     }
 
 
