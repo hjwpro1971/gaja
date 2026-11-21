@@ -6661,9 +6661,16 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     isGpsReplayMode = urlParams.get('replay') === '1';
-    const hadGpxUrl = !!(urlParams.get('url') || urlParams.get('file'));
     let gpxUrl = urlParams.get('url') || urlParams.get('file');
-    const courseName = urlParams.get('name');
+    let courseName = urlParams.get('name');
+
+    
+    if (!gpxUrl && courseName && !/[\/\\]/.test(courseName) && !/^replay$/i.test(courseName)) {
+      const fileName = /\.gpx$/i.test(courseName) ? courseName : courseName + '.gpx';
+      gpxUrl = new URL('tracks/' + encodeURIComponent(fileName), window.location.href).href;
+      courseName = null;
+    }
+    const hadGpxUrl = !!gpxUrl;
     let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
 
 
