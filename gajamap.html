@@ -57,7 +57,7 @@
 
     
     (function() {
-      const APP_BUILD = 'v20261023_roundtrip_confirming_banner';
+      const APP_BUILD = 'v20261121_loop_vs_roundtrip';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3957,6 +3957,13 @@
     } catch (e) {
       cleanedPoints.isExplicitRoundTrip = false;
     }
+    try {
+      const loopEl = xml.getElementsByTagNameNS('*', 'loop')[0]
+        || xml.getElementsByTagName('gajago:loop')[0];
+      cleanedPoints.isExplicitLoop = !!(loopEl && loopEl.textContent.trim() === 'true');
+    } catch (e) {
+      cleanedPoints.isExplicitLoop = false;
+    }
 
     return cleanedPoints;
   }
@@ -4106,6 +4113,7 @@
         points: points,
         waypoints: points.waypoints || [],
         isExplicitRoundTrip: !!points.isExplicitRoundTrip,
+        isExplicitLoop: !!points.isExplicitLoop,
         savedAt: Date.now()
       };
       let list = loadSavedRoutes();
@@ -4174,6 +4182,7 @@
     
     
     explicitRoundTripFlag = !!points.isExplicitRoundTrip;
+    explicitLoopFlag = !!points.isExplicitLoop;
     resetTrailSearchWindow(); 
     resetGajaMapRotationState(); 
 
@@ -4481,6 +4490,7 @@
     
     
     r.points.isExplicitRoundTrip = !!r.isExplicitRoundTrip;
+    r.points.isExplicitLoop = !!r.isExplicitLoop;
     drawRoute(r.points, r.name, r.sourceUrl);
   }
   window.openSavedRouteByIndex = openSavedRouteByIndex;
@@ -5268,10 +5278,18 @@
   
   
   let explicitRoundTripFlag = false;
+  let explicitLoopFlag = false;
+  const LOOP_CLOSE_M = 150;
   function isRoundTripCourse() {
     if (explicitRoundTripFlag) return true;
+    if (explicitLoopFlag) return false;
     if (!currentMilestones || currentMilestones.length < 1) return false;
-    return currentMilestones.some(m => m.name && m.name.includes('원점회귀'));
+    if (!currentMilestones.some(m => m.name && m.name.includes('원점회귀'))) return false;
+    if (currentPoints && currentPoints.length > 1) {
+      const a = currentPoints[0], b = currentPoints[currentPoints.length - 1];
+      if (haversineMeters(a.lat, a.lon, b.lat, b.lon) <= LOOP_CLOSE_M) return false;
+    }
+    return true;
   }
 
   let isSimulationMode = false;
@@ -6729,6 +6747,7 @@
           if (cached.waypoints) cached.points.waypoints = cached.waypoints;
           
           cached.points.isExplicitRoundTrip = !!cached.isExplicitRoundTrip;
+          cached.points.isExplicitLoop = !!cached.isExplicitLoop;
           drawRoute(cached.points, cached.name, cached.sourceUrl || gpxUrl, true);
           
           const fastBadge = document.createElement('div');
