@@ -2678,6 +2678,8 @@
       if (!samePairAsBefore) {
         pendingDirectionConfirmHeading = null;
         pendingDirectionConfirmStreak = 0;
+        pendingConfirmStartPos = null;
+        pendingSwitchVotes = 0;
       }
     }
   }
@@ -2687,34 +2689,46 @@
   
 
   
+
   
+
   
-  function reconfirmPendingRoundTripPair(movementHeading) {
+  const ROUNDTRIP_NET_MOVE_MIN_M = 20;
+  const ROUNDTRIP_FWD_REJECT_DEG = 90;
+  const ROUNDTRIP_RIVAL_ACCEPT_DEG = 70;
+  const ROUNDTRIP_SWITCH_VOTES = 2;   
+  let pendingConfirmStartPos = null;
+  let pendingSwitchVotes = 0;
+  function reconfirmPendingRoundTripPair(movementHeading, lat, lon) {
     if (!pendingRoundTripPair || movementHeading === null || movementHeading === undefined) return;
 
-    if (pendingDirectionConfirmHeading === null) {
-      pendingDirectionConfirmHeading = movementHeading;
-      pendingDirectionConfirmStreak = 1;
-      return;
-    }
-    const diff = Math.abs(shortestAngleDiff(movementHeading, pendingDirectionConfirmHeading));
-    if (diff <= ROUNDTRIP_DIRECTION_TOLERANCE_DEG) {
-      pendingDirectionConfirmStreak++;
-    } else {
-      pendingDirectionConfirmHeading = movementHeading;
-      pendingDirectionConfirmStreak = 1;
-    }
 
-    if (pendingDirectionConfirmStreak < ROUNDTRIP_DIRECTION_CONFIRM_STREAK) return;
+    if (!pendingConfirmStartPos) { pendingConfirmStartPos = { lat, lon }; return; }
+    if (haversineMeters(pendingConfirmStartPos.lat, pendingConfirmStartPos.lon, lat, lon) < ROUNDTRIP_NET_MOVE_MIN_M) return;
+    const netHeading = calculateBearing(pendingConfirmStartPos.lat, pendingConfirmStartPos.lon, lat, lon);
 
     const { candidateIdxA, candidateIdxB } = pendingRoundTripPair;
-    const sectionA = { fromMilestone: currentMilestones[candidateIdxA], toMilestone: currentMilestones[candidateIdxA + 1] };
-    const sectionB = { fromMilestone: currentMilestones[candidateIdxB], toMilestone: currentMilestones[candidateIdxB + 1] };
-    const bearingA = calculateBearing(sectionA.fromMilestone.trailLat, sectionA.fromMilestone.trailLon, sectionA.toMilestone.trailLat, sectionA.toMilestone.trailLon);
-    const bearingB = calculateBearing(sectionB.fromMilestone.trailLat, sectionB.fromMilestone.trailLon, sectionB.toMilestone.trailLat, sectionB.toMilestone.trailLon);
-    const diffA = Math.abs(shortestAngleDiff(movementHeading, bearingA));
-    const diffB = Math.abs(shortestAngleDiff(movementHeading, bearingB));
-    const chosenIdx = diffA <= diffB ? candidateIdxA : candidateIdxB;
+    
+    const fwdIdx = currentMilestoneIdx;
+    const rivalIdx = (fwdIdx === candidateIdxA) ? candidateIdxB : candidateIdxA;
+    const bearingOf = (idx) => calculateBearing(currentMilestones[idx].trailLat, currentMilestones[idx].trailLon, currentMilestones[idx + 1].trailLat, currentMilestones[idx + 1].trailLon);
+    const diffFwd = Math.abs(shortestAngleDiff(netHeading, bearingOf(fwdIdx)));
+    const diffRival = Math.abs(shortestAngleDiff(netHeading, bearingOf(rivalIdx)));
+
+    let chosenIdx = fwdIdx;
+    if (diffFwd >= ROUNDTRIP_FWD_REJECT_DEG && diffRival <= ROUNDTRIP_RIVAL_ACCEPT_DEG) {
+      
+      
+      pendingSwitchVotes++;
+      pendingConfirmStartPos = { lat, lon };
+      if (pendingSwitchVotes < ROUNDTRIP_SWITCH_VOTES) return;
+      chosenIdx = rivalIdx;
+    } else if (diffFwd > ROUNDTRIP_RIVAL_ACCEPT_DEG) {
+      
+      pendingSwitchVotes = 0;
+      pendingConfirmStartPos = { lat, lon };
+      return;
+    }
 
     const didSwitch = currentMilestoneIdx !== chosenIdx;
     if (didSwitch) {
@@ -2734,6 +2748,8 @@
     pendingRoundTripPair = null;
     pendingDirectionConfirmHeading = null;
     pendingDirectionConfirmStreak = 0;
+    pendingConfirmStartPos = null;
+    pendingSwitchVotes = 0;
 
     hidePersistentToastBadge();
     if (didSwitch) {
@@ -3391,6 +3407,8 @@
     
     pendingRoundTripPair = null;
     pendingDirectionConfirmHeading = null;
+    pendingConfirmStartPos = null;
+    pendingSwitchVotes = 0;
     pendingDirectionConfirmStreak = 0;
     hidePersistentToastBadge();
 
@@ -6300,7 +6318,7 @@
             lastArrowVectorPos = { lat, lon };
 
             
-            reconfirmPendingRoundTripPair(movementHeading);
+            reconfirmPendingRoundTripPair(movementHeading, lat, lon);
           }
 
         } else {
@@ -6332,6 +6350,10 @@
           lastRouteDistanceForReverseCheck = routeDistanceForArrow;
         }
 
+        
+        
+        
+        if (pendingRoundTripPair) rawReversed = false;
         if (rawReversed) {
           reverseWarningStreak++;
           if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
