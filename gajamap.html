@@ -1719,6 +1719,7 @@
     });
   }
 
+  let zoomRecenterUntil = 0; 
   function zoomMapBy(delta) {
     if (!map) return;
 
@@ -1726,9 +1727,18 @@
 
     
     const z = Math.max(map.getMinZoom ? map.getMinZoom() : 7, Math.min(map.getMaxZoom ? map.getMaxZoom() : 19, map.getZoom() + delta));
-    if (isHeadingUp && lastKnownPos && !isMapBeingDragged && !isWayfindActive) {
+
+    
+    
+    
+    const mapEl = document.getElementById('map');
+    const headingLayout = !!(mapEl && mapEl.classList.contains('heading-up'));
+    if ((isHeadingUp || headingLayout) && lastKnownPos && !isMapBeingDragged && !isWayfindActive) {
+      zoomRecenterUntil = Date.now() + 500;
       map.setZoom(z, false);
       map.setCenter(toLatLng(lastKnownPos.lat, lastKnownPos.lon));
+      try { localStorage.setItem('gajago_last_zoom', String(map.getZoom())); } catch(e) {}
+      if (simInterval !== null || isSimPaused) simUserZoomed = true;
       return;
     }
     map.setZoom(map.getZoom() + delta, true);
@@ -1773,6 +1783,7 @@
     let zoomSettleTimer = null;
     naver.maps.Event.addListener(map, 'zoom_changed', () => {
       if (isProgrammaticZoomInProgress) return;
+      if (Date.now() < zoomRecenterUntil) return;
       if (zoomSettleTimer === null) {
         isMapBeingDragged = true;
         isMapDragReturnPending = false;
