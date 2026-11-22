@@ -1126,6 +1126,7 @@
     } catch(e) {}
   }
   const HIKE_MAX_SPEED_MPS = 2.0;          
+  const HIKE_BACK_SLACK_M = 150;           
   const HIKE_TURN_ARRIVE_M = 25;           
   const HIKE_LASTSEEN_SAVE_INTERVAL_MS = 5000;
   let lastHikeSeenSavedAt = 0;
@@ -1148,9 +1149,18 @@
   
   function recordHikeHistory(routeDistance, nowTs) {
     const T = getTurnDistM();
-    if (T === null || typeof routeDistance !== 'number') return;
+    if (typeof routeDistance !== 'number') return;
     const sess = loadHikingSession();
     if (!sess || sess.routeKey !== currentRouteKey) return;
+    if (T === null) {
+      
+      if (pendingRoundTripPair) return;
+      if (nowTs - lastHikeSeenSavedAt >= HIKE_LASTSEEN_SAVE_INTERVAL_MS) {
+        lastHikeSeenSavedAt = nowTs;
+        updateHikingSession({ lastSeenRd: { t: nowTs, rd: routeDistance } });
+      }
+      return;
+    }
     const patch = {};
     
     if (!sess.turnReached) {
@@ -1176,6 +1186,31 @@
     const needM = (T - sess.lastSeen.d) + (T - outEquivalentDist(routeDistance));
     const elapsedS = (nowTs - sess.lastSeen.t) / 1000;
     return (elapsedS * HIKE_MAX_SPEED_MPS < needM) ? 'out' : null;
+  }
+
+  
+  
+  
+  function decideByProgress(nearIdx, projs, nowTs) {
+    const sess = loadHikingSession();
+    if (!sess || sess.routeKey !== currentRouteKey) return -1;
+    const pickNearestGeo = (list) => list.reduce((x, y) => (projs[y].distance < projs[x].distance ? y : x));
+    if (!sess.lastSeenRd) {
+      
+      const grp = [nearIdx[0]];
+      while (nearIdx.includes(grp[grp.length - 1] + 1)) grp.push(grp[grp.length - 1] + 1);
+      return pickNearestGeo(grp);
+    }
+    const elapsedS = Math.max(0, (nowTs - sess.lastSeenRd.t) / 1000);
+    const maxAheadM = elapsedS * HIKE_MAX_SPEED_MPS + HIKE_BACK_SLACK_M;
+    const feas = nearIdx.filter(i => {
+      const ahead = projs[i].routeDistance - sess.lastSeenRd.rd;
+      return ahead >= -HIKE_BACK_SLACK_M && ahead <= maxAheadM;
+    });
+    if (feas.length === 0) return -1;
+    const minAhead = Math.min(...feas.map(i => projs[i].routeDistance - sess.lastSeenRd.rd));
+    
+    return pickNearestGeo(feas.filter(i => projs[i].routeDistance - sess.lastSeenRd.rd <= minAhead + 100));
   }
   function makeRouteKey(courseName, sourceUrl) {
     return `${courseName || ''}::${sourceUrl || ''}`;
@@ -2728,6 +2763,18 @@
     const bothLegsNear = nearIdx.some(i => legOfSection(i) === 'out') && nearIdx.some(i => legOfSection(i) === 'back');
     const hikePhase = (rivals.length > 0 || bothLegsNear) ? decideHikePhase(best.proj.routeDistance, Date.now()) : null;
     const phaseCands = hikePhase ? nearIdx.filter(i => legOfSection(i) === hikePhase) : [];
+    
+    const progressPick = (getTurnDistM() === null && rivals.length > 0) ? decideByProgress(nearIdx, allProj, Date.now()) : -1;
+    if (progressPick >= 0) {
+      currentMilestoneIdx = progressPick;
+      nextMilestoneIdx = progressPick + 1;
+      pendingRoundTripPair = null;
+      pendingDirectionConfirmHeading = null;
+      pendingDirectionConfirmStreak = 0;
+      pendingConfirmStartPos = null; pendingWindowCount = 0;
+      pendingSwitchVotes = 0;
+      return;
+    }
     if (phaseCands.length > 0) {
       const pick = pickNearest(phaseCands);
       currentMilestoneIdx = pick;
