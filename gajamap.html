@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v233';
+    const CACHE_NAME = 'gaja-trail-cache-v234';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261123_zoom_anchor';
+      const APP_BUILD = 'v20261123_zoom_follow';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -1726,7 +1726,8 @@
     const mapEl = document.getElementById('map');
     const headingLayout = !!(mapEl && mapEl.classList.contains('heading-up'));
     if ((isHeadingUp || headingLayout) && lastKnownPos && !isMapBeingDragged && !isWayfindActive) {
-      zoomRecenterUntil = Date.now() + 500;
+      zoomRecenterUntil = Date.now() + 3000; 
+      isMapDragReturnPending = false; 
       map.setZoom(z, false);
       map.setCenter(toLatLng(lastKnownPos.lat, lastKnownPos.lon));
       try { localStorage.setItem('gajago_last_zoom', String(map.getZoom())); } catch(e) {}
