@@ -45,19 +45,19 @@
       } catch(e) {}
     })();
 
-
     
 
     
 
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v232';
+    
+    const CACHE_NAME = 'gaja-trail-cache-v233';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261121_loop_vs_roundtrip';
+      const APP_BUILD = 'v20261123_zoom_anchor';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -99,8 +99,6 @@
     })();
   </script>
 
-  
-  
   <script>
     window.navermap_authFailure = function() {
       alert('네이버 지도 인증 실패: 이 주소가 지도 API 키의 등록 도메인에 없습니다.');
@@ -439,8 +437,6 @@
     .modal-box p { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; }
 
     
-
-    
     .saved-route-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; max-height: 50vh; overflow-y: auto; text-align: left; }
     .saved-route-item {
       display: flex; justify-content: space-between; align-items: center; gap: 8px;
@@ -583,8 +579,6 @@
   <button type="button" class="start-hike-btn" id="startHikeBtn" onclick="confirmStartHike()">🚀 등산 시작</button>
 </div>
 
-
-
 <div class="layer-menu" id="layerMenu">
   <div class="layer-item selected" id="lyrTerrain" onclick="switchLayer('terrain')">⛰️ 네이버 지형도(등고선)</div>
   <div class="layer-item" id="lyrBasic" onclick="switchLayer('basic')">🧭 네이버 일반지도</div>
@@ -645,9 +639,9 @@
     window.__gajaIsReloadPending = () => reloadPending;
     navigator.serviceWorker.addEventListener('controllerchange', reloadIfSafe);
 
-
     
 
+    
     
     function lockPortraitOrientation() {
       try {
@@ -699,7 +693,7 @@
         })
         .catch(err => console.warn('PWA ServiceWorker 등록 알림:', err));
 
-
+      
       
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -714,11 +708,11 @@
     });
   }
 
-
   
 
   
 
+  
   const INSTALL_GUIDE_SEEN_KEY = 'gajago_install_guide_seen';
 
   function isRunningStandalone() {
@@ -745,11 +739,11 @@
     }
   });
 
-
   
 
   
 
+  
   
   
   const MotionState = Object.freeze({
@@ -795,15 +789,13 @@
       this.movingCandidateStreak = 0;
     }
 
-
+    
     forceStopped() {
       this.state = MotionState.STOPPED;
       this.stoppingEnteredAt = null;
       this.movingCandidateStreak = 0;
     }
 
-    
-    
     _isTrappedInRadius(latestRaw) {
       const windowStart = latestRaw.timestamp - (this.config.CLUSTER_WINDOW_SEC * 1000);
       this.recentPoints = this.recentPoints.filter(p => p.timestamp >= windowStart);
@@ -841,7 +833,7 @@
       const calculatedSpeedMps = rawDist / elapsedSec; 
       const calculatedSpeedKmh = calculatedSpeedMps * 3.6; 
 
-
+      
       
       
       const isBelowMinDistance = rawDist < this.config.MIN_DISTANCE;
@@ -932,8 +924,6 @@
         };
       }
 
-      
-      
       if (isBelowMinDistance) {
         return {
           latitude: this.lastConfirmed.latitude, longitude: this.lastConfirmed.longitude,
@@ -942,18 +932,16 @@
         };
       }
 
+      
 
-      
-      
-      
       const smoothLat = raw.latitude;
       const smoothLon = raw.longitude;
 
-
       
 
       
 
+      
       const coordinateBearing = calculateBearing(this.lastConfirmed.latitude, this.lastConfirmed.longitude, smoothLat, smoothLon);
       let newBearing;
       
@@ -978,7 +966,7 @@
         newBearing = coordinateBearing;
       }
 
-
+      
       console.log(`[GPS] speed=${raw.speed} accuracy=${raw.accuracy} rawHeading=${hasValidHeading ? raw.heading.toFixed(1) : 'N/A'} coordBearing=${coordinateBearing.toFixed(1)} chosenBearing=${newBearing.toFixed(1)}`);
 
       if (this.lastConfirmed.bearing !== null) {
@@ -1042,9 +1030,9 @@
   let reverseWarningStreak = 0;
   let lastRouteDistanceForReverseCheck = null; 
 
-
   
 
+  
   
   let pendingRoundTripPair = null; 
   let pendingDirectionConfirmHeading = null; 
@@ -1081,7 +1069,6 @@
   let lastToastUpdate = 0;
   let gpsMovementHeading = null;
 
-
   
 
   
@@ -1089,8 +1076,7 @@
   
 
   
-  
-  
+
   const HIKING_SESSION_KEY = 'gajago_hiking_session_v1';
   function loadHikingSession() {
     try {
@@ -1113,9 +1099,9 @@
     try { localStorage.removeItem(HIKING_SESSION_KEY); } catch(e) {}
   }
 
-
   
 
+  
   function updateHikingSession(patch) {
     try {
       const raw = localStorage.getItem(HIKING_SESSION_KEY);
@@ -1217,7 +1203,7 @@
   }
   let currentRouteKey = null; 
 
-
+  
   
   
   let isSegmentRotationMode = false; 
@@ -1233,9 +1219,9 @@
   const FIRST_ORIGIN_MIN_FIXES = 3;
   let firstOriginFixCount = 0;
 
-
   
 
+  
   const SLEEP_AFTER_STOPPED_MS = 5 * 60 * 1000;   
   const SLEEP_WATCHDOG_MS = 2 * 60 * 1000;        
   const WALK_VIBRATION_WAKE_THRESHOLD = 0.8;      
@@ -1244,12 +1230,10 @@
   let sleepCheckPos = null;        
   let sleepCheckStartedAt = null;  
 
-
   
 
   
 
-  
   
 
   
@@ -1260,14 +1244,12 @@
     return diff;
   }
 
-
   
 
   
 
   
-  
-  
+
   function renderGpsArrow(headingDeg) {
     if (headingDeg === null || headingDeg === undefined || isNaN(headingDeg)) return;
     const wrapper = document.getElementById('gpsHeadingWrapper');
@@ -1276,10 +1258,8 @@
     }
   }
 
+  
 
-  
-  
-  
   function updateGpsMarkerWarningStyle() {
 
     const shouldWarn = isOffTrailState || isReverseDirectionWarning;
@@ -1308,7 +1288,7 @@
     }
   });
 
-
+  
   function setHeadingUpMode(enable, isQuiet = false) {
     isHeadingUp = enable;
     const mapEl = document.getElementById('map');
@@ -1345,12 +1325,12 @@
     }
   }
 
-
+  
   let audioCtx = null;
   let lastBeepTime = 0;
   let beepStreak = 0; 
 
-
+  
   async function playTwoToneBeep(freqHz) {
     try {
 
@@ -1399,13 +1379,13 @@
     }
   }
 
-
   
 
   
 
   
 
+  
   let ttsEnabled = true;
   let lastTtsUtterance = '';
   let lastTtsTime = 0;
@@ -1443,8 +1423,6 @@
     playTwoToneBeep(880); 
   }
 
-  
-  
   function playBackOnTrailBeep() {
     playTwoToneBeep(440);
   }
@@ -1455,13 +1433,13 @@
     playBackOnTrailBeep();
   }
 
-
+  
   
   function playTurnAlertBeep() {
     playTwoToneBeep(660);
   }
 
-
+  
   
   
   function playPassedMilestoneBeep() {
@@ -1495,9 +1473,9 @@
     }, durationMs || 3200);
   }
 
-
   
 
+  
   
   
   let isPersistentToastActive = false;
@@ -1523,11 +1501,9 @@
     isPersistentToastActive = false;
   }
 
-  
-  
   function stopCompass() {}
 
-
+  
   
   let isBottomArrowVisible = false;
   
@@ -1561,8 +1537,6 @@
     isBottomArrowVisible = false;
   }
 
-  
-  
   function createGpsIconHtml(heading) {
     const rot = (heading !== null && !isNaN(heading)) ? heading : 0;
 
@@ -1601,9 +1575,9 @@
 
   
 
-
   
 
+  
   function updateRealVhUnit() {
     const vh = window.innerHeight * 0.01;
     document.documentElement.style.setProperty('--real-vh', `${vh}px`);
@@ -1612,7 +1586,7 @@
   window.addEventListener('resize', updateRealVhUnit);
   window.addEventListener('orientationchange', updateRealVhUnit);
 
-
+  
   
   
   function getPreferredGpsZoom() {
@@ -1626,13 +1600,11 @@
     return Math.max(map.getZoom(), 16);
   }
 
-
+  
   
   const toLatLng = (lat, lon) => new naver.maps.LatLng(lat, lon);
   const toPath = latlngs => latlngs.map(p => toLatLng(p[0], p[1]));
 
-  
-  
   function makeHtmlMarker(lat, lon, className, html, anchorX, anchorY, zIndex, sizePx) {
     const el = document.createElement('div');
     el.className = className;
@@ -1650,7 +1622,7 @@
   const markerEl = m => (m && m._el) || null;
   const removeOverlay = o => { if (o) o.setMap(null); };
 
-
+  
   let programmaticMoveFallbackTimer = null;
   function markProgrammaticMoveUntilIdle(fallbackMs) {
     isProgrammaticZoomInProgress = true;
@@ -1673,14 +1645,12 @@
     }
   }
 
-
   
 
   
 
   
-  
-  
+
   function refreshMapSize() {
     if (!map) return;
     const el = document.getElementById('map');
@@ -1698,9 +1668,9 @@
     map.setCenter(c);
   }
 
-
   
 
+  
   function relocateNaverAttribution() {
     const mapEl = document.getElementById('map');
     if (!mapEl) return;
@@ -1719,7 +1689,7 @@
     });
   }
 
-
+  
   
   function snapArrowToAnchor() {
     try {
@@ -1787,13 +1757,12 @@
       keyboardShortcuts: false,
     });
 
-
+    
     
     
     const DRAG_RETURN_DELAY_MS = 7000;
     let dragReturnTimer = null;
 
-
     
 
     
@@ -1804,6 +1773,7 @@
 
     
 
+    
     let zoomSettleTimer = null;
     naver.maps.Event.addListener(map, 'zoom_changed', () => {
       if (isProgrammaticZoomInProgress) return;
@@ -1840,25 +1810,25 @@
       }, DRAG_RETURN_DELAY_MS);
     }
 
-
     
 
     
 
     
 
+    
     
     let manualDragActive = false;
     let manualDragLastX = 0;
     let manualDragLastY = 0;
 
-
     
 
     
 
     
 
+    
     
     function finishMapRotationTransitionNow() {
       const el = document.getElementById('map');
@@ -1916,8 +1886,6 @@
         dragReturnTimer = null;
       }
 
-      
-      
       finishMapRotationTransitionNow();
     }
 
@@ -1930,14 +1898,12 @@
       manualDragLastY = clientY;
       if (dx === 0 && dy === 0) return;
 
-
       
 
       
 
       
-      
-      
+
       const corrected = rotateDragDelta(dx, dy, appliedMapRotationDeg);
       
       
@@ -1967,8 +1933,6 @@
     
     naver.maps.Event.addListener(map, 'idle', relocateNaverAttribution);
 
-    
-    
     if (typeof ResizeObserver === 'function') {
       let rafId = null;
       new ResizeObserver(() => {
@@ -1977,8 +1941,6 @@
       }).observe(document.getElementById('map'));
     }
 
-    
-    
     const mapContainerEl = map.getElement().parentElement || map.getElement();
 
     mapContainerEl.addEventListener('touchstart', (e) => {
@@ -1997,7 +1959,7 @@
     mapContainerEl.addEventListener('touchend', endManualMapDrag, { passive: true });
     mapContainerEl.addEventListener('touchcancel', endManualMapDrag, { passive: true });
 
-
+    
     const isHeadingUpMap = () => document.getElementById('map').classList.contains('heading-up');
     let lastWheelZoomAt = 0;
     mapContainerEl.addEventListener('wheel', (e) => {
@@ -2047,7 +2009,7 @@
     switchLayer('terrain');
   }
 
-
+  
   const LAYER_TO_MAP_TYPE = { terrain: 'TERRAIN', basic: 'NORMAL', satellite: 'SATELLITE' };
   function switchLayer(type) {
     if (!LAYER_TO_MAP_TYPE[type]) type = 'terrain';
@@ -2077,11 +2039,11 @@
     return 2 * R * Math.asin(Math.sqrt(a));
   }
 
-
   
 
   
 
+  
   function pointToSegmentMeters(plat, plon, alat, alon, blat, blon) {
     const latRef = plat * Math.PI / 180;
     const mPerDegLat = 111320;
@@ -2103,10 +2065,8 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
+  
 
-  
-  
-  
   function pointToSegmentMetersWithT(plat, plon, alat, alon, blat, blon) {
     const latRef = plat * Math.PI / 180;
     const mPerDegLat = 111320;
@@ -2128,13 +2088,12 @@
     return { distance: Math.sqrt(dx * dx + dy * dy), t, segLenM: Math.sqrt(segLenSq) };
   }
 
-
+  
   
   let lastNearestIdx = -1; 
   const TRAIL_WINDOW_RADIUS = 60; 
   const TRAIL_FALLBACK_THRESHOLD_M = 50; 
 
-
   
 
   
@@ -2143,6 +2102,7 @@
 
   
 
+  
   
   let trailTrackingMode = 'SEARCHING'; 
   let offCandidateStreak = 0; 
@@ -2164,7 +2124,6 @@
   const SEGMENT_ADVANCE_MIN_ABS_M = 15; 
   const SEGMENT_ADVANCE_MIN_MARGIN_M = 3; 
 
-
   
 
   
@@ -2176,8 +2135,7 @@
   
 
   
-  
-  
+
   const MIN_INDEX_DELTA = 1; 
 
   
@@ -2193,14 +2151,12 @@
   
   let isReversingOnTrail = false;
 
-
   
 
   
 
+  
 
-  
-  
   function resetTrackDirectionState() {
     isReversingOnTrail = false;
     trackDirectionCandidate = null;
@@ -2210,13 +2166,13 @@
     lastMoveDirectionIdx = null;
   }
 
-
   
 
   
 
   
 
+  
   
   
   let moveDirectionSign = 1; 
@@ -2241,13 +2197,13 @@
     moveDirectionSign = delta > 0 ? 1 : -1;
   }
 
-
   
 
   
 
   
 
+  
   
   const REVERSE_SEGMENT_EXCLUDE_DEG = 90;
   const REVERSE_SEGMENT_PENALTY_M = 30;
@@ -2269,7 +2225,7 @@
     let rawMinDist = Infinity;
     let rawNearestIdx = startIdx;
 
-
+    
     
     for (let i = startIdx; i < endIdx; i++) {
       const a = points[i];
@@ -2298,7 +2254,7 @@
       
       const score = d;
 
-
+      
       
       const SCORE_TIE_EPSILON_M = 0.01;
       if (score < minScore + SCORE_TIE_EPSILON_M) {
@@ -2314,20 +2270,18 @@
     return { distance: nearestActualDist, point: nearestPoint, index: nearestIdx, rawIndex: rawNearestIdx };
   }
 
-
   
 
   
 
+  
 
-
+  
   let cumulativeDistances = [];
   let currentMilestones = []; 
   let currentSegmentBearings = []; 
   let segmentLengths = []; 
 
-  
-  
   function buildMilestones(points, waypoints, cumDistances) {
     if (!points || !points.length) return [];
     const totalDistM = (cumDistances && cumDistances.length) ? cumDistances[cumDistances.length - 1] : 0;
@@ -2346,14 +2300,12 @@
         if (seen.has(coordKey)) return;
         seen.add(coordKey);
 
-
         
 
         
 
+        
         const WAYPOINT_MATCH_RADIUS_M = 30;
-        
-        
 
         let globalMinD = Infinity;
         for (let i = 0; i < points.length - 1; i++) {
@@ -2368,7 +2320,6 @@
           return;
         }
 
-
         
 
         
@@ -2379,6 +2330,7 @@
 
         
 
+        
         
         
         const matchThreshold = globalMinD > WAYPOINT_MATCH_RADIUS_M ? globalMinD + 1 : WAYPOINT_MATCH_RADIUS_M;
@@ -2440,7 +2392,6 @@
           icon = '🔀'; color = '#6a1b9a';
         }
 
-
         
 
         
@@ -2449,6 +2400,7 @@
 
         
 
+        
         
         let selectedClusters = clusters;
         if (n.includes('들머리') || n.includes('출발')) {
@@ -2497,9 +2449,9 @@
       });
     }
 
-
     
 
+    
     const hasPeak = list.some(m => m.name.endsWith('봉') || m.name.endsWith('산') || m.name.includes('정상') || m.name.includes('최고지점'));
     if (!hasPeak) {
       const withEle = points.filter(p => p.ele !== null && !isNaN(p.ele));
@@ -2523,11 +2475,11 @@
       }
     }
 
-
     
 
     
 
+    
     
     
     if (!list.some(m => m.name.includes('들머리') || m.name.includes('출발'))) {
@@ -2552,9 +2504,7 @@
       const endPt = points[points.length - 1];
       list.push({ name: '날머리', lat: endPt.lat, lon: endPt.lon, distanceM: totalDistM, icon: '🏁', color: '#d32f2f', trailLat: endPt.lat, trailLon: endPt.lon });
     }
-    
-    
-    
+
     const startM = list.find(m => m.name.includes('들머리') || m.name.includes('출발'));
     const endM = list.find(m => m.name.includes('날머리') || m.name.includes('도착'));
     
@@ -2564,16 +2514,14 @@
         startM.name = '들·날머리 (원점회귀)';
         startM.icon = '🔄';
         startM.color = '#7b1fa2'; 
-        
-        
-        
+
         endM.hideMarker = true;
       }
     }
 
-
     
 
+    
     const COVERAGE_GAP_M = 15;
     if (list.length > 0 && Math.min(...list.map(m => m.distanceM)) > COVERAGE_GAP_M) {
       const startPt = points[0];
@@ -2586,17 +2534,16 @@
 
     list.sort((a, b) => a.distanceM - b.distanceM);
 
-
     
 
     
 
     
 
+    
     return list;
   }
 
-
   
 
   
@@ -2607,11 +2554,12 @@
 
   
 
+  
 
   let currentMilestoneIdx = 0; 
   let nextMilestoneIdx = 1;    
 
-
+  
   function getCurrentSection() {
     const A = currentMilestones[currentMilestoneIdx];
     const B = currentMilestones[nextMilestoneIdx];
@@ -2619,9 +2567,9 @@
     return { fromMilestone: A, toMilestone: B, isForward: nextMilestoneIdx > currentMilestoneIdx };
   }
 
-
   
 
+  
   function peekNextSection(section) {
     if (!section) return null;
     const bIdx = currentMilestones.indexOf(section.toMilestone);
@@ -2635,7 +2583,7 @@
     return { fromMilestone: section.toMilestone, toMilestone: C, isForward: nextDir > 0 };
   }
 
-
+  
   
   function advanceSection(arrivedAtIdx) {
     const wasForward = nextMilestoneIdx > currentMilestoneIdx;
@@ -2646,7 +2594,7 @@
     nextMilestoneIdx = currentMilestoneIdx + dir;
   }
 
-
+  
   
   function findPointsIndexAtDistance(distances, targetDistM) {
     let idx = 0;
@@ -2688,10 +2636,8 @@
     return { idxLo, idxHi };
   }
 
+  
 
-  
-  
-  
   function projectOntoCurrentSection(lat, lon, section) {
     const { idxLo, idxHi } = getSectionIndexRange(section);
     if (!currentPoints || idxHi <= idxLo) return null;
@@ -2715,7 +2661,6 @@
     };
   }
 
-
   
 
   
@@ -2725,8 +2670,7 @@
   
 
   
-  
-  
+
   function resolveInitialSectionByProjection(lat, lon) {
     if (!currentMilestones || currentMilestones.length < 2) {
       currentMilestoneIdx = 0;
@@ -2749,9 +2693,9 @@
       return;
     }
 
-
     
 
+    
     
     if (currentPoints && currentPoints.length > 1 && best.idx > 0) {
       const p0 = currentPoints[0], pN = currentPoints[currentPoints.length - 1];
@@ -2765,7 +2709,6 @@
       }
     }
 
-
     
 
     
@@ -2792,6 +2735,7 @@
 
     
 
+    
     
     const nearIdx = [];
     for (let i = 0; i < allProj.length; i++) {
@@ -2803,8 +2747,6 @@
     const rivals = nearIdx.filter(i => !fwdGroup.includes(i));
     const pickNearest = (list) => list.reduce((x, y) => (allProj[y].distance < allProj[x].distance ? y : x));
 
-    
-    
     const bothLegsNear = nearIdx.some(i => legOfSection(i) === 'out') && nearIdx.some(i => legOfSection(i) === 'back');
     const hikePhase = (rivals.length > 0 || bothLegsNear) ? decideHikePhase(best.proj.routeDistance, Date.now()) : null;
     const phaseCands = hikePhase ? nearIdx.filter(i => legOfSection(i) === hikePhase) : [];
@@ -2870,14 +2812,14 @@
     }
   }
 
-
-
   
 
   
 
   
 
+  
+  
   
   const ROUNDTRIP_NET_MOVE_MIN_M = 10;
   const ROUNDTRIP_NET_MOVE_MAX_M = 25;
@@ -2894,7 +2836,7 @@
   function reconfirmPendingRoundTripPair(movementHeading, lat, lon, accuracyM) {
     if (!pendingRoundTripPair || movementHeading === null || movementHeading === undefined) return;
 
-
+    
     if (!pendingConfirmStartPos) { pendingConfirmStartPos = { lat, lon }; return; }
     
     
@@ -2981,7 +2923,6 @@
     }
   }
 
-
   
 
   
@@ -2999,8 +2940,7 @@
   
 
   
-  
-  
+
   const ROTATION_TARGET_MAX_LOOKAHEAD_M = 100;
   const SIM_ROTATION_TARGET_LOOKAHEAD_M = 500;
   function findNextRotationTarget(originDist, isReversing, maxLookaheadM) {
@@ -3014,8 +2954,6 @@
       ? Math.max(0, originDist - lookaheadM)
       : Math.min(totalDistM, originDist + lookaheadM);
 
-    
-    
     let nearestMilestone = null;
     if (currentMilestones && currentMilestones.length > 0) {
       currentMilestones.forEach(m => {
@@ -3038,10 +2976,8 @@
     return { name: '@' + lookaheadM + 'm', distanceM: maxLookaheadDistM, lat: pt.lat, lon: pt.lon, isMilestone: false };
   }
 
+  
 
-  
-  
-  
   function classifyTurnAngle(angle) {
     const abs = Math.abs(angle);
     if (abs < 5) return '직진';
@@ -3049,7 +2985,6 @@
     return abs >= 120 ? '급좌회전' : (abs >= 30 ? '좌회전' : '약간좌회전');
   }
 
-
   
 
   
@@ -3062,6 +2997,7 @@
 
   
 
+  
   
   
   function isBigLandmarkName(name) {
@@ -3138,9 +3074,9 @@
     return dists;
   }
 
-
   
 
+  
   function buildSegmentBearings(points) {
     const bearings = [];
 
@@ -3154,7 +3090,6 @@
     return bearings;
   }
 
-
   
 
   
@@ -3171,6 +3106,7 @@
 
   
 
+  
   const ARROW_LOOKAHEAD_M = 15;
 
   
@@ -3186,13 +3122,11 @@
   }
 
   
-  
-
 
   
 
   
-  
+
   
   function computeArrowHeadingV2(gpsLat, gpsLon, routeDistance) {
     if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2 || routeDistance === null || routeDistance === undefined) return null;
@@ -3202,7 +3136,7 @@
     return calculateBearing(gpsLat, gpsLon, targetPt.lat, targetPt.lon);
   }
 
-
+  
   function computeMovementVectorHeading(prevLat, prevLon, currLat, currLon) {
     if (prevLat === null || prevLat === undefined || currLat === null || currLat === undefined) return null;
     const movedM = haversineMeters(prevLat, prevLon, currLat, currLon);
@@ -3210,11 +3144,11 @@
     return calculateBearing(prevLat, prevLon, currLat, currLon);
   }
 
-
   
 
   
 
+  
   
   function smoothPolylinePoints(points) {
     if (!points || points.length < 3) return (points || []).map(p => [p.lat, p.lon]);
@@ -3256,7 +3190,7 @@
     return result;
   }
 
-
+  
   
   
   function findPointAheadByDistance(points, distances, fromIdx, targetMeters) {
@@ -3281,16 +3215,16 @@
     return points[points.length - 1];
   }
 
-
+  
   
   
   function pointAtCumulativeDistance(points, distances, targetDistM) {
     return findPointAheadByDistance(points, distances, 0, targetDistM);
   }
 
-
   
 
+  
   function pointAtCumulativeDistanceBehind(points, distances, targetDistM) {
     if (!points || points.length === 0) return null;
     for (let i = points.length - 1; i > 0; i--) {
@@ -3308,7 +3242,6 @@
     return points[0];
   }
 
-
   
 
   
@@ -3321,6 +3254,7 @@
 
   
 
+  
   
   function computeGuidanceHeading(fromLat, fromLon, targetLat, targetLon) {
     if (fromLat === undefined || fromLon === undefined || targetLat === undefined || targetLon === undefined) return null;
@@ -3328,11 +3262,11 @@
     return calculateBearing(fromLat, fromLon, targetLat, targetLon);
   }
 
-
   
 
   
 
+  
   
   function applyMapViewWithOffset(lat, lon, zoom, viewOpts) {
 
@@ -3343,22 +3277,20 @@
     
     const opts = isSegmentRotationMode ? { animate: false } : viewOpts;
 
-
     
 
     
 
     
-    
-    
+
     setMapView(lat, lon, zoom, !!(opts && opts.animate));
   }
 
-
   
 
   
 
+  
   
   let appliedMapRotationDeg = 0; 
   function applySegmentRotation(bearingDeg) {
@@ -3374,7 +3306,6 @@
     updateRouteBadgeRotation();
   }
 
-
   
 
   
@@ -3387,6 +3318,7 @@
 
   
 
+  
   
   const B_POINT_NEAR_THRESHOLD_M = 30; 
   const FAR_STATE_DRIFT_THRESHOLD_DEG = 90; 
@@ -3413,9 +3345,9 @@
   let farDriftStreak = 0; 
   let lastAppliedFarRouteDistance = null; 
 
-
   
 
+  
   function computeSectionApproachBearing(gpsLat, gpsLon, section, proj) {
 
     
@@ -3443,7 +3375,6 @@
     };
   }
 
-
   
 
   
@@ -3453,8 +3384,7 @@
   
 
   
-  
-  
+
   function computeWeightedHeadingOverRange(fromDist, toDist) {
     if (!currentPoints || !cumulativeDistances || cumulativeDistances.length < 2) return null;
     const lo = Math.min(fromDist, toDist);
@@ -3489,10 +3419,8 @@
 
   const BEARING_BASELINE_M = 30;
 
+  
 
-  
-  
-  
   function computeOutgoingBearingAtMilestone(section) {
     const nextSection = peekNextSection(section);
     if (!nextSection) return null;
@@ -3500,7 +3428,7 @@
     return computeWeightedHeadingOverRange(B.distanceM, B.distanceM + BEARING_BASELINE_M);
   }
 
-
+  
   function resetGajaMapRotationState() {
     sectionApproachState = null;
     lastAppliedFarBearing = null;
@@ -3516,7 +3444,6 @@
     lastRouteDistanceForReverseCheck = null;
   }
 
-
   
 
   
@@ -3532,8 +3459,7 @@
   
 
   
-  
-  
+
   const GPS_RELIABILITY = { NORMAL: 'NORMAL', SUSPECT: 'SUSPECT', REJECTED: 'REJECTED' };
 
   
@@ -3549,7 +3475,7 @@
   const SECTION_ADVANCE_CONFIRM_STREAK = 3; 
   let consecutiveRejectedCount = 0; 
 
-
+  
   function classifyGpsReliability(lat, lon, accuracy, timestamp, proj) {
 
     
@@ -3568,8 +3494,6 @@
     const sectionDistSuspect = proj ? proj.distance >= GPS_SUSPECT_SECTION_DIST_M : false;
     const accuracySuspect = (accuracy !== undefined && accuracy !== null && !isNaN(accuracy)) ? accuracy > 30 : false;
 
-    
-    
     if (speedMps >= GPS_MAX_WALK_SPEED_MPS * GPS_REJECT_SPEED_MULTIPLIER) {
       return GPS_RELIABILITY.REJECTED;
     }
@@ -3585,7 +3509,7 @@
     return GPS_RELIABILITY.NORMAL;
   }
 
-
+  
   
   
   function resetForFreshGpsFix(options) {
@@ -3613,7 +3537,6 @@
     postArrivalArrowFixCount = null;
     postArrivalArrowMilestoneKey = null;
 
-
     
 
     
@@ -3621,13 +3544,12 @@
     
 
     
-    
-    
+
     if (currentMilestoneIdx >= 0 && !pendingRoundTripPair) priorSectionIdx = currentMilestoneIdx;
     currentMilestoneIdx = -1;
     nextMilestoneIdx = -1;
 
-
+    
     
     
     pendingRoundTripPair = null;
@@ -3648,11 +3570,11 @@
     currentRotationOriginDist = null;
   }
 
-
   
 
   
 
+  
   
   
   const SECTION_ADVANCE_MARGIN_M = 15;
@@ -3699,9 +3621,9 @@
     return true;
   }
 
-
   
 
+  
   
   function maybeAdvanceSectionForPreview(section, proj) {
     if (!section || !proj) return false;
@@ -3714,7 +3636,6 @@
     return true;
   }
 
-
   
 
   
@@ -3724,8 +3645,7 @@
   
 
   
-  
-  
+
   function updateGajaMap(gpsLat, gpsLon, accuracy, timestamp) {
     const section = getCurrentSection();
     if (!section) return null; 
@@ -3737,9 +3657,9 @@
       lastConfirmedGpsPos = { lat: gpsLat, lon: gpsLon, timestamp };
     }
 
-
     
 
+    
     
     
     if (maybeAdvanceSection(section, proj, reliability)) {
@@ -3759,14 +3679,12 @@
     return Object.assign(updateGajaMapCore(section, proj, gpsLat, gpsLon, reliability), { advanced: false, arrivedMilestone: null, reliability });
   }
 
-
   
 
   
 
   
-  
-  
+
   const PREVIEW_ROTATION_REFRESH_DISTANCE_M = 500;
   let previewLastRotatedRouteDistance = null; 
 
@@ -3774,9 +3692,9 @@
     previewLastRotatedRouteDistance = null;
   }
 
-
   
 
+  
   
   
   const PREVIEW_LOOKAHEAD_M = 300;
@@ -3812,9 +3730,9 @@
       return { section: newSection, proj: newProj, recentered: true, advanced: true, arrivedMilestone };
     }
 
-
     
 
+    
     
     
     const PREVIEW_DRIFT_THRESHOLD_DEG = 30;
@@ -3837,18 +3755,18 @@
     const approach = computeSectionApproachBearing(gpsLat, gpsLon, section, proj);
     if (!approach) return { section, proj, recentered: false };
 
-
     
 
     
 
     
 
+    
     const isFirstJudgement = sectionApproachState === null;
 
-
     
 
+    
     
     let driftConfirmed = false;
     if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarBearing !== null) {
@@ -3866,9 +3784,9 @@
       farDriftStreak = 0;
     }
 
-
     
 
+    
     
     let distanceRefreshDue = false;
     if (approach.state === 'far' && !isFirstJudgement && lastAppliedFarRouteDistance !== null) {
@@ -3877,7 +3795,7 @@
       }
     }
 
-
+    
     
     
     const shouldApply = isFirstJudgement || driftConfirmed || distanceRefreshDue;
@@ -3887,7 +3805,6 @@
       return { section, proj, recentered: false, bearing: approach.bearing };
     }
 
-
     
 
     
@@ -3898,6 +3815,7 @@
 
     
 
+    
     
     
     if (reliability !== undefined && reliability !== GPS_RELIABILITY.NORMAL) {
@@ -3915,7 +3833,6 @@
     return { section, proj, recentered: true, bearing: approach.bearing };
   }
 
-
   
 
   
@@ -3931,8 +3848,7 @@
   
 
   
-  
-  
+
   function recalculateGajaMapFromScratch(reason) {
     if (!lastKnownPos) return;
     sectionApproachState = null;
@@ -3944,7 +3860,7 @@
     updateGajaMap(lastKnownPos.lat, lastKnownPos.lon);
   }
 
-
+  
   
   function updateRouteBadgeRotation() {
     routeBadgeEls.forEach(marker => {
@@ -3955,7 +3871,7 @@
     });
   }
 
-
+  
   function angleDiffToClockDirection(angleDiff) {
     const norm = ((angleDiff % 360) + 360) % 360; 
     if (norm >= 345 || norm < 15) return { clock: '12시 방향 (직진)', arrow: '⬆️' };
@@ -3973,10 +3889,8 @@
     return { clock: '12시 방향', arrow: '⬆️' };
   }
 
+  
 
-  
-  
-  
   function angleDiffToPlainKorean(angleDiff) {
     const abs = Math.abs(angleDiff);
     const side = angleDiff >= 0 ? '오른쪽' : '왼쪽';
@@ -3986,18 +3900,18 @@
     return `${side}으로 크게 돌아서 경로를 찾으세요`;
   }
 
-
   
 
   
 
   
 
+  
   let isWayfindActive = false;
   let wayfindingTargetMilestone = null; 
   const WAYFINDING_ARRIVAL_RADIUS_M = 15; 
 
-
+  
   
   
   function findNextWaypointMilestone(traveledDist) {
@@ -4011,11 +3925,11 @@
     return best;
   }
 
-
   
 
   
 
+  
   
   function updateWayfindingProgress(lat, lon, traveledDist) {
     if (!isWayfindActive) return;
@@ -4034,7 +3948,7 @@
 
     const distToTarget = haversineMeters(lat, lon, target.lat, target.lon);
 
-
+    
     const guideCoords = [[lat, lon], [target.lat, target.lon]];
     if (!guideLine) {
       guideLine = new naver.maps.Polyline({
@@ -4055,12 +3969,10 @@
     }
   }
 
-
   
 
   
-  
-  
+
   function openWayfindingMode() {
     if (!currentMilestones || currentMilestones.length === 0) {
       alert('이 코스에는 안내할 주요 지점(갈림길/봉우리/지명)이 없습니다.');
@@ -4078,7 +3990,7 @@
   }
   window.openWayfindingMode = openWayfindingMode;
 
-
+  
   
   function toggleWayfindingMode() {
     if (isWayfindActive) {
@@ -4100,8 +4012,8 @@
   }
   window.closeWayfindingMode = closeWayfindingMode;
 
-
-
+  
+  
   function resetTrailSearchWindow() {
     lastNearestIdx = -1;
 
@@ -4167,11 +4079,11 @@
     }).filter(w => !isNaN(w.lat) && !isNaN(w.lon) && w.name);
     cleanedPoints.waypoints = wpts;
 
-
     
 
     
 
+    
     try {
       const roundtripEl = xml.getElementsByTagNameNS('*', 'roundtrip')[0]
         || xml.getElementsByTagName('gajago:roundtrip')[0];
@@ -4192,12 +4104,10 @@
     return cleanedPoints;
   }
 
-
   
 
   
-  
-  
+
   function removeGpxSpikes(points) {
     if (!points || points.length < 3) return points;
 
@@ -4226,8 +4136,6 @@
     return result;
   }
 
-  
-  
   const SAVED_ROUTES_KEY = 'saved_hiking_routes_v2';
 
   
@@ -4298,7 +4206,6 @@
     } catch(e) { return []; }
   }
 
-
   
 
   
@@ -4309,6 +4216,7 @@
 
   
 
+  
   
   const LAST_OPENED_COURSE_KEY = 'gajago_last_opened_course_v1';
   function saveLastOpenedCourse(courseName, sourceUrl) {
@@ -4371,13 +4279,13 @@
     return loadSavedRoutes().find(r => isSameRoute(r, target)) || null;
   }
 
-
   
 
   
 
   
 
+  
   
   
   function expandRoundTripPoints(points) {
@@ -4442,9 +4350,9 @@
     markers = [];
     routeBadgeEls = []; 
 
-
     
 
+    
     
     
     const drawPoints = (points.roundTripTurnIdx != null)
@@ -4463,9 +4371,9 @@
 
     fitRoute();
 
-
     
 
+    
     
     const makeBadge = (lat, lon, title, bg) => {
       const marker = makeHtmlMarker(lat, lon, 'custom-badge-icon',
@@ -4494,8 +4402,6 @@
       }
     }
 
-    
-
     if (courseName) {
       document.getElementById('trailName').innerText = '🚩 ' + courseName;
       let cleanTitle = courseName.replace(/^🚩\s*/, '').trim();
@@ -4507,32 +4413,26 @@
       if (meta) meta.content = cleanTitle;
     }
 
-    
-    
     saveRouteToStorage(courseName, sourceUrl, points);
 
     saveLastOpenedCourse(courseName, sourceUrl);
 
     document.getElementById('emptyModal').style.display = 'none';
 
-
+    
     const tileCourseKey = getTileCourseKey(courseName, sourceUrl);
     autoSaveOfflineMap(points, tileCourseKey);
 
-
     
 
     
-    
-    
+
     lowPowerModeEnabled = false;
     isLowPowerPolling = false;
     try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
 
+    
 
-    
-    
-    
     const routeKey = makeRouteKey(courseName, sourceUrl);
     currentRouteKey = routeKey;
     const session = loadHikingSession();
@@ -4545,9 +4445,9 @@
     }
   }
 
-
   
 
+  
   function fitRoute() {
     if (!map || !polyline || !polyline._latlngs || !polyline._latlngs.length) return;
     markProgrammaticMoveUntilIdle(1500);
@@ -4558,10 +4458,8 @@
     map.fitBounds(bounds, { top: 85, right: 40, bottom: 45, left: 40 });
   }
 
+  
 
-  
-  
-  
   const TILES_SAVED_KEY = 'gajago_tiles_saved_v1';
 
   
@@ -4590,9 +4488,9 @@
     return normalizeCourseKey(courseName, sourceUrl) || (sourceUrl || courseName || 'unknown');
   }
 
-
   
 
+  
   async function cleanupEvictedCourseTiles() {
     if (!('caches' in window)) return;
 
@@ -4693,9 +4591,9 @@
   }
   window.showSavedRouteList = showSavedRouteList;
 
-
   
 
+  
   
   function isHikeInProgress() {
     return typeof watchId !== 'undefined' && watchId !== null;
@@ -4813,7 +4711,7 @@
     reader.readAsText(file);
   }
 
-
+  
   let isOffTrailState = false;
   let offTrailStreakCount = 0; 
   const RETURN_CONFIRM_STREAK = 3; 
@@ -4826,13 +4724,13 @@
   const ENTER_CONFIRM_STREAK = 3; 
   let enterStreakCount = 0; 
 
-
   
 
   
 
   
 
+  
   
   
   const OFFTRAIL_BASE_ENTER_M = 20;
@@ -4846,12 +4744,11 @@
   const TRAILHEAD_ENTER_M = 60;
   const TRAILHEAD_MAX_ENTER_M = 80;
 
-
+  
   
   
   const TRAIL_APPROACH_MAX_M = 100; 
 
-
   
 
   
@@ -4868,6 +4765,7 @@
 
   
 
+  
   
   
   let isApproachingTrailhead = false; 
@@ -4885,13 +4783,11 @@
     isTrailTooFar = false;
     if (!currentPoints || currentPoints.length === 0 || !section || !proj) return;
 
-    
-    
     if (currentRotationOriginDist !== null) return;
 
     const minDistanceM = proj.distance;
 
-
+    
     if (minDistanceM <= OFFTRAIL_BASE_ENTER_M) return;
 
     const toast = document.getElementById('gpsToast');
@@ -4908,7 +4804,7 @@
       return;
     }
 
-
+    
     isApproachingTrailhead = true;
 
     
@@ -4954,9 +4850,9 @@
     updateGpsMarkerWarningStyle();
   }
 
-
   
 
+  
   let lastArrowHeadingForGuidance = null;
   function getCurrentAbsHeadingForGuidance() {
     return lastArrowHeadingForGuidance;
@@ -4966,22 +4862,19 @@
   const ARRIVAL_DISTANCE_M = 20;       
   const ARRIVAL_MIN_TRAVELED_M = 50;   
 
-
   
-
-  
-  
-
 
   
 
   
 
   
+
+  
+
   
   const ROTATION_ARRIVAL_GRACE_M = 12;
 
-
   
 
   
@@ -5005,8 +4898,7 @@
   
 
   
-  
-  
+
   function updateSegmentRotationTrigger(section, advanced, arrivedMilestone) {
     if (!isSegmentRotationMode) return;
 
@@ -5034,7 +4926,7 @@
       return;
     }
 
-
+    
     
     
     firstOriginFixCount++;
@@ -5043,7 +4935,6 @@
     currentRotationOriginDist = section.fromMilestone.distanceM;
   }
 
-
   
 
   
@@ -5060,6 +4951,7 @@
 
   
 
+  
   
   function getBearingAndTargetForOriginReset(lat, lon, section) {
     const target = section && section.toMilestone;
@@ -5071,9 +4963,9 @@
     };
   }
 
-
   
 
+  
   
   const ORIGIN_RESET_VIEW_PADDING_RATIO = 2.6; 
   function applyOriginResetFitView(aLat, aLon, bLat, bLon) {
@@ -5145,9 +5037,9 @@
       }
     }
 
-
     
 
+    
     if (map && lastKnownPos) {
       if (targetInfo) {
         applyOriginResetFitView(lastKnownPos.lat, lastKnownPos.lon, targetInfo.targetLat, targetInfo.targetLon);
@@ -5162,11 +5054,11 @@
   }
   window.resetOriginNow = resetOriginNow;
 
-
   
 
   
 
+  
   function updateNavigationToast(accuracy, section, proj, arrowHeading, offTrailDistanceM, offTrailNearestPoint) {
 
     
@@ -5181,10 +5073,8 @@
     if (!toast || toast.style.display === 'none') return;
     if (!lastKnownPos || !section || !proj) return;
 
+    
 
-    
-    
-    
     const guidancePoint = offTrailNearestPoint;
     const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : proj.distance;
     if (guidancePoint && isOffTrailState) {
@@ -5212,10 +5102,8 @@
       let distStr = guidanceDistanceM >= 1000 ? (guidanceDistanceM / 1000).toFixed(2) + 'km' : Math.round(guidanceDistanceM) + 'm';
       toast.innerText = `🚨 [이탈] 경로에서 ${distStr} 벗어났어요. ${angleDiffToPlainKorean(toTrailAngleDiff)}`;
 
+      
 
-      
-      
-      
       if (offTrailStreakCount >= 1) {
         playOffTrailBeep();
         speakGuidance(`경로 이탈. ${distStr} 벗어났습니다. ${angleDiffToPlainKorean(toTrailAngleDiff)}`);
@@ -5232,14 +5120,13 @@
     const totalDistStr = `${(totalDist / 1000).toFixed(2)}km`;
     const traveledDistStr = `${(traveledDist / 1000).toFixed(2)}km`;
 
-
+    
     
     
     const prevM = section.fromMilestone;
     const nextM = section.toMilestone;
     const distToNextM = Math.abs(nextM.distanceM - traveledDist);
 
-
     
 
     
@@ -5250,6 +5137,7 @@
 
     
 
+    
     
     const outBearing = computeOutgoingBearingAtMilestone(section);
     let turnAngle = null;
@@ -5296,7 +5184,7 @@
       : (prevName ? `${prevName} · ` : (nextName ? `${nextName} · ` : ''));
     toast.innerHTML = `🧭 ${routeLabel}${fmtM(dispDistToNextM)} 남음<br>(전체 ${totalDistStr}중 ${traveledDistStr}이동)`;
 
-
+    
     
     if (traveledDist >= ARRIVAL_MIN_TRAVELED_M && remainingDist <= ARRIVAL_DISTANCE_M) {
       showToastBadge('🏁 날머리에 도착했습니다.\nGPS 추적을 자동으로 종료합니다.');
@@ -5306,7 +5194,6 @@
     }
   }
 
-
   
 
   
@@ -5319,6 +5206,7 @@
 
   
 
+  
   const TURN_ALERT_DISTANCE_M = 50;   
   const TURN_ALERT_BEEP_THRESHOLDS_M = [50, 30, 10]; 
 
@@ -5359,9 +5247,9 @@
     postArrivalArrowFixCount = null;
     postArrivalArrowMilestoneKey = null;
 
-
     
 
+    
     
     
     const isRealStraight = nextM.turnLabel === '직진';
@@ -5384,7 +5272,7 @@
       hideBottomDirectionArrow();
     }
 
-
+    
     if (isRealStraight) {
       if (key !== lastAlertedMilestoneKey) {
         lastAlertedMilestoneKey = null;
@@ -5424,11 +5312,11 @@
     }
   }
 
-
   
 
   
 
+  
   
   
   function speakTurnApproach(nextM, threshold, clockOnly) {
@@ -5438,7 +5326,6 @@
     speakGuidance(text);
   }
 
-
   
 
   
@@ -5447,6 +5334,7 @@
 
   
 
+  
   
   let wasTrackingBeforeHidden = false;
 
@@ -5486,18 +5374,18 @@
       if (wasTrackingBeforeHidden || wasPolling) {
         wasTrackingBeforeHidden = false;
 
-
+        
         
         
         if (wasPolling) stopLowPowerPolling();
 
-
         
 
         
 
         
 
+        
         
         lastActivateReacquireAt = Date.now(); 
         startGpsTracking(); 
@@ -5508,7 +5396,7 @@
     }
   });
 
-
+  
   let windowBlurredAt = null;
   window.addEventListener('blur', () => { windowBlurredAt = Date.now(); });
   window.addEventListener('focus', () => {
@@ -5559,14 +5447,13 @@
 
   let isSimulationMode = false;
 
-
   
 
   
 
+  
   let isGpsReplayMode = false;
 
-
   
 
   
@@ -5577,13 +5464,14 @@
 
   
 
+  
   let simLastNearestIdx = -1;
   let simMoveDirectionSign = 1;
   let simLastMoveDirectionIdx = null;
 
-
   
 
+  
   
   
   let simTrackDirectionCandidate = null;
@@ -5617,11 +5505,11 @@
     simLastConfirmedTrackIdx = null;
   }
 
-
   
 
   
 
+  
   function nearestPointOnTrailForSim(idx, points) {
     if (!points || points.length === 0) {
       simLastNearestIdx = -1;
@@ -5630,8 +5518,6 @@
     const maxIdx = points.length - 2;
     const bestIdx = Math.max(0, Math.min(idx, Math.max(maxIdx, 0)));
 
-    
-    
     if (simLastMoveDirectionIdx === null) {
       simLastMoveDirectionIdx = bestIdx;
     } else {
@@ -5643,7 +5529,7 @@
     return { distance: 0, point: points[bestIdx], index: bestIdx };
   }
 
-
+  
   
   
   function computeArrowHeadingForSim(lat, lon, nearestIdx, isNearTrailheadNow, traveledDist, nearestOnTrailPoint) {
@@ -5669,13 +5555,13 @@
     });
   }
 
-
+  
   function finishSimulationAndGoHome() {
     toggleSimulation();
     setTimeout(() => { if (simInterval === null && !isSimPaused) fitRoute(); }, 600);
   }
 
-
+  
   
   function renderSimFrame(idx, mapViewOpts) {
     if (!currentPoints || idx < 0 || idx >= currentPoints.length) return;
@@ -5685,13 +5571,13 @@
     const lat = pt.lat;
     const lon = pt.lon;
 
-
     
 
     
 
     
 
+    
     
     const simNearest = nearestPointOnTrailForSim(idx, currentPoints);
     updateTrackDirectionForSim(simNearest.index); 
@@ -5699,7 +5585,7 @@
     const simIsNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && simTraveledDist < TRAILHEAD_ENTRY_DISTANCE_M;
     const simArrowHeading = computeArrowHeadingForSim(lat, lon, simNearest.index, simIsNearTrailhead, simTraveledDist, simNearest.point);
 
-
+    
     if (!simMarker) {
       simMarker = makeHtmlMarker(lat, lon, 'custom-gps-icon', createGpsIconHtml(simArrowHeading), 40, 40, 1000, 80);
     } else {
@@ -5711,12 +5597,10 @@
     isCurrentlyStopped = false;
     isOffTrailState = false;
 
-
-
     
 
     
-    
+
     if (!getCurrentSection()) {
       resolveInitialSectionByProjection(lat, lon);
     }
@@ -5729,13 +5613,11 @@
       updateSegmentRotationTrigger(simSection, simGajaMapResult.advanced, simGajaMapResult.arrivedMilestone);
     }
 
-    
-    
     updateNavigationToast(5, simSection, simProj, simArrowHeading, simProj ? simProj.distance : 0, simOffTrailNearestPoint);
 
-
     
 
+    
     
     if (isMapBeingDragged || isMapDragReturnPending) return;
     const currentZoom = simUserZoomed ? map.getZoom() : Math.max(map.getZoom(), 15);
@@ -5806,7 +5688,7 @@
     window.addEventListener('mouseup', handleSimScrubEnd);
   }
 
-
+  
   let isSimPaused = false;
 
   function toggleSimulation() {
@@ -5854,9 +5736,9 @@
 
     if (watchId !== null) stopGpsTracking(); 
 
-
     
 
+    
     
     try {
       if (!audioCtx) {
@@ -5865,7 +5747,7 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
     } catch (e) {}
 
-
+    
     
     btn.innerText = '⏹️';
     btn.classList.add('active');
@@ -5900,7 +5782,7 @@
     
     showHeadingArrow = true;
 
-
+    
     
     {
       const mapEl = document.getElementById('map');
@@ -5921,7 +5803,7 @@
     initSimScrubEvents();
     updateSimScrubHandle();
 
-
+    
     setTimeout(refreshMapSize, 520);
     
     startSimInterval();
@@ -5930,13 +5812,13 @@
   
   const SIM_BASE_INTERVAL_MS = 250;
 
-
   
 
   
 
   
 
+  
   function startSimInterval() {
     function tick() {
       if (!currentPoints || currentPoints.length === 0) {
@@ -5962,9 +5844,9 @@
       renderSimFrame(simIndex, { animate: true, duration: 0.25 });
       updateSimScrubHandle();
 
-
       
 
+      
       let stepDistanceM = 4;
       if (simSpeed === 0.5) stepDistanceM = 2;
       else if (simSpeed === 2) stepDistanceM = 10;
@@ -5972,12 +5854,10 @@
       else if (simSpeed === 4) stepDistanceM = 40;
       else if (simSpeed === 5) stepDistanceM = 80;
 
-
       
 
       
-      
-      
+
       const SIM_DECEL_START_M = 60;
       const SIM_DECEL_SLOW_M = 50;
       const SIM_SLOW_STEP_M = 2; 
@@ -6004,7 +5884,7 @@
         }
       }
 
-
+      
       
       let nextIndex = simIndex + simPlayDirection;
       const startDist = cumulativeDistances[simIndex] || 0;
@@ -6023,7 +5903,7 @@
       }
       simIndex = nextIndex;
 
-
+      
       
       
       const SIM_MAX_DELAY_MS = 1500;
@@ -6033,7 +5913,7 @@
     simInterval = setTimeout(tick, SIM_BASE_INTERVAL_MS);
   }
 
-
+  
   
   
   function toggleSimulationPause() {
@@ -6054,7 +5934,7 @@
       return;
     }
 
-
+    
     
     
     try {
@@ -6092,7 +5972,7 @@
     }
   }
 
-
+  
   
   
   function confirmEndHike() {
@@ -6128,20 +6008,19 @@
     if (waitingOverlayStop) waitingOverlayStop.style.display = 'none';
     showToastBadge('📍 내 위치 추적을 종료했습니다.');
 
-
+    
     
     stopLowPowerPolling();
     lowPowerModeEnabled = false;
     try { localStorage.removeItem('gajago_low_power_mode'); } catch(e) {}
     updateLowPowerBtnUI();
 
-
+    
     if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
       window.location.reload();
     }
   }
 
-
   
 
   
@@ -6152,6 +6031,7 @@
 
   
 
+  
   
   
   const LOW_POWER_POLL_INTERVAL_MS = 5000;
@@ -6200,8 +6080,6 @@
   }
   window.toggleLowPowerMode = toggleLowPowerMode;
 
-  
-  
   function startLowPowerPolling() {
     isLowPowerPolling = true;
     if (watchId !== null) {
@@ -6214,7 +6092,7 @@
     lowPowerPollTimerId = setInterval(pollOnceForLowPower, LOW_POWER_POLL_INTERVAL_MS);
   }
 
-
+  
   function stopLowPowerPolling() {
     isLowPowerPolling = false;
     if (lowPowerPollTimerId) { clearInterval(lowPowerPollTimerId); lowPowerPollTimerId = null; }
@@ -6229,11 +6107,11 @@
     );
   }
 
-
   
 
   
 
+  
   
   function handleLowPowerPollError() {
     console.warn('⚠️ 저전력 폴링 중 GPS 픽스 실패(다음 폴링에서 재시도)');
@@ -6247,13 +6125,13 @@
     btn.innerText = lowPowerModeEnabled ? '🔔' : '🔕';
   }
 
-
+  
   let isFirstFix = true;
   let gpsWaitNoticeSeq = 0; 
 
-
   
 
+  
   
   
   function showStartHikeOverlay() {
@@ -6268,9 +6146,9 @@
     if (overlay) overlay.style.display = 'none';
   }
 
-
   
 
+  
   
   let lastActivateReacquireAt = 0;
   function reacquireGpsOnActivate(reason) {
@@ -6314,22 +6192,22 @@
 
     showHeadingArrow = true;
 
-
     
 
+    
     
     resetForFreshGpsFix();
 
-
     
 
+    
     
     
     isSegmentRotationMode = true;
     currentRotationOriginDist = null;
     firstOriginFixCount = 0;
 
-
+    
     try {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -6348,8 +6226,6 @@
     toast.innerText = '';
     showToastBadge('📍 [내 위치 켜짐]');
 
-    
-    
     const waitingOverlay = document.getElementById('gpsWaitingOverlay');
     const waitingText = waitingOverlay && waitingOverlay.querySelector('.gps-waiting-text');
     if (waitingText) waitingText.innerText = '📡 GPS 신호 탐색 중...';
@@ -6364,11 +6240,11 @@
       if (waitingText) waitingText.innerText = '📡 GPS 신호 탐색 중...\n하늘이 트인 곳으로 이동해 주세요';
     }, 15000);
 
-
     
 
     
 
+    
     
     
     if (isNativeApp()) {
@@ -6385,13 +6261,13 @@
     startSleepMonitor();
   }
 
-
   
 
   
 
   
 
+  
   function isNativeApp() {
     return typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge !== null;
   }
@@ -6415,16 +6291,14 @@
         const accuracy = Math.round(pos.coords.accuracy);
         const nowTs = Date.now();
 
-        
-        
         const waitingOverlayAtFix = document.getElementById('gpsWaitingOverlay');
         if (waitingOverlayAtFix) waitingOverlayAtFix.style.display = 'none';
         const toastAtFix = document.getElementById('gpsToast');
         if (toastAtFix) toastAtFix.style.visibility = '';
 
-
         
 
+        
         
         const sectionForReliabilityPreview = getCurrentSection();
         const projForReliabilityPreview = sectionForReliabilityPreview
@@ -6455,7 +6329,7 @@
         consecutiveRejectedCount = 0;
         lastKnownPos = { lat, lon }; 
 
-
+        
         
         
         const result = gpsFilterEngine.process({
@@ -6467,20 +6341,16 @@
           timestamp: Date.now()
         });
 
-
         
 
         
 
         
-        
-        
+
         if (result) {
           const wasStoppedBefore = isCurrentlyStopped;
           isCurrentlyStopped = result.isStopped;
 
-          
-          
           if (isCurrentlyStopped && !wasStoppedBefore) {
             stopEnteredAt = Date.now();
           } else if (!isCurrentlyStopped) {
@@ -6488,14 +6358,14 @@
           }
         }
 
-
-        
-
-
         
 
         
 
+        
+
+        
+        
         
         if (!getCurrentSection()) {
           resolveInitialSectionByProjection(lat, lon);
@@ -6505,16 +6375,16 @@
         const sectionProj = gajaMapResult ? gajaMapResult.proj : null;
         const gpsReliability = gajaMapResult ? gajaMapResult.reliability : GPS_RELIABILITY.NORMAL;
 
-
+        
         
         const traveledDistForEntry = sectionProj ? sectionProj.routeDistance : 0;
         const isNearTrailhead = isSegmentRotationMode && currentRotationOriginDist === null && traveledDistForEntry < TRAILHEAD_ENTRY_DISTANCE_M;
 
-
         
 
         
 
+        
         
         const offTrailDistanceM = sectionProj ? sectionProj.distance : 0;
         const offTrailNearestPoint = sectionProj
@@ -6526,20 +6396,19 @@
           updateOffTrailHysteresis(offTrailDistanceM, accuracy, isNearTrailhead);
         }
 
-
+        
         
         if (isWayfindActive && sectionProj) {
           updateWayfindingProgress(lat, lon, sectionProj.routeDistance);
         }
 
-
+        
         
         
         if (result && !result.isStopped && result.bearing !== null) {
           gpsMovementHeading = result.bearing;
         }
 
-
         
 
         
@@ -6556,6 +6425,7 @@
 
         
 
+        
         const routeDistanceForArrow = sectionProj ? sectionProj.routeDistance : traveledDistForEntry;
         recordHikeHistory(routeDistanceForArrow, nowTs);
         const gpxProgressHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
@@ -6576,12 +6446,11 @@
           lastArrowVectorPos = { lat, lon };
         }
 
-
+        
         
         
         const arrowHeading = lastMovementVectorHeading !== null ? lastMovementVectorHeading : gpxProgressHeading;
 
-
         
 
         
@@ -6590,6 +6459,7 @@
 
         
 
+        
         let rawReversed = false;
         let reverseJudged = false;   
         const routeDistanceDelta = lastRouteDistanceForReverseCheck !== null
@@ -6627,14 +6497,14 @@
         }
         updateGpsMarkerWarningStyle();
 
-
+        
         
         
         if (gajaMapResult) {
           updateSegmentRotationTrigger(section, gajaMapResult.advanced, gajaMapResult.arrivedMilestone);
         }
 
-
+        
         
         if (gajaMapResult && gajaMapResult.advanced && gajaMapResult.arrivedMilestone) {
           
@@ -6651,7 +6521,7 @@
           }
         }
 
-
+        
         if (gajaMapResult && gajaMapResult.advanced && gajaMapResult.arrivedMilestone && !endHikeAlertShown) {
           const m = gajaMapResult.arrivedMilestone;
           if (m.name && (m.name.includes('날머리') || m.name.includes('도착'))) {
@@ -6662,12 +6532,12 @@
           }
         }
 
-
+        
         
         
         updateNavigationToast(accuracy, section, sectionProj, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
 
-
+        
         
         
         if (isReverseDirectionWarning && !isOffTrailState && !isApproachingTrailhead && !isTrailTooFar) {
@@ -6709,11 +6579,11 @@
         }
         isFirstFix = false;
 
-
         
 
         
 
+        
         
         if (isWayfindActive) {
           
@@ -6755,19 +6625,19 @@
     const waitingOverlayErr = document.getElementById('gpsWaitingOverlay');
     if (waitingOverlayErr) waitingOverlayErr.style.display = 'none';
 
-
+    
     if (typeof window.__gajaIsReloadPending === 'function' && window.__gajaIsReloadPending()) {
       window.location.reload();
     }
   }
 
-
   
 
   
 
   
 
+  
 
   let sleepTickTimerId = null;
 
@@ -6804,20 +6674,16 @@
     watchId = null;
     showToastBadge('🔋 5분간 움직임이 없어 절전 모드로 전환합니다.\n다시 걸으면 자동으로 위치 추적이 재개됩니다.');
 
-    
-    
     if (sleepWatchdogTimerId) clearInterval(sleepWatchdogTimerId);
     sleepWatchdogTimerId = setInterval(runSleepWatchdogCheck, SLEEP_WATCHDOG_MS);
   }
 
-  
-  
   function wakeGpsFromVibration() {
     if (!isGpsSleeping) return;
     exitGpsSleep('진동 감지');
   }
 
-
+  
   const SLEEP_WATCHDOG_CHECK_MS = 8000;
   const SLEEP_WATCHDOG_MOVE_THRESHOLD_M = 8;
 
@@ -6843,8 +6709,6 @@
       { enableHighAccuracy: true, maximumAge: 0, timeout: SLEEP_WATCHDOG_CHECK_MS }
     );
 
-    
-    
     setTimeout(() => {
       if (isGpsSleeping) {
         navigator.geolocation.clearWatch(checkWatchId);
@@ -6852,7 +6716,7 @@
     }, SLEEP_WATCHDOG_CHECK_MS + 500);
   }
 
-
+  
   function restartWatchPositionOnly() {
     isFirstFix = false; 
     watchId = navigator.geolocation.watchPosition(
@@ -6879,7 +6743,7 @@
     showToastBadge(`📍 위치 추적을 재개합니다. (${reason})`);
   }
 
-
+  
   
   async function fetchWithTimeout(url, timeoutMs) {
     const controller = new AbortController();
@@ -6895,7 +6759,7 @@
     }
   }
 
-
+  
   
   function withCacheBuster(url) {
     const sep = url.includes('?') ? '&' : '?';
@@ -6919,7 +6783,7 @@
 
     const errors = [];
 
-
+    
     
     const isOwnRepoUrl = /hjwpro1971\.github\.io|raw\.githubusercontent\.com\/hjwpro1971/.test(cleanUrl);
     try {
@@ -6937,8 +6801,6 @@
       errors.push(`1) 직접 다운로드 실패: ${e.message || '네트워크/CORS 제한'}`);
     }
 
-    
-    
     try {
       const match = cleanUrl.match(/([^\/\?#&=:"']+\.gpx)/i);
       if (match && match[1]) {
@@ -6969,7 +6831,7 @@
       errors.push(`2) 저장소 대체 복구 실패: ${e.message}`);
     }
 
-
+    
 
     
     try {
@@ -6990,7 +6852,7 @@
     throw new Error('모든 방식으로 등산로 파일을 불러오지 못했습니다.\n[상세 사유]\n' + errors.join('\n'));
   }
 
-
+  
   
   function showVersionDetail() {
     const full = window.__GAJA_CACHE_NAME || '알 수 없음';
@@ -7028,7 +6890,7 @@
     const hadGpxUrl = !!gpxUrl;
     let decodedCourseName = courseName ? decodeURIComponent(courseName) : '';
 
-
+    
     
     
     if (!hadGpxUrl) {
@@ -7058,9 +6920,9 @@
     const appleMeta = document.getElementById('appleAppTitle');
     if (appleMeta) appleMeta.content = pageTitle;
 
-
     
 
+    
     
     
     if (gpxUrl) {
