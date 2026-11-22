@@ -2658,7 +2658,20 @@
     const rivals = nearIdx.filter(i => !fwdGroup.includes(i));
     const pickNearest = (list) => list.reduce((x, y) => (allProj[y].distance < allProj[x].distance ? y : x));
 
-    if (rivals.length === 0) {
+    
+    
+    const priorPick = (rivals.length > 0 && priorSectionIdx >= 0)
+      ? (nearIdx.includes(priorSectionIdx) ? priorSectionIdx : (nearIdx.includes(priorSectionIdx + 1) ? priorSectionIdx + 1 : -1))
+      : -1;
+    if (priorPick >= 0) {
+      currentMilestoneIdx = priorPick;
+      nextMilestoneIdx = priorPick + 1;
+      pendingRoundTripPair = null;
+      pendingDirectionConfirmHeading = null;
+      pendingDirectionConfirmStreak = 0;
+      pendingConfirmStartPos = null;
+      pendingSwitchVotes = 0;
+    } else if (rivals.length === 0) {
       
       currentMilestoneIdx = best.idx;
       nextMilestoneIdx = best.idx + 1;
@@ -2699,6 +2712,9 @@
   const ROUNDTRIP_SWITCH_VOTES = 2;   
   let pendingConfirmStartPos = null;
   let pendingSwitchVotes = 0;
+  
+  
+  let priorSectionIdx = -1;
   function reconfirmPendingRoundTripPair(movementHeading, lat, lon) {
     if (!pendingRoundTripPair || movementHeading === null || movementHeading === undefined) return;
 
@@ -2711,7 +2727,21 @@
     
     const fwdIdx = currentMilestoneIdx;
     const rivalIdx = (fwdIdx === candidateIdxA) ? candidateIdxB : candidateIdxA;
-    const bearingOf = (idx) => calculateBearing(currentMilestones[idx].trailLat, currentMilestones[idx].trailLon, currentMilestones[idx + 1].trailLat, currentMilestones[idx + 1].trailLon);
+    
+    
+    const walkedM = Math.max(ROUNDTRIP_NET_MOVE_MIN_M, haversineMeters(pendingConfirmStartPos.lat, pendingConfirmStartPos.lon, lat, lon));
+    const bearingOf = (idx) => {
+      const sec = { fromMilestone: currentMilestones[idx], toMilestone: currentMilestones[idx + 1], isForward: true };
+      const proj = projectOntoCurrentSection(pendingConfirmStartPos.lat, pendingConfirmStartPos.lon, sec);
+      if (!proj) return calculateBearing(currentMilestones[idx].trailLat, currentMilestones[idx].trailLon, currentMilestones[idx + 1].trailLat, currentMilestones[idx + 1].trailLon);
+      const endRd = Math.min(proj.routeDistance + walkedM, currentMilestones[idx + 1].distanceM);
+      const aheadIdx = Math.min(currentPoints.length - 1, findPointsIndexAtDistance(cumulativeDistances, endRd) + 1);
+      const ahead = currentPoints[aheadIdx];
+      if (haversineMeters(proj.projectedLat, proj.projectedLon, ahead.lat, ahead.lon) < 3) {
+        return calculateBearing(currentMilestones[idx].trailLat, currentMilestones[idx].trailLon, currentMilestones[idx + 1].trailLat, currentMilestones[idx + 1].trailLon);
+      }
+      return calculateBearing(proj.projectedLat, proj.projectedLon, ahead.lat, ahead.lon);
+    };
     const diffFwd = Math.abs(shortestAngleDiff(netHeading, bearingOf(fwdIdx)));
     const diffRival = Math.abs(shortestAngleDiff(netHeading, bearingOf(rivalIdx)));
 
@@ -3399,6 +3429,7 @@
     
     
     
+    if (currentMilestoneIdx >= 0 && !pendingRoundTripPair) priorSectionIdx = currentMilestoneIdx;
     currentMilestoneIdx = -1;
     nextMilestoneIdx = -1;
 
@@ -4191,6 +4222,7 @@
 
     
 
+    priorSectionIdx = -1;
     currentMilestoneIdx = -1;
     nextMilestoneIdx = -1;
     gpsFilterEngine.reset(); 
@@ -6048,6 +6080,7 @@
     hideStartHikeOverlay();
 
     startHikingSession(currentRouteKey);
+    priorSectionIdx = -1;
     endHikeAlertShown = false;
     startGpsTracking();
   }
