@@ -1719,6 +1719,28 @@
     });
   }
 
+
+  
+  function snapArrowToAnchor() {
+    try {
+      if (!map || isMapBeingDragged || isWayfindActive) return;
+      const mapEl = document.getElementById('map');
+      if (!mapEl || !mapEl.classList.contains('heading-up')) return;
+      const mk = (simInterval !== null || isSimPaused) && simMarker ? simMarker : userGpsMarker;
+      const el = mk && mk._el;
+      if (!el) return;
+      const mr = mapEl.getBoundingClientRect();
+      const ar = el.getBoundingClientRect();
+      const dx = (mr.left + mr.width / 2) - (ar.left + ar.width / 2);
+      const dy = (mr.top + mr.height / 2) - (ar.top + ar.height / 2);
+      if (Math.hypot(dx, dy) < 3) return;
+      
+      const rad = appliedMapRotationDeg * Math.PI / 180;
+      const mx = dx * Math.cos(rad) - dy * Math.sin(rad);
+      const my = dx * Math.sin(rad) + dy * Math.cos(rad);
+      map.panBy(new naver.maps.Point(-mx, -my));
+    } catch (e) {  }
+  }
   let zoomRecenterUntil = 0; 
   function zoomMapBy(delta) {
     if (!map) return;
@@ -1739,6 +1761,8 @@
       map.setCenter(toLatLng(lastKnownPos.lat, lastKnownPos.lon));
       try { localStorage.setItem('gajago_last_zoom', String(map.getZoom())); } catch(e) {}
       if (simInterval !== null || isSimPaused) simUserZoomed = true;
+      
+      [0, 120, 450].forEach(ms => setTimeout(snapArrowToAnchor, ms));
       return;
     }
     map.setZoom(map.getZoom() + delta, true);
