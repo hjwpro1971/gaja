@@ -1721,6 +1721,16 @@
 
   function zoomMapBy(delta) {
     if (!map) return;
+
+    
+
+    
+    const z = Math.max(map.getMinZoom ? map.getMinZoom() : 7, Math.min(map.getMaxZoom ? map.getMaxZoom() : 19, map.getZoom() + delta));
+    if (isHeadingUp && lastKnownPos && !isMapBeingDragged && !isWayfindActive) {
+      map.setZoom(z, false);
+      map.setCenter(toLatLng(lastKnownPos.lat, lastKnownPos.lon));
+      return;
+    }
     map.setZoom(map.getZoom() + delta, true);
   }
   window.zoomMapBy = zoomMapBy;
