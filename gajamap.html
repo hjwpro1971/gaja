@@ -4656,7 +4656,7 @@
     return typeof watchId !== 'undefined' && watchId !== null;
   }
 
-  function openSavedRouteByIndex(index) {
+  async function openSavedRouteByIndex(index) {
     if (isHikeInProgress()) {
       alert('⚠️ 등산 안내 중에는 다른 코스를 열 수 없습니다.\n\n먼저 "🏁 등산 완료"를 눌러 현재 산행을 종료해 주세요.');
       return;
@@ -4665,6 +4665,29 @@
     const r = routes[index];
     if (!r) return;
     closeModal();
+
+    
+
+    
+    let freshPoints = null;
+    try {
+      const su = r.sourceUrl || '';
+      const isOwn = /hjwpro1971\.github\.io|raw\.githubusercontent\.com\/hjwpro1971/.test(su) || /^\.?\/?tracks\//.test(su) || su.startsWith(location.origin + '/');
+      if (su && isOwn && navigator.onLine !== false) {
+        const res = await fetchWithTimeout(withCacheBuster(su), 3000);
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.includes('<trkpt')) {
+            const parsed = parseGPX(text);
+            if (parsed && parsed.length >= 2) freshPoints = parsed;
+          }
+        }
+      }
+    } catch (e) {  }
+    if (freshPoints) {
+      drawRoute(freshPoints, r.name, r.sourceUrl);
+      return;
+    }
     if (r.waypoints) r.points.waypoints = r.waypoints;
 
     
