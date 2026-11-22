@@ -6373,11 +6373,13 @@
         
 
         let rawReversed = false;
+        let reverseJudged = false;   
         const routeDistanceDelta = lastRouteDistanceForReverseCheck !== null
           ? routeDistanceForArrow - lastRouteDistanceForReverseCheck : null;
         if (routeDistanceDelta !== null && Math.abs(routeDistanceDelta) >= ARROW_VECTOR_MIN_MOVE_M) {
           const movedForward = section.isForward ? routeDistanceDelta > 0 : routeDistanceDelta < 0;
           rawReversed = !movedForward;
+          reverseJudged = true;
           lastRouteDistanceForReverseCheck = routeDistanceForArrow;
         } else if (lastRouteDistanceForReverseCheck === null) {
           lastRouteDistanceForReverseCheck = routeDistanceForArrow;
@@ -6386,15 +6388,19 @@
         
         
         
-        if (pendingRoundTripPair) rawReversed = false;
-        if (rawReversed) {
-          reverseWarningStreak++;
-          if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
-            isReverseDirectionWarning = true;
+        if (pendingRoundTripPair) { rawReversed = false; reverseJudged = false; reverseWarningStreak = 0; }
+
+        
+        if (reverseJudged) {
+          if (rawReversed) {
+            reverseWarningStreak++;
+            if (reverseWarningStreak >= REVERSE_WARNING_CONFIRM_STREAK) {
+              isReverseDirectionWarning = true;
+            }
+          } else {
+            reverseWarningStreak = 0;
+            isReverseDirectionWarning = false;
           }
-        } else {
-          reverseWarningStreak = 0;
-          isReverseDirectionWarning = false;
         }
 
         if (arrowHeading !== null) {
