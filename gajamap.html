@@ -575,7 +575,7 @@
 
 <div class="gps-waiting-overlay" id="gpsWaitingOverlay" style="display:none;">
   <div class="gps-waiting-spinner"></div>
-  <div class="gps-waiting-text">📡 GPS 수신 중...</div>
+  <div class="gps-waiting-text" style="white-space:pre-line; text-align:center;">📡 GPS 신호 탐색 중...</div>
 </div>
 
 
@@ -3957,6 +3957,8 @@
     } catch (e) {
       cleanedPoints.isExplicitRoundTrip = false;
     }
+    
+    
     try {
       const loopEl = xml.getElementsByTagNameNS('*', 'loop')[0]
         || xml.getElementsByTagName('gajago:loop')[0];
@@ -5251,9 +5253,24 @@
         
 
         
+        lastActivateReacquireAt = Date.now(); 
         startGpsTracking(); 
+      } else {
+
+        reacquireGpsOnActivate('visible');
       }
     }
+  });
+
+
+  let windowBlurredAt = null;
+  window.addEventListener('blur', () => { windowBlurredAt = Date.now(); });
+  window.addEventListener('focus', () => {
+    if (windowBlurredAt !== null && Date.now() - windowBlurredAt >= 3000) reacquireGpsOnActivate('focus');
+    windowBlurredAt = null;
+  });
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) reacquireGpsOnActivate('pageshow');
   });
 
   
@@ -5278,6 +5295,7 @@
   
   
   let explicitRoundTripFlag = false;
+  
   let explicitLoopFlag = false;
   const LOOP_CLOSE_M = 150;
   function isRoundTripCourse() {
@@ -5285,6 +5303,7 @@
     if (explicitLoopFlag) return false;
     if (!currentMilestones || currentMilestones.length < 1) return false;
     if (!currentMilestones.some(m => m.name && m.name.includes('원점회귀'))) return false;
+    
     if (currentPoints && currentPoints.length > 1) {
       const a = currentPoints[0], b = currentPoints[currentPoints.length - 1];
       if (haversineMeters(a.lat, a.lon, b.lat, b.lon) <= LOOP_CLOSE_M) return false;
@@ -5856,6 +5875,7 @@
     btn.innerText = '📍';
     btn.classList.remove('active');
     toast.style.display = 'none';
+    toast.style.visibility = '';
     hideBottomDirectionArrow();
     
     const waitingOverlayStop = document.getElementById('gpsWaitingOverlay');
@@ -5983,6 +6003,7 @@
 
 
   let isFirstFix = true;
+  let gpsWaitNoticeSeq = 0; 
 
 
   
@@ -6000,6 +6021,30 @@
     const overlay = document.getElementById('startHikeOverlay');
     if (overlay) overlay.style.display = 'none';
   }
+
+
+  
+
+  
+  let lastActivateReacquireAt = 0;
+  function reacquireGpsOnActivate(reason) {
+    if (isNativeApp()) return;                                  
+    if (document.visibilityState === 'hidden') return;
+    if (!currentPoints || !currentPoints.length) return;        
+    const session = loadHikingSession();                        
+    if (!session || session.routeKey !== currentRouteKey) return;
+    if (simInterval !== null || isSimPaused) return;            
+    const now = Date.now();
+    if (now - lastActivateReacquireAt < 2000) return;           
+    lastActivateReacquireAt = now;
+    console.log('📡 활성화 → GPS 새로 잡기:', reason);
+    
+    stopLowPowerPolling();
+    stopSleepMonitor();
+    if (watchId !== null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} watchId = null; }
+    startGpsTracking();
+  }
+  window.reacquireGpsOnActivate = reacquireGpsOnActivate;
 
   
   function confirmStartHike() {
@@ -6047,17 +6092,30 @@
 
     btn.innerText = '🧭';
     btn.classList.add('active');
+
+    
+    
     toast.style.display = 'block';
+    toast.style.visibility = 'hidden';
     toast.className = 'gps-toast';
-    toast.innerText = '📡 GPS 수신 중...';
+    toast.innerText = '';
     showToastBadge('📍 [내 위치 켜짐]');
 
     
     
     const waitingOverlay = document.getElementById('gpsWaitingOverlay');
+    const waitingText = waitingOverlay && waitingOverlay.querySelector('.gps-waiting-text');
+    if (waitingText) waitingText.innerText = '📡 GPS 신호 탐색 중...';
     if (waitingOverlay) waitingOverlay.style.display = 'flex';
 
     isFirstFix = true;
+
+    
+    const gpsStartedSeq = ++gpsWaitNoticeSeq;
+    setTimeout(() => {
+      if (gpsStartedSeq !== gpsWaitNoticeSeq || !isFirstFix || watchId === null) return;
+      if (waitingText) waitingText.innerText = '📡 GPS 신호 탐색 중...\n하늘이 트인 곳으로 이동해 주세요';
+    }, 15000);
 
 
     
@@ -6109,6 +6167,13 @@
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
         const nowTs = Date.now();
+
+        
+        
+        const waitingOverlayAtFix = document.getElementById('gpsWaitingOverlay');
+        if (waitingOverlayAtFix) waitingOverlayAtFix.style.display = 'none';
+        const toastAtFix = document.getElementById('gpsToast');
+        if (toastAtFix) toastAtFix.style.visibility = '';
 
 
         
@@ -6344,6 +6409,18 @@
         
         updateNavigationToast(accuracy, section, sectionProj, arrowHeading, offTrailDistanceM, offTrailNearestPoint);
 
+
+        
+        
+        if (isReverseDirectionWarning && !isOffTrailState && !isApproachingTrailhead && !isTrailTooFar) {
+          const reverseToast = document.getElementById('gpsToast');
+          if (reverseToast) {
+            reverseToast.style.display = 'block';
+            reverseToast.className = 'gps-toast reversed';
+            reverseToast.innerText = '↩️ 역방향으로 가고 있습니다';
+          }
+        }
+
         
         if (!userGpsMarker) {
           userGpsMarker = makeHtmlMarker(lat, lon, 'custom-gps-icon', createGpsIconHtml(getCurrentAbsHeadingForGuidance()), 40, 40, 1000, 80);
@@ -6404,6 +6481,8 @@
   function handleGpsError() {
     const toast = document.getElementById('gpsToast');
     const btn = document.getElementById('gpsBtn');
+    toast.style.display = 'block';
+    toast.style.visibility = ''; 
     toast.className = 'gps-toast warning';
     toast.innerText = '⚠️ GPS 수신 실패 (위치 권한 확인)';
     btn.innerText = '📍';
