@@ -2589,9 +2589,11 @@
       return;
     }
     let best = null;
+    const allProj = []; 
     for (let i = 0; i < currentMilestones.length - 1; i++) {
       const candidateSection = { fromMilestone: currentMilestones[i], toMilestone: currentMilestones[i + 1], isForward: true };
       const proj = projectOntoCurrentSection(lat, lon, candidateSection);
+      allProj[i] = proj;
       if (proj && (!best || proj.distance < best.proj.distance)) {
         best = { idx: i, proj };
       }
@@ -2638,77 +2640,45 @@
     
 
     
-    
-    
-    const bestFrom = currentMilestones[best.idx];
-    const bestTo = currentMilestones[best.idx + 1];
-    const fromTarget = bestFrom.roundTripPeer || bestFrom;
-    const toTarget = bestTo.roundTripPeer || bestTo;
 
-    const hasAnyPeer = !!bestFrom.roundTripPeer || !!bestTo.roundTripPeer;
+    
 
-    let pairIdx = -1;
-    if (hasAnyPeer) {
-      for (let i = 0; i < currentMilestones.length - 1; i++) {
-        if (currentMilestones[i] === toTarget && currentMilestones[i + 1] === fromTarget) {
-          pairIdx = i;
-          break;
-        }
-      }
+    
+
+    
+
+    
+    const nearIdx = [];
+    for (let i = 0; i < allProj.length; i++) {
+      if (allProj[i] && allProj[i].distance <= best.proj.distance + ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M) nearIdx.push(i);
     }
+    const fwdStart = nearIdx[0];
+    const fwdGroup = [fwdStart];
+    while (nearIdx.includes(fwdGroup[fwdGroup.length - 1] + 1)) fwdGroup.push(fwdGroup[fwdGroup.length - 1] + 1);
+    const rivals = nearIdx.filter(i => !fwdGroup.includes(i));
+    const pickNearest = (list) => list.reduce((x, y) => (allProj[y].distance < allProj[x].distance ? y : x));
 
-    if (pairIdx >= 0) {
-      
-      
-      const pairSection = { fromMilestone: currentMilestones[pairIdx], toMilestone: currentMilestones[pairIdx + 1], isForward: true };
-      const pairProj = projectOntoCurrentSection(lat, lon, pairSection);
-      const pairDistance = pairProj ? pairProj.distance : Infinity;
-      const distGap = Math.abs(best.proj.distance - pairDistance);
-
-      if (distGap >= ROUNDTRIP_DISTANCE_CLEAR_MARGIN_M) {
-        
-        
-        currentMilestoneIdx = best.idx;
-        nextMilestoneIdx = best.idx + 1;
-
-        if (pendingRoundTripPair
-            && (pendingRoundTripPair.candidateIdxA === best.idx || pendingRoundTripPair.candidateIdxA === pairIdx)
-            && (pendingRoundTripPair.candidateIdxB === best.idx || pendingRoundTripPair.candidateIdxB === pairIdx)) {
-          pendingRoundTripPair = null;
-          pendingDirectionConfirmHeading = null;
-          pendingDirectionConfirmStreak = 0;
-          hidePersistentToastBadge();
-        }
-      } else {
-
-        
-        
-        
-        currentMilestoneIdx = best.idx;
-        nextMilestoneIdx = best.idx + 1;
-
-
-        
-
-        
-        
-        
-        const normA = Math.min(best.idx, pairIdx);
-        const normB = Math.max(best.idx, pairIdx);
-        const samePairAsBefore = pendingRoundTripPair
-          && pendingRoundTripPair.candidateIdxA === normA
-          && pendingRoundTripPair.candidateIdxB === normB;
-        pendingRoundTripPair = { candidateIdxA: normA, candidateIdxB: normB };
-        if (!samePairAsBefore) {
-          pendingDirectionConfirmHeading = null;
-          pendingDirectionConfirmStreak = 0;
-          showPersistentToastBadge('🧭 이동방향을 확인중입니다. 이동해주세요');
-        }
-      }
-    } else {
+    if (rivals.length === 0) {
       
       currentMilestoneIdx = best.idx;
       nextMilestoneIdx = best.idx + 1;
+    } else {
+      const fwdIdx = pickNearest(fwdGroup);   
+      const rivalIdx = pickNearest(rivals);   
+      currentMilestoneIdx = fwdIdx;
+      nextMilestoneIdx = fwdIdx + 1;
+
+      
+      const normA = Math.min(fwdIdx, rivalIdx);
+      const normB = Math.max(fwdIdx, rivalIdx);
+      const samePairAsBefore = pendingRoundTripPair
+        && pendingRoundTripPair.candidateIdxA === normA
+        && pendingRoundTripPair.candidateIdxB === normB;
+      pendingRoundTripPair = { candidateIdxA: normA, candidateIdxB: normB };
+      if (!samePairAsBefore) {
+        pendingDirectionConfirmHeading = null;
+        pendingDirectionConfirmStreak = 0;
+      }
     }
   }
 
@@ -2750,6 +2720,15 @@
     if (didSwitch) {
       currentMilestoneIdx = chosenIdx;
       nextMilestoneIdx = chosenIdx + 1;
+
+      
+      sectionApproachState = null;
+      lastAppliedFarBearing = null;
+      farDriftStreak = 0;
+      lastAppliedFarRouteDistance = null;
+      isReverseDirectionWarning = false;
+      reverseWarningStreak = 0;
+      lastRouteDistanceForReverseCheck = null;
     }
 
     pendingRoundTripPair = null;
