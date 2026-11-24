@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v234';
+    const CACHE_NAME = 'gaja-trail-cache-v235';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261123_zoom_follow';
+      const APP_BUILD = 'v20261124_bearing_history';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3294,6 +3294,11 @@
   
   
   let appliedMapRotationDeg = 0; 
+
+  
+  let rotationAppliedSinceFix = false;
+  let lastBearingSavedAt = 0;
+  const BEARING_SAVE_INTERVAL_MS = 3000;
   function applySegmentRotation(bearingDeg) {
     const mapEl = document.getElementById('map');
     if (!mapEl || bearingDeg === null || isNaN(bearingDeg)) return;
@@ -3301,6 +3306,7 @@
     appliedMapRotationDeg += delta; 
     mapEl.style.transform = `translate(-50%, -50%) rotate(${-appliedMapRotationDeg}deg)`;
     mapRotationDeg = bearingDeg;
+    rotationAppliedSinceFix = true;
 
     
     
@@ -3547,6 +3553,7 @@
     
 
     if (currentMilestoneIdx >= 0 && !pendingRoundTripPair) priorSectionIdx = currentMilestoneIdx;
+    rotationAppliedSinceFix = false; 
     currentMilestoneIdx = -1;
     nextMilestoneIdx = -1;
 
@@ -6366,8 +6373,19 @@
         
 
         
+
         
         
+        
+        if (isFirstFix && !isHeadingUp) {
+          const hs = loadHikingSession();
+          const sb = (hs && hs.routeKey === currentRouteKey && typeof hs.lastBearing === 'number' && isFinite(hs.lastBearing)) ? hs.lastBearing : null;
+          if (sb !== null) {
+            try { setHeadingUpMode(true, true); } catch (e) {  }
+            applySegmentRotation(sb);
+            rotationAppliedSinceFix = false; 
+          }
+        }
         if (!getCurrentSection()) {
           resolveInitialSectionByProjection(lat, lon);
         }
@@ -6429,6 +6447,11 @@
         
         const routeDistanceForArrow = sectionProj ? sectionProj.routeDistance : traveledDistForEntry;
         recordHikeHistory(routeDistanceForArrow, nowTs);
+        
+        if (rotationAppliedSinceFix && !pendingRoundTripPair && nowTs - lastBearingSavedAt >= BEARING_SAVE_INTERVAL_MS) {
+          lastBearingSavedAt = nowTs;
+          updateHikingSession({ lastBearing: mapRotationDeg });
+        }
         const gpxProgressHeading = computeArrowHeadingV2(lat, lon, routeDistanceForArrow);
 
         let movementHeading = null;
