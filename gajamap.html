@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v236';
+    const CACHE_NAME = 'gaja-trail-cache-v237';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261125_force_update';
+      const APP_BUILD = 'v20261125_sim_update_gate';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -5699,6 +5699,8 @@
   
   let isSimPaused = false;
 
+  let simUpdateGatePassed = false; 
+  let simUpdateGateBusy = false;
   function toggleSimulation() {
     if (!currentPoints || currentPoints.length < 2) {
       alert('먼저 등산로 코스를 불러와주세요.');
@@ -5739,6 +5741,21 @@
       updateRouteBadgeRotation();
       if (mapEl) { mapEl.classList.remove('heading-up'); mapEl.style.transform = ''; }
       setTimeout(refreshMapSize, 520);
+      return;
+    }
+
+    
+    
+    if (!simUpdateGatePassed && typeof window.checkRemoteVersion === 'function') {
+      if (simUpdateGateBusy) return;
+      simUpdateGateBusy = true;
+      showToastBadge('🔄 최신 버전 확인 중...');
+      window.checkRemoteVersion({ force: true }).then(updating => {
+        simUpdateGateBusy = false;
+        if (updating) { showToastBadge('🔄 새 버전으로 갱신합니다...'); return; }
+        simUpdateGatePassed = true;
+        try { toggleSimulation(); } finally { simUpdateGatePassed = false; }
+      }).catch(() => { simUpdateGateBusy = false; simUpdateGatePassed = true; try { toggleSimulation(); } finally { simUpdateGatePassed = false; } });
       return;
     }
 
@@ -6899,16 +6916,22 @@
   }
   window.forceUpdateApp = forceUpdateApp;
   let lastRemoteVersionCheckAt = 0;
-  async function checkRemoteVersion() {
+  
+  
+  async function checkRemoteVersion(opts) {
+    const force = !!(opts && opts.force);
     const nowMs = Date.now();
-    if (nowMs - lastRemoteVersionCheckAt < 60000) return;
+    if (!force && nowMs - lastRemoteVersionCheckAt < 60000) return false;
     lastRemoteVersionCheckAt = nowMs;
     try {
       const cur = getCurrentVersionNum();
-      const res = await fetch('./sw.js?_vc=' + nowMs, { cache: 'no-store' });
-      if (!res.ok) return;
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), force ? 2500 : 8000);
+      let res;
+      try { res = await fetch('./sw.js?_vc=' + nowMs, { cache: 'no-store', signal: ctl.signal }); } finally { clearTimeout(timer); }
+      if (!res.ok) return false;
       const m = (await res.text()).match(/CACHE_NAME\s*=\s*'gaja-trail-cache-v(\d+)'/);
-      if (!m) return;
+      if (!m) return false;
       const remote = parseInt(m[1], 10);
       const badge = document.getElementById('appVersionBadge');
       if (remote > cur) {
@@ -6917,8 +6940,12 @@
         const tracking = typeof watchId !== 'undefined' && watchId !== null;
         let tried = null;
         try { tried = sessionStorage.getItem('gajago_force_target'); } catch (e) {}
-        if (!tracking && !(simInterval !== null || isSimPaused) && String(remote) !== tried) {
+        if (force && String(remote) !== tried) {
           forceUpdateApp(remote);
+          return true;
+        } else if (!tracking && !(simInterval !== null || isSimPaused) && String(remote) !== tried) {
+          forceUpdateApp(remote);
+          return true;
         } else if (typeof showToastBadge === 'function') {
           showToastBadge('🔄 새 버전 v' + remote + '이 있습니다. 하단 버전 표시를 누르면 강제로 갱신합니다.');
         }
@@ -6926,6 +6953,7 @@
         badge.innerText = 'v' + cur;
       }
     } catch (e) {  }
+    return false;
   }
   window.checkRemoteVersion = checkRemoteVersion;
   window.__gajaResetVersionCheck = () => { lastRemoteVersionCheckAt = 0; };
