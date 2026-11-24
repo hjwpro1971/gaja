@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v235';
+    const CACHE_NAME = 'gaja-trail-cache-v236';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261124_bearing_history';
+      const APP_BUILD = 'v20261125_force_update';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6877,14 +6877,71 @@
   }
 
   
+
   
+  
+  
+  function getCurrentVersionNum() {
+    const m = (window.__GAJA_CACHE_NAME || '').match(/(\d+)$/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+  async function forceUpdateApp(target) {
+    try { sessionStorage.setItem('gajago_force_target', String(target || '')); } catch (e) {}
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (e) {}
+    const u = new URL(window.location.href);
+    u.searchParams.set('_v', String(Date.now())); 
+    window.location.replace(u.href);
+  }
+  window.forceUpdateApp = forceUpdateApp;
+  let lastRemoteVersionCheckAt = 0;
+  async function checkRemoteVersion() {
+    const nowMs = Date.now();
+    if (nowMs - lastRemoteVersionCheckAt < 60000) return;
+    lastRemoteVersionCheckAt = nowMs;
+    try {
+      const cur = getCurrentVersionNum();
+      const res = await fetch('./sw.js?_vc=' + nowMs, { cache: 'no-store' });
+      if (!res.ok) return;
+      const m = (await res.text()).match(/CACHE_NAME\s*=\s*'gaja-trail-cache-v(\d+)'/);
+      if (!m) return;
+      const remote = parseInt(m[1], 10);
+      const badge = document.getElementById('appVersionBadge');
+      if (remote > cur) {
+        window.__gajaRemoteVersion = remote;
+        if (badge) badge.innerText = 'v' + cur + ' ⬆v' + remote;
+        const tracking = typeof watchId !== 'undefined' && watchId !== null;
+        let tried = null;
+        try { tried = sessionStorage.getItem('gajago_force_target'); } catch (e) {}
+        if (!tracking && !(simInterval !== null || isSimPaused) && String(remote) !== tried) {
+          forceUpdateApp(remote);
+        } else if (typeof showToastBadge === 'function') {
+          showToastBadge('🔄 새 버전 v' + remote + '이 있습니다. 하단 버전 표시를 누르면 강제로 갱신합니다.');
+        }
+      } else if (badge) {
+        badge.innerText = 'v' + cur;
+      }
+    } catch (e) {  }
+  }
+  window.checkRemoteVersion = checkRemoteVersion;
+  window.__gajaResetVersionCheck = () => { lastRemoteVersionCheckAt = 0; };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRemoteVersion(); });
   function showVersionDetail() {
     const full = window.__GAJA_CACHE_NAME || '알 수 없음';
-    if (typeof showToastBadge === 'function') {
-      showToastBadge(`🔖 현재 버전: ${full}`);
-    } else {
-      alert('현재 버전: ' + full);
-    }
+    const cur = getCurrentVersionNum();
+    const remote = window.__gajaRemoteVersion;
+    const msg = (remote && remote > cur)
+      ? `현재 v${cur}, 새 버전 v${remote}이 있습니다.
+지금 강제로 갱신할까요?
+(산행 기록·저장 코스·오프라인 지도는 유지됩니다)`
+      : `현재 버전: ${full}
+최신 버전을 강제로 다시 받을까요?
+(산행 기록·저장 코스·오프라인 지도는 유지됩니다)`;
+    if (confirm(msg)) forceUpdateApp(remote || cur);
   }
   window.showVersionDetail = showVersionDetail;
 
@@ -6898,6 +6955,7 @@
       const m = full.match(/v\d+$/);
       versionBadgeEl.innerText = m ? m[0] : full;
     }
+    setTimeout(checkRemoteVersion, 1500); 
 
 
     const urlParams = new URLSearchParams(window.location.search);
