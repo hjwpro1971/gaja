@@ -14,6 +14,18 @@
   <meta name="apple-mobile-web-app-title" id="appleAppTitle" content="아토-가자go">
   <title>아토-가자go</title>
   <script>
+    (function() {
+      try {
+        if (!/(^|\.)github\.io$/.test(location.hostname)) return;
+        if (navigator.onLine === false) return;
+        if (/[?&]legacy=1/.test(location.search)) return;
+        if (sessionStorage.getItem('gajago_tv_redirected') === '1') return;
+        sessionStorage.setItem('gajago_tv_redirected', '1');
+        location.replace('gajamap.html' + location.search + location.hash);
+      } catch (e) {}
+    })();
+  </script>
+  <script>
 
     
 

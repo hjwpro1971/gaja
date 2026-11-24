@@ -1,5 +1,5 @@
-// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v238)
-const CACHE_NAME = 'gaja-trail-cache-v238';
+// gaja 등산지도뷰어 오프라인 캐싱 서비스 워커 (PWA Service Worker - v239)
+const CACHE_NAME = 'gaja-trail-cache-v239';
 const CORE_ASSETS = [
   './leaflet.js',
   './leaflet.css',
@@ -8,6 +8,7 @@ const CORE_ASSETS = [
   './icon-512.png',
   './favicon.png',
   './track_viewer.html',
+  './gajamap.html',
   './track_viewer2.html',
   './gpx-map.html'
 ];
@@ -75,7 +76,8 @@ self.addEventListener('fetch', event => {
     // 오프라인 폴백 대상은 요청한 파일 그대로 골라야 한다 — 무조건
     // track_viewer.html로 폴백하면 track_viewer2.html을 오프라인 상태에서
     // 열었을 때 엉뚱하게 구버전 파일 내용이 뜨는 문제가 있었다.
-    const fallbackFile = url.includes('track_viewer2.html') ? './track_viewer2.html' : './track_viewer.html';
+    // 🔀 2026-11-25: gajamap.html을 요청했는데 못 받으면 옛 뷰어(track_viewer.html)가 아니라 미리 저장해 둔 gajamap.html을 낸다.
+    const fallbackFile = url.includes('track_viewer2.html') ? './track_viewer2.html' : (url.includes('gajamap.html') ? './gajamap.html' : './track_viewer.html');
     const NAV_TIMEOUT_MS = 4000;
     event.respondWith(
       new Promise(resolve => {
