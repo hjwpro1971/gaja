@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v237';
+    const CACHE_NAME = 'gaja-trail-cache-v238';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261125_sim_update_gate';
+      const APP_BUILD = 'v20261125_update_ratelimit';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -6902,10 +6902,22 @@
     const m = (window.__GAJA_CACHE_NAME || '').match(/(\d+)$/);
     return m ? parseInt(m[1], 10) : 0;
   }
-  async function forceUpdateApp(target) {
+
+  
+  
+  const AUTO_UPDATE_MIN_INTERVAL_MS = 10 * 60 * 1000;
+  async function forceUpdateApp(target, opts) {
+    const manual = !!(opts && opts.manual);
+    if (!manual) {
+      try {
+        const last = parseInt(localStorage.getItem('gajago_auto_update_at') || '0', 10);
+        if (Date.now() - last < AUTO_UPDATE_MIN_INTERVAL_MS) return false;
+        localStorage.setItem('gajago_auto_update_at', String(Date.now()));
+      } catch (e) {}
+    }
     try { sessionStorage.setItem('gajago_force_target', String(target || '')); } catch (e) {}
     try {
-      if ('serviceWorker' in navigator) {
+      if (manual && 'serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations();
         await Promise.all(regs.map(r => r.unregister()));
       }
@@ -6913,6 +6925,7 @@
     const u = new URL(window.location.href);
     u.searchParams.set('_v', String(Date.now())); 
     window.location.replace(u.href);
+    return true;
   }
   window.forceUpdateApp = forceUpdateApp;
   let lastRemoteVersionCheckAt = 0;
@@ -6941,11 +6954,10 @@
         let tried = null;
         try { tried = sessionStorage.getItem('gajago_force_target'); } catch (e) {}
         if (force && String(remote) !== tried) {
-          forceUpdateApp(remote);
+          forceUpdateApp(remote, { manual: true });
           return true;
         } else if (!tracking && !(simInterval !== null || isSimPaused) && String(remote) !== tried) {
-          forceUpdateApp(remote);
-          return true;
+          if (await forceUpdateApp(remote)) return true;
         } else if (typeof showToastBadge === 'function') {
           showToastBadge('🔄 새 버전 v' + remote + '이 있습니다. 하단 버전 표시를 누르면 강제로 갱신합니다.');
         }
@@ -6969,7 +6981,7 @@
       : `현재 버전: ${full}
 최신 버전을 강제로 다시 받을까요?
 (산행 기록·저장 코스·오프라인 지도는 유지됩니다)`;
-    if (confirm(msg)) forceUpdateApp(remote || cur);
+    if (confirm(msg)) forceUpdateApp(remote || cur, { manual: true });
   }
   window.showVersionDetail = showVersionDetail;
 
