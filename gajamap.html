@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v239';
+    const CACHE_NAME = 'gaja-trail-cache-v240';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261125_tv_redirect';
+      const APP_BUILD = 'v20261125_single_tab';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -4313,6 +4313,35 @@
     return expanded;
   }
 
+  
+
+  const TAB_OWNER_KEY = 'gajago_tab_owner_v1';
+  const MY_TAB_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  let myCourseTabKey = null;
+  function claimCourseTab() {
+    if (!myCourseTabKey || isGpsReplayMode || isNativeApp()) return;
+    if (document.visibilityState !== 'visible') return;
+    try { localStorage.setItem(TAB_OWNER_KEY, JSON.stringify({ course: myCourseTabKey, tabId: MY_TAB_ID, at: Date.now() })); } catch (e) {}
+  }
+  function retireDuplicateTab() {
+    
+    if (watchId !== null && watchId !== 'native') {
+      try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
+      watchId = null;
+      try { stopLowPowerPolling(); stopSleepMonitor(); } catch (e) {}
+    }
+    try { window.close(); } catch (e) {}
+  }
+  window.addEventListener('storage', e => {
+    if (e.key !== TAB_OWNER_KEY || !e.newValue) return;
+    let o = null;
+    try { o = JSON.parse(e.newValue); } catch (err) { return; }
+    if (!o || o.tabId === MY_TAB_ID || !myCourseTabKey || o.course !== myCourseTabKey) return;
+    if (document.visibilityState === 'visible') return; 
+    retireDuplicateTab();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') claimCourseTab(); });
+
   function drawRoute(points, courseName, sourceUrl, isFromCache) {
     if (!map || !points.length) return;
     points = expandRoundTripPoints(points);
@@ -4443,6 +4472,8 @@
 
     const routeKey = makeRouteKey(courseName, sourceUrl);
     currentRouteKey = routeKey;
+    myCourseTabKey = normalizeCourseKey(courseName, sourceUrl) || routeKey;
+    claimCourseTab(); 
     const session = loadHikingSession();
     if (session && session.routeKey === routeKey) {
       if (watchId === null && !isLowPowerPolling) {
