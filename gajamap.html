@@ -52,12 +52,12 @@
     
     
     
-    const CACHE_NAME = 'gaja-trail-cache-v240';
+    const CACHE_NAME = 'gaja-trail-cache-v241';
     window.__GAJA_CACHE_NAME = CACHE_NAME;
 
     
     (function() {
-      const APP_BUILD = 'v20261125_single_tab';
+      const APP_BUILD = 'v20261126_gps_weak_notice';
       try {
         if (localStorage.getItem('gajago_app_build') !== APP_BUILD) {
           localStorage.setItem('gajago_app_build', APP_BUILD);
@@ -3477,6 +3477,11 @@
   
   
   const GPS_SUSPECT_SECTION_DIST_M = 60;
+  const GPS_ERR_SLACK_CAP_M = 100;            
+  const GPS_WEAK_NOTICE_AFTER_MS = 20000;     
+  const GPS_WEAK_NOTICE_INTERVAL_MS = 60000;  
+  let lastAcceptedFixAt = 0;                  
+  let lastWeakNoticeAt = 0;
   let lastConfirmedGpsPos = null; 
   let sectionAdvanceConfirmStreak = 0; 
   const SECTION_ADVANCE_CONFIRM_STREAK = 3; 
@@ -3494,8 +3499,12 @@
     if (timestamp === undefined || timestamp === null) return GPS_RELIABILITY.NORMAL;
 
     const distFromLast = haversineMeters(lastConfirmedGpsPos.lat, lastConfirmedGpsPos.lon, lat, lon);
-    const elapsedSec = Math.max((timestamp - lastConfirmedGpsPos.timestamp) / 1000, 0.001);
-    const speedMps = distFromLast / elapsedSec;
+
+    
+    const errSlack = m => (typeof m === 'number' && isFinite(m) && m > 0) ? Math.min(m, GPS_ERR_SLACK_CAP_M) : 0;
+    const movedBeyondError = Math.max(0, distFromLast - errSlack(accuracy) - errSlack(lastConfirmedGpsPos.accuracy));
+    const elapsedSec = Math.max((timestamp - lastConfirmedGpsPos.timestamp) / 1000, 1);
+    const speedMps = movedBeyondError / elapsedSec;
 
     
     const sectionDistSuspect = proj ? proj.distance >= GPS_SUSPECT_SECTION_DIST_M : false;
@@ -3534,6 +3543,7 @@
     lastConfirmedGpsPos = null;
     sectionAdvanceConfirmStreak = 0;
     consecutiveRejectedCount = 0;
+    lastAcceptedFixAt = 0;
     
     
     resetTrailSearchWindow();
@@ -3662,7 +3672,7 @@
 
     const reliability = classifyGpsReliability(gpsLat, gpsLon, accuracy, timestamp, proj);
     if (reliability === GPS_RELIABILITY.NORMAL) {
-      lastConfirmedGpsPos = { lat: gpsLat, lon: gpsLon, timestamp };
+      lastConfirmedGpsPos = { lat: gpsLat, lon: gpsLon, timestamp, accuracy };
     }
 
     
@@ -5118,8 +5128,9 @@
     const guidanceDistanceM = (offTrailDistanceM !== undefined && offTrailDistanceM !== null) ? offTrailDistanceM : proj.distance;
     if (guidancePoint && isOffTrailState) {
       hideBottomDirectionArrow(); 
-      
+
       if (accuracy > 25 && offTrailStreakCount < 4) {
+        offTrailStreakCount++;
         toast.className = 'gps-toast';
         toast.innerText = `📡 숲·계곡 GPS 수신 대기 중 (오차 ±${Math.round(accuracy)}m)`;
         return;
@@ -6346,6 +6357,9 @@
         const lon = pos.coords.longitude;
         const accuracy = Math.round(pos.coords.accuracy);
         const nowTs = Date.now();
+        
+        
+        const fixTs = (typeof pos.timestamp === 'number' && isFinite(pos.timestamp) && Math.abs(nowTs - pos.timestamp) < 86400000) ? pos.timestamp : nowTs;
 
         const waitingOverlayAtFix = document.getElementById('gpsWaitingOverlay');
         if (waitingOverlayAtFix) waitingOverlayAtFix.style.display = 'none';
@@ -6360,29 +6374,29 @@
         const projForReliabilityPreview = sectionForReliabilityPreview
           ? projectOntoCurrentSection(lat, lon, sectionForReliabilityPreview)
           : null;
-        const reliabilityPreview = classifyGpsReliability(lat, lon, accuracy, nowTs, projForReliabilityPreview);
+        const reliabilityPreview = classifyGpsReliability(lat, lon, accuracy, fixTs, projForReliabilityPreview);
 
         if (reliabilityPreview === GPS_RELIABILITY.REJECTED) {
 
           
           if (lastKnownPos) {
             consecutiveRejectedCount++;
-            if (consecutiveRejectedCount === 5) {
-              showToastBadge('📡 GPS 신호가 불안정합니다 — 잠시 후 다시 확인해주세요.');
-
-              
-
-              
-
-              
-              
+            
+            
+            if (consecutiveRejectedCount >= 5) {
               lastConfirmedGpsPos = null;
               sectionAdvanceConfirmStreak = 0;
+            }
+            
+            if (lastAcceptedFixAt && nowTs - lastAcceptedFixAt >= GPS_WEAK_NOTICE_AFTER_MS && nowTs - lastWeakNoticeAt >= GPS_WEAK_NOTICE_INTERVAL_MS) {
+              lastWeakNoticeAt = nowTs;
+              showToastBadge('📡 GPS 신호가 불안정합니다 — 잠시 후 다시 확인해주세요.');
             }
             return;
           }
         }
         consecutiveRejectedCount = 0;
+        lastAcceptedFixAt = nowTs;
         lastKnownPos = { lat, lon }; 
 
         
@@ -6437,7 +6451,7 @@
         if (!getCurrentSection()) {
           resolveInitialSectionByProjection(lat, lon);
         }
-        const gajaMapResult = updateGajaMap(lat, lon, accuracy, nowTs);
+        const gajaMapResult = updateGajaMap(lat, lon, accuracy, fixTs);
         const section = gajaMapResult ? gajaMapResult.section : null;
         const sectionProj = gajaMapResult ? gajaMapResult.proj : null;
         const gpsReliability = gajaMapResult ? gajaMapResult.reliability : GPS_RELIABILITY.NORMAL;
